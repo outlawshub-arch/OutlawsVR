@@ -1,0 +1,46 @@
+{
+ "name": "GSGUN",
+ "texture": "GSGUN.png",
+ "size": [
+  284,
+  64
+ ],
+ "template": "GSGUN_template.png",
+ "sprite": {
+  "nwx": "GSGUN.NWX",
+  "spx": "GSGUN.SPX",
+  "frame": 0,
+  "hd_scale": 4,
+  "size": [
+   284,
+   60
+  ],
+  "at": [
+   0,
+   0
+  ],
+  "rows": [
+   0,
+   60
+  ]
+ },
+ "fill": {
+  "rows": [
+   0,
+   60
+  ],
+  "opaque_alpha_over": 127,
+  "rule": "RGB of every texel at or under the alpha from its nearest texel over it (Euclidean), alpha kept"
+ },
+ "card": {
+  "cm_per_hd_px": 0.373667,
+  "x_left": 68.381,
+  "x_right": -37.7403,
+  "z_top": 8.2207,
+  "z_bottom": -14.1993
+ },
+ "parts": [
+  "hammer",
+  "trigger"
+ ]
+}

@@ -1,0 +1,84 @@
+# Outlaws VR end credits (REQ-CREDITS). They roll first at the end of the final cutscene, then the original game's own
+# credits follow, read from the player's Outlaws files (credits.txt in the LABs).
+#
+# The layout is the original game's credits.txt layout:
+#   ~Heading    a line starting with ~ is a heading (drawn in gold)
+#   Name        any other line is a name (drawn in white)
+#   (empty)     an empty line is one line of space
+#   #           a line starting with # is a comment and is not shown
+# Lines are centred. Keep them short (about 40 letters fits across the picture).
+# To add a tester, add their name under ~Tested by.
+
+~OUTLAWS VR
+
+
+A community recreation of
+LucasArts' Outlaws (1997)
+for virtual reality
+
+
+
+~Made by
+T4H_Dingle
+
+
+
+~Tested by
+Dotard
+T4H_Dingle
+
+
+
+~Built with
+Unreal Engine by Epic Games
+Claude AI by Anthropic
+
+
+
+~Floor and ceiling triangulation
+earcut by Mapbox
+
+
+
+~Music decoding
+libsndfile by Erik de Castro Lopo
+
+
+
+~Grabbed bad guy upscaling
+Real-ESRGAN by Xintao Wang
+ncnn by Tencent
+
+
+
+~Cutscene conversion
+FFmpeg
+
+
+
+~Quest install
+Android Platform-Tools by Google
+
+
+
+~On the shoulders of
+The Force Engine by Lucius
+
+LawMaker, the Outlaws level editor
+by Alexei Novikov and David Lovejoy
+
+
+
+~Played from your own copy of
+Outlaws Remastered
+
+
+
+~Special thanks
+Everyone who kept the Outlaws
+community riding for over
+twenty-five years
+
+
+
+~Thanks for playing

@@ -1,0 +1,47 @@
+{
+ "name": "GPISTOL",
+ "texture": "GPISTOL.png",
+ "size": [
+  120,
+  128
+ ],
+ "template": "GPISTOL_template.png",
+ "sprite": {
+  "nwx": "GPISTOL.NWX",
+  "spx": "GPISTOL.SPX",
+  "frame": 0,
+  "hd_scale": 4,
+  "size": [
+   120,
+   60
+  ],
+  "at": [
+   0,
+   0
+  ],
+  "rows": [
+   0,
+   60
+  ]
+ },
+ "fill": {
+  "rows": [
+   0,
+   124
+  ],
+  "opaque_alpha_over": 127,
+  "rule": "RGB of every texel at or under the alpha from its nearest texel over it (Euclidean), alpha kept"
+ },
+ "card": {
+  "cm_per_hd_px": 0.249951,
+  "x_left": -4.2492,
+  "x_right": 25.745,
+  "z_top": 9.998,
+  "z_bottom": -4.999
+ },
+ "parts": [
+  "cyl",
+  "hammer",
+  "trigger"
+ ]
+}

@@ -1,0 +1,10 @@
+; Per-user Android SDK, NDK r25b and JDK 11 paths for Quest builds. Nothing here is committed.
+; - For the editor (Project Settings, Platforms > Android SDK, and packaging from the editor): copy this file to
+;   Config/UserEngine.ini (git ignores it).
+; - For command-line builds (UnrealBuildTool, RunUAT): UnrealBuildTool reads these keys without the project, so
+;   either set ANDROID_HOME, NDKROOT and JAVA_HOME in the environment, or put the same section in
+;   %LOCALAPPDATA%\Unreal Engine\Engine\Config\UserEngine.ini (per user, every project).
+[/Script/AndroidPlatformEditor.AndroidSDKSettings]
+SDKPath=(Path="C:/Android/sdk")
+NDKPath=(Path="C:/Android/sdk/ndk/android-ndk-r25b")
+JavaPath=(Path="C:/Java/jdk-11")

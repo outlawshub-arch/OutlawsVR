@@ -1,0 +1,54 @@
+{
+    "FileVersion": 3,
+    "EngineAssociation": "5.1",
+    "Category": "",
+    "Description": "Outlaws recreation proof of concept",
+    "Plugins": [
+        {
+            "Name": "ModelingToolsEditorMode",
+            "Enabled": true,
+            "TargetAllowList": [
+                "Editor"
+            ]
+        },
+        {
+            "Name": "PythonScriptPlugin",
+            "Enabled": true,
+            "TargetAllowList": [
+                "Editor"
+            ]
+        },
+        {
+            "Name": "EditorScriptingUtilities",
+            "Enabled": true
+        },
+        {
+            "Name": "ProceduralMeshComponent",
+            "Enabled": true
+        },
+        {
+            "Name": "OpenXR",
+            "Enabled": true
+        }
+    ],
+    "Modules": [
+        {
+            "Name": "OutlawsUE",
+            "AdditionalDependencies": [
+                "Engine"
+            ],
+            "Type": "Runtime",
+            "LoadingPhase": "Default"
+        },
+        {
+            "Name": "OutlawsXR",
+            "Type": "Runtime",
+            "LoadingPhase": "PostConfigInit"
+        },
+        {
+            "Name": "OutlawsRuntime",
+            "Type": "Runtime",
+            "LoadingPhase": "Default"
+        }
+    ]
+}

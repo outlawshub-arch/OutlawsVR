@@ -1,0 +1,47 @@
+{
+ "name": "GRIFLE",
+ "texture": "GRIFLE.png",
+ "size": [
+  276,
+  52
+ ],
+ "template": "GRIFLE_template.png",
+ "sprite": {
+  "nwx": "GRIFLE.NWX",
+  "spx": "GRIFLE.SPX",
+  "frame": 0,
+  "hd_scale": 4,
+  "size": [
+   276,
+   48
+  ],
+  "at": [
+   0,
+   0
+  ],
+  "rows": [
+   0,
+   48
+  ]
+ },
+ "fill": {
+  "rows": [
+   0,
+   48
+  ],
+  "opaque_alpha_over": 127,
+  "rule": "RGB of every texel at or under the alpha from its nearest texel over it (Euclidean), alpha kept"
+ },
+ "card": {
+  "cm_per_hd_px": 0.398551,
+  "x_left": 82.8986,
+  "x_right": -27.1014,
+  "z_top": 6.3768,
+  "z_bottom": -12.7536
+ },
+ "parts": [
+  "hammer",
+  "trigger",
+  "lever"
+ ]
+}

@@ -1,0 +1,5 @@
+; Optional, per user: copy to Config/UserGame.ini (git ignores it).
+; ItemDir: a local folder of private placeholder art for development (the same as -OLItemDir=<dir> or the
+; OUTLAWSVR_ITEMDIR environment variable). Nothing in it ships; leave it out to play normally.
+[Outlaws]
+;ItemDir=C:/path/to/placeholders
