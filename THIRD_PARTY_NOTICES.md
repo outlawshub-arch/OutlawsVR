@@ -1,5 +1,12 @@
 # Third-party notices
 
+## What the MIT licence covers
+
+The MIT licence in LICENSE covers the source code, configuration, scripts and JSON data in this repository written for
+Outlaws VR. It does not cover Outlaws, its data, or the Unreal Engine; see the notices below. The held-gun
+recipe files (`*_build.json`) hold measurements and shapes derived from the original game's art; the MIT licence
+covers our work on them, not the original art they were measured from.
+
 ## earcut (ISC)
 
 `Source/OutlawsRuntime/OutlawsTriangulate.cpp` is a C++ port of earcut.js 2.2.4 by Mapbox. The Python tools in
