@@ -1559,6 +1559,16 @@ private:
 	float Stamina = 100.f;
 	TWeakObjectPtr<class UAudioComponent> TiredSound;
 	float TiredWait = 0.f;
+	// (REQ-TIREDVOL, -OLStaminaProbe only) the first breath since the probe set TiredBreathStamina to -1: its stamina and multiplier
+	float TiredBreathStamina = -1.f;
+	float TiredBreathGain = 0.f;
+	/** tired.wav's curve: 0 at 99 and over (no breath), else ((99 - Stamina) / 99) ^ 1.5, faint at 99 and full at 0 (user 2026-09-27). */
+	static float TiredWant(float Stamina);
+	/** REQ-TIREDVOL (user 2026-10-27): tired.wav's volume multiplier for a Want off TiredWant, before the sound and master
+	 *  volumes: 1.5 times max(0.04, Want), 1.5 times as loud on the same curve; bOld (-OLOldTiredVolume): max(0.04, Want). */
+	static float TiredGain(float Want, bool bOld);
+	/** -OLOldTiredVolume (REQ-TIREDVOL's A/B switch): tired.wav at its level before 27 Oct. */
+	static bool OldTiredVolume();
 	void SwimKick(float Dir);
 	float StaminaFrac() const { return FMath::Clamp(Stamina / 100.f, 0.f, 1.f); }
 	void UpdateStamina(float Dt);

@@ -305,6 +305,23 @@ float AOutlawsPlayer::StaminaRate(bool bRunOnGround, bool bMoving, bool bCrouche
 	return Rate;
 }
 
+bool AOutlawsPlayer::OldTiredVolume()
+{
+	static const bool bOld = OLFlags::Param(TEXT("OLOldTiredVolume"));     // (REQ-TIREDVOL's before: tired.wav as loud as it was)
+	return bOld;
+}
+
+float AOutlawsPlayer::TiredWant(float Stamina)
+{
+	return Stamina < 99.f ? FMath::Pow((99.f - Stamina) / 99.f, 1.5f) : 0.f;
+}
+
+float AOutlawsPlayer::TiredGain(float Want, bool bOld)
+{
+	// 1.5 times as loud (user 2026-10-27): tired.wav peaks at -8 dBFS, so x1.5 still peaks 4.5 dB under full scale
+	return (bOld ? 1.f : 1.5f) * FMath::Max(0.04f, Want);
+}
+
 float AOutlawsPlayer::StaminaJumpCost(bool bCarrying, bool bOld)
 {
 	// E_JUMP 5, at a quarter (user 2026-09-27), over 1.5 (REQ-STAMINA15, user 2026-10-27); -OLOldStamina: the quarter alone
@@ -339,7 +356,7 @@ void AOutlawsPlayer::UpdateStamina(float Dt)
 	}
 	// tired.wav from the first point spent: faint at 99, full at 0 (user 2026-09-27)
 	AOutlawsLevelActor* L = Level.Get();
-	const float Want = Stamina < 99.f && !bDeadView && !bMenuOpen ? FMath::Pow((99.f - Stamina) / 99.f, 1.5f) : 0.f;
+	const float Want = !bDeadView && !bMenuOpen ? TiredWant(Stamina) : 0.f;
 	// a breath every 2 seconds (user 2026-09-27: the loop ran them together)
 	if (Want > 0.f && L && !L->IsFrontEnd())
 	{
@@ -348,7 +365,10 @@ void AOutlawsPlayer::UpdateStamina(float Dt)
 		{
 			TiredWait = 2.f;
 			TiredSound = L->PlayOnce2D(TEXT("tired"));
-			if (TiredSound.IsValid()) TiredSound->SetVolumeMultiplier(FMath::Max(0.04f, Want) * L->SoundVolume * L->MasterVolume);
+			// 1.5 times as loud on the same curve (REQ-TIREDVOL, user 2026-10-27; -OLOldTiredVolume: as before)
+			const float Gain = TiredGain(Want, OldTiredVolume()) * L->SoundVolume * L->MasterVolume;
+			if (TiredBreathStamina < 0.f && StaminaProbeOn()) { TiredBreathStamina = Stamina; TiredBreathGain = Gain; }
+			if (TiredSound.IsValid()) TiredSound->SetVolumeMultiplier(Gain);
 		}
 	}
 	else

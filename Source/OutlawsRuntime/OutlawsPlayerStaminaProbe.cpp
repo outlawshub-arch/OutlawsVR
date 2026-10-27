@@ -7,6 +7,8 @@
 // standing still (invincible meanwhile) is spent and the game's own tick (UpdateStamina) timed until full, against the
 // stepped time of the rule in use.  Lines "OLSTAMINA ..." and "OLSTAMINA RESULT PASS|FAIL".  With -OLShipSmoke the level
 // is played until it is done (OutlawsShipSmoke::HoldLevel); without it the game quits once done.  See OutlawsPlayer.h.
+// REQ-TIREDVOL (user 2026-10-27): also tired.wav's volume multiplier at stamina 90, 50 and 0 before (-OLOldTiredVolume)
+// and now (1.5 times), and the multiplier the game's own tick gave the first breath of the timed rest.
 
 #include "OutlawsPlayer.h"
 #include "OutlawsRuntime.h"
@@ -118,6 +120,19 @@ void AOutlawsPlayer::TickStaminaProbe(float Dt)
 			Check(FMath::IsNearlyEqual(OldCost / NewCost, 1.5f, 0.001f), FString::Printf(TEXT("jumps%s: %.3f each before, %.3f now; full to spent in %d jumps before, %d now"),
 				bCarry ? TEXT(", carrying a man") : TEXT(""), OldCost, NewCost, OldN, NewN));
 		}
+		// REQ-TIREDVOL: tired.wav's multiplier on the same curve, before and now (and in use, at the sound and master volumes)
+		const float Vol = L->SoundVolume * L->MasterVolume;
+		for (const float S : { 90.f, 50.f, 0.f })
+		{
+			const float Old = TiredGain(TiredWant(S), true), New = TiredGain(TiredWant(S), false);
+			Check(FMath::IsNearlyEqual(New, Old * 1.5f, 0.0001f), FString::Printf(TEXT("tired.wav at stamina %.0f: x%.4f before, x%.4f now (%.2f times); with the sound %.0f %% and master %.0f %%, x%.4f in use (%s)"),
+				S, Old, New, Old > 0.f ? New / Old : 0.f, L->SoundVolume * 100.f, L->MasterVolume * 100.f, TiredGain(TiredWant(S), OldTiredVolume()) * Vol,
+				OldTiredVolume() ? TEXT("-OLOldTiredVolume") : TEXT("now")));
+		}
+		Check(TiredWant(99.f) == 0.f && TiredWant(100.f) == 0.f && TiredWant(98.f) > 0.f, FString::Printf(TEXT("tired.wav starts below 99: want %.4f at 100, %.4f at 99, %.4f at 98"),
+			TiredWant(100.f), TiredWant(99.f), TiredWant(98.f)));
+		TiredBreathStamina = -1.f;
+		TiredWait = 0.f;
 		// the game's own tick: spent, standing still, timed until full (the rule in use)
 		P.bCrouchedAtStart = bCrouched;
 		P.Expect = StepTime(0.f, 100.f, false, false, bCrouched, L->Pace(), false, OldStamina());
@@ -151,6 +166,12 @@ void AOutlawsPlayer::TickStaminaProbe(float Dt)
 			Check(bOk, FString::Printf(TEXT("the tick's rest, %s, standing still%s: spent to full in %.2f s (stepped %.2f s)%s%s"), *L->LevelName,
 				P.bCrouchedAtStart ? TEXT(", crouched") : TEXT(""), P.RestT, P.Expect, Stamina >= 100.f ? TEXT("") : TEXT(", never full"),
 				P.Disturbed.IsEmpty() ? TEXT("") : *FString::Printf(TEXT(", %s"), *P.Disturbed)));
+			// REQ-TIREDVOL: the first breath of that rest, as the tick set it
+			const float BreathWant = TiredBreathStamina >= 0.f ? TiredWant(TiredBreathStamina) : 0.f;
+			const float BreathExpect = TiredGain(BreathWant, OldTiredVolume()) * L->SoundVolume * L->MasterVolume;
+			Check(TiredBreathStamina >= 0.f && FMath::IsNearlyEqual(TiredBreathGain, BreathExpect, 0.0001f),
+				FString::Printf(TEXT("the tick's first breath of the rest: at stamina %.2f, x%.4f (x%.4f expected, %s)%s"), TiredBreathStamina, TiredBreathGain,
+					BreathExpect, OldTiredVolume() ? TEXT("-OLOldTiredVolume") : TEXT("1.5 times"), TiredBreathStamina >= 0.f ? TEXT("") : TEXT(", no breath")));
 			L->bInvincible = P.bWasInvincible;
 			P.Stage = 2;
 		}
@@ -160,7 +181,7 @@ void AOutlawsPlayer::TickStaminaProbe(float Dt)
 			return;
 		}
 	}
-	UE_LOG(LogOutlaws, Display, TEXT("OLSTAMINA RESULT %s: %d passed, %d failed (the rule in use %s)"), P.Fail == 0 && P.Pass > 0 ? TEXT("PASS") : TEXT("FAIL"),
-		P.Pass, P.Fail, OldStamina() ? TEXT("old, -OLOldStamina") : TEXT("new"));
+	UE_LOG(LogOutlaws, Display, TEXT("OLSTAMINA RESULT %s: %d passed, %d failed (the rule in use %s; tired.wav %s)"), P.Fail == 0 && P.Pass > 0 ? TEXT("PASS") : TEXT("FAIL"),
+		P.Pass, P.Fail, OldStamina() ? TEXT("old, -OLOldStamina") : TEXT("new"), OldTiredVolume() ? TEXT("as before, -OLOldTiredVolume") : TEXT("1.5 times as loud"));
 	if (!OutlawsShipSmoke::Active()) FPlatformMisc::RequestExit(false);
 }
