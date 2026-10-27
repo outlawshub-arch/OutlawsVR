@@ -1553,13 +1553,30 @@ private:
 	// stamina (the original's energy, 0..100; James' cidjames.itm rates): running drains E_MOVE 10 a second,
 	// a jump E_JUMP 5; resting gives back E_REST 11 (walking half that, INFERRED), crouched E_CROUCH 2 more.
 	// Spent, running slows to a walk and jumps reach half as high; every shot strays (100 - energy) x 0.05
-	// degrees more [EXE 0x1400de9d1]; below half, tired.wav breathes, louder the lower it gets
+	// degrees more [EXE 0x1400de9d1]; below 99, tired.wav breathes, louder the lower it gets.  Ours (StaminaRate):
+	// running and jumps at a quarter of the exe's over 1.5, resting, walking and crouched at the exe's own (REQ-STAMINA15)
 	float Stamina = 100.f;
 	TWeakObjectPtr<class UAudioComponent> TiredSound;
 	float TiredWait = 0.f;
 	void SwimKick(float Dir);
 	float StaminaFrac() const { return FMath::Clamp(Stamina / 100.f, 0.f, 1.f); }
 	void UpdateStamina(float Dt);
+	/** REQ-STAMINA15 (user 2026-10-27, "out of breath in VR"): stamina a second (minus: spent) for what the body does:
+	 *  running on the ground (at Pace, the level's Pace(); carrying a man CarryDrain times as fast), moving otherwise (a
+	 *  walk), or still, and crouched or not.  The breath lasts 1.5 times as long running and comes back twice as fast as
+	 *  before; bOld (-OLOldStamina): the rates before it. */
+	static float StaminaRate(bool bRunOnGround, bool bMoving, bool bCrouched, float Pace, bool bCarrying, bool bOld);
+	/** REQ-STAMINA15: what a jump spends (E_JUMP 5 at a quarter, over 1.5; bOld: at a quarter, as before). */
+	static float StaminaJumpCost(bool bCarrying, bool bOld);
+	/** -OLOldStamina (REQ-STAMINA15's A/B switch): the running, jumping and recovery rates before 27 Oct. */
+	static bool OldStamina();
+	/** (REQ-STAMINA15, OutlawsPlayerStaminaProbe.cpp) -OLStaminaProbe, in any build (Shipping too, through OLFlags, not
+	 *  under WITH_OUTLAWS_TESTS): the times StaminaRate gives (a run from full to spent at each speed setting, carrying a
+	 *  man, the rests from spent to full, the jumps to spent) under both rules, then, in the level, a rest from spent to
+	 *  full timed on the game's own tick under the rule in use; "OLSTAMINA ..." lines and "OLSTAMINA RESULT PASS|FAIL".
+	 *  With -OLShipSmoke the first level is played until it is done; without it the game quits once done. */
+	static bool StaminaProbeOn();
+	void TickStaminaProbe(float Dt);
 	/** REQ-REGEN2X: the auto health regen a second standing still (the host's in co-op and multiplayer). */
 	float RegenRate() const;
 	/** Air under water (user 2026-10-01): it runs down as the head stays under, 30 s at the slider's 100 % and longer as

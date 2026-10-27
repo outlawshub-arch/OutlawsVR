@@ -210,9 +210,10 @@ void AOutlawsPlayer::LevelCarryTestTick()
 			return;
 		}
 		{
-			// the saved stamina as written, and the player's now: at most this frame's rest on top (6.5 a second at the most,
-			// crouched; a frame after a load is long headless)
+			// the saved stamina as written, and the player's now: at most this frame's rest on top (the quickest, crouched and
+			// still: 13 a second since REQ-STAMINA15, user 2026-10-27, 6.5 with -OLOldStamina; a frame after a load is long headless)
 			const float Dt = GetWorld() ? GetWorld()->GetDeltaSeconds() : 0.f;
+			const float MaxRest = StaminaRate(false, false, true, 0.5f, false, OldStamina());
 			FString Text;
 			TSharedPtr<FJsonObject> O;
 			double SavedStamina = -1.0;
@@ -222,8 +223,8 @@ void AOutlawsPlayer::LevelCarryTestTick()
 			Check(FMath::IsNearlyEqual(SavedStamina, 33.0, 0.01), FString::Printf(TEXT("(c) slot 7 holds stamina %.2f"), SavedStamina));
 			// (a map load: the new player's first 3 s go by before these checks run, resting)
 			const float Rest = bMapMode ? Dt + ShotTime : Dt;
-			UE_LOG(LogOutlaws, Display, TEXT("OLSHOT levelcarry (c) %.3f s: up to %.2f stamina of rest since the load"), Rest, 6.5f * Rest);
-			Expect(TEXT("(c) the save loaded"), 33.f, 33.f + 6.5f * Rest + 0.01f, 7, 1, 4, 9);
+			UE_LOG(LogOutlaws, Display, TEXT("OLSHOT levelcarry (c) %.3f s: up to %.2f stamina of rest since the load"), Rest, MaxRest * Rest);
+			Expect(TEXT("(c) the save loaded"), 33.f, 33.f + MaxRest * Rest + 0.01f, 7, 1, 4, 9);
 			ExpectHolstered(TEXT("(c) the save loaded"), 1, 0, 3);
 		}
 		// (d) the loaded level restarted: the save's own entry (its entry_mags) gives the guns back as the town was entered

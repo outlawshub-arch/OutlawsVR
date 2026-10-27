@@ -284,6 +284,33 @@ float AOutlawsPlayer::RegenRate() const
 	return OutlawsFeel::RegenPerSecond;
 }
 
+bool AOutlawsPlayer::OldStamina()
+{
+	static const bool bOld = OLFlags::Param(TEXT("OLOldStamina"));     // (REQ-STAMINA15's before: the rates as they were)
+	return bOld;
+}
+
+float AOutlawsPlayer::StaminaRate(bool bRunOnGround, bool bMoving, bool bCrouched, float Pace, bool bCarrying, bool bOld)
+{
+	// recovery at the exe's own rates (REQ-STAMINA15, user 2026-10-27: "out of breath in VR", it comes back twice as fast):
+	// E_REST 11, walking half that, E_CROUCH 2 more.  -OLOldStamina: at half those (user 2026-09-27), 5.5, 2.75 and 1 more
+	float Rate = bOld ? 5.5f : 11.f;
+	// running drains half by the second and half by the ground covered (user 2026-10-01: turned slow it winded too soon,
+	// 30 % a drag): the speed setting against 50 %, where it felt right (E_MOVE 10 at a quarter, and over 1.5 since user
+	// 2026-10-27, so a breath lasts 1.5 times as long; -OLOldStamina: the quarter alone)
+	const float SpeedMix = 0.5f + 0.5f * Pace / 0.5f;
+	if (bRunOnGround) Rate = -(bOld ? 2.5f : 2.5f / 1.5f) * SpeedMix * (bCarrying ? CarryDrain : 1.f);
+	else if (bMoving) Rate = bOld ? 2.75f : 5.5f;
+	if (bCrouched && Rate > 0.f) Rate += bOld ? 1.f : 2.f;
+	return Rate;
+}
+
+float AOutlawsPlayer::StaminaJumpCost(bool bCarrying, bool bOld)
+{
+	// E_JUMP 5, at a quarter (user 2026-09-27), over 1.5 (REQ-STAMINA15, user 2026-10-27); -OLOldStamina: the quarter alone
+	return (bOld ? 1.25f : 1.25f / 1.5f) * (bCarrying ? CarryDrain : 1.f);
+}
+
 void AOutlawsPlayer::UpdateStamina(float Dt)
 {
 	OL_PERF_SCOPE("Player: stamina");
@@ -292,14 +319,9 @@ void AOutlawsPlayer::UpdateStamina(float Dt)
 	const bool bCrouched = GetCapsuleComponent()->GetUnscaledCapsuleHalfHeight() < 60.f;
 	if (!bDeadView && !bMenuOpen)
 	{
-		// recovery at half the exe's rates (user 2026-09-27): E_REST 11, walking half that, E_CROUCH 2 more
-		float Rate = 5.5f;
-		// running drains half by the second and half by the ground covered (user 2026-10-01: turned slow it winded too soon,
-		// 30 % a drag): the speed setting against 50 %, where it felt right and drains as before (E_MOVE 10 at a quarter)
-		const float SpeedMix = 0.5f + 0.5f * (Level.IsValid() ? Level->Pace() : 0.5f) / 0.5f;
-		if (bRunning && bMovingNow && M->IsMovingOnGround()) Rate = -2.5f * SpeedMix * (CarryingMan() ? CarryDrain : 1.f);
-		else if (bMovingNow) Rate = 2.75f;
-		if (bCrouched && Rate > 0.f) Rate += 1.f;
+		// (StaminaRate: REQ-STAMINA15, user 2026-10-27, the breath lasts 1.5 times as long running and comes back twice as fast)
+		const float Rate = StaminaRate(bRunning && bMovingNow && M->IsMovingOnGround(), bMovingNow, bCrouched,
+			Level.IsValid() ? Level->Pace() : 0.5f, CarryingMan(), OldStamina());
 		Stamina = FMath::Clamp(Stamina + Rate * Dt, 0.f, 100.f);
 	}
 	if (bDeadView) Stamina = 100.f;
@@ -1168,7 +1190,7 @@ void AOutlawsPlayer::DoJump()
 	GetCharacterMovement()->JumpZVelocity = (bVR ? VRJumpVelocity : DesktopJumpVelocity) * FMath::Sqrt(FMath::Lerp(0.5f, 1.f, StaminaFrac()));
 	if (CanJump())
 	{
-		Stamina = FMath::Max(0.f, Stamina - 1.25f * (CarryingMan() ? CarryDrain : 1.f));    // E_JUMP 5, at a quarter (user 2026-09-27)
+		Stamina = FMath::Max(0.f, Stamina - StaminaJumpCost(CarryingMan(), OldStamina()));    // E_JUMP 5 at a quarter, over 1.5 (user 2026-10-27)
 	}
 	if (CanJump() && L)
 	{
@@ -1219,6 +1241,7 @@ void AOutlawsPlayer::Tick(float Dt)
 	if (FirstUseProbeOn()) TickFirstUseProbe(Dt);     // (FIRSTHITCH: -OLFirstUseProbe)
 	if (ClimbProbeOn()) TickClimbProbe(Dt);           // (BUG-SLOPECLIMB: -OLClimbProbe)
 	if (ToolWhackProbeOn()) TickToolWhackProbe(Dt);   // (BUG-SHOVELWHACK: -OLToolWhackProbe)
+	if (StaminaProbeOn()) TickStaminaProbe(Dt);       // (REQ-STAMINA15: -OLStaminaProbe)
 	OutlawsAchievements::Tick(this, Level.Get(), Dt);     // (REQ-EXTRAS: an achievement's toast once there is somewhere to show it)
 	// both sticks kept in for 1.5 s: mark this moment for the perf report (and no recenter at the release)
 #if WITH_OUTLAWS_TESTS
