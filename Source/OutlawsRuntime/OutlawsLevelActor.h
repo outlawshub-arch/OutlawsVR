@@ -769,6 +769,12 @@ public:
 	bool DebugCanSee(const FVector& From, const FVector& To, const AActor* Target) const { return CanSee(From, To, Target); }
 	bool DebugIsMapItemSeen(const AActor* A) const;
 	static bool bDebugMapItemsOff;           // (the shots' "before": the map drawn without the items)
+	/** -OLKnifePickupProbe: the pickups lying about (not in a hand), and how many placed ground items this build drew as
+	 *  3D models (pickups or, -OLOldKnifePickup, level scenery). */
+	struct FPickupDebug { AActor* Actor = nullptr; int32 Serial = -1; FString Ground; FVector Where = FVector::ZeroVector; };
+	void DebugPickups(TArray<FPickupDebug>& Out) const;
+	int32 DebugPlacedGroundModels() const { return PlacedGroundModels; }
+	int32 DebugModelSerialsFrom() const { return ModelSerialsFrom; }
 #endif
 	/** A shot's line From..To past the hanging lamps: one it passes near swings; a chandelier's shade it passes through
 	 *  breaks alone (user 2026-10-01). */
@@ -1559,7 +1565,7 @@ private:
 	static void SkyCollision(UProceduralMeshComponent* M);            // sky faces: bodies stop, everything else passes
 	float WallFacingYaw(const FVector& Where, int32 SectorIndex, float Fallback) const;   // a pickup's back to its nearest wall
 	void BuildSkyCeilingCollision(const FOutlawsLevel& L);             // the walled rooms' sky ceilings, invisible, bodies only
-	AActor* MakeDynamiteActor(UProceduralMeshComponent* From, UProceduralMeshComponent*& OutMesh);
+	AActor* MakeDynamiteActor(UProceduralMeshComponent* From, UProceduralMeshComponent*& OutMesh, const TCHAR* MeshName = TEXT("OutlawsDynamite"));
 	UPROPERTY(Transient)
 	TObjectPtr<class UMaterialInstanceDynamic> SkySurfaceMid;
 
@@ -2091,6 +2097,10 @@ private:
 	};
 	bool IsMapItem(const FPickup& P) const;
 	int32 PickupSerials = 0;
+	// (BUG-KNIFEPICKUP) placed ground items drawn as 3D models (the level's knives, gknife.3do) this build, and the first
+	// serial they took: they are numbered after the sprites, so a save from before them names the sprites as it did
+	int32 PlacedGroundModels = 0;
+	int32 ModelSerialsFrom = 0;
 	bool CollectPickup(int32 Index, bool bSilent = false);
 	bool GiveEntry(const FPickup::FEntry& E);
 	void ShowMessage(int32 Id, int32 Count = 0, const FString& Fallback = FString());

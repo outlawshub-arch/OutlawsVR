@@ -1086,6 +1086,7 @@ bool AOutlawsLevelActor::CollectPickup(int32 Index, bool bSilent)
 		// canteen / elixir: only below full health
 		if (Health >= 10.f || bDead)
 		{
+			UE_LOG(LogOutlaws, Log, TEXT("OLRT pickup %s refused: %s"), *P.Ground, bDead ? TEXT("the player is dead") : TEXT("full health"));
 			return false;
 		}
 		Health = FMath::Min(10.f, Health + P.HealthB / 10.f);
@@ -1106,6 +1107,16 @@ bool AOutlawsLevelActor::CollectPickup(int32 Index, bool bSilent)
 		if (!bAny)
 		{
 			// (no "You already have the maximum of that item." line: the pickup just stays; user 2026-09-28)
+			// (BUG-KNIFEPICKUP) why, in the log (Shipping's too): each entry's item, how many carried and the most
+			TArray<FString> Why;
+			for (const FPickup::FEntry& E : P.Entries)
+			{
+				const FItemDef* D = ItemDefs.Find(E.Item.ToLower());
+				if (E.Item.IsEmpty()) Why.Add(TEXT("an entry with no item"));
+				else if (D && D->Class == TEXT("armr")) Why.Add(FString::Printf(TEXT("%s: plate %d no better than the %d worn"), *E.Item, E.Count, Armour));
+				else Why.Add(FString::Printf(TEXT("%s: %d carried, the most %d"), *E.Item, GetCount(E.Item), D ? D->MaxCount : 1));
+			}
+			UE_LOG(LogOutlaws, Log, TEXT("OLRT pickup %s refused: nothing fitted (%s)"), *P.Ground, Why.Num() ? *FString::Join(Why, TEXT("; ")) : TEXT("no entries"));
 			return false;
 		}
 	}

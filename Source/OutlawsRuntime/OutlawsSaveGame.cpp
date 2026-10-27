@@ -347,6 +347,7 @@ bool AOutlawsLevelActor::BuildSaveText(AOutlawsPlayer* P, FString& OutText, int3
 		Ps.Add(MakeShared<FJsonValueObject>(J));
 	}
 	O->SetArrayField(TEXT("pickups"), Ps);
+	O->SetNumberField(TEXT("placed_serials"), PickupSerials);      // (BUG-KNIFEPICKUP: the serials this build gave, the placed knives' among them)
 
 	// props (their choreography: a shot lamp stays broken), glass, dynamite
 	FJsonArray Pr, Gl, Dy;
@@ -696,10 +697,16 @@ void AOutlawsLevelActor::ApplyLoad(const FJsonObject& O, bool bWorldOnly)
 			}
 		}
 	}
+	// (BUG-KNIFEPICKUP) a save from before the level's knives were pickups names the sprites' serials only: the knives (numbered
+	// after them) it never knew stay as the build made them
+	double SavedSerials = double(ModelSerialsFrom);
+	O.TryGetNumberField(TEXT("placed_serials"), SavedSerials);
+	int32 NotInSave = 0;
 	for (int32 i = Pickups.Num() - 1; i >= 0; --i)
 	{
 		FPickup& Pk = Pickups[i];
 		if (Pk.Serial < 0) continue;
+		if (Pk.Serial >= int32(SavedSerials)) { ++NotInSave; continue; }
 		AActor* A = Pk.Actor.Get();
 		if (const FVector* Where = Keep.Find(Pk.Serial))
 		{
@@ -710,6 +717,7 @@ void AOutlawsLevelActor::ApplyLoad(const FJsonObject& O, bool bWorldOnly)
 		if (A) A->Destroy();
 		Pickups.RemoveAt(i);
 	}
+	if (NotInSave > 0) UE_LOG(LogOutlaws, Log, TEXT("OLRT save put back: %d of the level's own pickups (serials from %d) are not in this older save: left as built"), NotInSave, int32(SavedSerials));
 	for (int32 d = 0; d < Dropped.Num(); ++d)
 	{
 		if (bDeferDrops)

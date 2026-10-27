@@ -157,6 +157,8 @@ void AOutlawsLevelActor::Clear()
 	HurtSector = -1;
 	Pickups.Reset();
 	PickupSerials = 0;
+	PlacedGroundModels = 0;
+	ModelSerialsFrom = 0;
 	Inventory.Reset();
 	InventoryLabels.Reset();
 	Groups.Reset();
@@ -249,10 +251,10 @@ FString AOutlawsLevelActor::CloudReport() const
 		SkySurfaceMid->Parent ? *SkySurfaceMid->Parent->GetName() : TEXT("-"));
 }
 
-AActor* AOutlawsLevelActor::MakeDynamiteActor(UProceduralMeshComponent* From, UProceduralMeshComponent*& OutMesh)
+AActor* AOutlawsLevelActor::MakeDynamiteActor(UProceduralMeshComponent* From, UProceduralMeshComponent*& OutMesh, const TCHAR* MeshName)
 {
 	// a copy of a level mesh on an actor of its own, where the level put it (riding a lift if it did): shot traces
-	// meet it, bodies pass
+	// meet it, bodies pass (a placed knife's too, BUG-KNIFEPICKUP, then made without collision by its caller)
 	OutMesh = nullptr;
 	UWorld* World = GetWorld();
 	if (!World || !From) return nullptr;
@@ -260,7 +262,7 @@ AActor* AOutlawsLevelActor::MakeDynamiteActor(UProceduralMeshComponent* From, UP
 	SP.ObjectFlags |= RF_Transient;
 	AActor* A = World->SpawnActor<AActor>(AActor::StaticClass(), From->GetComponentTransform(), SP);
 	if (!A) return nullptr;
-	UProceduralMeshComponent* M = NewObject<UProceduralMeshComponent>(A, TEXT("OutlawsDynamite"));
+	UProceduralMeshComponent* M = NewObject<UProceduralMeshComponent>(A, MeshName);
 	M->bUseComplexAsSimpleCollision = true;
 	M->bUseAsyncCooking = false;
 	M->SetCastShadow(false);
@@ -1196,6 +1198,7 @@ void AOutlawsLevelActor::Build()
 	int32 NumEnemies = 0, NumGenerators = 0;
 	const bool bGameWorld = World->IsGameWorld();
 	int32 NumSprites = 0, NumMeshes = 0, NumNone = 0, NumOutside = 0, NumRiding = 0, NumPickups = 0, NumOtherDifficulty = 0;
+	TArray<int32> ModelPickups;            // (BUG-KNIFEPICKUP) the placed 3D ground items' pickups, numbered after the loop
 	NumItemModels = 0;
 	SpinningModels.Reset();
 	WavingModels.Reset();
@@ -1698,6 +1701,42 @@ void AOutlawsLevelActor::Build()
 					++NumPickups;
 				}
 			}
+			else if (bGameWorld && (ItmFunc.Equals(TEXT("Inv_GroundObject"), ESearchCase::IgnoreCase) || ItmFunc.Equals(TEXT("Inv_InstantGroundObject"), ESearchCase::IgnoreCase)))
+			{
+				// (BUG-KNIFEPICKUP, user 27 Oct: "the ones that spawn with the level can't be picked up") a ground item drawn
+				// as a 3D model (gknife.itm: FUNC Inv_GroundObject, ANIM gknife.3do, PICKUP iknife, COUNT 1; the only one the
+				// game has) was built as a piece of the level and never made a pickup, so only a knife thrown or dropped in
+				// play (SpawnGroundItem) could be taken.  Its own actor, without collision as a dropped knife has, and the
+				// pickup its ITM gives (the count and the carry rules as for any pickup).  Numbered after the sprites, below,
+				// so a save made before names them as it did.  -OLOldKnifePickup: level scenery, as it was
+				static const bool bOldKnifePickup = OLFlags::Param(TEXT("OLOldKnifePickup"));
+				++PlacedGroundModels;
+				if (bOldKnifePickup)
+				{
+					UE_LOG(LogOutlaws, Log, TEXT("OLRT placed %s at %s: level scenery, no pickup (-OLOldKnifePickup)"), *O.Name, *Pos.ToString());
+				}
+				else
+				{
+					ObjectMeshes.Remove(M);
+					UProceduralMeshComponent* KM = nullptr;
+					AActor* KA = MakeDynamiteActor(M, KM, TEXT("OutlawsGroundModel"));
+					M->DestroyComponent();
+					M = KM;
+					if (KA && KM)
+					{
+						KM->SetCollisionEnabled(ECollisionEnabled::NoCollision);
+						if (RegisterPickup(KA, O.Name, Itm))
+						{
+							ModelPickups.Add(Pickups.Num() - 1);
+							++NumPickups;
+						}
+						else
+						{
+							UE_LOG(LogOutlaws, Log, TEXT("OLRT placed %s at %s is not a pickup"), *O.Name, *Pos.ToString());
+						}
+					}
+				}
+			}
 			if (!M) continue;
 			++NumMeshes;
 		}
@@ -1705,6 +1744,15 @@ void AOutlawsLevelActor::Build()
 		{
 			++NumNone;
 		}
+	}
+	ModelSerialsFrom = PickupSerials;
+	for (const int32 Pi : ModelPickups)
+	{
+		if (Pickups.IsValidIndex(Pi)) Pickups[Pi].Serial = PickupSerials++;
+	}
+	if (PlacedGroundModels > 0)
+	{
+		UE_LOG(LogOutlaws, Log, TEXT("OLRT placed 3D ground items: %d, %d of them pickups (serials from %d)"), PlacedGroundModels, ModelPickups.Num(), ModelSerialsFrom);
 	}
 	CoopExtrasFirst = -1;
 	CoopExtrasMade = 0;

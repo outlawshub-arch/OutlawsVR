@@ -16,6 +16,8 @@
 #include "Components/CapsuleComponent.h"
 #include "Camera/CameraComponent.h"
 #include "Engine/World.h"
+#include "OutlawsFlags.h"
+#include "Misc/Crc.h"
 
 namespace
 {
@@ -124,6 +126,19 @@ void UOutlawsCoop::AssignPickupIds(AOutlawsLevelActor* L)
 		P.CoopId = P.Serial >= 0 ? P.Serial : LevelLooseIdBase + Loose++;
 	}
 	UE_LOG(LogOutlawsCoop, Log, TEXT("OLCOOP pickups numbered: %d (%d of them without a serial, from %d)"), L->Pickups.Num(), Loose, LevelLooseIdBase);
+#if WITH_OUTLAWS_TESTS
+	// (BUG-KNIFEPICKUP) the numbers and what they stand for, the same on both machines: a checksum of every (number, ground
+	// item) pair, and the level's own knives by number
+	uint32 Sum = 0;
+	FString Knives;
+	for (const AOutlawsLevelActor::FPickup& P : L->Pickups)
+	{
+		Sum = FCrc::MemCrc32(&P.CoopId, sizeof(P.CoopId), Sum);
+		Sum = FCrc::StrCrc32(*P.Ground, Sum);
+		if (P.Ground == TEXT("gknife")) Knives += FString::Printf(TEXT(" %d"), P.CoopId);
+	}
+	UE_LOG(LogOutlawsCoop, Log, TEXT("OLCOOP test pickup table: checksum %08x, the level's knives:%s"), Sum, Knives.IsEmpty() ? TEXT(" none") : *Knives);
+#endif
 }
 
 void UOutlawsCoop::RunFor(int32 Epoch, TFunction<void()> Do)
@@ -748,11 +763,14 @@ int32 UOutlawsCoop::TestCandidate(AOutlawsLevelActor* L, const FVector& Near) co
 	// badge (it halves the hurt test), not a canteen, not riding a lift, not one tried already
 	int32 Best = INDEX_NONE;
 	double BestD = 1e30;
+	FString OnlyGround;                       // (BUG-KNIFEPICKUP: -OLCoopTestGround=gknife, the level's own knives alone)
+	OLFlags::Value(TEXT("OLCoopTestGround"), OnlyGround);
 	for (int32 i = 0; i < L->Pickups.Num(); ++i)
 	{
 		const AOutlawsLevelActor::FPickup& P = L->Pickups[i];
 		const AActor* A = P.Actor.Get();
 		if (!A || P.bHeld || P.CoopId < 0 || P.CoopId >= LevelLooseIdBase || TestTried.Contains(P.CoopId) || P.UseId >= 0 || P.bInstant) continue;
+		if (!OnlyGround.IsEmpty() && !P.Ground.Equals(OnlyGround, ESearchCase::IgnoreCase)) continue;
 		if (P.Item.Equals(TEXT("ibadge"), ESearchCase::IgnoreCase) || (A->GetRootComponent() && A->GetRootComponent()->GetAttachParent())) continue;
 		if (!WouldGive(L, i)) continue;
 		const double D = FVector::DistSquared(A->GetActorLocation(), Near);
