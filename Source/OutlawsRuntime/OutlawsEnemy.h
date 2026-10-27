@@ -240,6 +240,11 @@ public:
 	void SetDormant(bool bOn);
 	bool IsDormant() const { return bDormant; }
 	void WakeForTest() { WakeTick(); }          // (-OLVb2Test: a man put in the air ticks every frame, as one thrown does)
+	/** (BUG-SHOVELWHACK's probe, -OLToolWhackProbe) his duck played now, his body as short as its frames (or CrouchHalf: a
+	 *  bot's body as short as a crouching player's, so its puppet is drawn crouched); false: none. */
+	bool DuckForProbe(float CrouchHalf = 0.f);
+	/** (the probe) his body standing again after a duck. */
+	void StandForProbe();
 	/** The boss appears here: seen, solid, and straight after the player. */
 	void Appear(const FVector& FeetLoc);
 	/** A taunt from its list whatever the rules (the boss's forced taunts), played at a place. */

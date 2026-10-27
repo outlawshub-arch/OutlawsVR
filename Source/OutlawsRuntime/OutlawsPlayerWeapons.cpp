@@ -3066,6 +3066,31 @@ static bool MeleeTouches(const AOutlawsEnemy* E, const FVector& At, double Reach
 	return FVector::Dist2D(C, At) <= E->GetCapsuleComponent()->GetScaledCapsuleRadius() + 15.f && FMath::Abs(At.Z - C.Z) <= Half;
 }
 
+// (BUG-SHOVELWHACK) a shovel's or a crowbar's blow lands from this far out of the fist to the tool's end (the crowbar's
+// outer half, near enough, as before; the shovel's shaft too)
+static constexpr double ToolStrikeFromCm = 25.0;
+
+// (BUG-SHOVELWHACK) where a tool's striking length A..B lands on a bad guy: within 6 cm of his body's capsule (as before),
+// else in his picture as drawn, within a fist's 22 cm of it, a point every 5 cm from the end in; a held one on his body
+// only (his picture is in the other hand).  OutAt the point
+static bool ToolMeets(const AOutlawsEnemy* E, const FVector& A, const FVector& B, FVector& OutAt)
+{
+	if (BodyGap(E, A, B, &OutAt) <= 6.0) return true;
+	const AOutlawsSpriteActor* Spr = E->GetSprite();
+	if (!Spr || E->bHeldByPlayer) return false;
+	const int32 N = FMath::Clamp(FMath::CeilToInt(FVector::Dist(A, B) / 5.0), 1, 40);
+	for (int32 i = 0; i <= N; ++i)
+	{
+		const FVector P = FMath::Lerp(B, A, double(i) / N);
+		if (Spr->DrawnTouches(P, 22.0))
+		{
+			OutAt = P;
+			return true;
+		}
+	}
+	return false;
+}
+
 void AOutlawsPlayer::UpdatePunches(float Dt)
 {
 	OL_PERF_SCOPE("Player: punches");
@@ -3733,16 +3758,22 @@ void AOutlawsPlayer::UpdateTools(float Dt)
 				ToolCooldown[H] = 0.25f;
 				continue;
 			}
-			// the shovel or the crowbar swung into a bad guy lands as a club (user 2026-10-01): its outer half on his body,
-			// harder than a fist (the fist 0.8); a held one too, though not by the hand holding the tool
+			// the shovel or the crowbar swung into a bad guy lands as a club (user 2026-10-01), harder than a fist (the fist
+			// 0.8); a held one too, though not by the hand holding the tool.  What lands is the tool from a hand's width past
+			// the fist to its end, on his body or on his picture as drawn, as a fist lands (BUG-SHOVELWHACK, user 2026-10-27:
+			// a shovel swung at a bad guy's head did nothing: only its outer half within 6 cm of his body's capsule counted,
+			// the capsule 180 cm tall and the bad guys drawn up to 220, and face to face the outer half of the 111 cm shovel
+			// was past him).  Only a swing (the tip faster than the walk by HitSpeedHard, above): a tool resting on him or
+			// carried into him as the player walks is no blow
 			if (HeldTool[H] == TEXT("ishovel") || HeldTool[H] == TEXT("icrowbar"))
 			{
 				const bool bShovel = HeldTool[H] == TEXT("ishovel");
-				const FVector Half = ToolRoot[H]->GetComponentTransform().TransformPosition(FVector(ToolTipX[H] * 0.45, 0.0, 0.0));
+				const FVector Eye = Camera->GetComponentLocation();
+				const FVector Butt = ToolRoot[H]->GetComponentTransform().TransformPosition(FVector(FMath::Min(ToolStrikeFromCm, ToolTipX[H] * 0.45), 0.0, 0.0));
 				AOutlawsEnemy* Struck = nullptr;
 				FVector At = Tip;
-				if (MeleeInSight(this, L, Camera->GetComponentLocation(), Tip)
-					&& UOutlawsCoop::StrikeAtPlayers(L, Tip, 10.f, (bShovel ? 1.4f : 1.2f) * FMath::FRandRange(0.9f, 1.1f) * L->PlayerDamageScale(), bShovel ? TEXT("a shovel") : TEXT("a crowbar")))
+				if (UOutlawsCoop::StrikeAlongAtPlayers(L, Butt, Tip, 10.f, (bShovel ? 1.4f : 1.2f) * FMath::FRandRange(0.9f, 1.1f) * L->PlayerDamageScale(), bShovel ? TEXT("a shovel") : TEXT("a crowbar"),
+					[&](const FVector& P) { return MeleeInSight(this, L, Eye, P); }))
 				{
 					L->PlaySoundAt(TEXT("connect"), Tip);   // (M1's gaps: another player in a match)
 					PulseImpact(H, Swing);
@@ -3751,7 +3782,7 @@ void AOutlawsPlayer::UpdateTools(float Dt)
 				{
 					AOutlawsEnemy* E = Wk.Get();
 					if (!E || E->IsDead() || E->IsDormant() || E == GrabbedEnemy[H].Get()) continue;
-					if (BodyGap(E, Half, Tip, &At) <= 6.0 && MeleeInSight(this, L, Camera->GetComponentLocation(), At))
+					if (ToolMeets(E, Butt, Tip, At) && MeleeInSight(this, L, Eye, At))
 					{
 						Struck = E;
 						break;

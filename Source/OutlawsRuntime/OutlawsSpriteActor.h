@@ -74,6 +74,14 @@ public:
 	/** The floor is this far under the actor's place (a walking bad guy's capsule rides 2 cm over the floor, more on a
 	 *  slope): the insertion point goes down onto it. */
 	void SetFloorGap(float Cm) { FloorGapCm = FMath::Clamp(Cm, 0.f, 30.f); }
+	/** (BUG-SHOVELWHACK) How tall the drawing of what plays now stands over its insertion point, in cm: its choreography's
+	 *  tallest frame (16 px an Outlaws unit, as a bad guy's body takes it from the frame on show; a crouch is short), never
+	 *  over the cell itself. */
+	double DrawnHeightCm() const;
+	/** (BUG-SHOVELWHACK) A blow's point in this picture as it is drawn: inside the quad where PlaceQuad put it (drawn nearer
+	 *  the eye and scaled down for the near feet), a little inside its sides, within Reach of its plane, from just under the
+	 *  insertion point up to DrawnHeightCm.  False while it is hidden. */
+	bool DrawnTouches(const FVector& At, double Reach) const;
 	/** -OLAnchorShots (with -OLShots): close, low shots of the horse and other floor sprites, ol_anchor_<name>_<tag>.png
 	 *  (-OLAnchorTag=, default "after"), and a log line per floor sprite (floor, insertion point, lowest drawn row). */
 	static void TickAnchorShots(UWorld* World, float DeltaSeconds);

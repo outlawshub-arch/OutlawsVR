@@ -1195,6 +1195,15 @@ public:
 	/** M1's gaps (OutlawsCoopMatchStrikes.cpp): a melee blow at At (Reach round it), a thrown thing's step A..B, a blast's reach on
 	 *  the other players' bodies drawn here, reported to the host as a pellet is; false (0) when no one is struck. */
 	static bool StrikeAtPlayers(AOutlawsLevelActor* L, const FVector& At, float Reach, float Damage, const TCHAR* Kind);
+	/** (BUG-SHOVELWHACK) A tool's blow along its striking length A..B (the shovel, the crowbar): the first other player whose
+	 *  body (Reach round it) or drawn picture it meets at a point Seen passes, struck as StrikeAtPlayers strikes. */
+	static bool StrikeAlongAtPlayers(AOutlawsLevelActor* L, const FVector& A, const FVector& B, float Reach, float Damage, const TCHAR* Kind,
+		TFunctionRef<bool(const FVector&)> Seen);
+	/** (BUG-SHOVELWHACK's probe, any build) the melee blows sent at other players so far, and the last one's damage. */
+	static int32 MatchStrikesSent();
+	static float LastMatchStrikeDamage();
+	/** (the probe, on the host) hits the host checked and dealt so far. */
+	int32 MatchHitsDealtSoFar() const { return MatchHitsDealt; }
 	static bool SweepAtPlayers(AOutlawsLevelActor* L, const FVector& A, const FVector& B, float Damage, const TCHAR* Kind, FVector& OutAt);
 	static int32 BlastAtPlayers(AOutlawsLevelActor* L, const FVector& Where, float RadiusCm, float Damage);
 	/** A match whose blasts the host deals (another machine's blast does not hurt this player directly). */
@@ -1922,6 +1931,11 @@ private:
 	// M1's gaps (OutlawsCoopMatchStrikes.cpp)
 	float MatchDamageFor(int32 Victim, float Damage) const;
 	bool ReportStrike(AOutlawsLevelActor* L, int32 Victim, float Damage, const FVector& At, const TCHAR* Kind);
+	/** The first other player a blow along A..B (a point when A is B) meets: within Reach of the body or in the picture
+	 *  drawn here; -1 none.  OutAt the point. */
+	int32 PlayerStruckAlong(const FVector& A, const FVector& B, float Reach, FVector& OutAt) const;
+	/** That player struck (once in StrikeCoolSeconds for one blow going through) and reported. */
+	bool StrikePlayer(AOutlawsLevelActor* L, int32 Who, float Damage, const FVector& At, const TCHAR* Kind);
 	void TickHostStrikeTest(double Now, AOutlawsLevelActor* L, AOutlawsPlayer* P);
 	void OnStrikeTestStep(const FString& Step, int32 Arg, AOutlawsLevelActor* L, AOutlawsPlayer* P);
 	void OnStrikeExtraStep(const FString& Step, AOutlawsLevelActor* L, AOutlawsPlayer* P);

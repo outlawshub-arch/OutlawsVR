@@ -1218,6 +1218,7 @@ void AOutlawsPlayer::Tick(float Dt)
 	UpdatePlayWarm(Level.Get());
 	if (FirstUseProbeOn()) TickFirstUseProbe(Dt);     // (FIRSTHITCH: -OLFirstUseProbe)
 	if (ClimbProbeOn()) TickClimbProbe(Dt);           // (BUG-SLOPECLIMB: -OLClimbProbe)
+	if (ToolWhackProbeOn()) TickToolWhackProbe(Dt);   // (BUG-SHOVELWHACK: -OLToolWhackProbe)
 	OutlawsAchievements::Tick(this, Level.Get(), Dt);     // (REQ-EXTRAS: an achievement's toast once there is somewhere to show it)
 	// both sticks kept in for 1.5 s: mark this moment for the perf report (and no recenter at the release)
 #if WITH_OUTLAWS_TESTS

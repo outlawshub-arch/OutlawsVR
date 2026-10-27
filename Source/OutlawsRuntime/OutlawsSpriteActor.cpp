@@ -1,5 +1,6 @@
 #include "OutlawsSpriteActor.h"
 #include "OutlawsFlags.h"
+#include "OutlawsGeometry.h"
 #include "OutlawsPerf.h"
 #include "Components/StaticMeshComponent.h"
 #include "Materials/MaterialInstanceDynamic.h"
@@ -780,6 +781,31 @@ void AOutlawsSpriteActor::PlaceQuad(const FVector* Viewer)
 	Quad->SetRelativeScale3D(FVector(K));
 	Quad->SetWorldLocation(Want);
 	bQuadMoved = true;
+}
+
+double AOutlawsSpriteActor::DrawnHeightCm() const
+{
+	const double Cell = FMath::Abs(GetActorScale3D().Z) * 0.97;
+	if (Chors.IsValidIndex(PlayingChor) && Chors[PlayingChor].HeightPx > 0)
+	{
+		return FMath::Min(Cell, Chors[PlayingChor].HeightPx / 16.0 * FOutlawsGeometry::UnitsToCm);
+	}
+	return Cell;
+}
+
+bool AOutlawsSpriteActor::DrawnTouches(const FVector& At, double Reach) const
+{
+	// (BUG-SHOVELWHACK, user 2026-10-27: a shovel swung at a bad guy's head did nothing; his body's capsule is 180 cm tall,
+	// his picture up to 220) the quad's foot and scale as PlaceQuad left them (its place when it stands unmoved), across
+	// from the drawing's middle along the actor's Y, the height from the insertion point on the floor
+	if (IsHidden() || !Quad || !Quad->IsVisible()) return false;
+	const FVector Sc = GetActorScale3D();
+	const double K = FMath::Max(0.05, double(Quad->GetRelativeScale3D().X));
+	const FVector Rel = At - Quad->GetComponentLocation();
+	const double Across = FMath::Abs(FVector::DotProduct(Rel, GetActorRightVector()));
+	const double Depth = FMath::Abs(FVector::DotProduct(Rel, GetActorForwardVector()));
+	const double Up = At.Z - (GetActorLocation().Z - FloorGapCm);
+	return Across <= FMath::Abs(Sc.Y) * K * 0.42 && Depth <= Reach && Up >= -10.0 && Up <= DrawnHeightCm() * K;
 }
 
 double AOutlawsSpriteActor::PullClearance(const FVector& At, const FVector2D& Dir)

@@ -1605,6 +1605,14 @@ private:
 	 *  ("OLCLIMBPROBE <level> <n> ...: PASS|FAIL|SKIP"), a RESULT line, then it quits (exit code 0 when all pass). */
 	static bool ClimbProbeOn();
 	void TickClimbProbe(float Dt);
+	/** (BUG-SHOVELWHACK, OutlawsPlayerToolWhack.cpp) -OLToolWhackProbe, in any build: once a level is up, the shovel and the
+	 *  crowbar swung at bad guys stood before the player, or at a bot in a match (across at the head, the body and low at 40,
+	 *  80 and 120 cm, standing and ducking, chopped, resting on him, walked into him, a multiplied copy, a bad guy of another
+	 *  kind, straight after a dig), each swing a frame at a time through UpdateTools, and the fist the same way through
+	 *  UpdatePunches; "OLWHACK <level> <case>: PASS|FAIL|SKIP" and "OLWHACK RESULT".  With -OLShipSmoke each level is played
+	 *  until its cases are done. */
+	static bool ToolWhackProbeOn();
+	void TickToolWhackProbe(float Dt);
 
 	UPROPERTY(Transient)
 	TObjectPtr<class UStaticMeshComponent> FadeVeil;

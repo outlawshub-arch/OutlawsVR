@@ -18,20 +18,22 @@ namespace
 	const TCHAR* const SmokeLevels[] = { TEXT("hideout"), TEXT("townex"), TEXT("train"), TEXT("canyon"), TEXT("mill"), TEXT("simms"), TEXT("miner"), TEXT("cliff"), TEXT("ranch") };
 	constexpr int32 NumSmokeLevels = UE_ARRAY_COUNT(SmokeLevels);
 	constexpr double SmokePlaySecondsPlain = 2.0;  // each level (and the menu) ticked this long before the next
-	constexpr double SmokePlaySecondsProbe = 40.0; // (FIRSTHITCH: with -OLFirstUseProbe, its two rounds of steps)
+	constexpr double SmokePlaySecondsProbe = 40.0; // (FIRSTHITCH: with -OLFirstUseProbe, its two rounds of steps; BUG-SHOVELWHACK: -OLToolWhackProbe's swings)
 	double SmokePlaySecondsFor(bool bMenu)
 	{
-		static const bool bProbe = OLFlags::Param(TEXT("OLFirstUseProbe"));
+		static const bool bProbe = OLFlags::Param(TEXT("OLFirstUseProbe")) || OLFlags::Param(TEXT("OLToolWhackProbe"));
 		return bProbe && !bMenu ? SmokePlaySecondsProbe : SmokePlaySecondsPlain;
 	}
 	constexpr double SmokeMenuWait = 180.0;        // the menu up by then from the start
 	constexpr double SmokeLevelWait = 180.0;       // a level built by then from its start
+	constexpr double SmokeHoldMax = 240.0;         // (BUG-SHOVELWHACK) a probe holds a level this long from its build at most
 
 	enum class ESmokeStage { Menu, Level, Settle, Done };
 	ESmokeStage GSmokeStage = ESmokeStage::Menu;
 	int32 GSmokeIndex = -1;                  // the level being loaded or played (-1: the menu)
 	double GSmokeStageAt = 0.0;              // when the menu wait (the module's start) or the level's start began
 	double GSmokeSettleUntil = 0.0;
+	double GSmokeHoldCap = 0.0;               // (HoldLevel) the latest a level is played to
 	int32 GSmokeLoaded = 0, GSmokeFailed = 0;
 	double GSmokeTotalMs = 0.0;
 	TWeakObjectPtr<AOutlawsLevelActor> GSmokeLevel;
@@ -171,4 +173,11 @@ void OutlawsShipSmoke::NoteBuilt(AOutlawsLevelActor* L)
 	}
 	GSmokeStage = ESmokeStage::Settle;
 	GSmokeSettleUntil = FPlatformTime::Seconds() + SmokePlaySecondsFor(false);
+	GSmokeHoldCap = FPlatformTime::Seconds() + SmokeHoldMax;
+}
+
+void OutlawsShipSmoke::HoldLevel(double Seconds)
+{
+	if (!Active() || GSmokeStage != ESmokeStage::Settle || GSmokeIndex < 0) return;
+	GSmokeSettleUntil = FMath::Max(GSmokeSettleUntil, FMath::Min(FPlatformTime::Seconds() + Seconds, GSmokeHoldCap));
 }

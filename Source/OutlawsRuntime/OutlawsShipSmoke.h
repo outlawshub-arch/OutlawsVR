@@ -21,4 +21,7 @@ namespace OutlawsShipSmoke
 	void NoteMenu(AOutlawsLevelActor* Level);
 	/** A level build has ended, built or not (AOutlawsLevelActor::Build, every way out). */
 	void NoteBuilt(AOutlawsLevelActor* Level);
+	/** (BUG-SHOVELWHACK) A probe with steps still to take (-OLToolWhackProbe): the level being played is kept at least Seconds
+	 *  more, up to four minutes from its build.  Nothing while a level is loading, or without the flag. */
+	void HoldLevel(double Seconds);
 }

@@ -2,8 +2,9 @@
 // pellets do (OutlawsCoopMatch.cpp, ShotAtPlayers): the striking machine finds the other player's body drawn there, reports
 // the hit to the host (ServerPlayerHit: the host checks it and deals it through the co-op hurt, the kill credited to the
 // striker), and it is never dealt twice.
-// - Melee: a knife's jab, a fist, a shovel or a crowbar, a bottle or a pot smashed over a head (StrikeAtPlayers: a point and
-//   a reach against the body; each striker's blow lands on one player once in 0.4 s).
+// - Melee: a knife's jab, a fist, a bottle or a pot smashed over a head (StrikeAtPlayers: a point and a reach against the
+//   body, or in the player's picture as drawn), a shovel or a crowbar (StrikeAlongAtPlayers: the tool's striking length so);
+//   each striker's blow lands on one player once in 0.4 s.
 // - Thrown: a knife, a bottle, a pot (SweepAtPlayers: the flight's step against the body).
 // - Dynamite: the blast's fall-off (full within a quarter of the radius, then with the square) on each other player in its
 //   reach and in sight, from the machine whose stick went off (BlastAtPlayers); a blast told from another machine no longer
@@ -16,6 +17,7 @@
 #include "OutlawsLevelActor.h"
 #include "OutlawsPlayer.h"
 #include "OutlawsRemotePlayer.h"
+#include "OutlawsSpriteActor.h"
 #include "OutlawsMpPolish.h"
 #include "TimerManager.h"
 #include "OutlawsMpHost.h"
@@ -33,6 +35,7 @@ namespace
 	constexpr double StrikeCoolSeconds = 0.4;
 	double GStrikeAt[UOutlawsCoop::MaxPlayers] = {};
 	int32 GStrikesSent = 0, GBlastsSent = 0;
+	float GLastStrikeDamage = 0.f;
 
 	/** The point on segment A..B nearest the body's upright axis, and how far from it (the body: Mid, Half up and down). */
 	double SegmentToBody(const FVector& A, const FVector& B, const FVector& Mid, double Half, FVector& OutAt, double& OutT)
@@ -87,26 +90,70 @@ bool UOutlawsCoop::ReportStrike(AOutlawsLevelActor* L, int32 Victim, float Damag
 	return true;
 }
 
+int32 UOutlawsCoop::PlayerStruckAlong(const FVector& A, const FVector& B, float Reach, FVector& OutAt) const
+{
+	// a point every 5 cm from B back to A (one point when A is B): within Reach of the body as before, or in the player's
+	// picture as it is drawn here (BUG-SHOVELWHACK: a blow at the drawn head counts, as on a bad guy)
+	const int32 N = FMath::Clamp(FMath::CeilToInt(FVector::Dist(A, B) / 5.0), 0, 40);
+	for (int32 Who = 0; Who < MaxPlayers; ++Who)
+	{
+		if (Who == MyIndex()) continue;
+		const AOutlawsRemotePlayer* R = PuppetOf(Who);
+		if (!R || R->IsHidden() || R->PlateDead()) continue;
+		const FVector Mid = R->ShownBody();
+		const double Half = FMath::Max(40.0, double(R->ShownHalf()));
+		const AOutlawsSpriteActor* Spr = R->ShownSprite();
+		for (int32 i = 0; i <= N; ++i)
+		{
+			const FVector P = N > 0 ? FMath::Lerp(B, A, double(i) / N) : B;
+			const bool bBody = FVector::Dist2D(Mid, P) <= 32.0 + Reach && FMath::Abs(P.Z - Mid.Z) <= Half + Reach;
+			if (!bBody && !(Spr && Spr->DrawnTouches(P, FMath::Max(22.0, double(Reach))))) continue;
+			OutAt = P;
+			return Who;
+		}
+	}
+	return -1;
+}
+
+bool UOutlawsCoop::StrikePlayer(AOutlawsLevelActor* L, int32 Who, float Damage, const FVector& At, const TCHAR* Kind)
+{
+	const double Now = FPlatformTime::Seconds();
+	if (Now - GStrikeAt[Who] < StrikeCoolSeconds) return true;         // (the same blow, still going through: struck once)
+	GStrikeAt[Who] = Now;
+	++GStrikesSent;
+	GLastStrikeDamage = Damage;
+	return ReportStrike(L, Who, Damage, At, Kind);
+}
+
 bool UOutlawsCoop::StrikeAtPlayers(AOutlawsLevelActor* L, const FVector& At, float Reach, float Damage, const TCHAR* Kind)
 {
 	if (CVarOLMatchStrikes.GetValueOnGameThread() == 0) return false;
 	UOutlawsCoop* C = L ? Get(L) : nullptr;
 	if (!C || !C->IsMatch() || !C->bLevelBuilt || Damage <= 0.f) return false;
-	const double Now = FPlatformTime::Seconds();
-	for (int32 Who = 0; Who < MaxPlayers; ++Who)
-	{
-		if (Who == C->MyIndex()) continue;
-		const AOutlawsRemotePlayer* R = C->PuppetOf(Who);
-		if (!R || R->IsHidden() || R->PlateDead()) continue;
-		const FVector Mid = R->ShownBody();
-		const double Half = FMath::Max(40.0, double(R->ShownHalf()));
-		if (FVector::Dist2D(Mid, At) > 32.0 + Reach || FMath::Abs(At.Z - Mid.Z) > Half + Reach) continue;
-		if (Now - GStrikeAt[Who] < StrikeCoolSeconds) return true;         // (the same blow, still going through: struck once)
-		GStrikeAt[Who] = Now;
-		++GStrikesSent;
-		return C->ReportStrike(L, Who, Damage, At, Kind);
-	}
-	return false;
+	FVector Hit = At;
+	const int32 Who = C->PlayerStruckAlong(At, At, Reach, Hit);
+	return Who >= 0 && C->StrikePlayer(L, Who, Damage, Hit, Kind);
+}
+
+bool UOutlawsCoop::StrikeAlongAtPlayers(AOutlawsLevelActor* L, const FVector& A, const FVector& B, float Reach, float Damage, const TCHAR* Kind,
+	TFunctionRef<bool(const FVector&)> Seen)
+{
+	if (CVarOLMatchStrikes.GetValueOnGameThread() == 0) return false;
+	UOutlawsCoop* C = L ? Get(L) : nullptr;
+	if (!C || !C->IsMatch() || !C->bLevelBuilt || Damage <= 0.f) return false;
+	FVector Hit = B;
+	const int32 Who = C->PlayerStruckAlong(A, B, Reach, Hit);
+	return Who >= 0 && Seen(Hit) && C->StrikePlayer(L, Who, Damage, Hit, Kind);
+}
+
+int32 UOutlawsCoop::MatchStrikesSent()
+{
+	return GStrikesSent;
+}
+
+float UOutlawsCoop::LastMatchStrikeDamage()
+{
+	return GLastStrikeDamage;
 }
 
 bool UOutlawsCoop::SweepAtPlayers(AOutlawsLevelActor* L, const FVector& A, const FVector& B, float Damage, const TCHAR* Kind, FVector& OutAt)

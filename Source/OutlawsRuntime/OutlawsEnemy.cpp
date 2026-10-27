@@ -364,6 +364,24 @@ bool AOutlawsEnemy::IsDucking() const
 	return Sprite && Def.DuckChor >= 0 && Sprite->GetPlayingChor() == Def.DuckChor;
 }
 
+bool AOutlawsEnemy::DuckForProbe(float CrouchHalf)
+{
+	if (IsDead()) return false;
+	const bool bChor = Sprite && Def.DuckChor >= 0 && Sprite->Chors.IsValidIndex(Def.DuckChor);
+	if (bChor) Play(Def.DuckChor, true);
+	if (CrouchHalf > 0.f)
+	{
+		SetBodyHalf(CrouchHalf);       // (a bot's own picture is hidden: its puppet goes by the body's height)
+		return true;
+	}
+	return bChor && IsDucking();
+}
+
+void AOutlawsEnemy::StandForProbe()
+{
+	if (!IsDead()) SetBodyHalf(StandHalf);
+}
+
 void AOutlawsEnemy::SetState(EOutlawsEnemyState NewState)
 {
 	State = NewState;
