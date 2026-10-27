@@ -856,6 +856,7 @@ private:
 	float MantleLeft = 0.f;
 	FVector MantleFrom = FVector::ZeroVector;
 	FVector MantleTo = FVector::ZeroVector;
+	FString ClimbRefusal;              // (BUG-SLOPECLIMB) why the last StartMantle found no climb, for the let-go's log line
 	TWeakObjectPtr<AActor> HeldItem[2];   // a key / puzzle item in each hand
 	// a bottle off a shelf (user 2026-09-28): held at its real size where the hand closed on it, thrown on the let-go,
 	// set down gently it stands; swung into a bad guy it is a melee blow; it bursts on whatever it strikes hard
@@ -1597,6 +1598,13 @@ private:
 	 *  level's median frame.  With -OLShipSmoke each level is played until it is done. */
 	static bool FirstUseProbeOn();
 	void TickFirstUseProbe(float Dt);
+	/** (BUG-SLOPECLIMB, OutlawsPlayerClimbProbe.cpp) -OLClimbProbe[=townex+mill], in any build (Shipping too, through OLFlags,
+	 *  not under WITH_OUTLAWS_TESTS): climbs made as a hand makes them (the ledge taken by the right hand's grip, let go at
+	 *  chest height): the town's sloped roofs from the ground beside them and a window it must not climb through, then the
+	 *  mill's climbs of BUG-MILLCLIMB (the box and the walkway in the hall, a landing in the yard refused); a line each
+	 *  ("OLCLIMBPROBE <level> <n> ...: PASS|FAIL|SKIP"), a RESULT line, then it quits (exit code 0 when all pass). */
+	static bool ClimbProbeOn();
+	void TickClimbProbe(float Dt);
 
 	UPROPERTY(Transient)
 	TObjectPtr<class UStaticMeshComponent> FadeVeil;

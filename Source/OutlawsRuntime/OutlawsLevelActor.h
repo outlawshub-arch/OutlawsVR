@@ -392,8 +392,9 @@ public:
 	/** (BUG-SLOPES test) the Nth sloped-floor sector standing 1.2 to 2.4 m over the walkable sector beside it: the ground
 	 *  point in front of that wall, the lip's middle, its height and the way in (UE units).  False when none. */
 	bool DebugRoofLip(int32 Nth, FVector& OutGround, FVector& OutLip, FVector& OutIn, int32& OutSector) const;
-	/** (BUG-CLIMBCEIL) the ceiling over a point, in cm: the sector the point stands in (its floor at or under it); huge when none. */
-	double CeilingZAt(const FVector& P) const;
+	/** (BUG-CLIMBCEIL) the ceiling over a point, in cm: the sector the point stands in (its floor at or under it); huge when none.
+	 *  OutSector: that sector (-1 none). */
+	double CeilingZAt(const FVector& P, int32* OutSector = nullptr) const;
 	/** (BUG-STUCKGAP) the sector whose walls hold a point (UE cm) and whose floor..ceiling holds its height (slopes
 	 *  included, Slack cm either way): its index; -1 outside every sector; -2 no level. */
 	int32 SectorHoldingPoint(const FVector& P, double Slack = 2.0) const;

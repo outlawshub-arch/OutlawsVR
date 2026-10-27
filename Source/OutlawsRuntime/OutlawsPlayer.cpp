@@ -1217,6 +1217,7 @@ void AOutlawsPlayer::Tick(float Dt)
 	UpdateFadeVeil();                      // (first: the movie, menu and front-end branches below return early)
 	UpdatePlayWarm(Level.Get());
 	if (FirstUseProbeOn()) TickFirstUseProbe(Dt);     // (FIRSTHITCH: -OLFirstUseProbe)
+	if (ClimbProbeOn()) TickClimbProbe(Dt);           // (BUG-SLOPECLIMB: -OLClimbProbe)
 	OutlawsAchievements::Tick(this, Level.Get(), Dt);     // (REQ-EXTRAS: an achievement's toast once there is somewhere to show it)
 	// both sticks kept in for 1.5 s: mark this moment for the perf report (and no recenter at the release)
 #if WITH_OUTLAWS_TESTS
@@ -2577,9 +2578,17 @@ void AOutlawsPlayer::ReleaseGrab(bool bFling)
 	}
 	// let go with the hand at chest height or lower (28 cm under the eyes; user 2026-09-28: 45 felt like the waist):
 	// the body is up at the lip, so climb onto it (or over it, for a fence or rail)
-	if (H >= 0 && GripOf(H)->GetComponentLocation().Z <= Camera->GetComponentLocation().Z - 28.0 && StartMantle())
+	const bool bLow = H >= 0 && GripOf(H)->GetComponentLocation().Z <= Camera->GetComponentLocation().Z - 28.0;
+	if (bLow && StartMantle())
 	{
 		return;
+	}
+	// (BUG-SLOPECLIMB) a hand's let-go that does not climb, and why, one line each (a Log line: Shipping's log has it too)
+	if (H >= 0 && bFling)
+	{
+		const AOutlawsLevelActor* LL = Level.Get();
+		UE_LOG(LogOutlaws, Log, TEXT("OLRT let go of the ledge z %.0f (the body in sector %d): no climb, falling: %s"), LedgeTopZ, LL ? LL->PlayerSectorIndex() : -1,
+			bLow ? *ClimbRefusal : TEXT("the hand over the chest"));
 	}
 	GrabHand = -1;
 	UCharacterMovementComponent* M = GetCharacterMovement();
@@ -2699,7 +2708,38 @@ bool AOutlawsPlayer::StartMantle()
 	// started in the room above and stood the body on its floor) never over the ceiling of the ledge's own sector: the search
 	// starts under it, and nothing there or above it is a landing
 	const AOutlawsLevelActor* LC = Level.Get();
-	const double LedgeCeil = LC ? LC->CeilingZAt(FVector(GrabPoint.X, GrabPoint.Y, LedgeTopZ) + LedgeIn * (R + 12.0)) : 1e9;
+	int32 LedgeSector = -1;
+	double LedgeCeil = LC ? LC->CeilingZAt(FVector(GrabPoint.X, GrabPoint.Y, LedgeTopZ) + LedgeIn * (R + 12.0), &LedgeSector) : 1e9;
+	// (user 2026-10-27, BUG-SLOPECLIMB, the town's roofs over a room: "it would throw me up a little and then drop me") a roof
+	// rising past the lip is over the point looked at, so the sector found there was the room under the roof, whose ceiling is
+	// under the lip (or, where the roof's eave dips into the room's top, a hand over it): no spot was under it, the climb was
+	// refused and the hand let go.  A ceiling that leaves no crouch's room over the ledge's top is checked against the sector
+	// the top is in, looked for at the lip itself just in from the wall, and that one's is kept when it is higher (a box under
+	// a low ceiling has the same one there: still no climb) (-OLOldSlopeClimb: as before)
+	static const bool bOldSlopeClimb = OLFlags::Param(TEXT("OLOldSlopeClimb"));
+	if (LC && !bOldSlopeClimb && LedgeCeil < LedgeTopZ + 2.0 * CrouchHalfHeight)
+	{
+		int32 LipSector = -1;
+		const double LipCeil = LC->CeilingZAt(FVector(GrabPoint.X, GrabPoint.Y, LedgeTopZ) + LedgeIn * 7.0, &LipSector);
+		if (LipCeil > LedgeCeil)
+		{
+			LedgeCeil = LipCeil;
+			LedgeSector = LipSector;
+		}
+	}
+	ClimbRefusal.Reset();
+	// (BUG-SLOPECLIMB) a refusal, and why, for the let-go's line (ReleaseGrab); while hanging, once a second here
+	auto Refuse = [&](const FString& Why)
+	{
+		ClimbRefusal = FString::Printf(TEXT("%s (the ledge's sector %d)"), *Why, LedgeSector);
+		static double LastRefuseLog = -10.0;      // (asked every tick while hanging: once a second)
+		if (FPlatformTime::Seconds() - LastRefuseLog > 1.0)
+		{
+			LastRefuseLog = FPlatformTime::Seconds();
+			UE_LOG(LogOutlaws, Log, TEXT("OLRT climb over the ledge z %.0f refused: %s"), LedgeTopZ, *ClimbRefusal);
+		}
+		return false;
+	};
 	auto GroundAt = [&](const FVector& At)
 	{
 		FHitResult G;
@@ -2714,7 +2754,7 @@ bool AOutlawsPlayer::StartMantle()
 	// (BUG-MILLCLIMB, the mill's hall inside its yard: a climb onto a box threw the player out into the yard) never a spot
 	// in a sector the player's own does not lead to through openings near the climb
 	FString LandWhy;
-	int32 LandRefused = 0;
+	int32 LandRefused = 0, CeilRefused = 0;
 	auto LandOk = [&](const FVector& At)
 	{
 		if (!LC || LC->ClimbLandingSector(At, GetActorLocation(), &LandWhy) != -1) return true;
@@ -2736,7 +2776,7 @@ bool AOutlawsPlayer::StartMantle()
 				for (const double Lift : { 0.0, 15.0, 30.0, 45.0 })
 				{
 					const FVector At = At0 + FVector(0.0, 0.0, Lift);
-					if (At.Z + 2.0 * Try > LedgeCeil + 1.0) continue;          // (BUG-CLIMBCEIL: the body under the ledge's own ceiling)
+					if (At.Z + 2.0 * Try > LedgeCeil + 1.0) { ++CeilRefused; continue; }          // (BUG-CLIMBCEIL: the body under the ledge's own ceiling)
 					if (Half < 0.f && Fits(At, Try) && (!bNeedFloor || HasFloor(At0)) && LandOk(At))
 					{
 						Half = Try;
@@ -2748,13 +2788,10 @@ bool AOutlawsPlayer::StartMantle()
 	}
 	if (Half < 0.f)
 	{
-		static double LastLandLog = -10.0;      // (asked every tick while hanging: once a second)
-		if (LandRefused > 0 && FPlatformTime::Seconds() - LastLandLog > 1.0)
-		{
-			LastLandLog = FPlatformTime::Seconds();
-			UE_LOG(LogOutlaws, Log, TEXT("OLRT climb over the ledge z %.0f refused: %s"), LedgeTopZ, *LandWhy);
-		}
-		return false;                     // no room on or past the ledge: keep hanging
+		// no room on or past the ledge: keep hanging.  (BUG-SLOPECLIMB: the ceiling's refusal and the no-room one left no line
+		// in the log before)
+		return Refuse(LandRefused > 0 ? LandWhy : CeilRefused > 0 ? FString::Printf(TEXT("no spot for the body under the ledge's ceiling z %.0f"), LedgeCeil)
+			: FString(TEXT("no room for the body on or past the ledge")));
 	}
 	// (user 2026-10-04, BUG-CLIMBBARS: barred windows were climbed through) the way over the lip has to be open as a walk
 	// would need it: the body (crouched, a little slimmer) swept across from over the hanging spot to the landing; a mid
@@ -2773,9 +2810,8 @@ bool AOutlawsPlayer::StartMantle()
 		};
 		if (Shut(Over, Past) || (Top > Land.Z + 1.0 && Shut(Past, Land)))
 		{
-			UE_LOG(LogOutlaws, Log, TEXT("OLRT climb over the ledge z %.0f refused: the way across is shut by %s at %s"), LedgeTopZ,
-				Block.GetComponent() ? *Block.GetComponent()->GetName() : TEXT("?"), *FVector(Block.ImpactPoint).ToCompactString());
-			return false;
+			return Refuse(FString::Printf(TEXT("the way across is shut by %s at %s"), Block.GetComponent() ? *Block.GetComponent()->GetName() : TEXT("?"),
+				*FVector(Block.ImpactPoint).ToCompactString()));
 		}
 	}
 	if (Half < CurHalf)

@@ -4467,13 +4467,15 @@ bool AOutlawsLevelActor::DebugCeilBoxSpotN(int32 Nth, FVector& OutStand, FVector
 	return false;
 }
 
-double AOutlawsLevelActor::CeilingZAt(const FVector& P) const
+double AOutlawsLevelActor::CeilingZAt(const FVector& P, int32* OutSector) const
 {
+	if (OutSector) *OutSector = -1;
 	const FOutlawsLevel* Lv = Inf ? &Inf->Live : LevelData.Get();
 	if (!Lv) return 1e9;
 	const double U = FOutlawsGeometry::UnitsToCm;
 	const FOutlawsSector* S = Lv->SectorAt(FOutlawsGeometry::ToOutlaws(P, 0.2), PlayerSkip());      // (the player's lookups skip a zone gate's far side)
 	if (!S) return 1e9;
+	if (OutSector) *OutSector = S->Index;
 	return Lv->SurfaceY(*S, FOutlawsGeometry::ToOutlawsPlan(P), false) * U;
 }
 
