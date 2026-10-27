@@ -1,5 +1,7 @@
 #include "OutlawsObjMesh.h"
 #include "OutlawsRuntime.h"
+#include "OutlawsFlags.h"
+#include "Algo/Sort.h"
 #include "Misc/FileHelper.h"
 #include "Misc/Paths.h"
 #include "ImageUtils.h"
@@ -189,6 +191,112 @@ namespace
 
 	uint64 EdgeKey(int32 A, int32 B) { return (uint64(uint32(FMath::Min(A, B))) << 32) | uint32(FMath::Max(A, B)); }
 
+	/** (FACETURN) A piece's triangles in a box tree: a ray is tried only against the triangles in the boxes it passes through.
+	 *  The boxes are padded far past rounding, so it counts the crossings trying every triangle would. */
+	struct FPieceTree
+	{
+		struct FNode { FVector Min, Max; int32 First = 0, Count = 0; };   // a leaf (Count over 0): Order[First, First + Count); else the children First, First + 1
+		TArray<FNode> Nodes;
+		TArray<int32> Order;      // the leaves' triangles, as places in the piece's member list
+
+		void Build(const TArray<int32>& Members, const TArray<FVector>& P, const TArray<int32>& Tri)
+		{
+			const int32 N = Members.Num();
+			TArray<FVector> Lo, Hi, Mid;
+			Lo.SetNumUninitialized(N);
+			Hi.SetNumUninitialized(N);
+			Mid.SetNumUninitialized(N);
+			Order.SetNumUninitialized(N);
+			for (int32 i = 0; i < N; ++i)
+			{
+				const int32 t = Members[i];
+				const FVector& A = P[Tri[3 * t]];
+				const FVector& B = P[Tri[3 * t + 1]];
+				const FVector& C = P[Tri[3 * t + 2]];
+				Lo[i] = A.ComponentMin(B).ComponentMin(C);
+				Hi[i] = A.ComponentMax(B).ComponentMax(C);
+				Mid[i] = (A + B + C) / 3.0;
+				Order[i] = i;
+			}
+			// each box split at the middle triangle along its triangles' longest spread, down to 8 a leaf
+			struct FJob { int32 Node, Lo, Hi; };
+			TArray<FJob, TInlineAllocator<64>> Jobs;
+			Nodes.Reset();
+			Nodes.AddDefaulted();
+			Jobs.Add({ 0, 0, N });
+			while (Jobs.Num())
+			{
+				const FJob J = Jobs.Pop(false);
+				FVector BMin(UE_BIG_NUMBER), BMax(-UE_BIG_NUMBER), CMin(UE_BIG_NUMBER), CMax(-UE_BIG_NUMBER);
+				for (int32 k = J.Lo; k < J.Hi; ++k)
+				{
+					const int32 i = Order[k];
+					BMin = BMin.ComponentMin(Lo[i]);
+					BMax = BMax.ComponentMax(Hi[i]);
+					CMin = CMin.ComponentMin(Mid[i]);
+					CMax = CMax.ComponentMax(Mid[i]);
+				}
+				const FVector Pad(1e-3 + 1e-6 * (BMax - BMin).GetAbsMax());
+				Nodes[J.Node].Min = BMin - Pad;
+				Nodes[J.Node].Max = BMax + Pad;
+				if (J.Hi - J.Lo <= 8)
+				{
+					Nodes[J.Node].First = J.Lo;
+					Nodes[J.Node].Count = J.Hi - J.Lo;
+					continue;
+				}
+				const FVector Spread = CMax - CMin;
+				const int32 Ax = Spread.X >= Spread.Y && Spread.X >= Spread.Z ? 0 : Spread.Y >= Spread.Z ? 1 : 2;
+				Algo::Sort(MakeArrayView(Order.GetData() + J.Lo, J.Hi - J.Lo), [&Mid, Ax](int32 a, int32 b) { return Mid[a][Ax] < Mid[b][Ax]; });
+				const int32 Half = (J.Lo + J.Hi) / 2;
+				const int32 Kids = Nodes.Num();
+				Nodes.AddDefaulted(2);
+				Nodes[J.Node].First = Kids;
+				Nodes[J.Node].Count = 0;
+				Jobs.Add({ Kids, J.Lo, Half });
+				Jobs.Add({ Kids + 1, Half, J.Hi });
+			}
+		}
+
+		/** How many of the piece's triangles but its Skip'th the ray O + t D crosses (RayCrosses). */
+		int32 Crossings(const FVector& O, const FVector& D, int32 Skip, const TArray<int32>& Members, const TArray<FVector>& P, const TArray<int32>& Tri) const
+		{
+			auto Inv = [](double V) { return FMath::Abs(V) > 1e-30 ? 1.0 / V : (V < 0.0 ? -1e30 : 1e30); };
+			const FVector Id(Inv(D.X), Inv(D.Y), Inv(D.Z));
+			int32 Hits = 0;
+			TArray<int32, TInlineAllocator<64>> Stack;
+			Stack.Add(0);
+			while (Stack.Num())
+			{
+				const FNode& Nd = Nodes[Stack.Pop(false)];
+				// the ray's stretch (t from 0 on) inside each pair of the box's sides
+				double T0 = 0.0, T1 = UE_BIG_NUMBER;
+				for (int32 a = 0; a < 3 && T0 <= T1; ++a)
+				{
+					double Ta = (Nd.Min[a] - O[a]) * Id[a], Tb = (Nd.Max[a] - O[a]) * Id[a];
+					if (Ta > Tb) Swap(Ta, Tb);
+					T0 = FMath::Max(T0, Ta);
+					T1 = FMath::Min(T1, Tb);
+				}
+				if (T0 > T1) continue;
+				if (Nd.Count == 0)
+				{
+					Stack.Add(Nd.First);
+					Stack.Add(Nd.First + 1);
+					continue;
+				}
+				for (int32 k = Nd.First; k < Nd.First + Nd.Count; ++k)
+				{
+					const int32 i = Order[k];
+					if (i == Skip) continue;
+					const int32 u = Members[i];
+					if (RayCrosses(O, D, P[Tri[3 * u]], P[Tri[3 * u + 1]], P[Tri[3 * u + 2]])) ++Hits;
+				}
+			}
+			return Hits;
+		}
+	};
+
 	/** TurnFacesOutward's look at the triangles: OutTurn[t] for each one it would turn over. */
 	OutlawsObj::FFaceTurn FacesOutward(const TArray<FVector>& P, const TArray<int32>& Tri, TArray<bool>& OutTurn)
 	{
@@ -261,8 +369,11 @@ namespace
 		// out through the piece an even number of times starts outside it.  Kept as it is, wound as one, or that turned over:
 		// whichever leaves the most area facing out, changed only when clearly better
 		const FVector Jit(1.3e-4, 2.1e-4, 3.7e-4);       // (off the exact normal: a ray along an edge counts it twice)
+		FPieceTree Tree;
 		for (const TArray<int32>& Members : Pieces)
 		{
+			const bool bTree = Members.Num() > 32;
+			if (bTree) Tree.Build(Members, P, Tri);
 			const int32 Step = FMath::Max(1, Members.Num() / 1500);
 			double Area = 0.0, OutAsIs = 0.0, OutWound = 0.0, OutTurned = 0.0;
 			for (int32 m = 0; m < Members.Num(); m += Step)
@@ -281,9 +392,16 @@ namespace
 					const FVector D = (Nd + Jit).GetSafeNormal();
 					const FVector O = Cen + Nd * 0.002;
 					int32 Hits = 0;
-					for (int32 u : Members)
+					if (bTree)
 					{
-						if (u != t && RayCrosses(O, D, P[Tri[3 * u]], P[Tri[3 * u + 1]], P[Tri[3 * u + 2]])) ++Hits;
+						Hits = Tree.Crossings(O, D, m, Members, P, Tri);
+					}
+					else
+					{
+						for (int32 u : Members)
+						{
+							if (u != t && RayCrosses(O, D, P[Tri[3 * u]], P[Tri[3 * u + 1]], P[Tri[3 * u + 2]])) ++Hits;
+						}
 					}
 					bOut[Side] = (Hits & 1) == 0;
 				}
@@ -334,6 +452,25 @@ OutlawsObj::FFaceTurn OutlawsObj::TurnFacesOutward(FObjMesh& M, bool bApply)
 	FFaceTurn R;
 	for (TPair<FString, FOutlawsMeshSection>& Kv : M.Sections) R.Add(TurnFacesOutward(Kv.Value, bApply));
 	return R;
+}
+
+OutlawsObj::FFaceTurn OutlawsObj::FaceItemModelOutward(FObjMesh& M, const FString& What)
+{
+	static const bool bOld = OLFlags::Param(TEXT("OLOldScopeFaces"));
+	const double T0 = FPlatformTime::Seconds();
+	const FFaceTurn Ft = TurnFacesOutward(M, !bOld);
+	const double Ms = (FPlatformTime::Seconds() - T0) * 1000.0;
+	// a model with faces to turn on the console too; one with none to the log file only
+	if (Ft.Turned > 0)
+	{
+		UE_LOG(LogOutlaws, Display, TEXT("%s faces%s: %d triangles in %d pieces, %d %s, facing out %.0f%% -> %.0f%%, %.1f ms"), *What, bOld ? TEXT(" (old)") : TEXT(""),
+			Ft.Faces, Ft.Pieces, Ft.Turned, bOld ? TEXT("would turn") : TEXT("turned"), Ft.ShareBefore() * 100.0, (bOld ? Ft.ShareBefore() : Ft.ShareAfter()) * 100.0, Ms);
+	}
+	else
+	{
+		UE_LOG(LogOutlaws, Log, TEXT("%s faces: %d triangles in %d pieces, none to turn, facing out %.0f%%, %.1f ms"), *What, Ft.Faces, Ft.Pieces, Ft.ShareBefore() * 100.0, Ms);
+	}
+	return Ft;
 }
 
 OutlawsObj::FFaceTurn OutlawsObj::MeasureFacesOutward(const TArray<FVector>& Positions, const TArray<int32>& Triangles)

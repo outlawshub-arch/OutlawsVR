@@ -291,6 +291,7 @@ void AOutlawsPlayer::BuildGearModel(int32 Hand)
 				const FString Path = FPaths::Combine(FOutlawsAssets::PlaceholderDir(), TEXT("items3d/GLANTERN.obj"));
 				LanternObj = MakeShared<OutlawsObj::FObjMesh>();
 				if (!FPaths::FileExists(Path) || !OutlawsObj::Load(Path, 1.0, true, *LanternObj)) LanternObj.Reset();
+				else OutlawsObj::FaceItemModelOutward(*LanternObj, TEXT("OLRT held lantern"));      // (FACETURN: as the floor's; it has none to turn)
 			}
 			UMaterialInterface* Base = HeldBase();
 			if (LanternObj.IsValid() && Base && LanternObj->Bounds.IsValid)

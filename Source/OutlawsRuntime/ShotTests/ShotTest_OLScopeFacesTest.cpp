@@ -200,15 +200,20 @@ OL_SHOT_MATCH(OLFaceTurnSurvey) { return OLFlags::Param(TEXT("OLFaceTurnSurvey")
 OL_SHOT_TEST(OLFaceTurnSurvey, 1116)
 {
 	// SCOPEFACES: every placeholder model (items3d\*.obj, the floor's, and items3d\held\*.obj, the hands') loaded as the game
-	// loads it and put through OutlawsObj::TurnFacesOutward once, applied (to the copy read here; the game turns only the
-	// telescope and the four tube pickups): what it would turn in each, logged OLFACETURN.  A model whose share facing out
-	// went down, or that read no triangles, fails
+	// loads it and put through OutlawsObj::TurnFacesOutward once, measuring only: what it would turn in each, logged OLFACETURN.
+	// (FACETURN) A floor model is then put through the game's own load step, OutlawsObj::FaceItemModelOutward (every floor
+	// model; with -OLOldScopeFaces none), and what the game draws measured again ("game").  A model whose share facing out
+	// would go down, that read no triangles, or whose game copy is not as the turn leaves it (as the file has it, with
+	// -OLOldScopeFaces) fails.  (Held: the game turns the scope and the -OLDetailedThrowables knife and bundle, which are
+	// single-faced; the guns and tools are double-faced, nothing to turn; -OLFaceTurnTest checks them in the hand)
 	if (ShotStep == 0 && ShotTime > 1.f)
 	{
+		static const bool bOld = OLFlags::Param(TEXT("OLOldScopeFaces"));
 		int32 Models = 0, Turning = 0, Fails = 0;
-		double Ms = 0.0;
+		double MsLoad = 0.0, Ms = 0.0;
 		for (const TCHAR* Sub : { TEXT("items3d"), TEXT("items3d/held") })
 		{
+			const bool bFloor = FCString::Strcmp(Sub, TEXT("items3d")) == 0;
 			const FString Dir = FPaths::Combine(FOutlawsAssets::PlaceholderDir(), Sub);
 			TArray<FString> Files;
 			IFileManager::Get().FindFiles(Files, *FPaths::Combine(Dir, TEXT("*.obj")), true, false);
@@ -218,18 +223,29 @@ OL_SHOT_TEST(OLFaceTurnSurvey, 1116)
 				OutlawsObj::FObjMesh Obj;
 				const double T0 = FPlatformTime::Seconds();
 				const bool bRead = OutlawsObj::Load(FPaths::Combine(Dir, F), 1.0, true, Obj);
-				const OutlawsObj::FFaceTurn Ft = bRead ? OutlawsObj::TurnFacesOutward(Obj, true) : OutlawsObj::FFaceTurn();
-				const double Took = (FPlatformTime::Seconds() - T0) * 1000.0;
+				const double T1 = FPlatformTime::Seconds();
+				const OutlawsObj::FFaceTurn Ft = bRead ? OutlawsObj::TurnFacesOutward(Obj, false) : OutlawsObj::FFaceTurn();
+				const double TookLoad = (T1 - T0) * 1000.0, Took = (FPlatformTime::Seconds() - T1) * 1000.0;
+				MsLoad += TookLoad;
 				Ms += Took;
-				const bool bBad = !bRead || Ft.Faces == 0 || Ft.ShareAfter() + 1e-9 < Ft.ShareBefore();
+				bool bBad = !bRead || Ft.Faces == 0 || Ft.ShareAfter() + 1e-9 < Ft.ShareBefore();
+				FString Game;
+				if (bFloor && bRead)
+				{
+					OutlawsObj::FaceItemModelOutward(Obj, FString::Printf(TEXT("OLFACETURN game load %s/%s"), Sub, *F));
+					const double G = OutlawsObj::TurnFacesOutward(Obj, false).ShareBefore();
+					bBad |= FMath::Abs(G - (bOld ? Ft.ShareBefore() : Ft.ShareAfter())) > 0.002;
+					Game = FString::Printf(TEXT(", game %.1f%%"), G * 100.0);
+				}
 				Fails += bBad ? 1 : 0;
 				Turning += Ft.Turned > 0 ? 1 : 0;
 				++Models;
-				UE_LOG(LogOutlaws, Display, TEXT("OLFACETURN %s/%s: %d triangles in %d pieces, %d turned, facing out %.1f%% -> %.1f%%, %.1f ms%s"), Sub, *F, Ft.Faces, Ft.Pieces, Ft.Turned,
-					Ft.ShareBefore() * 100.0, Ft.ShareAfter() * 100.0, Took, bBad ? TEXT(" FAIL") : TEXT(""));
+				UE_LOG(LogOutlaws, Display, TEXT("OLFACETURN %s/%s: %d triangles in %d pieces, %d turned, facing out %.1f%% -> %.1f%%%s, read %.1f ms, turn %.1f ms%s"), Sub, *F, Ft.Faces,
+					Ft.Pieces, Ft.Turned, Ft.ShareBefore() * 100.0, Ft.ShareAfter() * 100.0, *Game, TookLoad, Took, bBad ? TEXT(" FAIL") : TEXT(""));
 			}
 		}
-		UE_LOG(LogOutlaws, Display, TEXT("OLFACETURN RESULT %s: %d models, %d with faces to turn, %.0f ms in all"), Fails == 0 && Models > 0 ? TEXT("ALL PASS") : TEXT("FAIL"), Models, Turning, Ms);
+		UE_LOG(LogOutlaws, Display, TEXT("OLFACETURN RESULT %s%s: %d models, %d with faces to turn, read %.0f ms, turn %.0f ms in all"), Fails == 0 && Models > 0 ? TEXT("ALL PASS") : TEXT("FAIL"),
+			bOld ? TEXT(" (old faces)") : TEXT(""), Models, Turning, MsLoad, Ms);
 		++ShotStep;
 	}
 	else if (ShotStep == 1 && ShotTime > 2.f)

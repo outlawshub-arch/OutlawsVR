@@ -1826,7 +1826,9 @@ TSharedPtr<OutlawsObj::FObjMesh> AOutlawsPlayer::HeldModelFor(int32 Wi, bool& bO
 			AOutlawsLevelActor* L = Level.Get();
 			// the knife and the bundle in detail (item3d weapons_extra.py, user 2026-10-01) only when asked for
 			// (-OLDetailedThrowables): the game's own 3DOs look better and truer to the original, and the detailed ones drew
-			// black on the headset (user 2026-10-02)
+			// black on the headset (user 2026-10-02).  (FACETURN) They are single-faced and most of their faces were wound
+			// inward (the knife 37 % facing out, the bundle 17 %), most likely why they drew black there: turned to face out
+			// (-OLOldScopeFaces: as the files have them)
 			bool bHave = false;
 			if (W.Throw > 0 && OLFlags::Param(TEXT("OLDetailedThrowables")))
 			{
@@ -1834,6 +1836,7 @@ TSharedPtr<OutlawsObj::FObjMesh> AOutlawsPlayer::HeldModelFor(int32 Wi, bool& bO
 				OutlawsObj::FObjMesh AltObj;
 				if (FPaths::FileExists(Alt) && OutlawsObj::Load(Alt, 1.0, true, AltObj) && AltObj.Sections.Num() > 0)
 				{
+					OutlawsObj::FaceItemModelOutward(AltObj, FString::Printf(TEXT("OLRT held %s"), *FPaths::GetBaseFilename(Alt)));
 					for (TPair<FString, FOutlawsMeshSection>& Kv : AltObj.Sections)
 					{
 						if (!Tex.Contains(Kv.Value.Texture)) if (UTexture2D* T = OutlawsObj::LoadTextureFile(Kv.Value.Texture)) { Tex.Add(Kv.Value.Texture, T); KeepAlive.Add(T); }
@@ -6481,10 +6484,7 @@ void AOutlawsPlayer::BuildGunParts(int32 Hand, int32 Wi)
 				for (TPair<FString, FOutlawsMeshSection>& Kv : Obj->Sections) for (FVector& P : Kv.Value.Positions) P += FVector(24.0, 0.0, 4.9);
 				// (SCOPEFACES, user 27 Oct: the tube looked inside-out) the pickup's tube walls are wound inward and the held
 				// material is one-sided: turned to face out.  -OLOldScopeFaces: as the file has them
-				const bool bOld = OLFlags::Param(TEXT("OLOldScopeFaces"));
-				const OutlawsObj::FFaceTurn Ft = OutlawsObj::TurnFacesOutward(*Obj, !bOld);
-				UE_LOG(LogOutlaws, Display, TEXT("OLRT held scope faces%s: %d triangles in %d pieces, %d %s, facing out %.0f%% -> %.0f%%"), bOld ? TEXT(" (old)") : TEXT(""),
-					Ft.Faces, Ft.Pieces, Ft.Turned, bOld ? TEXT("would turn") : TEXT("turned"), Ft.ShareBefore() * 100.0, (bOld ? Ft.ShareBefore() : Ft.ShareAfter()) * 100.0);
+				OutlawsObj::FaceItemModelOutward(*Obj, TEXT("OLRT held scope"));
 			}
 			else
 			{

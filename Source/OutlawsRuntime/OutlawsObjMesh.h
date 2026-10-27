@@ -45,9 +45,20 @@ namespace OutlawsObj
 	 * corners take its new front as their normal.  item3d's tube() (rework.py) wound every tube wall inward and its caps and glass
 	 * outward, so on the one-sided held and item materials the rifle's telescope and the lever, crowbar and crank pickups
 	 * showed their insides.  bApply false only measures.  Flat cards and double-faced meshes come out as they went in.
+	 * (FACETURN) A big piece's rays are tried only against the triangles whose boxes they pass (a box tree): the same
+	 * crossings as trying every triangle, a gun pickup in a few ms instead of 170 to 350.
 	 */
 	OUTLAWSRUNTIME_API FFaceTurn TurnFacesOutward(FOutlawsMeshSection& S, bool bApply);
 	OUTLAWSRUNTIME_API FFaceTurn TurnFacesOutward(FObjMesh& M, bool bApply);
+	/**
+	 * (FACETURN) An item3d model as the floor or a hand draws it single-faced: TurnFacesOutward applied, and one OLRT line,
+	 * "<What> faces: ...".  item3d's generators wound some tubes and shells inward (rework.py's tube(), treegen's trunks and
+	 * cactus arms, the cow skull, the flags, the gatling's drum...): on the one-sided held material those showed their
+	 * insides, and on the headset the ink shell, pushed out along the normals, sat inside them (no outline).  Every model
+	 * goes through it, so none needs naming; flat cards and double-faced models come out as they went in.
+	 * -OLOldScopeFaces: every model as its file has it (what would turn is still logged).
+	 */
+	OUTLAWSRUNTIME_API FFaceTurn FaceItemModelOutward(FObjMesh& M, const FString& What);
 	/** The same measure of triangles in Unreal's order (a live mesh section's), nothing changed. */
 	OUTLAWSRUNTIME_API FFaceTurn MeasureFacesOutward(const TArray<FVector>& Positions, const TArray<int32>& Triangles);
 
