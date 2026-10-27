@@ -1,10 +1,10 @@
 // REQ-EXTRAS (user 13 Oct, v1.1): the main menu's Extras and its pages, modelled on the remaster's own (extras.rml,
 // achievements.rml, menu.rcss):
-//   #extras         the title pages' parchment: Achievements, Unlockables, Collectibles, Credits
+//   #extras         the title pages' parchment: Achievements, Collectibles, Credits (REQ-NOUNLOCKABLES, user 27 Oct: no
+//                   Unlockables page; the Randomizer and the Bad guys multiplier are open from the start, the shelf has the boxes)
 //   #extras_achiev  the remaster's achievements page on the save page's wide sheet: its parchment (Achiev_Base), the capsules in a
 //                   scroll list (AchievM_capsule*, the earned one's icon Achiev_IconNN), "???" for a hidden one not yet earned,
 //                   the focused one's description, progress and date in the panel under it, the frame (Achiev_Frame) over them
-//   #extras_unlock  a parchment sheet: every reward and the way to it (UNLOCKFREE: both modes open from the start)
 //   #extras_shelf   the collectible boxes' shelf (REQ-COLLECTBOX fills it later): an outline for each story level's box
 // The art is the player's own (UI.kpf), read at runtime as every other page's; without it the plain colours stand in.
 // Credits plays the end credits roll (OutlawsLevelActorCredits.cpp) on the black, then comes back here.
@@ -76,7 +76,6 @@ bool AOutlawsPlayer::BuildExtrasPage(const FString& File, OutlawsMenu::FPage& Pa
 	{
 		Page.Title = TEXT("EXTRAS");
 		Add(EItemKind::Link, Loc(TEXT("m_achievements"), TEXT("Achievements")), TEXT(""), TEXT("#extras_achiev"));
-		Add(EItemKind::Link, TEXT("Unlockables"), TEXT(""), TEXT("#extras_unlock"));
 		Add(EItemKind::Link, TEXT("Collectibles"), TEXT(""), TEXT("#extras_shelf"));
 		Add(EItemKind::Action, Loc(TEXT("m_credits"), TEXT("Credits")), TEXT("extras_credits"), TEXT(""));
 		return true;
@@ -91,16 +90,6 @@ bool AOutlawsPlayer::BuildExtrasPage(const FString& File, OutlawsMenu::FPage& Pa
 		}
 		AchievFocus = 0;
 		UE_LOG(LogOutlaws, Log, TEXT("OLEXTRAS achievements page: %d of %d earned (profile %s)"), OutlawsAchievements::EarnedCount(L), Page.Items.Num(), *OutlawsUnlocks::ProfileOf(L));
-		return true;
-	}
-	if (File == TEXT("#extras_unlock"))
-	{
-		// every reward and the way to it (UNLOCKFREE, user decision for 0.95: the Randomizer and the multiplier are open from the
-		// first start, so each says so instead of what used to unlock it)
-		Page.Title = TEXT("UNLOCKABLES");
-		Add(EItemKind::Link, TEXT("Randomizer: available from the start"), TEXT(""), TEXT("#rando"));
-		Add(EItemKind::Link, TEXT("Bad guys multiplier: available from the start"), TEXT(""), TEXT("options_gameplay.rml"));
-		Add(EItemKind::Heading, TEXT("Hidden box rewards: coming soon"), TEXT("unlock_boxes_note"), TEXT(""));
 		return true;
 	}
 	if (File == TEXT("#extras_shelf"))

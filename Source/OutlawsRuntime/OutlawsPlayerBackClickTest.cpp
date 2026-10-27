@@ -4,8 +4,11 @@
 // (it must light, and the shot bc_<page>_hover.png is taken), then the trigger is pulled: the page one level up must show, as the
 // B / Y button gives.  The menus' drawing height is logged against the death screen's (three quarters).  Prints
 // "OLSHOT backclick check PASS|FAIL: ..." and "OLSHOT backclick RESULT".
+// -OLShots -OLBackClickTest=extras (REQ-NOUNLOCKABLES): the same on the title instead (no -OLLevel), Back from Achievements and
+// from Collectibles, each to Extras.
 
 #include "OutlawsPlayer.h"
+#include "OutlawsBoxHand.h"
 #include "OutlawsGlyphs.h"
 #include "OutlawsLevelActor.h"
 #include "OutlawsMenuDoc.h"
@@ -35,6 +38,15 @@ namespace
 		};
 		return Cases;
 	}
+	// (-OLBackClickTest=extras, from the title's main menu)
+	const TArray<FBackCase>& ExtrasBackCases()
+	{
+		static const TArray<FBackCase> Cases = {
+			{ TEXT("extras_achievements"), { TEXT("#extras"), TEXT("#extras_achiev") }, 0, TEXT("#extras") },
+			{ TEXT("extras_collectibles"), { TEXT("#extras"), TEXT("#extras_shelf") }, 0, TEXT("#extras") },
+		};
+		return Cases;
+	}
 }
 
 void AOutlawsPlayer::BackClickTestTick(float Dt)
@@ -43,14 +55,16 @@ void AOutlawsPlayer::BackClickTestTick(float Dt)
 	static double Next = 0.0;
 	AOutlawsLevelActor* L = Level.Get();
 	const double Now = FPlatformTime::Seconds();
-	if (Case == -3 || !L || L->IsFrontEnd() || ShotTime < 6.f || !Camera) return;
+	const bool bTitle = OLFlags::ValueIs(TEXT("OLBackClickTest"), TEXT("extras"));
+	if (Case == -3 || !L || L->IsFrontEnd() != bTitle || ShotTime < 6.f || !Camera) return;
+	if (bTitle && Case == -1 && !(bMenuOpen && MenuPage && MenuPage->File == TEXT("#front"))) return;      // (the title menu up first)
 	auto Check = [](bool bOk, const FString& What)
 	{
 		(bOk ? Pass : Fail)++;
 		UE_LOG(LogOutlaws, Display, TEXT("OLSHOT backclick check %s: %s"), bOk ? TEXT("PASS") : TEXT("FAIL"), *What);
 	};
 	if (bMenuOpen && Controller) Controller->SetControlRotation(FRotator(0.0, MenuYaw, 0.0));
-	const TArray<FBackCase>& All = BackCases();
+	const TArray<FBackCase>& All = bTitle ? ExtrasBackCases() : BackCases();
 
 	// the point the right hand aims at this phase, in the menu root's space (X = 0 is the sheet's plane)
 	auto BackLocal = [this](FVector& Out) -> bool
@@ -78,6 +92,20 @@ void AOutlawsPlayer::BackClickTestTick(float Dt)
 		const FVector Target = MenuRoot->GetComponentTransform().TransformPosition(Local);
 		const FVector From = Camera->GetComponentLocation() + Camera->GetRightVector() * 15.0 - FVector(0.0, 0.0, 20.0);
 		if (UMotionControllerComponent* R = AimOf(1)) R->SetWorldLocationAndRotation(From, (Target - From).Rotation());
+		// (the title screens point with the dominant hand's straight index finger, its laser out of the tip: the right hand's
+		// grip turned about the fingertip until the finger's line meets the target, a few passes as the tip moves with it)
+		if (bMenuPistol && RightHand && RightGrip)
+		{
+			RightGrip->SetWorldLocation(From);
+			for (int32 k = 0; k < 4; ++k)
+			{
+				const FTransform Bx = RightHand->GetComponentTransform();
+				const FVector Tip = Bx.TransformPosition(RightHand->IndexTip());
+				const FVector Way = Bx.TransformVectorNoScale(RightHand->IndexWay()).GetSafeNormal();
+				const FQuat Turn = FQuat::FindBetweenNormals(Way, (Target - Tip).GetSafeNormal());
+				RightGrip->SetWorldLocationAndRotation(Tip + Turn.RotateVector(RightGrip->GetComponentLocation() - Tip), Turn * RightGrip->GetComponentQuat());
+			}
+		}
 		// the left hand points at the floor, at nothing
 		if (UMotionControllerComponent* Lh = AimOf(0)) Lh->SetWorldLocationAndRotation(From - Camera->GetRightVector() * 30.0, FRotator(-80.0, Camera->GetComponentRotation().Yaw, 0.0));
 	};
@@ -85,6 +113,7 @@ void AOutlawsPlayer::BackClickTestTick(float Dt)
 	if (Case == -1)
 	{
 		bVR = true;                      // (the lasers and the drawn controllers are VR's; this run only)
+		if (bTitle) { DominantHand = EOutlawsHand::Right; OneController = 0; }     // (the right hand's finger points, as the test aims it)
 		if (!bMenuOpen) OpenMenu();
 		const float Menu = MenuGlyphCm(), Seen = MenuGlyphSeenCm();
 		Check(FMath::Abs(Menu / Seen - 0.75f) < 0.01f, FString::Printf(TEXT("the menus' drawings %.2f sheet cm, the death screen's seen size %.2f: %.0f %%; the death plate keeps %.2f cm at 140 cm"),
@@ -97,7 +126,7 @@ void AOutlawsPlayer::BackClickTestTick(float Dt)
 	if (Case >= All.Num())
 	{
 		TestAxes.Remove(TEXT("OLVR_RightTrigger"));
-		if (bMenuOpen) { while (MenuStack.Num() > 0) MenuBack(); CloseMenu(); }
+		if (bMenuOpen) { while (MenuStack.Num() > 0) MenuBack(); if (!bTitle) CloseMenu(); }
 		UE_LOG(LogOutlaws, Display, TEXT("OLSHOT backclick RESULT %s (%d passed, %d failed)"), Fail == 0 && Pass > 0 ? TEXT("ALL PASS") : TEXT("FAIL"), Pass, Fail);
 		Case = -3;
 		FGenericPlatformMisc::RequestExit(false);
@@ -219,7 +248,7 @@ void AOutlawsPlayer::BackClickTestTick(float Dt)
 	}
 }
 
-OL_SHOT_MATCH(OLBackClickTest) { return OLFlags::Param(TEXT("OLBackClickTest")); }
+OL_SHOT_MATCH(OLBackClickTest) { return OLFlags::Param(TEXT("OLBackClickTest")) || OLFlags::ValueIs(TEXT("OLBackClickTest"), TEXT("extras")); }
 OL_SHOT_TEST(OLBackClickTest, 20)
 {
 	BackClickTestTick(Dt);           // (REQ-BACKCLICK: OutlawsPlayerBackClickTest.cpp)

@@ -77,15 +77,16 @@ OL_SHOT_TEST(OLMenuTest, 460)
 		UE_LOG(LogOutlaws, Display, TEXT("OLRT menu shot ol_menu_gameplay rows: %s"), *Rows);
 		break;
 	}
-	// (REQ-EXTRAS) Extras > Unlockables, a parchment sheet with its locked rows greyed
-	case 13: MenuStack.Reset(); ShowMenuPage(TEXT("#extras_unlock"), true); break;
+	// (REQ-EXTRAS) the Extras page; REQ-NOUNLOCKABLES: Achievements, Collectibles, Credits, no Unlockables page
+	case 13: MenuStack.Reset(); ShowMenuPage(TEXT("#extras"), true); break;
 	case 14:
 	{
-		Shot(TEXT("ol_menu_unlockables"));
-		Fits(TEXT("ol_menu_unlockables"));
+		Shot(TEXT("ol_menu_extras"));
+		Fits(TEXT("ol_menu_extras"));
 		FString Rows;
 		if (MenuPage) for (const OutlawsMenu::FItem& It : MenuPage->Items) Rows += (Rows.IsEmpty() ? TEXT("") : TEXT(" | ")) + It.Label + (It.Classes.Contains(TEXT("disabled")) ? TEXT(" [greyed]") : TEXT(""));
-		UE_LOG(LogOutlaws, Display, TEXT("OLRT menu shot ol_menu_unlockables rows: %s"), *Rows);
+		const bool bRows = Rows == TEXT("Achievements | Collectibles | Credits");
+		UE_LOG(LogOutlaws, Display, TEXT("OLRT menu shot ol_menu_extras rows %s: %s"), bRows ? TEXT("PASS") : TEXT("FAIL"), *Rows);
 		break;
 	}
 	default: FGenericPlatformMisc::RequestExit(false); ShotTime = -1.f; break;

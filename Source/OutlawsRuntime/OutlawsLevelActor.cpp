@@ -1910,6 +1910,7 @@ void AOutlawsLevelActor::BeginPlay()
 		&& !OLFlags::Param(TEXT("OLStoryTest")) && !OLFlags::Param(TEXT("OLMpMenuShot"))
 		&& !OLFlags::Param(TEXT("OLMpHostShot"))
 		&& !OLFlags::Param(TEXT("OLExtrasTest"))          // (REQ-EXTRAS: from the title menu)
+		&& !OLFlags::ValueIs(TEXT("OLBackClickTest"), TEXT("extras"))      // (REQ-NOUNLOCKABLES: Back on the Extras pages, from the title)
 		&& !OLFlags::HasValue(TEXT("OLTitleLoadTest"));     // (REQ-TITLEMENU: the title menu tested)
 	UWorld* GameWorld = GetWorld();
 	if (bBuildOnBeginPlay && GameWorld && GameWorld->IsGameWorld() && FOutlawsAssets::CanAskForInstall() && FOutlawsAssets::FindInstallRoot(InstallPath).IsEmpty())

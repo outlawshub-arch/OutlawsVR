@@ -1666,10 +1666,8 @@ void AOutlawsLevelActor::TickTutorialTest(float Dt)
 			{ TEXT("Back"), TEXT("#newgame"), nullptr, nullptr, nullptr },
 			// REQ-EXTRAS: the title's Extras and each of its pages, Back from each
 			{ TEXT(""), TEXT("#front"), nullptr, nullptr, nullptr },
-			{ TEXT("Extras"), TEXT("#extras"), TEXT("Achievements | Unlockables | Collectibles | Credits"), TEXT("EXTRAS"), TEXT("extras_page") },
+			{ TEXT("Extras"), TEXT("#extras"), TEXT("Achievements | Collectibles | Credits"), TEXT("EXTRAS"), TEXT("extras_page") },
 			{ TEXT("Achievements"), TEXT("#extras_achiev"), nullptr, TEXT("ACHIEVEMENTS"), TEXT("extras_achievements") },
-			{ TEXT(""), TEXT("#extras"), nullptr, nullptr, nullptr },
-			{ TEXT("Unlockables"), TEXT("#extras_unlock"), nullptr, TEXT("UNLOCKABLES"), TEXT("extras_unlockables") },
 			{ TEXT(""), TEXT("#extras"), nullptr, nullptr, nullptr },
 			{ TEXT("Collectibles"), TEXT("#extras_shelf"), TEXT("? | ? | ? | ? | ? | ? | ? | ? | ?"), TEXT("COLLECTIBLES"), TEXT("extras_collectibles") },
 			{ TEXT(""), TEXT("#extras"), nullptr, nullptr, nullptr },

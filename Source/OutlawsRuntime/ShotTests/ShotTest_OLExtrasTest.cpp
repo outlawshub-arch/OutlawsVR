@@ -79,7 +79,8 @@ OL_SHOT_TEST(OLExtrasTest, 855)
 		Check(Par.Contains(TEXT("6:52")) && Par.Contains(TEXT("The Hideout")), FString::Printf(TEXT("old file: the best time is the par's progress (%s)"), *Par));
 		Check(!OutlawsUnlocks::StoreDamaged(), TEXT("old file: not taken as damaged"));
 		Check(TestPressLink(TEXT("#extras")) && Page() == TEXT("#extras"), FString::Printf(TEXT("Extras opens its page (%s)"), *Page()));
-		Check(Rows() == TEXT("Achievements | Unlockables | Collectibles | Credits"), FString::Printf(TEXT("Extras reads Achievements, Unlockables, Collectibles, Credits (%s)"), *Rows()));
+		Check(Rows() == TEXT("Achievements | Collectibles | Credits"), FString::Printf(TEXT("Extras reads Achievements, Collectibles, Credits (%s)"), *Rows()));
+		Check(!ShowMenuPage(TEXT("#extras_unlock"), true) && Page() == TEXT("#extras"), FString::Printf(TEXT("no Unlockables page any more (REQ-NOUNLOCKABLES; on %s)"), *Page()));
 		break;
 	}
 	case 2: Shot(Pre + TEXT("page")); break;
@@ -203,31 +204,26 @@ OL_SHOT_TEST(OLExtrasTest, 855)
 		MenuHover[1] = -1;
 		MenuBack();
 		Check(Page() == TEXT("#extras"), FString::Printf(TEXT("Back to Extras (%s)"), *Page()));
-		Check(TestPressLink(TEXT("#extras_unlock")) && Page() == TEXT("#extras_unlock"), FString::Printf(TEXT("Unlockables opens (%s)"), *Page()));
-		Check(Rows() == TEXT("Randomizer: available from the start | Bad guys multiplier: available from the start | Hidden box rewards: coming soon"), FString::Printf(TEXT("Unlockables: both open, available from the start (%s)"), *Rows()));
-		break;
-	case 11: Shot(Pre + TEXT("unlockables")); break;
-	case 12:
-		MenuBack();
 		Check(TestPressLink(TEXT("#extras_shelf")) && Page() == TEXT("#extras_shelf"), FString::Printf(TEXT("Collectibles opens (%s)"), *Page()));
 		Check(MenuPage && MenuPage->Items.Num() == 9 && !MenuPage->Items.ContainsByPredicate([](const OutlawsMenu::FItem& I) { return !I.Classes.Contains(TEXT("disabled")); }),
 			FString::Printf(TEXT("the shelf: nine outlines, none found (%s)"), *Rows()));
 		break;
-	case 13: Shot(Pre + TEXT("collectibles")); break;
-	case 14:
+	case 11: Shot(Pre + TEXT("collectibles")); break;
+	case 12:
 	{
 		MenuBack();
+		Check(Page() == TEXT("#extras"), FString::Printf(TEXT("Back from Collectibles to Extras (%s)"), *Page()));
 		const int32 Cr = MenuPage ? MenuPage->Items.IndexOfByPredicate([](const OutlawsMenu::FItem& I) { return I.Name == TEXT("extras_credits"); }) : INDEX_NONE;
 		if (Cr != INDEX_NONE) MenuActivate(1, Cr);
 		NextAt = ShotTime + 3.f;
 		break;
 	}
-	case 15:
+	case 13:
 		Check(L && L->IsMoviePlaying() && !bMenuOpen, TEXT("Credits rolls the end credits"));
 		Shot(Pre + TEXT("credits"));
 		break;
-	case 16: if (L) L->SkipMovie(); NextAt = ShotTime + 2.f; break;
-	case 17:
+	case 14: if (L) L->SkipMovie(); NextAt = ShotTime + 2.f; break;
+	case 15:
 		Check(Page() == TEXT("#extras"), FString::Printf(TEXT("skipped: back on the Extras page (%s)"), *Page()));
 		Finish();
 		return;
