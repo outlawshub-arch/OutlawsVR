@@ -1745,6 +1745,7 @@ void AOutlawsLevelActor::TickTutorialTest(float Dt)
 		UE_LOG(LogOutlaws, Display, TEXT("OLTUT test: the pause page in the tutorial: %s"), *Rows);
 		Check(P->bMenuOpen && P->MenuPage && P->MenuPage->Items.Num() > 0 && P->MenuPage->Items[0].Label == TEXT("Skip tutorial"), TEXT("Skip tutorial is the pause page's top row"));
 		Check(!Rows.Contains(TEXT("Save")) && !Rows.Contains(TEXT("Load")), TEXT("no Save or Load rows in the tutorial"));
+		Check(!Rows.Contains(TEXT("Tools")) && !Rows.Contains(TEXT("Unstuck")), TEXT("no Tools or Unstuck row in the tutorial (REQ-NOUNSTUCK)"));
 		Shot(TEXT("pause"));
 		T.Phase = 22;
 		T.At = Now + 0.8;

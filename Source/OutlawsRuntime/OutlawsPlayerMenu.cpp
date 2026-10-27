@@ -402,37 +402,6 @@ bool AOutlawsPlayer::ShowMenuPage(const FString& File, bool bPush)
 	{
 		if (!BuildExtrasPage(File, *Page)) return false;           // (REQ-EXTRAS: OutlawsPlayerExtras.cpp)
 	}
-	else if (File == TEXT("#tools"))
-	{
-		// REQ-PAUSETIDY: the pause page's Tools: Unstuck (not in a match), Cheats once unlocked
-		using namespace OutlawsMenu;
-		Page->File = File;
-		if (!FOutlawsMpCharacter::bMatchMenu)
-		{
-			FItem I;
-			I.Kind = EItemKind::Action;
-			I.Label = TEXT("Unstuck");                // (BUG-STUCKGAP, user 2026-10-05: back to the last safe floor spot)
-			I.Name = TEXT("unstuck");
-			Page->Items.Add(I);
-		}
-		if (bCheatsShown)
-		{
-			FItem I;
-			I.Kind = EItemKind::Link;
-			I.Label = TEXT("Cheats");
-			I.Target = TEXT("#cheats");
-			Page->Items.Add(I);
-		}
-		if (bCheatsShown && OutlawsDevChecks::Enabled())
-		{
-			// REQ-DEVCHECKS: the headset checklist, behind the same turn and a dev flag (OutlawsDevChecks.h)
-			FItem I;
-			I.Kind = EItemKind::Link;
-			I.Label = TEXT("Dev checks");
-			I.Target = TEXT("#devchecks");
-			Page->Items.Add(I);
-		}
-	}
 	else if (File == TEXT("#devchecks"))
 	{
 		Page->File = File;
@@ -931,10 +900,11 @@ bool AOutlawsPlayer::ShowMenuPage(const FString& File, bool bPush)
 	if (File == TEXT("main_game.rml"))
 	{
 		// REQ-PAUSETIDY (user 2026-10-08: the pause page in multiplayer scrolled): the remaster's rows in their order, then
-		// ours folded into pages: Start the game under Resume (the host's warm-up), Players > before Options (co-op or a
-		// match: the Scoreboard, the character, the team, the session's lines and Mute), Tools > before Exit (Unstuck, Cheats)
+		// ours: Start the game under Resume (the host's warm-up), Players > before Options (co-op or a match: the Scoreboard,
+		// the character, the team, the session's lines and Mute), Cheats > before Exit once a whole turn has shown it
+		// (REQ-NOUNSTUCK, user 2026-10-27: the Unstuck row and the Tools page it shared with Cheats are gone; the rescue
+		// itself is automatic, OutlawsPlayerUnstuck.cpp)
 		using namespace OutlawsMenu;
-		const bool bUnstuck = !FOutlawsMpCharacter::bMatchMenu;
 		// Save, Load and Restart Level: single player's and the co-op host's (user 2026-10-08: the host restarts, saves and
 		// loads for both); a co-op joiner and every match go without
 		const UOutlawsCoop* Co = UOutlawsCoop::IsActive(this) ? UOutlawsCoop::Get(this) : nullptr;
@@ -947,12 +917,22 @@ bool AOutlawsPlayer::ShowMenuPage(const FString& File, bool bPush)
 				return It.Action == TEXT("ev_restart_level") || It.Target.Equals(TEXT("save_game.rml"), ESearchCase::IgnoreCase) || It.Target.Equals(TEXT("load_game.rml"), ESearchCase::IgnoreCase);
 			});
 		}
-		if (bUnstuck || bCheatsShown)
+		if (bCheatsShown)
 		{
 			FItem I;
 			I.Kind = EItemKind::Link;
-			I.Label = TEXT("Tools");
-			I.Target = TEXT("#tools");
+			I.Label = TEXT("Cheats");
+			I.Target = TEXT("#cheats");
+			Page->Items.Insert(I, FMath::Max(0, Page->Items.Num() - 1));
+		}
+		if (bCheatsShown && OutlawsDevChecks::Enabled())
+		{
+			// REQ-DEVCHECKS: the headset checklist, under Cheats, behind the same turn and a dev flag (OutlawsDevChecks.h:
+			// never in Shipping, never without -OLDevChecks or Saved/DevChecks/devchecks_on)
+			FItem I;
+			I.Kind = EItemKind::Link;
+			I.Label = TEXT("Dev checks");
+			I.Target = TEXT("#devchecks");
 			Page->Items.Insert(I, FMath::Max(0, Page->Items.Num() - 1));
 		}
 		if (UOutlawsCoop::IsActive(this) || FOutlawsMpCharacter::bMatchMenu)
@@ -985,10 +965,6 @@ bool AOutlawsPlayer::ShowMenuPage(const FString& File, bool bPush)
 		FString Rows;
 		for (const FItem& It : Page->Items) Rows += (Rows.IsEmpty() ? TEXT("") : TEXT(" | ")) + It.Label;
 		UE_LOG(LogOutlaws, Log, TEXT("OLRT pause page rows (%d, %s): %s"), Page->Items.Num(), Page->Items.Num() > MenuRowsShown ? TEXT("scrolls") : TEXT("no scroll"), *Rows);
-	}
-	if (File == TEXT("#tools"))
-	{
-		Page->Title = TEXT("TOOLS");
 	}
 	if (File == TEXT("options.rml"))
 	{
@@ -1934,7 +1910,7 @@ void AOutlawsPlayer::MenuActivate(int32 Hand, int32 Index)
 		}
 		if (I.Name == TEXT("devchecks_next"))
 		{
-			OutlawsDevChecks::NextPage();                     // (REQ-DEVCHECKS: the page row; Back still leads to Tools)
+			OutlawsDevChecks::NextPage();                     // (REQ-DEVCHECKS: the page row; Back still leads to the pause page)
 			ShowMenuPage(TEXT("#devchecks"), false);
 			return;
 		}
@@ -1944,11 +1920,7 @@ void AOutlawsPlayer::MenuActivate(int32 Hand, int32 Index)
 			UnlockPageContinue();                            // (REQ-UNLOCKS: the unlock page's Continue)
 			return;
 		}
-		if (I.Name == TEXT("unstuck"))
-		{
-			RequestUnstuck(TEXT("menu"));                    // (BUG-STUCKGAP: the pause menu's Unstuck row)
-			return;
-		}
+		// (REQ-NOUNSTUCK: no "unstuck" row any more; RequestUnstuck is only the automatic rescue's, OutlawsPlayerUnstuck.cpp)
 		if (I.Name == TEXT("mp_name"))
 		{
 			const AOutlawsLevelActor* LN = Level.Get();
@@ -2569,7 +2541,7 @@ void AOutlawsPlayer::UpdateMenu(float Dt)
 		if (FMath::Abs(CheatSpin) >= 360.f)
 		{
 			bCheatsShown = true;
-			if (MenuPage->File == TEXT("main_game.rml") || MenuPage->File == TEXT("#tools")) bMenuRebuild = true;
+			if (MenuPage->File == TEXT("main_game.rml")) bMenuRebuild = true;
 			MenuToastText(TEXT("Cheats unlocked"));
 			MenuToastLeft = 3.f;
 			Pulse(0, 0.5f);
@@ -4684,7 +4656,7 @@ void UOutlawsCoop::PauseTidyTestTick(AOutlawsPlayer* P, float Dt)
 	static float T = 0.f;
 	static int32 Step = 0;
 	static FString Mode;
-	if (!P || Step >= 20) return;
+	if (!P || Step >= 30) return;
 	AOutlawsLevelActor* L = P->Level.Get();
 	if (!L || L->IsFrontEnd() || L->IsRebuildPending() || P->bFrontMenu) { T = 0.f; return; }
 	if (Mode.IsEmpty() && !OLFlags::Value(TEXT("OLPauseTidyMode"), Mode)) Mode = TEXT("sp");
@@ -4713,6 +4685,30 @@ void UOutlawsCoop::PauseTidyTestTick(AOutlawsPlayer* P, float Dt)
 		UE_LOG(LogOutlaws, Log, TEXT("OLFIT check %s: %s"), bOk ? TEXT("PASS") : TEXT("FAIL"), *What);
 	};
 	static float NextAt = 0.f;
+	// (REQ-NOUNSTUCK) the pause page's own rows: no Tools or Unstuck row; Cheats just before Exit once shown, never before;
+	// Dev checks just after it with the dev flag only (OutlawsDevChecks::Enabled), never without
+	static int32 Turns = 0;
+	auto OwnRows = [P](const FString& What)
+	{
+		const TArray<OutlawsMenu::FItem>* It = P->MenuPage && P->MenuPage->File == TEXT("main_game.rml") ? &P->MenuPage->Items : nullptr;
+		auto Find = [It](TFunctionRef<bool(const OutlawsMenu::FItem&)> F) { return It ? It->IndexOfByPredicate(F) : INDEX_NONE; };
+		const int32 Tools = Find([](const OutlawsMenu::FItem& I) { return I.Target == TEXT("#tools") || I.Label == TEXT("Tools"); });
+		const int32 Unstuck = Find([](const OutlawsMenu::FItem& I) { return I.Name == TEXT("unstuck") || I.Label == TEXT("Unstuck"); });
+		const int32 Cheats = Find([](const OutlawsMenu::FItem& I) { return I.Target == TEXT("#cheats"); });
+		const int32 Dev = Find([](const OutlawsMenu::FItem& I) { return I.Target == TEXT("#devchecks"); });
+		const int32 Last = It ? It->Num() - 1 : INDEX_NONE;
+		const bool bExitLast = It && Last >= 0 && (*It)[Last].Label == TEXT("Exit");
+		const bool bDevWanted = P->bCheatsShown && OutlawsDevChecks::Enabled();
+		auto Say = [&What](bool bOk, const FString& Line) { UE_LOG(LogOutlaws, Log, TEXT("OLPAUSE check %s: %s %s"), bOk ? TEXT("PASS") : TEXT("FAIL"), *What, *Line); };
+		Say(It != nullptr, FString::Printf(TEXT("the pause page is up (%s)"), P->MenuPage ? *P->MenuPage->File : TEXT("none")));
+		Say(Tools == INDEX_NONE && Unstuck == INDEX_NONE, FString::Printf(TEXT("no Tools row (%d) and no Unstuck row (%d)"), Tools, Unstuck));
+		Say(P->bCheatsShown ? (Cheats != INDEX_NONE && bExitLast && Cheats == Last - (bDevWanted ? 2 : 1)) : Cheats == INDEX_NONE,
+			FString::Printf(TEXT("Cheats row %s (at %d of %d rows, Exit last %d; cheats %s)"), Cheats == INDEX_NONE ? TEXT("absent") : TEXT("there"), Cheats, Last + 1, bExitLast ? 1 : 0,
+				P->bCheatsShown ? TEXT("shown: wanted just before Exit") : TEXT("hidden: wanted absent")));
+		Say(bDevWanted ? (Dev != INDEX_NONE && Dev == Cheats + 1 && Dev == Last - 1) : Dev == INDEX_NONE,
+			FString::Printf(TEXT("Dev checks row %s (at %d; dev flag %d, cheats %d: wanted %s)"), Dev == INDEX_NONE ? TEXT("absent") : TEXT("there"), Dev, OutlawsDevChecks::Enabled() ? 1 : 0,
+				P->bCheatsShown ? 1 : 0, bDevWanted ? TEXT("just after Cheats") : TEXT("absent")));
+	};
 	if (Step == 0)
 	{
 		if (T < At) return;
@@ -4761,14 +4757,11 @@ void UOutlawsCoop::PauseTidyTestTick(AOutlawsPlayer* P, float Dt)
 		UE_LOG(LogOutlaws, Log, TEXT("OLPAUSE check %s: %s Back from Players to the pause page (%s)"), P->MenuPage && P->MenuPage->File == TEXT("main_game.rml") ? TEXT("PASS") : TEXT("FAIL"), *Mode, P->MenuPage ? *P->MenuPage->File : TEXT("none"));
 		NextAt = T + 0.5f; ++Step; return;
 	case 5:
-		if (Has(TEXT("#tools"))) { P->ShowMenuPage(TEXT("#tools"), true); NextAt = T + 1.0f; ++Step; }
-		else { UE_LOG(LogOutlaws, Log, TEXT("OLPAUSE %s: no Tools row"), *Mode); Step = 8; }
+		// (REQ-NOUNSTUCK: was the Tools page, steps 5 to 7) the pause page's own rows, the cheats still hidden
+		OwnRows(Mode + TEXT(" pause page, cheats hidden:"));
+		Step = 8;
+		NextAt = T + 0.3f;
 		return;
-	case 6: Rows(TEXT("Tools page")); Shot(FString::Printf(TEXT("ol_pause_%s_tools"), *Mode)); NextAt = T + 0.8f; ++Step; return;
-	case 7:
-		P->MenuBack();
-		UE_LOG(LogOutlaws, Log, TEXT("OLPAUSE check %s: %s Back from Tools to the pause page (%s)"), P->MenuPage && P->MenuPage->File == TEXT("main_game.rml") ? TEXT("PASS") : TEXT("FAIL"), *Mode, P->MenuPage ? *P->MenuPage->File : TEXT("none"));
-		NextAt = T + 0.5f; ++Step; return;
 	case 8:
 	{
 		// REQ-MPLOBBY c (BUG-MPRESUME): no Resume Game in a co-op or match session, the pause page's nor the title menu's (it
@@ -4878,10 +4871,48 @@ void UOutlawsCoop::PauseTidyTestTick(AOutlawsPlayer* P, float Dt)
 		P->MenuBack();
 		NextAt = T + 0.5f; ++Step; return;
 	case 16:
+		// (REQ-NOUNSTUCK) then the cheats shown the player's way (a whole turn with the pause page up) and the page again
+		P->MenuStack.Reset();
+		P->ShowMenuPage(TEXT("main_game.rml"), false);
+		Turns = 0;
+		NextAt = T + 0.5f; ++Step; return;
+	case 17:
+		if (!P->bCheatsShown && Turns < 40)
+		{
+			if (AController* Cn = P->GetController()) { FRotator R = Cn->GetControlRotation(); R.Yaw += 20.f; Cn->SetControlRotation(R); }
+			++Turns;
+			NextAt = T + 0.05f;
+			return;
+		}
+		UE_LOG(LogOutlaws, Log, TEXT("OLPAUSE check %s: %s the turn on the spot showed the cheats (%d steps of 20 degrees)"), P->bCheatsShown ? TEXT("PASS") : TEXT("FAIL"), *Mode, Turns);
+		if (AController* Cn = P->GetController()) Cn->SetControlRotation(FRotator(0.0, P->MenuYaw, 0.0));     // (back to face the page)
+		NextAt = T + 1.0f; ++Step; return;
+	case 18:
+		// the page as the turn left it (the turn rebuilds it), not shown again by the test
+		Rows(TEXT("pause page, cheats shown"));
+		OwnRows(Mode + TEXT(" pause page, cheats shown:"));
+		Shot(FString::Printf(TEXT("ol_pause_%s_cheats"), *Mode));
+		NextAt = T + 0.8f; ++Step; return;
+	case 19:
+		if (Has(TEXT("#cheats"))) { P->ShowMenuPage(TEXT("#cheats"), true); NextAt = T + 1.0f; ++Step; }
+		else { Step = 21; NextAt = T + 0.3f; }
+		return;
+	case 20:
+	{
+		// the Cheats page from its pause row, as before (a client of a host with cheats off: its one line), then Back
+		FString R;
+		for (const OutlawsMenu::FItem& I : P->MenuPage ? P->MenuPage->Items : TArray<OutlawsMenu::FItem>()) R += (R.IsEmpty() ? TEXT("") : TEXT(" | ")) + I.Label;
+		UE_LOG(LogOutlaws, Log, TEXT("OLPAUSE %s Cheats page (%s): %d rows: %s"), *Mode, P->MenuPage ? *P->MenuPage->File : TEXT("none"), P->MenuPage ? P->MenuPage->Items.Num() : 0, *R.Left(400));
+		UE_LOG(LogOutlaws, Log, TEXT("OLPAUSE check %s: %s the Cheats row opens the Cheats page (%s)"), P->MenuPage && P->MenuPage->File == TEXT("#cheats") ? TEXT("PASS") : TEXT("FAIL"), *Mode, P->MenuPage ? *P->MenuPage->File : TEXT("none"));
+		P->MenuBack();
+		UE_LOG(LogOutlaws, Log, TEXT("OLPAUSE check %s: %s Back from Cheats to the pause page (%s)"), P->MenuPage && P->MenuPage->File == TEXT("main_game.rml") ? TEXT("PASS") : TEXT("FAIL"), *Mode, P->MenuPage ? *P->MenuPage->File : TEXT("none"));
+		NextAt = T + 0.5f; ++Step; return;
+	}
+	case 21:
 		P->CloseMenu();
 		UE_LOG(LogOutlaws, Log, TEXT("OLFIT %s done: %d passed, %d failed"), *Mode, FitPass, FitFail);
 		UE_LOG(LogOutlaws, Log, TEXT("OLPAUSE %s done"), *Mode);
-		Step = 20;
+		Step = 30;
 		if (OLFlags::Param(TEXT("OLPauseTidyQuit"))) FGenericPlatformMisc::RequestExit(false);
 		return;
 	default:

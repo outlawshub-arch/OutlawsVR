@@ -1230,8 +1230,10 @@ public:
 	 *  session); End game pressed there. */
 	static bool IsHostBetweenMatches(const UObject* Context);
 	static void HostEndGameFor(const UObject* Context);
-	/** -OLPauseTidyMode=<sp|cohost|coclient|dm> (REQ-PAUSETIDY): the pause page, Players and Tools opened in turn, their rows
-	 *  logged with whether they scroll, a shot each, Back checked; -OLPauseTidyQuit ends the run after. */
+	/** -OLPauseTidyMode=<sp|cohost|coclient|dm|dmclient> (REQ-PAUSETIDY): the pause page and Players opened in turn, their rows
+	 *  logged with whether they scroll, a shot each, Back checked; then (REQ-NOUNSTUCK) the pause page's own rows (no Tools,
+	 *  Cheats only once shown) before and after the turn that shows the cheats, a shot of each (ol_pause_<mode>_cheats), the
+	 *  Cheats row opened and Back; -OLPauseTidyQuit ends the run after. */
 	static void PauseTidyTestTick(AOutlawsPlayer* P, float Dt);
 	/** The match's scores as the frag table wants them (every machine: the session's). */
 	bool FillMatchTable(struct FFragTableData& Out) const;

@@ -261,7 +261,8 @@ public:
 
 	// ---- stuck rescue (BUG-STUCKGAP, user 2026-10-05; OutlawsPlayerUnstuck.cpp), single player and co-op ----
 	/** Back to the last safe floor spot (else the middle of the last sector the head was in), through a blink of black.
-	 *  Trigger: what asked ("head", "body", "menu", a test's word); logged with the level and both places. */
+	 *  Trigger: what asked ("head", "body", a test's word; REQ-NOUNSTUCK: no menu row asks any more); logged with the level
+	 *  and both places. */
 	void RequestUnstuck(const TCHAR* Trigger);
 	/** The last spot the feet stood on a sector's floor with the head inside a sector and a standing body's room, still
 	 *  clear now (re-checked at the floor as it is now); false when none. */
@@ -1283,8 +1284,8 @@ private:
 	/** Whether Feet is a safe floor spot now: OutFeet the feet on the sector's floor there. */
 	bool SafeFeetAt(const FVector& Feet, FVector& OutFeet) const;
 	void UnstuckWarp();
-	/** -OLShots -OLUnstuckTest: the head through a wall for 0.3 s and 1.5 s, a body pinned in the floor, the menu's row,
-	 *  the fallback with no safe spot. */
+	/** -OLShots -OLUnstuckTest: the head through a wall for 0.3 s and 1.5 s, a body pinned in the floor, the fallback with
+	 *  no safe spot. */
 	void UnstuckShotTick();
 	/** -OLShots -OLNarrowWalkTest=<sector>|narrow: stood on a thin floor (a fence top, a beam) and walked its length; logs
 	 *  each stuck check that starts and each rescue (none must fire) and how far the walk got (OutlawsPlayerUnstuck.cpp) */
@@ -1902,7 +1903,7 @@ private:
 	void KeyboardDone();
 	/** -OLShots -OLMpMenuShot: Options > Multiplayer and the keyboard, photographed and worked (ol_mp_options, ol_mp_keyboard). */
 	void MpMenuShotTick();
-	/** -OLDevChecksTest[=nodev] (REQ-DEVCHECKS, OutlawsDevChecks.cpp): the hidden Tools > Dev checks page walked through. */
+	/** -OLDevChecksTest[=nodev] (REQ-DEVCHECKS, OutlawsDevChecks.cpp): the hidden Pause > Dev checks page walked through. */
 	void DevChecksTestTick(float Dt);
 	/** -OLShots -OLCharPageShot: the pause menu's Switch character row, the character page (photographed), a choice. */
 	void CharPageShotTick();

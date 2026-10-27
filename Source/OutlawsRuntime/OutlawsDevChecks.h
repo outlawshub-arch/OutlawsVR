@@ -5,7 +5,7 @@
 namespace OutlawsMenu { struct FPage; }
 
 /**
- * REQ-DEVCHECKS: Pause > Tools > Dev checks, a hidden checklist for the headset confirmations.
+ * REQ-DEVCHECKS: Pause > Dev checks (under Cheats), a hidden checklist for the headset confirmations.
  *
  * Gate: never in a Shipping build (compiled out). Otherwise on only with -OLDevChecks on the command line or the flag file
  * Saved/DevChecks/devchecks_on (tools/olue/devchecks/devchecks.ps1 push puts it there); -OLNoDevChecks forces it off.

@@ -5,7 +5,7 @@
 //   climb through an opening into the next sector never sets it off, and a quick lean through a wall is forgiven.
 // - The body: the capsule inside the level's walls, or the feet outside every sector, for BodyGrace (a climb's own moves
 //   are left alone).
-// - The pause menu's Unstuck row, any time.
+// (REQ-NOUNSTUCK, user 2026-10-27: the pause menu's Unstuck row is gone; the rescue is only these automatic checks.)
 // Safe ground is the last spot the feet stood on a walkable floor with the head inside a sector and room for a standing
 // body, checked again when it is wanted (a lift may have gone); with none, the middle of the last sector the head was in,
 // at its floor and clear of walls and objects; else the level's start.  Each rescue goes through a blink of black and is
@@ -18,7 +18,6 @@
 #include "OutlawsFlags.h"
 #include "OutlawsRuntime.h"
 #include "OutlawsLevelActor.h"
-#include "OutlawsMenuDoc.h"
 #include "Camera/CameraComponent.h"
 #include "Camera/PlayerCameraManager.h"
 #include "Components/CapsuleComponent.h"
@@ -419,19 +418,7 @@ void AOutlawsPlayer::UnstuckShotTick()
 	else if (ShotStep == 4 && ShotTime > UnstuckTestT0 + 4.f)
 	{
 		Say(FString::Printf(TEXT("C: the body held in the floor (the head inside): %s"), UnstuckCount > UnstuckTestCount0 ? TEXT("rescued") : TEXT("NOT RESCUED")));
-		// D: the pause menu's Unstuck row (REQ-PAUSETIDY: on the Tools page)
-		OpenMenu();
-		ShowMenuPage(TEXT("#tools"), true);
-		const int32 i = MenuPage ? MenuPage->Items.IndexOfByPredicate([](const OutlawsMenu::FItem& It) { return It.Name == TEXT("unstuck"); }) : INDEX_NONE;
-		Say(FString::Printf(TEXT("D: the pause menu (%s) has the Unstuck row at %d"), MenuPage ? *MenuPage->File : TEXT("none"), i));
-		UnstuckTestCount0 = UnstuckCount;
-		if (i != INDEX_NONE) MenuActivate(1, i);
-		UnstuckTestT0 = ShotTime;
-		++ShotStep;
-	}
-	else if (ShotStep == 5 && ShotTime > UnstuckTestT0 + 1.5f)
-	{
-		Say(FString::Printf(TEXT("D: the Unstuck row: %s, the menu %s"), UnstuckCount > UnstuckTestCount0 ? TEXT("rescued") : TEXT("NOT RESCUED"), bMenuOpen ? TEXT("STILL OPEN") : TEXT("closed")));
+		// (REQ-NOUNSTUCK: D, the pause menu's Unstuck row, is gone with the row)
 		// E: no safe spot known: the middle of the last sector the head was in
 		ForgetSafeSpots();
 		UnstuckTestCount0 = UnstuckCount;
@@ -439,7 +426,7 @@ void AOutlawsPlayer::UnstuckShotTick()
 		UnstuckTestT0 = ShotTime;
 		++ShotStep;
 	}
-	else if (ShotStep == 6 && ShotTime > UnstuckTestT0 + 1.5f)
+	else if (ShotStep == 5 && ShotTime > UnstuckTestT0 + 1.5f)
 	{
 		Say(FString::Printf(TEXT("E: the fallback: %s"), UnstuckCount > UnstuckTestCount0 ? TEXT("moved") : TEXT("NOT MOVED")));
 		FGenericPlatformMisc::RequestExit(false);

@@ -219,9 +219,11 @@ void OutlawsDevChecks::BuildPage(OutlawsMenu::FPage& Page)
 }
 
 // ---- -OLDevChecksTest[=nodev] -----------------------------------------------------------------------------------------
-// full: the turn on the spot unlocks Cheats, Tools > Dev checks opens, a row cycles, the answers file is read back, the pushed
-// list wins and the bundled one stands in when it is gone, paging, Back. nodev: after the unlock the Tools page has no Dev
-// checks row (run without -OLDevChecks and without Saved/DevChecks/devchecks_on). -OLDevChecksShots=<dir> for the shots.
+// full: the turn on the spot unlocks Cheats, the pause page's Dev checks row (just under Cheats) opens, a row cycles, the
+// answers file is read back, the pushed list wins and the bundled one stands in when it is gone, paging, Back. nodev: after
+// the unlock the pause page has Cheats and no Dev checks row (run without -OLDevChecks and without
+// Saved/DevChecks/devchecks_on). -OLDevChecksShots=<dir> for the shots. (REQ-NOUNSTUCK: the Tools page these went through
+// is gone.)
 
 #if WITH_OUTLAWS_TESTS
 void AOutlawsPlayer::DevChecksTestTick(float Dt)
@@ -275,10 +277,9 @@ void AOutlawsPlayer::DevChecksTestTick(float Dt)
 		NextAt = T + 1.f; ++Step; return;
 	case 1:
 		Check(!bCheatsShown, TEXT("Cheats locked before the turn"));
-		if (Find(TEXT("#tools")) != INDEX_NONE) ShowMenuPage(TEXT("#tools"), true);
-		Rows(TEXT("Tools page before the turn"));
+		Rows(TEXT("pause page before the turn"));
 		Check(Find(TEXT("#devchecks")) == INDEX_NONE, TEXT("no Dev checks row before the unlock"));
-		MenuBack();
+		Check(Find(TEXT("#cheats")) == INDEX_NONE && Find(TEXT("#tools")) == INDEX_NONE, TEXT("no Cheats row and no Tools row before the unlock"));
 		NextAt = T + 0.3f; ++Step; return;
 	case 2:
 		// the gesture: a whole turn of the head (here the view) with the menu up, 20 degrees a step
@@ -293,20 +294,21 @@ void AOutlawsPlayer::DevChecksTestTick(float Dt)
 		NextAt = T + 0.5f; ++Step; return;
 	case 3:
 	{
-		const int32 Tools = Find(TEXT("#tools"));
-		if (Tools != INDEX_NONE) MenuActivate(1, Tools);
-		Rows(TEXT("Tools page after the turn"));
-		const int32 Dev = Find(TEXT("#devchecks"));
+		// the pause page as the turn rebuilt it (not shown again here)
+		Rows(TEXT("pause page after the turn"));
+		const int32 Dev = Find(TEXT("#devchecks")), Cheats = Find(TEXT("#cheats"));
+		Check(MenuPage && MenuPage->File == TEXT("main_game.rml") && Find(TEXT("#tools")) == INDEX_NONE, FString::Printf(TEXT("still the pause page, no Tools row (%s)"), MenuPage ? *MenuPage->File : TEXT("none")));
 		if (Mode == TEXT("nodev"))
 		{
 			Check(Dev == INDEX_NONE, TEXT("no Dev checks row without the dev flag (the packaged default)"));
-			Check(Find(TEXT("#cheats")) != INDEX_NONE, TEXT("the Cheats row is there"));
-			Shot(TEXT("devchecks_nodev_tools"));
+			Check(Cheats != INDEX_NONE && MenuPage && Cheats == MenuPage->Items.Num() - 2, FString::Printf(TEXT("the Cheats row is there, just before Exit (row %d)"), Cheats));
+			Shot(TEXT("devchecks_nodev_pause"));
 			NextAt = T + 1.f; Step = 50; return;
 		}
-		Check(Dev != INDEX_NONE, TEXT("Dev checks row on the Tools page after the unlock"));
+		Check(Dev != INDEX_NONE && Cheats != INDEX_NONE && Dev == Cheats + 1 && MenuPage && Dev == MenuPage->Items.Num() - 2,
+			FString::Printf(TEXT("Dev checks row on the pause page after the unlock, just after Cheats and before Exit (Cheats %d, Dev checks %d)"), Cheats, Dev));
 		if (Dev == INDEX_NONE) { Finish(); return; }
-		Shot(TEXT("devchecks_tools"));
+		Shot(TEXT("devchecks_pause"));
 		NextAt = T + 0.8f; ++Step; return;
 	}
 	case 4:
@@ -338,8 +340,8 @@ void AOutlawsPlayer::DevChecksTestTick(float Dt)
 		{
 			MenuActivate(1, Find(TEXT("devchecks_next")));
 			Rows(TEXT("Dev checks page 2"));
-			Check(OutlawsDevChecks::CurrentPage() == 1 && MenuPage && MenuPage->File == TEXT("#devchecks") && MenuStack.Num() == 2,
-				FString::Printf(TEXT("next page shows page 2 of %d, Back still leads to Tools (stack %d)"), OutlawsDevChecks::NumPages(), MenuStack.Num()));
+			Check(OutlawsDevChecks::CurrentPage() == 1 && MenuPage && MenuPage->File == TEXT("#devchecks") && MenuStack.Num() == 1,
+				FString::Printf(TEXT("next page shows page 2 of %d, Back still leads to the pause page (stack %d)"), OutlawsDevChecks::NumPages(), MenuStack.Num()));
 			Shot(TEXT("devchecks_page2"));
 			for (int32 k = 1; k < OutlawsDevChecks::NumPages(); ++k) MenuActivate(1, Find(TEXT("devchecks_next")));
 			Check(OutlawsDevChecks::CurrentPage() == 0, TEXT("the page row wraps back to page 1"));
@@ -369,9 +371,7 @@ void AOutlawsPlayer::DevChecksTestTick(float Dt)
 	}
 	case 8:
 		MenuBack();
-		Check(MenuPage && MenuPage->File == TEXT("#tools"), FString::Printf(TEXT("Back returns to Tools (%s)"), MenuPage ? *MenuPage->File : TEXT("none")));
-		MenuBack();
-		Check(MenuPage && MenuPage->File == TEXT("main_game.rml"), TEXT("Back again returns to the pause page"));
+		Check(MenuPage && MenuPage->File == TEXT("main_game.rml"), FString::Printf(TEXT("Back returns to the pause page (%s)"), MenuPage ? *MenuPage->File : TEXT("none")));
 		NextAt = T + 0.5f; Step = 50; return;
 	case 50:
 		Finish();

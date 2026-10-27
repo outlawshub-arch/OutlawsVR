@@ -38,6 +38,19 @@ OL_SHOT_TEST(OLMenuTest, 460)
 	case 2:
 	{
 		Shot(TEXT("ol_menu_main"));
+		{
+			// (REQ-NOUNSTUCK) the pause page: no Tools or Unstuck row; no Cheats row (or Dev checks) until the turn shows it
+			FString Rows;
+			bool bOk = MenuPage && MenuPage->File == TEXT("main_game.rml");
+			if (MenuPage) for (const OutlawsMenu::FItem& It : MenuPage->Items)
+			{
+				Rows += (Rows.IsEmpty() ? TEXT("") : TEXT(" | ")) + It.Label;
+				if (It.Target == TEXT("#tools") || It.Name == TEXT("unstuck") || It.Label == TEXT("Tools") || It.Label == TEXT("Unstuck")) bOk = false;
+				if (!bCheatsShown && (It.Target == TEXT("#cheats") || It.Target == TEXT("#devchecks"))) bOk = false;
+			}
+			UE_LOG(LogOutlaws, Display, TEXT("OLRT menu shot ol_menu_main rows %s: %s (no Tools, no Unstuck; cheats %s)"), bOk ? TEXT("PASS") : TEXT("FAIL"), *Rows,
+				bCheatsShown ? TEXT("shown") : TEXT("hidden: no Cheats row"));
+		}
 		// what the sheet holds: its coverage (alpha) and where it sits against the eye
 		TArray<FColor> Px;
 		int32 Covered = 0, Lit = 0;
