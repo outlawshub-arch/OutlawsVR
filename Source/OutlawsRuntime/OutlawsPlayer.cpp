@@ -180,7 +180,7 @@ void AOutlawsPlayer::BeginPlay()
 		RouteAudioToHeadset();
 	}
 	else if (OLFlags::Param(TEXT("OLHandTest")) || OLFlags::Param(TEXT("OLGearTest"))
-		|| OLFlags::Param(TEXT("OLHeldGunTest")) || OLFlags::Param(TEXT("OLGripTest")) || OLFlags::Param(TEXT("OLFlash3DTest"))
+		|| OLFlags::Param(TEXT("OLHeldGunTest")) || OLFlags::Param(TEXT("OLScopeFacesTest")) || OLFlags::Param(TEXT("OLGripTest")) || OLFlags::Param(TEXT("OLFlash3DTest"))
 		|| OLFlags::Param(TEXT("OLKnifeTest")) || OLFlags::Param(TEXT("OLFanTest"))
 		|| OLFlags::Param(TEXT("OLTntTest")) || OLFlags::Param(TEXT("OLTntDeathTest")) || OLFlags::Param(TEXT("OLArcStuckTest")) || OLFlags::Param(TEXT("OLRemoteFxTest")) || OLFlags::Param(TEXT("OLLanternSwimTest"))
 		|| OLFlags::Param(TEXT("OLFlickTest")) || OLFlags::Param(TEXT("OLFlickNetTest"))

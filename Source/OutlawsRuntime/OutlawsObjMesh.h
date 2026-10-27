@@ -26,6 +26,31 @@ namespace OutlawsObj
 	 */
 	OUTLAWSRUNTIME_API bool Load(const FString& Path, double Scale, bool bRightHanded, FObjMesh& Out);
 
+	/** (SCOPEFACES) What TurnFacesOutward found and did. */
+	struct FFaceTurn
+	{
+		int32 Faces = 0;           // triangles looked at
+		int32 Pieces = 0;          // pieces: triangles joined edge to edge
+		int32 Turned = 0;          // triangles turned over
+		double Area = 0.0, OutBefore = 0.0, OutAfter = 0.0;      // their area, and the part of it facing out before and after
+		double ShareBefore() const { return Area > 0.0 ? OutBefore / Area : 1.0; }
+		double ShareAfter() const { return Area > 0.0 ? OutAfter / Area : 1.0; }
+		void Add(const FFaceTurn& O) { Faces += O.Faces; Pieces += O.Pieces; Turned += O.Turned; Area += O.Area; OutBefore += O.OutBefore; OutAfter += O.OutAfter; }
+	};
+
+	/**
+	 * (SCOPEFACES) Each piece of a section (triangles joined edge to edge, corners within 0.001 cm welded) wound one way and
+	 * turned over when most of its area faces in: a ray off a face's front that crosses its own piece an odd number of
+	 * times started inside it.  A piece is changed only when that leaves clearly more of it facing out; a turned face's
+	 * corners take its new front as their normal.  item3d's tube() (rework.py) wound every tube wall inward and its caps and glass
+	 * outward, so on the one-sided held and item materials the rifle's telescope and the lever, crowbar and crank pickups
+	 * showed their insides.  bApply false only measures.  Flat cards and double-faced meshes come out as they went in.
+	 */
+	OUTLAWSRUNTIME_API FFaceTurn TurnFacesOutward(FOutlawsMeshSection& S, bool bApply);
+	OUTLAWSRUNTIME_API FFaceTurn TurnFacesOutward(FObjMesh& M, bool bApply);
+	/** The same measure of triangles in Unreal's order (a live mesh section's), nothing changed. */
+	OUTLAWSRUNTIME_API FFaceTurn MeasureFacesOutward(const TArray<FVector>& Positions, const TArray<int32>& Triangles);
+
 	/** A texture from a PNG/TGA/BMP file on disk (nearest filtering, no mips); null on failure. */
 	OUTLAWSRUNTIME_API UTexture2D* LoadTextureFile(const FString& Path);
 

@@ -170,6 +170,180 @@ bool OutlawsObj::Load(const FString& Path, double Scale, bool bRightHanded, FObj
 
 namespace
 {
+	/** Moller-Trumbore: the ray O + t D crosses the triangle A B C at some t over 1e-5. */
+	bool RayCrosses(const FVector& O, const FVector& D, const FVector& A, const FVector& B, const FVector& C)
+	{
+		const FVector E1 = B - A, E2 = C - A;
+		const FVector H = FVector::CrossProduct(D, E2);
+		const double Det = FVector::DotProduct(E1, H);
+		if (FMath::Abs(Det) < 1e-12) return false;
+		const double F = 1.0 / Det;
+		const FVector S = O - A;
+		const double U = F * FVector::DotProduct(S, H);
+		if (U < 0.0 || U > 1.0) return false;
+		const FVector Q = FVector::CrossProduct(S, E1);
+		const double V = F * FVector::DotProduct(D, Q);
+		if (V < 0.0 || U + V > 1.0) return false;
+		return F * FVector::DotProduct(E2, Q) > 1e-5;
+	}
+
+	uint64 EdgeKey(int32 A, int32 B) { return (uint64(uint32(FMath::Min(A, B))) << 32) | uint32(FMath::Max(A, B)); }
+
+	/** TurnFacesOutward's look at the triangles: OutTurn[t] for each one it would turn over. */
+	OutlawsObj::FFaceTurn FacesOutward(const TArray<FVector>& P, const TArray<int32>& Tri, TArray<bool>& OutTurn)
+	{
+		OutlawsObj::FFaceTurn R;
+		const int32 NT = Tri.Num() / 3;
+		OutTurn.Init(false, NT);
+		// the corners welded (a tube's seam and its caps' rims are separate corners at the same place)
+		TMap<FIntVector, int32> Weld;
+		TArray<int32> W;
+		W.SetNumUninitialized(P.Num());
+		for (int32 i = 0; i < P.Num(); ++i)
+		{
+			const FIntVector K(FMath::RoundToInt(P[i].X * 1000.0), FMath::RoundToInt(P[i].Y * 1000.0), FMath::RoundToInt(P[i].Z * 1000.0));
+			if (const int32* Got = Weld.Find(K)) W[i] = *Got;
+			else { const int32 Id = Weld.Num(); Weld.Add(K, Id); W[i] = Id; }
+		}
+		// the triangles with an area, each edge with the triangles on it and which way each runs it (+1 low to high)
+		TArray<int32> Live;
+		TArray<FVector> Front;            // (C - A) x (B - A): the side the triangle shows (FOutlawsMeshSection::AddFace)
+		Front.SetNum(NT);
+		TMap<uint64, TArray<TPair<int32, int32>, TInlineAllocator<2>>> Edges;
+		for (int32 t = 0; t < NT; ++t)
+		{
+			const int32 a = Tri[3 * t], b = Tri[3 * t + 1], c = Tri[3 * t + 2];
+			if (!P.IsValidIndex(a) || !P.IsValidIndex(b) || !P.IsValidIndex(c)) continue;
+			const int32 w[3] = { W[a], W[b], W[c] };
+			Front[t] = FVector::CrossProduct(P[c] - P[a], P[b] - P[a]);
+			if (w[0] == w[1] || w[1] == w[2] || w[0] == w[2] || Front[t].SizeSquared() < 1e-16) continue;
+			Live.Add(t);
+			for (int32 k = 0; k < 3; ++k) Edges.FindOrAdd(EdgeKey(w[k], w[(k + 1) % 3])).Add(TPair<int32, int32>(t, w[k] < w[(k + 1) % 3] ? 1 : -1));
+		}
+		// the pieces, each wound as its first triangle: across an edge with two triangles on it, the neighbour runs it the
+		// other way (an edge with one triangle is a border, one with more is not crossed)
+		TArray<int32> Piece;
+		Piece.Init(-1, NT);
+		TArray<bool> Rev;
+		Rev.Init(false, NT);
+		TArray<TArray<int32>> Pieces;
+		for (int32 s : Live)
+		{
+			if (Piece[s] >= 0) continue;
+			const int32 Pi = Pieces.Num();
+			TArray<int32> Members;
+			TArray<int32> Stack;
+			Stack.Add(s);
+			Piece[s] = Pi;
+			while (Stack.Num())
+			{
+				const int32 t = Stack.Pop(false);
+				Members.Add(t);
+				const int32 w[3] = { W[Tri[3 * t]], W[Tri[3 * t + 1]], W[Tri[3 * t + 2]] };
+				for (int32 k = 0; k < 3; ++k)
+				{
+					const int32 e0 = w[k], e1 = w[(k + 1) % 3];
+					const TArray<TPair<int32, int32>, TInlineAllocator<2>>* On = Edges.Find(EdgeKey(e0, e1));
+					if (!On || On->Num() != 2) continue;
+					const int32 Runs = (e0 < e1 ? 1 : -1) * (Rev[t] ? -1 : 1);
+					for (const TPair<int32, int32>& Kv : *On)
+					{
+						if (Kv.Key == t || Piece[Kv.Key] >= 0) continue;
+						Piece[Kv.Key] = Pi;
+						Rev[Kv.Key] = Kv.Value == Runs;
+						Stack.Add(Kv.Key);
+					}
+				}
+			}
+			Pieces.Add(MoveTemp(Members));
+		}
+		// each piece's faces vote (all of them, or 1500 spread over a big piece): a ray off the front, and one off the back,
+		// out through the piece an even number of times starts outside it.  Kept as it is, wound as one, or that turned over:
+		// whichever leaves the most area facing out, changed only when clearly better
+		const FVector Jit(1.3e-4, 2.1e-4, 3.7e-4);       // (off the exact normal: a ray along an edge counts it twice)
+		for (const TArray<int32>& Members : Pieces)
+		{
+			const int32 Step = FMath::Max(1, Members.Num() / 1500);
+			double Area = 0.0, OutAsIs = 0.0, OutWound = 0.0, OutTurned = 0.0;
+			for (int32 m = 0; m < Members.Num(); m += Step)
+			{
+				const int32 t = Members[m];
+				const FVector& A = P[Tri[3 * t]];
+				const FVector& B = P[Tri[3 * t + 1]];
+				const FVector& C = P[Tri[3 * t + 2]];
+				const double Ar = Front[t].Size() * 0.5;
+				const FVector N = Front[t].GetSafeNormal();
+				const FVector Cen = (A + B + C) / 3.0;
+				bool bOut[2];
+				for (int32 Side = 0; Side < 2; ++Side)
+				{
+					const FVector Nd = Side ? -N : N;
+					const FVector D = (Nd + Jit).GetSafeNormal();
+					const FVector O = Cen + Nd * 0.002;
+					int32 Hits = 0;
+					for (int32 u : Members)
+					{
+						if (u != t && RayCrosses(O, D, P[Tri[3 * u]], P[Tri[3 * u + 1]], P[Tri[3 * u + 2]])) ++Hits;
+					}
+					bOut[Side] = (Hits & 1) == 0;
+				}
+				Area += Ar;
+				if (bOut[0]) OutAsIs += Ar;
+				if (bOut[Rev[t] ? 1 : 0]) OutWound += Ar;
+				if (bOut[Rev[t] ? 0 : 1]) OutTurned += Ar;
+			}
+			const bool bTurnAll = OutTurned > OutWound;
+			const double Best = FMath::Max(OutWound, OutTurned);
+			const bool bChange = Best > OutAsIs + 0.1 * Area && Best > 0.75 * Area;
+			R.Faces += Members.Num();
+			R.Pieces += 1;
+			R.Area += Area;
+			R.OutBefore += OutAsIs;
+			R.OutAfter += bChange ? Best : OutAsIs;
+			if (!bChange) continue;
+			for (int32 t : Members)
+			{
+				OutTurn[t] = Rev[t] != bTurnAll;
+				R.Turned += OutTurn[t] ? 1 : 0;
+			}
+		}
+		return R;
+	}
+}
+
+OutlawsObj::FFaceTurn OutlawsObj::TurnFacesOutward(FOutlawsMeshSection& S, bool bApply)
+{
+	TArray<bool> Turn;
+	const FFaceTurn R = FacesOutward(S.Positions, S.Triangles, Turn);
+	if (!bApply || R.Turned == 0) return R;
+	// each turned triangle the other way round, the normal at its corners its new front (AddFace gives each polygon its
+	// own corners; the loader's normal for an OBJ face was already the opposite of its old front)
+	for (int32 t = 0; t < Turn.Num(); ++t)
+	{
+		if (!Turn[t]) continue;
+		Swap(S.Triangles[3 * t + 1], S.Triangles[3 * t + 2]);
+		const int32 a = S.Triangles[3 * t], b = S.Triangles[3 * t + 1], c = S.Triangles[3 * t + 2];
+		const FVector N = FVector::CrossProduct(S.Positions[c] - S.Positions[a], S.Positions[b] - S.Positions[a]).GetSafeNormal();
+		for (const int32 v : { a, b, c }) if (S.Normals.IsValidIndex(v)) S.Normals[v] = N;
+	}
+	return R;
+}
+
+OutlawsObj::FFaceTurn OutlawsObj::TurnFacesOutward(FObjMesh& M, bool bApply)
+{
+	FFaceTurn R;
+	for (TPair<FString, FOutlawsMeshSection>& Kv : M.Sections) R.Add(TurnFacesOutward(Kv.Value, bApply));
+	return R;
+}
+
+OutlawsObj::FFaceTurn OutlawsObj::MeasureFacesOutward(const TArray<FVector>& Positions, const TArray<int32>& Triangles)
+{
+	TArray<bool> Turn;
+	return FacesOutward(Positions, Triangles, Turn);
+}
+
+namespace
+{
 	// the file each texture LoadTextureFile made came from (its texels on the CPU, for SolidMaskOf)
 	TMap<TWeakObjectPtr<const UTexture>, FString> GTextureFile;
 }

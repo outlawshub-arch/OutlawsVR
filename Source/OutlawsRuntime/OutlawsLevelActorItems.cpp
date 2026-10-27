@@ -136,6 +136,17 @@ namespace
 		OutlawsObj::FObjMesh Obj;
 		if (FPaths::FileExists(Path) && OutlawsObj::Load(Path, 1.0, true, Obj))
 		{
+			// (SCOPEFACES) the pickups item3d's tube() made wind their tube walls inward, and the item material is one-sided:
+			// turned to face out before the normals are worked out from the winding.  -OLOldScopeFaces: as the files have them
+			static const TCHAR* InsideOut[] = { TEXT("GSCOPE"), TEXT("GLEVER"), TEXT("GCROWBAR"), TEXT("GCRANK") };
+			for (const TCHAR* Io : InsideOut)
+			{
+				if (!Stem.Equals(Io, ESearchCase::IgnoreCase)) continue;
+				const bool bOld = OLFlags::Param(TEXT("OLOldScopeFaces"));
+				const OutlawsObj::FFaceTurn Ft = OutlawsObj::TurnFacesOutward(Obj, !bOld);
+				UE_LOG(LogOutlaws, Display, TEXT("OLRT item model %s faces%s: %d triangles in %d pieces, %d %s, facing out %.0f%% -> %.0f%%"), *Stem, bOld ? TEXT(" (old)") : TEXT(""),
+					Ft.Faces, Ft.Pieces, Ft.Turned, bOld ? TEXT("would turn") : TEXT("turned"), Ft.ShareBefore() * 100.0, (bOld ? Ft.ShareBefore() : Ft.ShareAfter()) * 100.0);
+			}
 			D = MakeShared<FItemModelData>();
 			D->Sections = MoveTemp(Obj.Sections);
 			const double Scale = ItemWorldScale(FPaths::Combine(ItemModelDir(), Stem + TEXT(".json")));

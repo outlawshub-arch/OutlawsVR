@@ -6479,6 +6479,12 @@ void AOutlawsPlayer::BuildGunParts(int32 Hand, int32 Wi)
 			if (FPaths::FileExists(ScopePath) && OutlawsObj::Load(ScopePath, 1.0, true, *Obj))
 			{
 				for (TPair<FString, FOutlawsMeshSection>& Kv : Obj->Sections) for (FVector& P : Kv.Value.Positions) P += FVector(24.0, 0.0, 4.9);
+				// (SCOPEFACES, user 27 Oct: the tube looked inside-out) the pickup's tube walls are wound inward and the held
+				// material is one-sided: turned to face out.  -OLOldScopeFaces: as the file has them
+				const bool bOld = OLFlags::Param(TEXT("OLOldScopeFaces"));
+				const OutlawsObj::FFaceTurn Ft = OutlawsObj::TurnFacesOutward(*Obj, !bOld);
+				UE_LOG(LogOutlaws, Display, TEXT("OLRT held scope faces%s: %d triangles in %d pieces, %d %s, facing out %.0f%% -> %.0f%%"), bOld ? TEXT(" (old)") : TEXT(""),
+					Ft.Faces, Ft.Pieces, Ft.Turned, bOld ? TEXT("would turn") : TEXT("turned"), Ft.ShareBefore() * 100.0, (bOld ? Ft.ShareBefore() : Ft.ShareAfter()) * 100.0);
 			}
 			else
 			{

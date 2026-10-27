@@ -20,6 +20,8 @@ namespace OutlawsInk
 	OUTLAWSRUNTIME_API void AddShell(UProceduralMeshComponent* M, float Thickness, UMaterialInterface* Ink);
 	/** A mesh cleared and built again: its shells forgotten, so the next AddShell counts all its sections as its own. */
 	OUTLAWSRUNTIME_API void Forget(UProceduralMeshComponent* M);
+	/** How many of M's sections are its own (the rest its shell); all of them when it has no shell. */
+	OUTLAWSRUNTIME_API int32 OwnSections(const UProceduralMeshComponent* M);
 	/** M's sections copied from one already shelled (its first Own its own, the rest the shell): known as shelled. */
 	OUTLAWSRUNTIME_API void NoteShelled(UProceduralMeshComponent* M, int32 Own);
 	/** The same shell as a child component of Src (its own sections only, not its ink shell), in Mat: the grab glow's

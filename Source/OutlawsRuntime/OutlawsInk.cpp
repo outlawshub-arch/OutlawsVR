@@ -143,6 +143,15 @@ void OutlawsInk::Forget(UProceduralMeshComponent* M)
 	GShelledSections.Remove(M);
 }
 
+int32 OutlawsInk::OwnSections(const UProceduralMeshComponent* M)
+{
+	if (!M) return 0;
+	UProceduralMeshComponent* Key = const_cast<UProceduralMeshComponent*>(M);
+	const int32* Shelled = GShelledSections.Find(Key);
+	const int32* Known = Shelled && *Shelled == M->GetNumSections() ? GOwnSections.Find(Key) : nullptr;
+	return Known ? FMath::Min(*Known, M->GetNumSections()) : M->GetNumSections();
+}
+
 void OutlawsInk::NoteShelled(UProceduralMeshComponent* M, int32 Own)
 {
 	if (!M) return;
