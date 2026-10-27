@@ -185,7 +185,7 @@ void AOutlawsPlayer::BeginPlay()
 		|| OLFlags::Param(TEXT("OLTntTest")) || OLFlags::Param(TEXT("OLTntDeathTest")) || OLFlags::Param(TEXT("OLArcStuckTest")) || OLFlags::Param(TEXT("OLRemoteFxTest")) || OLFlags::Param(TEXT("OLLanternSwimTest"))
 		|| OLFlags::Param(TEXT("OLFlickTest")) || OLFlags::Param(TEXT("OLFlickNetTest"))
 		|| OLFlags::Param(TEXT("OLCharLoadoutTest")) || (OLFlags::Has(TEXT("OLTreadTest"))) || OLFlags::Has(TEXT("OLVb2Test"))
-		|| OLFlags::Has(TEXT("OLWaterHandsTest")) || OLFlags::Has(TEXT("OLWheelTopTest"))
+		|| OLFlags::Has(TEXT("OLWaterHandsTest")) || OLFlags::Has(TEXT("OLWheelTopTest")) || OLFlags::Has(TEXT("OLHurtTintTest"))
 		|| OLFlags::Param(TEXT("OLLevelCarryTest")) || OLFlags::ValueIs(TEXT("OLCoopTest"), TEXT("levelcarry")))
 	{
 		BuildHands();                    // the desktop hand pictures
@@ -3533,6 +3533,13 @@ void AOutlawsPlayer::UpdateScreenFx(float Dt)
 		DeathMid->SetScalarParameterValue(TEXT("Amount"), FMath::Max(DeathBlend, bDeadView ? WeakAtDeath : Weak));
 	}
 	HurtDirAmount = FMath::Max(0.f, HurtDirAmount - Dt * 1.6f);
+#if WITH_OUTLAWS_TESTS
+	if (HurtPin >= 0.f)
+	{
+		HurtDirAmount = HurtPin;            // (-OLHurtTintTest: held all round for its pictures)
+		HurtDir = FVector2D::ZeroVector;
+	}
+#endif
 	UpdateHurtVeil();                       // (the headset: no post process, a plane before the eyes)
 	if (!HurtDirMid)
 	{
@@ -3668,6 +3675,19 @@ void AOutlawsPlayer::UpdateScreenFx(float Dt)
 		// (w: REQ-GAMMA's Brightness less one, 0 the look as made: the node skips its pow)
 		Q->SetVectorParameterValue(TEXT("QHurt"), FLinearColor(QDir.X, QDir.Y, QHurtAmount, OutlawsDeviceProfile::Gamma() - 1.f));
 		Q->SetVectorParameterValue(TEXT("QMisc"), FLinearColor(Death, QTone, QDim, PP.VignetteIntensity));
+		// BUG-HURTTINTALPHA: on the PC the hit's red (M_OLR_HurtDir) is a post process before tonemapping, but TSR blends the
+		// translucent surfaces (the see-through mids' glass, water, smoke, glows, muzzle flashes, fading sprites) into the
+		// picture after it, and the ink line round held gear is drawn after tonemapping: they kept their own colours under
+		// the red (user 2026-10-27, town). PcHurt carries the red to them (tools\olue\ue_olue_hurt_late.py, outside the repo): z for the translucent
+		// materials (on the PC only while TSR blends them late; on the headset for the muzzle flash, held sprites and grab
+		// rim, the few drawn after its red veil with no OLQuestLook of their own), w for the PC's ink line; xy the side.
+		// -OLOldHurtTint: as before
+		static const bool bOldHurtTint = OLFlags::Param(TEXT("OLOldHurtTint"));
+		static const IConsoleVariable* AaMethod = IConsoleManager::Get().FindConsoleVariable(TEXT("r.AntiAliasingMethod"));
+		const bool bMobile = GetWorld()->FeatureLevel <= ERHIFeatureLevel::ES3_1;
+		const bool bLateTranslucency = bMobile || (AaMethod && AaMethod->GetInt() == 4);        // (4: TSR)
+		const float Amount = !bOldHurtTint && HurtDirMid ? HurtDirAmount : 0.f;
+		Q->SetVectorParameterValue(TEXT("PcHurt"), FLinearColor(HurtDir.X, HurtDir.Y, bLateTranslucency ? Amount : 0.f, bMobile ? 0.f : Amount));
 	}
 }
 

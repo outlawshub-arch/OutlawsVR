@@ -1929,6 +1929,7 @@ public:
 	TObjectPtr<class UMaterialInstanceDynamic> HurtDirMid;
 	FVector2D HurtDir = FVector2D::ZeroVector;     // screen: x right, y up; zero = all round
 	float HurtDirAmount = 0.f;
+	float HurtPin = -1.f;                          // (-OLHurtTintTest: the red held all round at this amount; -1 off)
 	/** Health reached 0: the view turns sepia and drops to the floor until a button respawns. */
 	void OnDied();
 	/** A message on the line fixed in the view, a little above centre (newest at the bottom). */
