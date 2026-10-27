@@ -40,7 +40,8 @@ OL_SHOT_TEST(OLFaceTurnTest, 1117)
 	// eye (their tops), then a cactus, TREE01, the cow skull, a flag and the gatling pickup on the floor.  Each mesh's area
 	// facing out is measured and logged: OLFACETURN ...  With -OLDetailedThrowables the hands hold item3d's GDYNAM3D and
 	// GKNIFE3D (turned at load), without it the game's own 3DOs from the player's install (measured only: not ours to turn).
-	// -OLOldScopeFaces: the before pictures (every item3d model as its file has it), no checks
+	// Last the worn chest plate (PLATEFACES: GBPLATE through its own load and mirror), front on and turned 70 degrees.
+	// -OLOldScopeFaces: the before pictures (every item3d model as its file has it), no faces checks
 	static const TCHAR* Poses[] = { TEXT("dyn_side"), TEXT("dyn_tip"), TEXT("knife_side"), TEXT("knife_tip") };
 	static const TCHAR* Floor[] = { TEXT("CACTUS01"), TEXT("TREE01"), TEXT("COWSKULL"), TEXT("CONFLAG"), TEXT("GGATGUN") };
 	constexpr int32 NumPoses = UE_ARRAY_COUNT(Poses), NumFloor = UE_ARRAY_COUNT(Floor);
@@ -81,6 +82,24 @@ OL_SHOT_TEST(OLFaceTurnTest, 1117)
 	const int32 F0 = 1 + 2 * NumPoses;
 	const int32 Fi = ShotStep >= F0 ? (ShotStep - F0) / 2 : -1, Fp = ShotStep >= F0 ? (ShotStep - F0) % 2 : -1;
 	const float FloorDue = 4.f + 2.5f * NumPoses + 3.f * Fi;
+	// (PLATEFACES) then the worn chest plate: put on (the desktop wears it as the headset does), then held 65 cm before the
+	// eye every frame, its front to the eye and then turned 70 degrees; each pose a step to photograph it and one to hold it
+	// while the picture is taken
+	static const TCHAR* PlatePoses[] = { TEXT("plate_front"), TEXT("plate_side") };
+	constexpr int32 NumPlate = UE_ARRAY_COUNT(PlatePoses);
+	const int32 P0 = F0 + 2 * NumFloor;
+	const int32 Pp = ShotStep > P0 && ShotStep <= P0 + 2 * NumPlate ? (ShotStep - P0 - 1) / 2 : -1;
+	const float PlateDue = 4.f + 2.5f * NumPoses + 3.f * NumFloor + 0.5f;
+	const float PlateShotDue = PlateDue + 2.5f + 2.f * Pp;
+	if (Pp >= 0 && Controller && ChestRoot)
+	{
+		Controller->SetControlRotation(FRotator(0.0, Yaw0, 0.0));
+		const FVector Eye = Camera->GetComponentLocation();
+		const FVector F = Camera->GetForwardVector(), R = Camera->GetRightVector(), U = Camera->GetUpVector();
+		const double Turn = FMath::DegreesToRadians(Pp == 0 ? 0.0 : 70.0);
+		const FVector Out = (-F * FMath::Cos(Turn) + R * FMath::Sin(Turn)).GetSafeNormal();
+		ChestRoot->SetWorldLocationAndRotation(Eye + F * 65.0, FRotationMatrix::MakeFromXZ(Out, U).ToQuat());
+	}
 	if (ShotStep == 0 && ShotTime > 3.f && L)
 	{
 		L->GiveAllWeapons();
@@ -160,7 +179,37 @@ OL_SHOT_TEST(OLFaceTurnTest, 1117)
 		if (!bOld) Fails += Check(Ft.ShareBefore() > 0.95, FString::Printf(TEXT("floor %s: %.1f%% of it faces out (over 95)"), Floor[Fi], Ft.ShareBefore() * 100.0));
 		++ShotStep;
 	}
-	else if (ShotStep == F0 + 2 * NumFloor && ShotTime > 4.f + 2.5f * NumPoses + 3.f * NumFloor + 0.5f)
+	else if (ShotStep == P0 && ShotTime > PlateDue && L)
+	{
+		if (Item.IsValid()) Item->Destroy();
+		bTestPlatePickup = true;
+		L->ArmourMax = 0;
+		L->AddCount(TEXT("ibplate"), 150);          // (as a pickup takes it: armour set, a new plate)
+		UE_LOG(LogOutlaws, Display, TEXT("OLFACETURN plate: worn, armour %d"), L->GetArmour());
+		++ShotStep;
+	}
+	else if (Pp >= 0 && (ShotStep - P0 - 1) % 2 == 0 && ShotTime > PlateShotDue)
+	{
+		const FString Name = FString(PlatePoses[Pp]) + (bOld ? TEXT("_old") : TEXT(""));
+		Shot(Name);
+		FVector At;
+		FRotator Rot;
+		UProceduralMeshComponent* Pm = ChestMesh.Get();
+		const bool bShown = ChestPlateShown(At, Rot) && Pm && Pm->GetNumSections() > 0;
+		const int32 Own = OutlawsInk::OwnSections(Pm);
+		const OutlawsObj::FFaceTurn Ft = FaceTurnLiveOut(Pm, false);
+		UE_LOG(LogOutlaws, Display, TEXT("OLFACETURN %s: worn plate %s, %s (%d sections), %d triangles in %d pieces, facing out %.1f%% (would turn %d)"), *Name,
+			bShown ? TEXT("shown") : TEXT("NOT SHOWN"), Own == 1 ? TEXT("the pickup's model") : TEXT("the drawn plate"), Own, Ft.Faces, Ft.Pieces, Ft.ShareBefore() * 100.0, Ft.Turned);
+		Fails += Check(bShown, FString::Printf(TEXT("%s: the worn plate is shown"), PlatePoses[Pp]));
+		Fails += Check(Own == 1, FString::Printf(TEXT("%s: it is the pickup's GBPLATE model (%d sections)"), PlatePoses[Pp], Own));
+		if (!bOld) Fails += Check(Ft.ShareBefore() > 0.95, FString::Printf(TEXT("%s: %.1f%% of the worn plate faces out (over 95)"), PlatePoses[Pp], Ft.ShareBefore() * 100.0));
+		++ShotStep;
+	}
+	else if (Pp >= 0 && (ShotStep - P0 - 1) % 2 == 1 && ShotTime > PlateShotDue + 0.5f)
+	{
+		++ShotStep;
+	}
+	else if (ShotStep == P0 + 1 + 2 * NumPlate && ShotTime > PlateDue + 2.5f + 2.f * NumPlate + 0.5f)
 	{
 		UE_LOG(LogOutlaws, Display, TEXT("OLFACETURN RESULT %s%s"), Fails == 0 ? TEXT("ALL PASS") : TEXT("FAIL"), bOld ? TEXT(" (old faces: pictures, no faces checks)") : TEXT(""));
 		FGenericPlatformMisc::RequestExit(false);

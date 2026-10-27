@@ -97,6 +97,11 @@ namespace
 		OutlawsObj::FObjMesh Obj;
 		const FString Path = FPaths::Combine(FOutlawsAssets::PlaceholderDir(), TEXT("items3d/GBPLATE.obj"));
 		if (!FPaths::FileExists(Path) || !OutlawsObj::Load(Path, 1.0, true, Obj) || !Obj.Bounds.IsValid) return S;
+		// (PLATEFACES) turned to face out as the floor's copy is (FACETURN): the file has 4 % of its area facing out, so on the
+		// one-sided held material the worn plate showed its inside and the headset's ink shell sat inside it.  The mirror below
+		// moves the corners and turns each face back with them, so what faces out here still faces out.  -OLOldScopeFaces: as the
+		// file has it
+		OutlawsObj::FaceItemModelOutward(Obj, TEXT("OLRT worn plate GBPLATE"));
 		// its axes by its extents: the thinnest through it, the longest up it
 		const FVector E = Obj.Bounds.GetSize();
 		int32 Thin = 0, Tall = 0;
