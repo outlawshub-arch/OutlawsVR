@@ -2545,6 +2545,9 @@ private:
 public:
 	int32 DebugVisFlips() const { return VisFlipsTotal; }
 	FString DebugVisScan(const AActor* Viewer, int32& OutFalse, int32& OutPairs) const;
+	/** (BUG-DOORWAYGEO, -OLDoorwayGeoProbe) rays all round from EyeW to the level's faces: how many land on a face whose
+	 *  sector this tick's flood left out, and why, by sector. */
+	FString DebugEyeScan(const AActor* Viewer, const FVector& EyeW, int32& OutRays, int32& OutMissed, TArray<int32>* OutMissedSectors = nullptr) const;
 	/** (BUG-INVISWALLS, -OLInvisScan) the body's capsule swept over every floor: where it stops but the original walks on. */
 	FString DebugInvisScan(const APawn* Body, int32& OutCandidates) const;
 	mutable int32 DebugFloodMode = 0;         // (tests) the flood's rules lifted, DebugVisScan

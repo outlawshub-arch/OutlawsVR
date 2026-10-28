@@ -4054,6 +4054,41 @@ void AOutlawsLevelActor::UpdateVisibility()
 			const FOutlawsSector* EyeS = LP->SectorAt(Eye.X, EyeZ, Eye.Y);      // (no body yet: the level's first tick)
 			if (EyeS) From = EyeS->Index;
 		}
+		// BUG-DOORWAYGEO (user 28 Oct, snapshots 3-5): under a raised door slab (the hideout's upstairs doors, sectors 31 and
+		// 32: thin door sectors at 23..25, holes in the plans of their rooms 376 and 341) the eye stands in no sector at all:
+		// the room's plan has a hole there and the slab is over it.  The body's sector went to the room below whose plan
+		// holds the spot (325, 190), and the flood from there drew that room and left the one the player stands in unseen.
+		// With no sector round the eye and one right over it, the flood starts from that one's neighbour round the eye's
+		// height (the room), and the slab is drawn too.  -OLOldDoorwayGeo: from the body's sector, as before
+		static const bool bOldDoorway = OLFlags::Param(TEXT("OLOldDoorwayGeo"));
+		int32 Slab = -1;
+		if (!bOldDoorway && LP->Sectors.IsValidIndex(From))
+		{
+			const FOutlawsLevel& Lv = *LP;
+			auto Holds = [&Lv, &Eye, EyeZ](const FOutlawsSector& S)
+			{
+				return S.Verts.Num() >= 3 && EyeZ >= Lv.SurfaceY(S, Eye, true) - 0.05 && EyeZ <= Lv.SurfaceY(S, Eye, false) + 0.05 && Lv.ContainsXZ(S, Eye.X, Eye.Y);
+			};
+			if (!Holds(Lv.Sectors[From]))
+			{
+				int32 Room = -1;
+				bool bInOne = false;
+				for (int32 i = 0; i < NumS && !bInOne; ++i)
+				{
+					const FOutlawsSector& S = Lv.Sectors[i];
+					if ((CullBoxes.IsValidIndex(i) && !CullBoxes[i].IsInside(Eye)) || S.Verts.Num() < 3 || !Lv.ContainsXZ(S, Eye.X, Eye.Y)) continue;
+					if (EyeZ >= Lv.SurfaceY(S, Eye, true) - 0.05 && EyeZ <= Lv.SurfaceY(S, Eye, false) + 0.05) { bInOne = true; break; }
+					if (EyeZ >= Lv.SurfaceY(S, Eye, true) || Room >= 0) continue;
+					for (const FOutlawsWall& W : S.Walls)
+					{
+						const FOutlawsSector* R = Lv.Sector(W.Adjoin);
+						if (R && EyeZ >= R->Floor.Y - 0.05 && EyeZ <= R->Ceil.Y + 0.05) { Room = R->Index; Slab = i; break; }
+					}
+				}
+				if (bInOne || Room < 0) Slab = -1;
+				else From = Room;
+			}
+		}
 		DebugFloodMode = 0;
 		// (QSPEED-3) the flood again only when something it read may have changed (FloodStillHolds); else the last one
 		// stands, the same sectors to the one
@@ -4082,6 +4117,7 @@ void AOutlawsLevelActor::UpdateVisibility()
 			FloodCache.bLastTracked = bCache;
 			FloodCache.KeptSince = 0;
 			PortalFlood(*LP, From, Eye, EyeZ, SeenFromEye, &SeenDepth, bCache ? &FloodCache.Bounds : nullptr);
+			if (Slab >= 0) SeenFromEye.Add(Slab);           // (BUG-DOORWAYGEO) the slab over the eye
 			++VisFloods;
 			VisPops += DebugFloodPops;
 			if (bCache)
@@ -4471,6 +4507,87 @@ FString AOutlawsLevelActor::DebugVisScan(const AActor* Viewer, int32& OutFalse, 
 	for (const TPair<FString, int32>& Kv : Why) W += FString::Printf(TEXT(" %s=%d"), *Kv.Key, Kv.Value);
 	return FString::Printf(TEXT("%d eyes, %d bad guys, %d traces; build-22 rule: %d culled in clear view (%d bad guys); the flood's arrivals passed on: %d at most, %.0f a flood; still culled, seen when lifted:%s; first of each:%s"),
 		Eyes, Es.Num(), Traces, OldFalse, OldWho.Num(), MaxPops, Eyes > 0 ? double(SumPops) / Eyes : 0.0, *W, *Ex);
+}
+
+FString AOutlawsLevelActor::DebugEyeScan(const AActor* Viewer, const FVector& EyeW, int32& OutRays, int32& OutMissed, TArray<int32>* OutMissedSectors) const
+{
+	// (BUG-DOORWAYGEO, -OLDoorwayGeoProbe) the level as the eye sees it against what the culling leaves drawn: rays all
+	// round from the eye (8 degrees apart, 40 m) to the level's own faces; a face's sector (the side the eye is on) left
+	// out of this tick's flood is geometry missing in clear view.  Each such sector: the rays, and which rule left it out
+	OutRays = OutMissed = 0;
+	const FOutlawsLevel* LP = Inf ? &Inf->Live : nullptr;
+	UWorld* World = GetWorld();
+	if (!LP || !World) return TEXT("no level");
+	const FOutlawsLevel& L = *LP;
+	const double U = FOutlawsGeometry::UnitsToCm;
+	TMap<int32, int32> Missed;
+	TMap<int32, FString> MissedOn;
+	int32 Unplaced = 0;
+	FCollisionQueryParams Q(SCENE_QUERY_STAT(OutlawsEyeScan), true, Viewer);
+	for (int32 p = -84; p <= 84; p += 8)
+	{
+		for (int32 y = 0; y < 360; y += 8)
+		{
+			const FVector Dir = FRotator(p, y, 0.0).Vector();
+			FHitResult H;
+			if (!World->LineTraceSingleByChannel(H, EyeW, EyeW + Dir * 4000.0, ECC_Visibility, Q) || H.GetActor() != this) continue;
+			++OutRays;
+			// the face's sector: one whose plan holds the point just off it and whose floor and ceiling hold its height
+			// (Which3D falls back to a sector by plan alone, the room under a stacked one); none, the ray is not counted
+			const FVector Po = FOutlawsGeometry::ToOutlaws(H.ImpactPoint - Dir * 2.0);
+			const FVector2D Pp(Po.X, Po.Z);
+			int32 S = -1;
+			for (int32 i = 0; i < L.Sectors.Num() && S < 0; ++i)
+			{
+				const FOutlawsSector& Si = L.Sectors[i];
+				if ((CullBoxes.IsValidIndex(i) && !CullBoxes[i].IsInside(Pp)) || Si.Verts.Num() < 3 || !L.ContainsXZ(Si, Pp.X, Pp.Y)) continue;
+				if (Po.Y >= L.SurfaceY(Si, Pp, true) - 0.1 && Po.Y <= L.SurfaceY(Si, Pp, false) + 0.1) S = i;
+			}
+			if (S < 0) { ++Unplaced; continue; }
+			if (SeenFromEye.Contains(S)) continue;
+			++OutMissed;
+			if (++Missed.FindOrAdd(S) == 1) MissedOn.Add(S, FString::Printf(TEXT("%s at %s"), H.GetComponent() ? *H.GetComponent()->GetName() : TEXT("?"), *H.ImpactPoint.ToCompactString()));
+		}
+	}
+	const FVector2D Eye = FOutlawsGeometry::ToOutlawsPlan(EyeW);
+	const double EyeZ = EyeW.Z / U;
+	const int32 EyeS = L.Which3D(FOutlawsGeometry::ToOutlaws(EyeW));
+	FString Out = FString::Printf(TEXT("body sector %d, eye sector %d, %d sectors drawn; %d of %d rays on a face whose sector is not drawn (%d in no sector)"), PlayerSector, EyeS, SeenFromEye.Num(), OutMissed, OutRays,
+		Unplaced);
+	if (Missed.Num() == 0) return Out;
+	auto Desc = [&L](int32 Si)
+	{
+		if (!L.Sectors.IsValidIndex(Si)) return FString(TEXT("?"));
+		const FOutlawsSector& S = L.Sectors[Si];
+		FString A;
+		for (const FOutlawsWall& W : S.Walls) if (W.Adjoin >= 0) A += FString::Printf(TEXT(" %d"), W.Adjoin);
+		return FString::Printf(TEXT("s%d %.2f..%.2f flags 0x%x adj%s"), Si, S.Floor.Y, S.Ceil.Y, S.Flags, *A);
+	};
+	Out += FString::Printf(TEXT("\n   eye %.2f, %.2f at %.2f; body %s; eye's %s"), Eye.X, Eye.Y, EyeZ, *Desc(PlayerSector), *Desc(EyeS));
+	FString Plan, Drawn;
+	for (const FOutlawsSector& S : L.Sectors) if (S.Verts.Num() >= 3 && L.ContainsXZ(S, Eye.X, Eye.Y)) Plan += TEXT("\n     under or over the eye: ") + Desc(S.Index);
+	for (const int32 Si : SeenFromEye) Drawn += FString::Printf(TEXT(" %d"), Si);
+	Out += Plan + TEXT("\n   drawn:") + Drawn;
+	TSet<int32> FromEye;
+	if (EyeS >= 0 && EyeS != PlayerSector) PortalFlood(L, EyeS, Eye, EyeZ, FromEye);
+	Missed.ValueSort([](int32 A, int32 B) { return A > B; });
+	for (const TPair<int32, int32>& Kv : Missed)
+	{
+		if (OutMissedSectors) OutMissedSectors->Add(Kv.Key);
+		FString Why;
+		if (FromEye.Contains(Kv.Key)) Why = TEXT("seen from the eye's own sector");
+		for (const int32 Mode : { 2, 4, 6, 1, 3, 5, 7 })
+		{
+			TSet<int32> S2;
+			DebugFloodMode = Mode;
+			PortalFlood(L, PlayerSector, Eye, EyeZ, S2);
+			if (S2.Contains(Kv.Key)) { Why += FString::Printf(TEXT("%sfrom the body's when lifted: %s%s%s"), Why.IsEmpty() ? TEXT("") : TEXT("; "), (Mode & 1) ? TEXT("cap") : TEXT(""), (Mode & 2) ? TEXT("V") : TEXT(""), (Mode & 4) ? TEXT("ang") : TEXT("")); break; }
+			if (Mode == 7) Why += FString::Printf(TEXT("%sunreached from the body's"), Why.IsEmpty() ? TEXT("") : TEXT("; "));
+		}
+		DebugFloodMode = 0;
+		Out += FString::Printf(TEXT("\n   s%d %d rays (first on %s) [%s] %s"), Kv.Key, Kv.Value, *MissedOn.FindRef(Kv.Key), *Why, *Desc(Kv.Key));
+	}
+	return Out;
 }
 #endif // WITH_OUTLAWS_TESTS
 
