@@ -444,10 +444,15 @@ void AOutlawsPlayer::TickPerfTestProbe(float Dt)
 		ShowMenuPage(TEXT("#newgame"), true);
 		Pp.SavedBefore = PpSavedMd5();
 		Pp.Run = 3;
+		const FString Shown = Rows();
+		const bool bPressed = Press(TEXT("Performance test"));
+		// (the order as the run's own makes it, after the press, as the first run's: on the main menu no run is set, so with the
+		// mission order shuffled the order read before it was the story's unshuffled one)
 		TArray<FString> Order;
 		L->RandoLevelOrder(Order);
 		Pp.Expect = Order.IsValidIndex(1) ? Order[1] : FString();
-		PpCheck(Press(TEXT("Performance test")) && OutlawsPerfTest::IsOn(), FString::Printf(TEXT("run 3: Performance test pressed after Main Game > Ugly (%s)"), *Rows()));
+		PpCheck(bPressed && OutlawsPerfTest::IsOn(), FString::Printf(TEXT("run 3: Performance test pressed after Main Game > Ugly (%s; the run's order %s)"), *Shown,
+			*FString::Join(Order, TEXT(" "))));
 		Wait(0.0, 240.0);
 		return;
 	}
