@@ -856,14 +856,17 @@ void FOutlawsInfRuntime::ReadState(const FJsonObject& O)
 	// only when the level's INF is the one saved (same counts); the items always.  A save from before the piano's gating
 	// light (townex, town: RC2, RC4) holds every elevator but that one, which comes last: those come back by index, the
 	// light keeps its start
+	// (REQ-SECTORLIGHT) and a save from before the sector lights (shsimms, simms, cliff, shgranry, hideout) holds every
+	// elevator before them: those come back, the lights run from their start
 	const FJsonArray* Es = Array(O, TEXT("elevators"));
 	const bool bOldLayout = Es && Es->Num() != Elevators.Num() && SavedElevatorsBefore > 0 && Es->Num() == SavedElevatorsBefore;
-	if (bOldLayout)
+	const bool bBeforeLights = Es && !bOldLayout && LightsFrom > 0 && Es->Num() < Elevators.Num() && Es->Num() == LightsFrom;
+	if (bOldLayout || bBeforeLights)
 	{
-		UE_LOG(LogOutlaws, Log, TEXT("OLRT save: %d elevators saved before the piano's light (%d now): those put back, the rest at their start"),
-			Es->Num(), Elevators.Num());
+		UE_LOG(LogOutlaws, Log, TEXT("OLRT save: %d elevators saved before the %s (%d now): those put back, the rest at their start"),
+			Es->Num(), bOldLayout ? TEXT("piano's light") : TEXT("sector lights"), Elevators.Num());
 	}
-	if (Es && (Es->Num() == Elevators.Num() || bOldLayout))
+	if (Es && (Es->Num() == Elevators.Num() || bOldLayout || bBeforeLights))
 	{
 		for (int32 i = 0; i < Es->Num(); ++i)
 		{

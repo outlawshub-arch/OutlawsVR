@@ -181,6 +181,7 @@ void FOutlawsMeshSection::AddFace(const FVector* Pts, const FVector2D* ObjUVs, i
 }
 
 TMap<int32, int32> FOutlawsGeometry::SectorWaterGroup;
+TMap<int32, FIntVector> FOutlawsGeometry::SectorLight;
 bool FOutlawsGeometry::bOldSignRule = false;
 bool FOutlawsGeometry::bOldSkygap = false;
 
@@ -267,12 +268,20 @@ namespace
 		const int32* G = FOutlawsGeometry::SectorWaterGroup.Find(Sector);
 		return G ? *G : -1;
 	}
+
+	/** (REQ-SECTORLIGHT) a face's light group: the sector's CHANGE_LIGHT elevator and offset, and the wall's own LIGHT */
+	FIntVector LightOf(int32 Sector, int32 WallLight)
+	{
+		const FIntVector* G = FOutlawsGeometry::SectorLight.Find(Sector);
+		return G ? FIntVector(G->X, G->Y, FMath::Max(0, WallLight)) : FIntVector(-1, 0, 0);
+	}
 }
 
-void FOutlawsGeometry::AddTo(TMap<FString, FOutlawsMeshSection>& Map, const FString& Tex, bool bMasked, const FVector* Pts, const FVector2D* UVs, int32 N, float Brightness, bool bReverse, bool bNoCollision, bool bSwirl, int32 WaterGroup, int64 AtxWall)
+void FOutlawsGeometry::AddTo(TMap<FString, FOutlawsMeshSection>& Map, const FString& Tex, bool bMasked, const FVector* Pts, const FVector2D* UVs, int32 N, float Brightness, bool bReverse, bool bNoCollision, bool bSwirl, int32 WaterGroup, int64 AtxWall,
+	const FIntVector& Light)
 {
 	const FString Key = FString(bNoCollision ? TEXT("~") : TEXT("")) + (bMasked ? Tex + TEXT("|m") : Tex) + (WaterGroup >= 0 ? FString::Printf(TEXT("|w%d"), WaterGroup) : FString())
-		+ (AtxWall >= 0 ? FString::Printf(TEXT("|x%lld"), AtxWall) : FString());
+		+ (AtxWall >= 0 ? FString::Printf(TEXT("|x%lld"), AtxWall) : FString()) + (Light.X >= 0 ? FString::Printf(TEXT("|L%d,%d,%d"), Light.X, Light.Y, Light.Z) : FString());
 	FOutlawsMeshSection* S = Map.Find(Key);
 	if (!S)
 	{
@@ -281,6 +290,9 @@ void FOutlawsGeometry::AddTo(TMap<FString, FOutlawsMeshSection>& Map, const FStr
 		S->bMasked = bMasked;
 		S->WaterGroup = WaterGroup;
 		S->AtxWall = AtxWall;
+		S->LightElev = Light.X;
+		S->LightOff = Light.Y;
+		S->LightWall = Light.Z;
 	}
 	S->AddFace(Pts, UVs, N, Brightness, bReverse, bSwirl);
 	for (int32 i = 0; i < N; ++i)
@@ -483,7 +495,7 @@ void FOutlawsGeometry::Build(const FOutlawsLevel& L, const TMap<FString, FOutlaw
 					Swap(P[0], P[2]);
 					Swap(UV[0], UV[2]);
 				}
-				AddTo(bWater ? Water : World, TexStem, false, P, UV, 3, Bright(Lvl), bRev, false, bSwirl, bWater ? -1 : WG);
+				AddTo(bWater ? Water : World, TexStem, false, P, UV, 3, Bright(Lvl), bRev, false, bSwirl, bWater ? -1 : WG, -1, bWater ? FIntVector(-1, 0, 0) : LightOf(S.Index, 0));
 			}
 			Stat(bFloor ? TEXT("floor") : TEXT("ceil"));
 		}
@@ -727,7 +739,7 @@ void FOutlawsGeometry::Build(const FOutlawsLevel& L, const TMap<FString, FOutlaw
 				}
 				// a wall whose ATX stops (a switch, a key slot) draws from a section of its own: its frames are its alone
 				const int64 AtxKey = TI.bAtxStops ? int64(FOutlawsBuildFilter::Key(S.Index, WallIndex)) : -1;
-				AddTo(World, TexStem, Bd.bMasked, Q, UV, 4, Bright(Lvl), bRev, Bd.Band == EBand::MidTex, false, WaterGroupOf(S.Index), AtxKey);   // blockers below collide instead
+				AddTo(World, TexStem, Bd.bMasked, Q, UV, 4, Bright(Lvl), bRev, Bd.Band == EBand::MidTex, false, WaterGroupOf(S.Index), AtxKey, LightOf(S.Index, W.Light));   // blockers below collide instead
 				Stat(Bd.Band == EBand::Bot ? TEXT("wall_bot") : Bd.Band == EBand::Top ? TEXT("wall_top") : Bd.Band == EBand::Mid ? TEXT("wall_mid") : TEXT("wall_midtex"));
 			}
 
@@ -828,7 +840,7 @@ void FOutlawsGeometry::Build(const FOutlawsLevel& L, const TMap<FString, FOutlaw
 				FVector Q[4] = { ToUE(PLX, CU0, PLZ), ToUE(PRX, CU0, PRZ), ToUE(PRX, CU1, PRZ), ToUE(PLX, CU1, PLZ) };
 				FVector2D UV[4] = { FVector2D(UL, VB), FVector2D(UR, VB), FVector2D(UR, VT), FVector2D(UL, VT) };
 				OrientQuad(Q, UV, Inward);
-				AddTo(World, OTex, true, Q, UV, 4, Bright(Lvl), bRev, false, false, WaterGroupOf(S.Index));
+				AddTo(World, OTex, true, Q, UV, 4, Bright(Lvl), bRev, false, false, WaterGroupOf(S.Index), -1, LightOf(S.Index, W.Light));
 				Stat(TEXT("wall_overlay"));
 				if (Audit && (W.Adjoin >= 0 || W.DAdjoin >= 0))
 				{

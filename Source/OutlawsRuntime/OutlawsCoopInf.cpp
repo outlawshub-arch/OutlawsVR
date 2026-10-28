@@ -291,7 +291,8 @@ void UOutlawsCoop::TickInf(double Now)
 		for (int32 i = 0; i < N; ++i)
 		{
 			const FOutlawsCoopInfSnap Sn = InfSnapOf(Inf.Elevators[i]);
-			if (InfSeen[i].Target != Sn.Target || InfSeen[i].Stop != Sn.Stop) LogInfMove(L, i, InfSeen[i], Sn);
+			// (REQ-SECTORLIGHT) a flickering light's stops are not logged: a few a second each would use up the moves' lines
+			if ((InfSeen[i].Target != Sn.Target || InfSeen[i].Stop != Sn.Stop) && !Inf.Elevators[i].IsLight()) LogInfMove(L, i, InfSeen[i], Sn);
 			InfSeen[i] = Sn;
 			if (S->InfElevators[i] != Sn) S->InfElevators[i] = Sn;
 		}
@@ -319,7 +320,7 @@ void UOutlawsCoop::TickInf(double Now)
 		const FOutlawsCoopInfSnap Was = InfSeen[i];
 		InfSeen[i] = Sn;
 		Inf.SetFromHost(i, Sn.Value, Sn.Stop, Sn.Target, (Sn.Flags & 1) != 0, (Sn.Flags & 2) != 0, (Sn.Flags & 4) != 0);
-		if (Was.Target != Sn.Target || Was.Stop != Sn.Stop) LogInfMove(L, i, Was, InfSnapOf(Inf.Elevators[i]));
+		if ((Was.Target != Sn.Target || Was.Stop != Sn.Stop) && !Inf.Elevators[i].IsLight()) LogInfMove(L, i, Was, InfSnapOf(Inf.Elevators[i]));
 	}
 	if (S->InfTriggers != InfTriggersSeen)
 	{
@@ -776,6 +777,12 @@ void UOutlawsCoop::TestLogElevator(AOutlawsLevelActor* L, int32 Index, const TCH
 	if (!E) return;
 	UE_LOG(LogOutlawsCoop, Log, TEXT("OLCOOP test: elevator %d %s at %.2f, stop %d, target %d (%s) [%s]"), Index, *E->Name, E->Current, E->Stop, E->Target,
 		IsHost() ? TEXT("host") : TEXT("client"), Why);
+	if (E->IsLight() && E->Sectors.Num() > 0)
+	{
+		// (REQ-SECTORLIGHT) a light: the AMBIENT its sectors are drawn at on this machine
+		UE_LOG(LogOutlawsCoop, Log, TEXT("OLCOOP test: sector light %s: sector %d AMBIENT %d (%s)"), *E->Name, E->Sectors[0], L->Inf->Live.Sectors[E->Sectors[0]].Ambient,
+			IsHost() ? TEXT("host") : TEXT("client"));
+	}
 }
 #endif // WITH_OUTLAWS_TESTS
 
@@ -873,6 +880,12 @@ void UOutlawsCoop::TickHostInfTest(double Now, AOutlawsLevelActor* L, AOutlawsPl
 			TestStep = 51;
 			TestAt = Now + 5.5;
 			return;
+		}
+		// (REQ-SECTORLIGHT) 0: a sector light as each machine has it (the hideout's ALIEN1: its stops 4 s apart)
+		if (L->Inf->LightsFrom >= 0)
+		{
+			TestLogElevator(L, L->Inf->LightsFrom, TEXT("a sector light"));
+			TestSay(TEXT("infstate"), L->Inf->LightsFrom);
 		}
 		// 1: the client pushes a door (the hideout's cow shed door; elsewhere the first door that swings)
 		TestDoorA = Named(TEXT("COWDOOR"));

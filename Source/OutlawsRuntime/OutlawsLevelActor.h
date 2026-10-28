@@ -1421,6 +1421,17 @@ public:
 	void DebugLogElevatorStates(const TCHAR* Tag) const;
 	void DebugScrambleElevators();
 	const class FOutlawsInfRuntime* DebugInf() const { return Inf.Get(); }
+	/** (REQ-SECTORLIGHT, tests) A CHANGE_LIGHT elevator's drawn faces, the sprites and models standing in its sectors, the
+	 *  level last drawn (-1 none), its first face's vertex brightness; the time the light updates took and how many. */
+	struct FLightStats
+	{
+		int32 Faces = 0, Sprites = 0, Models = 0, Shown = -1, SpriteLight = -1, SpriteWant = -1;
+		float FaceBright = -1.f, FaceWant = -1.f, ModelShade = -1.f, ModelWant = -1.f;
+		bool bParsedSame = false;             // the parsed level's AMBIENT (LightAt's) as the INF's, in every sector of it
+	};
+	FLightStats DebugLight(int32 Elevator) const;
+	double DebugLightSeconds = 0.0;
+	int32 DebugLightUpdates = 0, DebugLightTicks = 0;
 	bool HandEvent(int32 Sector, int32 Wall, uint32 Event);     // a hand's press on a wall (Wall -1: the sector), once per 0.7 s
 	FVector SteerCurrent(class ACharacter* Body, const FVector& Push);   // a water current round a closed gate; a swimmer beats it
 	FVector FlowSteer = FVector::ZeroVector;
@@ -2040,6 +2051,36 @@ private:
 	void BuildScrolls(const FOutlawsLevel& L, const TMap<FString, FOutlawsTexInfo>& TexInfo);
 	void FillFloorShift(FOutlawsBuildFilter& F) const;
 	void TickScrolls();
+	// (REQ-SECTORLIGHT) the sectors an INF CHANGE_LIGHT lights: the drawn sections of their faces (the builder keeps them
+	// apart: FOutlawsGeometry::SectorLight), and the sprites and 3D models standing in them, drawn at the light's level
+	struct FLightFace
+	{
+		TWeakObjectPtr<class UProceduralMeshComponent> Mesh;     // a world part (no collision), the world mesh (a '~' section) or a scroll mesh
+		int32 Section = 0;
+		int32 Scroll = -1;                 // a scroll mesh's: ScrollMeshes index (TickScrolls draws its colours with its UVs)
+		int32 ScrollSection = -1;
+		int32 Elev = -1, Off = 0, Wall = 0;
+		TArray<FVector> Pos;               // (a section update takes its positions back; normals and UVs stay as they are)
+		TArray<FLinearColor> Col;
+		float Shown = -1.f;                // the brightness drawn
+		FBox Box = FBox(ForceInit);        // its faces' bounds (how near the eye is to them)
+	};
+	struct FLightThing
+	{
+		TWeakObjectPtr<class AOutlawsSpriteActor> Sprite;
+		int32 Elev = -1, Off = 0;
+		int32 Built = 31;                  // the light its model's colours were made at
+		int32 Shown = -1;                  // the sprite's light set
+		int32 ModelLv = -1;                // the light its model's colours are drawn at
+		TArray<int32> Sections;            // its model's own sections (not the ink shell), their vertices as made
+		TArray<TArray<FVector>> Pos;
+		TArray<TArray<FLinearColor>> Col;
+	};
+	TArray<FLightFace> LightFaces;
+	TArray<FLightThing> LightThings;
+	bool bLightThingsFound = false;
+	void FindLightThings();
+	void TickSectorLights();
 	float FloorHurt = 0.f;                  // damaging-floor damage waiting to be dealt
 	double LastShriek = -10.0;              // real seconds of the last damaging-floor cry
 	int32 HurtSector = -1;                  // the damaging sector last logged

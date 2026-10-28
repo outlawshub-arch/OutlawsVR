@@ -16,6 +16,12 @@ namespace
 	}
 }
 
+bool FOutlawsInfRuntime::SectorLightsOn()
+{
+	static const bool bOld = OLFlags::Param(TEXT("OLOldSectorLight"));
+	return !bOld;
+}
+
 double FOutlawsInfRuntime::DefaultSpeed(EOutlawsInfClass Class)
 {
 	switch (Class)
@@ -57,8 +63,10 @@ void FOutlawsInfRuntime::Init(const FOutlawsLevel& Level, const FString& InfText
 	Live = Level;
 	Elevators.Reset();
 	SavedElevatorsBefore = 0;
+	LightsFrom = -1;
 	Triggers.Reset();
 	ElevatorsBySector.Reset();
+	LightsBySector.Reset();
 	TriggersBySector.Reset();
 	TriggersByWall.Reset();
 	Warnings.Reset();
@@ -66,6 +74,7 @@ void FOutlawsInfRuntime::Init(const FOutlawsLevel& Level, const FString& InfText
 
 	TArray<int32> Found;
 	TArray<FIntVector4> GatedLights;     // (REQ-PIANO) scroll, item, class, sector: lights made elevators after the rest
+	TArray<FIntVector> SectorLights;     // (REQ-SECTORLIGHT) item, class, sector: the other lights, made after those
 	for (int32 i = 0; i < Inf.Items.Num(); ++i)
 	{
 		const FOutlawsInfItem& It = Inf.Items[i];
@@ -203,11 +212,13 @@ void FOutlawsInfRuntime::Init(const FOutlawsLevel& Level, const FString& InfText
 			{
 				// (REQ-PIANO) a CHANGE_LIGHT after a stop-less scroll in the same SEQ (town's and townex's SCROLL, the piano's
 				// roll: lit by the doors as the tune starts, dark again as they shut): the scroll runs while the light is up.
-				// Only that pairing (no other level has it); lights on their own are not run yet
+				// Only that pairing (no other level has it); lights on their own come after (REQ-SECTORLIGHT)
+				bool bGates = false;
 				for (int32 k = 0; k < Scrolls.Num(); ++k)
 				{
-					if (Scrolls[k].Item == i && Scrolls[k].Elevator < 0) GatedLights.Add(FIntVector4(k, i, c, Sec));
+					if (Scrolls[k].Item == i && Scrolls[k].Elevator < 0) { GatedLights.Add(FIntVector4(k, i, c, Sec)); bGates = true; }
 				}
+				if (!bGates && SectorLightsOn()) SectorLights.Add(FIntVector(i, c, Sec));
 			}
 			else if (C.IsElevator() && !It.bLine)
 			{
@@ -374,8 +385,46 @@ void FOutlawsInfRuntime::Init(const FOutlawsLevel& Level, const FString& InfText
 		E.Sectors.Add(G.W);
 		E.BaseFloor.Add(Live.Sectors[G.W].Floor.Y);
 		E.BaseCeil.Add(Live.Sectors[G.W].Ceil.Y);
+		E.BaseLight.Add(Live.Sectors[G.W].Ambient);
 		Scrolls[G.X].Light = Elevators.Add(E);
 		ElevatorsBySector.FindOrAdd(G.W).Add(Scrolls[G.X].Light);
+	}
+	// (REQ-SECTORLIGHT, user 2026-10-28, snapshot 17: shsimms's campfires did not flicker) every other CHANGE_LIGHT, last of
+	// all so no earlier elevator's index moves.  As the Jedi engine runs them (TFE inf_allocateElevItem, updateElevator,
+	// infUpdate_changeAmbient): the elevator's value is its master's AMBIENT, moved between the stops at SPEED light levels
+	// a second (32 when the INF gives none), each slave's AMBIENT moved by as much; a SPEED of 0 or less jumps, as every
+	// elevator here (gallery's FLICKER -100, hideout's ALIEN1 -200: TFE's arithmetic would run them off their stops for
+	// good).  They are kept apart from the sectors' elevators (LightsBySector): messages reach them (gallery's targets, indy's
+	// LIGHT; no light in any level takes a player's event: EVENT_MASK 0 or none), and no door, lift or drop logic counts
+	// their sectors as moving
+	LightsFrom = SectorLights.Num() > 0 ? Elevators.Num() : -1;
+	for (const FIntVector& Sl : SectorLights)
+	{
+		const FOutlawsInfItem& It = Inf.Items[Sl.X];
+		const FOutlawsInfClass& C = It.Classes[Sl.Y];
+		FOutlawsElevator E;
+		E.Item = Sl.X;
+		E.ClassIndex = Sl.Y;
+		E.Class = C.Class;
+		E.Name = It.Name;
+		E.bMasterOn = C.bMasterOn;
+		E.Speed = C.bHasSpeed ? C.Speed : 32.0;
+		E.Sectors.Add(Sl.Z);
+		for (const FString& SlaveName : C.Slaves)
+		{
+			FString N, Id;
+			FOutlawsInfFile::SplitNameId(SlaveName, N, Id);
+			TArray<int32> SlaveSecs;
+			FindSectors(N, Id, SlaveSecs);
+			for (int32 s : SlaveSecs) E.Sectors.AddUnique(s);
+		}
+		for (int32 s : E.Sectors)
+		{
+			E.BaseFloor.Add(Live.Sectors[s].Floor.Y);
+			E.BaseCeil.Add(Live.Sectors[s].Ceil.Y);
+			E.BaseLight.Add(Live.Sectors[s].Ambient);
+		}
+		LightsBySector.FindOrAdd(Sl.Z).Add(Elevators.Add(E));
 	}
 	// every elevator jumps to its START stop, then that stop's delay applies
 	for (FOutlawsElevator& E : Elevators)
@@ -432,6 +481,13 @@ void FOutlawsInfRuntime::Apply(FOutlawsElevator& E)
 			if (bCeil) S.Ceil.Y = E.BaseCeil[i] + Delta;
 			if (S.Floor.Y != F0 || S.Ceil.Y != C0) SectorHeightGen[E.Sectors[i]] = ++HeightGen;     // (QSPEED-3: the flood's cache reads it)
 		}
+	}
+	else if (E.IsLight() && E.BaseLight.Num() == E.Sectors.Num() && E.BaseLight.Num() > 0 && SectorLightsOn())
+	{
+		// (REQ-SECTORLIGHT) the master's AMBIENT is the value (drawn by its whole part, as Jedi's floor16), each slave's moved
+		// by as much
+		const int32 Delta = FMath::FloorToInt(E.Current) - E.BaseLight[0];
+		for (int32 i = 0; i < E.Sectors.Num(); ++i) Live.Sectors[E.Sectors[i]].Ambient = E.BaseLight[i] + Delta;
 	}
 	if (OnElevatorMoved)
 	{
@@ -543,7 +599,8 @@ void FOutlawsInfRuntime::Tick(double Dt)
 		}
 		else if (E.bWaiting)
 		{
-			E.WaitLeft -= Dt / FMath::Max(1.0, WaitScale);
+			// (REQ-SECTORLIGHT) a light keeps the INF's own rate: the player's pace stretches the doors' waits, not a flicker
+			E.WaitLeft -= Dt / (E.IsLight() ? 1.0 : FMath::Max(1.0, WaitScale));
 			if (E.WaitLeft <= 0.0)
 			{
 				E.bWaiting = false;
@@ -692,6 +749,10 @@ void FOutlawsInfRuntime::Send(const FString& Target, const FString& TargetId, co
 		if (const TArray<int32>* Es = ElevatorsBySector.Find(s))
 		{
 			for (int32 e : *Es) ElevatorMessage(Elevators[e], Msg, bKeyChecked);
+		}
+		if (const TArray<int32>* Ls = LightsBySector.Find(s))
+		{
+			for (int32 e : *Ls) ElevatorMessage(Elevators[e], Msg, bKeyChecked);     // (REQ-SECTORLIGHT: gallery's targets, indy's LIGHT)
 		}
 		if (const TArray<int32>* Ts = TriggersBySector.Find(s))
 		{

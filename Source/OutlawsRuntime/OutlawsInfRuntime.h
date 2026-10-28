@@ -41,7 +41,9 @@ struct FOutlawsElevator
 	bool bTerminated = false;
 	bool bMasterOn = true;
 	int32 Group = -1;                      // geometry group index (actor side)
+	TArray<int32> BaseLight;               // (REQ-SECTORLIGHT) CHANGE_LIGHT: each sector's own AMBIENT, master first
 
+	bool IsLight() const { return Class == EOutlawsInfClass::ChangeLight; }
 	bool IsMorph() const { return Class == EOutlawsInfClass::MorphMove || Class == EOutlawsInfClass::MorphSpin; }
 	bool IsVertical() const { return Class == EOutlawsInfClass::MoveFloor || Class == EOutlawsInfClass::MoveCeiling || Class == EOutlawsInfClass::MoveFC; }
 	// (a CHANGE_LIGHT counts with the scrolls: no geometry of its own, it only gates a scroll; REQ-PIANO)
@@ -101,10 +103,16 @@ public:
 	/** The elevators a save from before REQ-PIANO holds (RC2, RC4): all but the scroll-gating lights appended after them.
 	 *  Such a save puts these back by index; the lights keep their start. */
 	int32 SavedElevatorsBefore = 0;
+	/** (REQ-SECTORLIGHT) The first of the sector lights (every CHANGE_LIGHT not gating a scroll), appended after the piano's:
+	 *  a save from before them holds this many elevators.  -1: none made (-OLOldSectorLight). */
+	int32 LightsFrom = -1;
+	/** (REQ-SECTORLIGHT) CHANGE_LIGHT elevators move their sectors' AMBIENT in Live (off: -OLOldSectorLight). */
+	static bool SectorLightsOn();
 	TArray<FOutlawsTrigger> Triggers;
 	TArray<FOutlawsScroll> Scrolls;
 	TSet<int32> AutoDoors;                          // door-flagged sectors made doors here (their neighbours' faces move with them)
 	TMap<int32, TArray<int32>> ElevatorsBySector;   // master sector -> elevators
+	TMap<int32, TArray<int32>> LightsBySector;      // (REQ-SECTORLIGHT) master sector -> its sector lights (messages reach them; no door logic counts them)
 	TMap<int32, TArray<int32>> TriggersBySector;    // sector items' triggers
 	TMap<uint64, TArray<int32>> TriggersByWall;     // line items' triggers
 	TArray<FString> Warnings;

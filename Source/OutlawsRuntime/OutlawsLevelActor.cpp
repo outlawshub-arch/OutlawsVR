@@ -125,6 +125,9 @@ void AOutlawsLevelActor::Clear()
 	MoverMeshes.Reset();
 	MoverBatches.Reset();                   // (their meshes went with MoverMeshes)
 	ScrollMeshes.Reset();                   // (their meshes went with ObjectMeshes)
+	LightFaces.Reset();                     // (REQ-SECTORLIGHT; their meshes too)
+	LightThings.Reset();
+	bLightThingsFound = false;
 	ExplodeWalls.Reset();
 	OverlapPairs.Reset();                   // (their meshes too)
 	SeenFromEye.Reset();                    // portal culling: off until the next level's first tick
@@ -798,6 +801,22 @@ int32 AOutlawsLevelActor::AddSections(UProceduralMeshComponent* Mesh, const TMap
 	int32 Index = FirstSection;
 	TArray<int32> Collide;
 	static const bool bOldWaterMidTint = OLFlags::Param(TEXT("OLOldWaterMidTint"));    // (-OLOldWaterMidTint: as before, for shots)
+	// (REQ-SECTORLIGHT) a lit sector's section of the static world: kept, to be drawn at its light (SplitWorldDraws moves
+	// its solid ones to parts of their own)
+	auto NoteLight = [this, Mesh](const FOutlawsMeshSection& S, int32 At)
+	{
+		if (S.LightElev < 0 || Mesh != WorldMesh) return;
+		FLightFace& F = LightFaces.AddDefaulted_GetRef();
+		F.Mesh = Mesh;
+		F.Section = At;
+		F.Elev = S.LightElev;
+		F.Off = S.LightOff;
+		F.Wall = S.LightWall;
+		F.Pos = S.Positions;
+		F.Col = S.Colors;
+		F.Shown = S.Colors.Num() > 0 ? S.Colors[0].R : -1.f;
+		F.Box = FBox(S.Positions);
+	};
 	for (const FString& K : Keys)
 	{
 		const FOutlawsMeshSection& All = Sections[K];
@@ -809,6 +828,7 @@ int32 AOutlawsLevelActor::AddSections(UProceduralMeshComponent* Mesh, const TMap
 			const FOutlawsMeshSection& S = All;
 			// '~' sections (see-through mid textures) never collide: the opening's flags decide (Blockers)
 			Mesh->CreateMeshSection_LinearColor(Index, S.Positions, S.Triangles, S.Normals, S.UVs, S.Colors, TArray<FProcMeshTangent>(), false);
+			NoteLight(S, Index);
 			if (bCollision && !K.StartsWith(TEXT("~"))) Collide.Add(Index);
 			// see-through mid textures ('~') take the glass material: their alpha is their opacity
 			UMaterialInterface* Parent = S.bMasked ? Masked : Opaque;
@@ -833,6 +853,7 @@ int32 AOutlawsLevelActor::AddSections(UProceduralMeshComponent* Mesh, const TMap
 			const FOutlawsMeshSection& S = Sections[K];
 			if (S.Triangles.Num() == 0 || !S.bMasked || !K.StartsWith(TEXT("~"))) continue;
 			Mesh->CreateMeshSection_LinearColor(Index, S.Positions, S.Triangles, S.Normals, S.UVs, S.Colors, TArray<FProcMeshTangent>(), false);
+			NoteLight(S, Index);
 			Mesh->SetMaterial(Index, MaterialFor(WorldMaskedSolidMaterial, S.Texture, bOldWaterMidTint || Opaque != WorldMaterial ? -1 : S.WaterGroup, S.AtxWall));
 			OutTris += S.NumTriangles();
 			++Index;
@@ -867,13 +888,19 @@ void AOutlawsLevelActor::SplitWorldDraws()
 	// section is drawn instead by a mesh of its own (no collision: the world mesh keeps every face for that) which the
 	// renderer culls by its own bounds; the world mesh keeps drawing only its see-through sections (glass, tint), so their
 	// sorting is as before. The faces, materials and order are the same, so the picture is too.
-	if (!WorldMesh || CVarOLWorldParts.GetValueOnGameThread() == 0 || OLFlags::Param(TEXT("OLNoWorldParts"))) return;
+	// (REQ-SECTORLIGHT) a lit sector's solid sections are drawn by parts of their own whatever the setting: the world mesh
+	// collides, and a section changed there would cook its collision again
+	const bool bAllParts = WorldMesh && CVarOLWorldParts.GetValueOnGameThread() != 0 && !OLFlags::Param(TEXT("OLNoWorldParts"));
+	if (!WorldMesh || (!bAllParts && LightFaces.Num() == 0)) return;
+	TMap<int32, UProceduralMeshComponent*> PartOf;
+	for (const FLightFace& F : LightFaces) if (F.Mesh.Get() == WorldMesh) PartOf.Add(F.Section, nullptr);
 	int32 Parts = 0;
 	for (int32 s = 0; s < WorldMesh->GetNumSections(); ++s)
 	{
 		const FProcMeshSection* Sec = WorldMesh->GetProcMeshSection(s);
 		UMaterialInterface* Mat = WorldMesh->GetMaterial(s);
 		if (!Sec || !Mat || !Sec->bSectionVisible || Sec->ProcIndexBuffer.Num() == 0) continue;
+		if (!bAllParts && !PartOf.Contains(s)) continue;
 		const EBlendMode Blend = Mat->GetBlendMode();
 		if (Blend != BLEND_Opaque && Blend != BLEND_Masked) continue;
 		FProcMeshSection Copy = *Sec;
@@ -883,7 +910,13 @@ void AOutlawsLevelActor::SplitWorldDraws()
 		P->SetMaterial(0, Mat);
 		ObjectMeshes.Add(P);           // (it goes with the level: Clear)
 		WorldMesh->SetMeshSectionVisible(s, false);
+		if (UProceduralMeshComponent** Was = PartOf.Find(s)) *Was = P;
 		++Parts;
+	}
+	for (FLightFace& F : LightFaces)
+	{
+		UProceduralMeshComponent* const* P = F.Mesh.Get() == WorldMesh ? PartOf.Find(F.Section) : nullptr;
+		if (P && *P) { F.Mesh = *P; F.Section = 0; }
 	}
 	UE_LOG(LogOutlaws, Log, TEXT("OLRT world drawn as %d parts by texture (%d sections left in the world mesh)"), Parts, WorldMesh->GetNumSections() - Parts);
 }
@@ -1057,6 +1090,7 @@ void AOutlawsLevelActor::Build()
 		}
 	}
 	bInfEndsLevel = false;
+	FOutlawsGeometry::SectorLight.Reset();     // (REQ-SECTORLIGHT: BuildInf names this level's lit sectors)
 	if (bRunInf && A.GetText(LevelName + TEXT(".inf"), InfText))
 	{
 		BuildInf(L, InfText, StaticFilter);

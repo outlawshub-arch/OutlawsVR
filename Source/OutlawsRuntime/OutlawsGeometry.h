@@ -28,6 +28,9 @@ struct OUTLAWSRUNTIME_API FOutlawsMeshSection
 	TArray<int32> Triangles;
 	int32 WaterGroup = -1;   // faces of an underwater sector: its body of water (the level tints their material)
 	int64 AtxWall = -1;      // a wall whose ATX texture stops: FOutlawsBuildFilter::Key of it (its material animates alone)
+	// (REQ-SECTORLIGHT) faces of a sector whose light an INF CHANGE_LIGHT moves: that elevator, the sector's AMBIENT less its
+	// master's, and the walls' LIGHT (0 for floors and ceilings), so the section's light is LightLevel(level + LightOff, LightWall)
+	int32 LightElev = -1, LightOff = 0, LightWall = 0;
 
 	/**
 	 * Add a convex polygon.  Pts are oriented the exporter's way: the right-handed cross product
@@ -120,6 +123,10 @@ struct OUTLAWSRUNTIME_API FOutlawsGeometry
 	 *  an underwater sector owns (floor, ceiling, walls, overlays) is put in its water's sections, as the LawMaker
 	 *  viewer tints by the owning sector's UNDERWATER flag (user 2026-09-28: tinting by position broke in spots). */
 	static TMap<int32, int32> SectorWaterGroup;
+	/** (REQ-SECTORLIGHT) Sector index -> (its CHANGE_LIGHT elevator, its AMBIENT less the elevator's master's, 0), set by the
+	 *  level before it builds: the faces a lit sector owns are put in sections of their own (per elevator, offset and wall
+	 *  light), so the level can change their light without touching the rest of the world. */
+	static TMap<int32, FIntVector> SectorLight;
 
 	/** -OLAdjoinScan only: build with the sign rule as it was before BUG-ADJOINDEFAULT (each sign drawn as one panel
 	 *  over the wall's whole floor-to-ceiling height, across any opening, its DEFAULT placeholder too). */
@@ -131,5 +138,6 @@ struct OUTLAWSRUNTIME_API FOutlawsGeometry
 	TArray<FString>* Audit = nullptr;
 
 private:
-	void AddTo(TMap<FString, FOutlawsMeshSection>& Map, const FString& Tex, bool bMasked, const FVector* Pts, const FVector2D* UVs, int32 N, float Brightness, bool bReverse, bool bNoCollision = false, bool bSwirl = false, int32 WaterGroup = -1, int64 AtxWall = -1);
+	void AddTo(TMap<FString, FOutlawsMeshSection>& Map, const FString& Tex, bool bMasked, const FVector* Pts, const FVector2D* UVs, int32 N, float Brightness, bool bReverse, bool bNoCollision = false, bool bSwirl = false, int32 WaterGroup = -1, int64 AtxWall = -1,
+		const FIntVector& Light = FIntVector(-1, 0, 0));
 };
