@@ -227,7 +227,13 @@ void AOutlawsPlayer::TickPerfTestProbe(float Dt)
 		for (const FString& Line : Lines) N += Line.IsEmpty() || Line.StartsWith(TEXT("t_s,")) ? 0 : 1;
 		return N;
 	};
-	auto Press = [&](const TCHAR* Label) { return TutorialTestPressLabel(Label); };
+	// a row pressed by its label (as the tutorial test's own, which is not in a Shipping build)
+	auto Press = [this](const TCHAR* Label)
+	{
+		const int32 i = bMenuOpen && MenuPage ? MenuPage->Items.IndexOfByPredicate([Label](const OutlawsMenu::FItem& It) { return It.Label.Equals(Label, ESearchCase::IgnoreCase); }) : INDEX_NONE;
+		if (i != INDEX_NONE) MenuActivate(1, i);
+		return i != INDEX_NONE;
+	};
 	switch (Pp.Step)
 	{
 	case 0:
