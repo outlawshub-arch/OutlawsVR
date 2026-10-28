@@ -863,6 +863,9 @@ void AOutlawsPlayer::ResetForLevel()
 	}
 	SavedMag.Reset();                    // (a new level: TopUpForLevelStart loads them from the carried ammunition; a restart: RestoreEntryMags)
 	Stamina = 100.f;                     // (BUG-LEVELCARRY: rested at every level start; a load's ReadSave puts the saved stamina back)
+	// (BUG-PLATECARRY) a hit the plate took before this start (the one that killed, unseen behind the death view) is spent:
+	// the count the start gives it is no blow
+	if (const AOutlawsLevelActor* LP = Level.Get()) PlateHitsSeen = LP->PlateHits;
 	// a death on a ledge or mid-mantle left the body flying: back to normal movement
 	bSwimming = false;
 	bVaulting = false;

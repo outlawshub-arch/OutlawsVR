@@ -1454,6 +1454,7 @@ private:
 	float ChestYawRel = 0.f;                               // the body's yaw in the play space (degrees)
 	bool bChestYawSet = false;
 	int32 ChestArmourSeen = -1;                            // the armour last frame (a drop dents the plate)
+	int32 ChestMaxSeen = -1;                               // (BUG-PLATECARRY) the plate's size last frame (a load sets it)
 	FVector ChestHurtFrom = FVector::ZeroVector;           // the last hit's source (OnHurt), for where its dent goes
 	double ChestHurtAt = -1.0;
 	void BuildMapPage(int32 Hand);
@@ -1470,6 +1471,7 @@ private:
 	/** The plate's mesh, size PlateMax, dented by Marks, into Pm's sections (the held material's sections set by the caller). */
 	static void FillPlateMesh(class UProceduralMeshComponent* Pm, int32 PlateMax, const TArray<FPlateMark>& Marks);
 	int32 PlateSerialSeen = -1;
+	int32 PlateHitsSeen = -1;                  // (BUG-PLATECARRY: the level's PlateHits last frame; a drop with none new is no blow)
 	TMap<FString, float> TestAxes;             // (desktop tests: an input held, as Axis reads it)
 	TWeakObjectPtr<class AOutlawsLevelActor> PlateLevelSeen;     // (a new level's count starts again: no pickup)
 	FVector2D PlateDims = FVector2D::ZeroVector;

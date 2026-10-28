@@ -595,6 +595,7 @@ void AOutlawsLevelActor::DamagePlayer(float Damage, float LocationMult, bool bSk
 	const float Plate = bSkipArmour || !bArmourPassive ? 0.f : Armour / 10.f;      // (a fall goes past it)
 	if (Plate > 0.f)
 	{
+		++PlateHits;                         // (BUG-PLATECARRY: a blow to the worn plate, for its dents and its breaking)
 		if (Plate >= Damage)
 		{
 			Armour -= FMath::RoundToInt(Damage * 10.f);

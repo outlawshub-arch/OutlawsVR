@@ -41,6 +41,7 @@ void AOutlawsLevelActor::StartHom(EOutlawsDifficulty InDifficulty)
 	InventoryLabels.Reset();
 	Gold = 0;
 	Armour = 0;
+	ArmourMax = 0;                           // (BUG-PLATECARRY: no plate at all, not the last game's size)
 	Health = 10.f;
 	EntryLevel.Reset();
 	StopMusic();

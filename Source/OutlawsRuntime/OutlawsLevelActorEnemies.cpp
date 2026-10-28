@@ -1528,6 +1528,7 @@ void AOutlawsLevelActor::StartStory(EOutlawsDifficulty InDifficulty)
 	InventoryLabels.Reset();
 	Gold = 0;
 	Armour = 0;
+	ArmourMax = 0;                         // (BUG-PLATECARRY: no plate at all, not the last game's size)
 	Health = 10.f;
 	BeginRandoRun(TEXT("new game"));       // (R10: the run's randomizer and seed, fixed from here)
 	NextLevelName = TEXT("hideout");
@@ -1560,6 +1561,7 @@ void AOutlawsLevelActor::StartMission(const FString& Level, EOutlawsDifficulty I
 	InventoryLabels.Reset();
 	Gold = 0;
 	Armour = 0;
+	ArmourMax = 0;                         // (BUG-PLATECARRY: no plate at all, not the last game's size)
 	Health = 10.f;
 	LevelName = Level;
 	EntryLevel.Reset();

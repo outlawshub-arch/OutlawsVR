@@ -4,7 +4,9 @@
 // full for nothing when drawn), and a restart gives every gun the rounds it held as the level was entered.  The checks:
 // -OLShots -OLLevel=hideout -OLNoFrontEnd -OLLevelCarryTest (single player; with -OLMemLoadMapAbove=1 every level start is a map
 // load, the Quest's way when its memory is high), and -OLCoopAuto -OLCoopTest=levelcarry on a story co-op host and its client
-// (hideout), each machine checking its own player.
+// (hideout), each machine checking its own player.  BUG-PLATECARRY (user 2026-10-28): the co-op pair also wear a dented plate into
+// the town and through its restart: carried as it is, and "The boiler plate breaks apart" never shown (the single player's plate
+// cases are -OLPlateCarryProbe's, OutlawsPlateCarryProbe.cpp).
 
 #include "OutlawsPlayer.h"
 #include "OutlawsLevelActor.h"
@@ -275,6 +277,14 @@ void UOutlawsCoop::TickLevelCarryTest(double Now, AOutlawsLevelActor* L, AOutlaw
 		S = P->LevelCarryDrawRounds(0, 4);
 		return FString::Printf(TEXT("drawn rifle %d, revolver %d, double barrel %d, sawed-off %d; %s"), R, V, D, S, *P->LevelCarryState());
 	};
+	// (BUG-PLATECARRY) every "The boiler plate breaks apart" put up on this machine, counted as it comes (it stays up 2 s)
+	static int32 BreakShows = 0, BreakUp = 0;
+	{
+		int32 Up = 0;
+		for (const FString& H : P->HudLines) Up += H.Contains(TEXT("breaks apart")) ? 1 : 0;
+		if (Up > BreakUp) BreakShows += Up - BreakUp;
+		BreakUp = Up;
+	}
 	switch (LcStep)
 	{
 	case 0:
@@ -290,7 +300,11 @@ void UOutlawsCoop::TickLevelCarryTest(double Now, AOutlawsLevelActor* L, AOutlaw
 		// holstered, the double barrel empty and the sawed-off 1 of 2, with 2 shells
 		P->LevelCarryArrange(12.f, 4, 2, 40, 50);
 		P->LevelCarryHolster(0, 1, 2);
-		UE_LOG(LogOutlaws, Log, TEXT("OLCOOP levelcarry (%s) in the hideout: %s"), Me, *P->LevelCarryState());
+		// (BUG-PLATECARRY) and a medium plate dented once, 85 of 100: carried as it is, and nothing breaks at either start
+		L->ArmourMax = 0;
+		L->AddCount(TEXT("ibplate"), 100);
+		L->DamagePlayer(1.5f, 1.f, false);
+		UE_LOG(LogOutlaws, Log, TEXT("OLCOOP levelcarry (%s) in the hideout: %s; armour %d of %d"), Me, *P->LevelCarryState(), L->GetArmour(), L->ArmourMax);
 		LcAt = Now + 8.0;                          // (the host's start: the client has made its own ready by then)
 		LcStep = 1;
 		return;
@@ -322,6 +336,7 @@ void UOutlawsCoop::TickLevelCarryTest(double Now, AOutlawsLevelActor* L, AOutlaw
 			int32 R, V, D, S;
 			const FString Line = Drawn(R, V, D, S);
 			Check(D == 2 && S == 1 && L->GetCount(TEXT("ishells")) == 0, FString::Printf(TEXT("the holstered guns in the town: %s (wanted double barrel 2, sawed-off 1, ishells 0)"), *Line));
+			Check(L->GetArmour() == 85 && L->ArmourMax == 100, FString::Printf(TEXT("the plate carried into the town: armour %d of %d (wanted 85 of 100)"), L->GetArmour(), L->ArmourMax));
 		}
 		// then everything fired and spent, and the host restarts the town for both: each back to what it entered with
 		P->LevelCarryArrange(50.f, 3, 1, 5, 5);
@@ -362,6 +377,13 @@ void UOutlawsCoop::TickLevelCarryTest(double Now, AOutlawsLevelActor* L, AOutlaw
 			Check(P->Stamina >= 99.9f && R == 12 && V == 6 && D == 2 && S == 1 && L->GetCount(TEXT("ibullit")) == 36 && L->GetCount(TEXT("ishells")) == 0,
 				FString::Printf(TEXT("the town restarted: %s (wanted stamina 100, rifle 12, revolver 6, double barrel 2, sawed-off 1, ibullit 36, icart 42, ishells 0)"), *Line));
 		}
+		LcAt = Now + 3.0;                              // (BUG-PLATECARRY: the plate's own ticks after the restart)
+		LcStep = 12;
+		return;
+	case 12:
+		if (Now < LcAt) return;
+		Check(L->GetArmour() == 85 && L->ArmourMax == 100 && BreakShows == 0, FString::Printf(TEXT("the plate after the town and its restart: armour %d of %d, 'breaks apart' shown %d times (wanted 85 of 100, none)"),
+			L->GetArmour(), L->ArmourMax, BreakShows));
 		LcStep = 3;
 		return;
 	case 3:

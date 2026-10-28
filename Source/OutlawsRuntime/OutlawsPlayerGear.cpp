@@ -822,15 +822,31 @@ void AOutlawsPlayer::UpdateChestPlate(float Dt)
 	{
 		PlateLevelSeen = L;
 		PlateSerialSeen = L->PlateSerial;
+		PlateHitsSeen = L->PlateHits;
 		ChestArmourSeen = L->GetArmour();
+		ChestMaxSeen = L->ArmourMax;
 	}
 	const int32 Armour = L->GetArmour();
+	// BUG-PLATECARRY (user 2026-10-28, snapshot 18: "the boiler plate breaks apart" as the hideout began, after End Game and a
+	// new game): a drop in the count was taken for a hit whatever made it.  The new game's empty pockets (seen only after
+	// its movie, the menu and the movie holding this back), a restart's entry kit, a load, a take the co-op host refused, the
+	// respawn after a death that broke it unseen: each broke or dented the plate.  Only a hit does now
+	const bool bHit = PlateHitsSeen != L->PlateHits;
+	PlateHitsSeen = L->PlateHits;
 	bool bRebuild = false;
 	if (PlateSerialSeen != L->PlateSerial)
 	{
 		EnsurePlateMarks();
 		bRebuild = true;
 		UE_LOG(LogOutlaws, Log, TEXT("OLRT the boiler plate is worn: armour %d of %d"), Armour, L->ArmourMax);
+	}
+	else if ((Armour != ChestArmourSeen && !(bHit && Armour < ChestArmourSeen)) || L->ArmourMax != ChestMaxSeen)
+	{
+		// the count (or the size: a load puts its own after the restart's entry kit) set with no hit: the plate as it now is,
+		// put on quietly, its marks those of its wear (as a saved game's)
+		PlateMarks.Reset();
+		bRebuild = true;
+		UE_LOG(LogOutlaws, Log, TEXT("OLRT the boiler plate set to armour %d of %d (no hit: no dent, nothing broken)"), Armour, L->ArmourMax);
 	}
 	else if (ChestArmourSeen > 0 && Armour < ChestArmourSeen)
 	{
@@ -848,6 +864,7 @@ void AOutlawsPlayer::UpdateChestPlate(float Dt)
 		}
 	}
 	ChestArmourSeen = Armour;
+	ChestMaxSeen = L->ArmourMax;
 	const bool bShow = bLocalShown && Armour > 0 && !bDeadView;
 	if (!bShow)
 	{

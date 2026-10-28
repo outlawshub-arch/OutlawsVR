@@ -1333,6 +1333,9 @@ public:
 	/** The plate picked up last: its size (50 light, 100 medium, 150 heavy) and a count that goes up with each new one. */
 	int32 ArmourMax = 0;
 	int32 PlateSerial = 0;
+	/** Every hit the plate took a share of (DamagePlayer).  BUG-PLATECARRY: only these dent the worn plate or break it; the
+	 *  count set any other way (a new game, a restart, a load, a take the co-op host refused) is no blow to it. */
+	int32 PlateHits = 0;
 	/** Armour takes its share of every hit (the original's rule; in VR too since the plate is worn, REQ-CHESTPLATE). */
 	bool bArmourPassive = true;
 	int32 BlastsSeen = 0;                                          // (the tests': blasts gone off here)
