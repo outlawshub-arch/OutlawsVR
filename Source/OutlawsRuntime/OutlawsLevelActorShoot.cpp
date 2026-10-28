@@ -3,6 +3,7 @@
 // blows up when shot.  research/outlaws_shootables_spec.md holds the evidence.
 #include "OutlawsLevelActor.h"
 #include "OutlawsPerf.h"
+#include "OutlawsFlags.h"
 #include "OutlawsRuntime.h"
 #include "OutlawsFlags.h"
 #include "OutlawsLab.h"
@@ -974,7 +975,10 @@ void AOutlawsLevelActor::UpdateGlass(float Dt)
 				Nrm[v] = Sh.R.RotateVector(G.LocalN[v]);
 			}
 		}
-		if (!OutlawsPerf::FreezeMeshUpdates()) M->UpdateMeshSection_LinearColor(0, Pos, Nrm, G.UV, G.Col, TArray<FProcMeshTangent>());
+		// BUG-SRGBREST (28 Oct): the shards' colours as SpawnGlass made them, no sRGB conversion (the update's default, the
+		// create's not: they brightened after their first move).  -OLOldSRGBRest: converted as before
+		static const bool bOldSrgb = OLFlags::Param(TEXT("OLOldSRGBRest"));
+		if (!OutlawsPerf::FreezeMeshUpdates()) M->UpdateMeshSection_LinearColor(0, Pos, Nrm, G.UV, G.Col, TArray<FProcMeshTangent>(), bOldSrgb);
 	}
 }
 

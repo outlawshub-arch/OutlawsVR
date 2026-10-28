@@ -314,6 +314,10 @@ public:
 	int32 DebugExplodeWallCount() const;
 	bool DebugExplodeWallDrawn(int32 Index, FBox& OutDrawn, FBox& OutSector, int32& OutSectorIndex) const;
 	void DebugBlowExplodeWall(int32 Index);
+	/** (tests, BUG-SRGBREST) the moving models' vertex colours as drawn, Kind 0 cloths, 1 plants, 2 flames, 3 bottle shards:
+	 *  models, those an update reached, vertices, as made (unconverted), as sRGB-converted, not black or white; the first's middle. */
+	void DebugRestColours(int32 Kind, int32& OutModels, int32& OutMoved, int32& OutVerts, int32& OutAsBuild, int32& OutAsOld, int32& OutLit,
+		FVector& OutAt) const;
 	/** A story movie is on the screen (between levels): the player only watches, a trigger skips. */
 	bool IsMoviePlaying() const;
 	void SkipMovie();

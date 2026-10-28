@@ -895,6 +895,10 @@ void AOutlawsLevelActor::UpdateWavingModels(float Dt)
 	// fly): the centre line's measured sag, eased between the frames, less the first frame's (the model is built from
 	// it), and a ripple across the face growing toward the fly end, a wave a loop.  20 times a second, near the player
 	if (WavingModels.Num() == 0 && FlickerModels.Num() == 0 && BendModels.Num() == 0) return;
+	// BUG-SRGBREST (28 Oct, after BUG-SCROLLSRGB): the colours written as the build wrote them, with no sRGB conversion:
+	// UpdateMeshSection_LinearColor converts by default where CreateMeshSection_LinearColor does not, so a waving cloth, a
+	// bending plant or a flickering flame drew brighter than its sector after its first move.  -OLOldSRGBRest: converted as before
+	static const bool bOldSrgb = OLFlags::Param(TEXT("OLOldSRGBRest"));
 	UWorld* World = GetWorld();
 	APlayerController* PC = World ? World->GetFirstPlayerController() : nullptr;
 	const FVector Eye = PC && PC->PlayerCameraManager ? PC->PlayerCameraManager->GetCameraLocation() : FVector::ZeroVector;
@@ -940,7 +944,7 @@ void AOutlawsLevelActor::UpdateWavingModels(float Dt)
 				const float Rip = W.Ripple * FMath::Clamp(Out / L, 0.f, 1.f) * FMath::Sin(2.f * PI * (Ph - Out / L));
 				P += W.Side * Rip - FVector::UpVector * Sag;
 			}
-			M->UpdateMeshSection_LinearColor(s, Pos, W.Nrm[s], W.UV[s], W.Col[s], TArray<FProcMeshTangent>());
+			M->UpdateMeshSection_LinearColor(s, Pos, W.Nrm[s], W.UV[s], W.Col[s], TArray<FProcMeshTangent>(), bOldSrgb);
 		}
 		if (WavingStems.IsValidIndex(i)) ShellItemModel(M, WavingStems[i]);      // (the ink line follows the cloth)
 	}
@@ -978,7 +982,7 @@ void AOutlawsLevelActor::UpdateWavingModels(float Dt)
 				const float Fl = Bm.Flutter * FMath::Sin(Now * 4.8f + float(P.X + P.Y) * 0.07f);
 				P += Wind * (TopShift * W) + Across * (Fl * W);
 			}
-			M->UpdateMeshSection_LinearColor(s, Pos, Bm.Nrm[s], Bm.UV[s], Bm.Col[s], TArray<FProcMeshTangent>());
+			M->UpdateMeshSection_LinearColor(s, Pos, Bm.Nrm[s], Bm.UV[s], Bm.Col[s], TArray<FProcMeshTangent>(), bOldSrgb);
 		}
 		if (D2 < FMath::Square(1200.0)) ShellItemModel(M, Bm.Stem);
 	}
@@ -1003,7 +1007,82 @@ void AOutlawsLevelActor::UpdateWavingModels(float Dt)
 		for (FVector& P : Pos) P = Fm.Root + (P - Fm.Root) * Sc;
 		TArray<FLinearColor> Col = Fm.Col;
 		for (FLinearColor& C0 : Col) C0 = FLinearColor(C0.R * Br, C0.G * Br, C0.B * Br, C0.A);
-		M->UpdateMeshSection_LinearColor(Fm.Section, Pos, Fm.Nrm, Fm.UV, Col, TArray<FProcMeshTangent>());
+		M->UpdateMeshSection_LinearColor(Fm.Section, Pos, Fm.Nrm, Fm.UV, Col, TArray<FProcMeshTangent>(), bOldSrgb);
+	}
+}
+
+void AOutlawsLevelActor::DebugRestColours(int32 Kind, int32& OutModels, int32& OutMoved, int32& OutVerts, int32& OutAsBuild, int32& OutAsOld, int32& OutLit,
+	FVector& OutAt) const
+{
+	// (-OLSrgbRestProbe) the moving models' vertex colours as last given the GPU, against the colours they were made with,
+	// unconverted (the build's rule) and sRGB-converted (as the updates wrote them before BUG-SRGBREST).  Kind 0 the waving
+	// cloths, 1 the bending plants, 2 the flickering flames (made colours times the frame's brightness), 3 the bottle shards
+	OutModels = OutMoved = OutVerts = OutAsBuild = OutAsOld = OutLit = 0;
+	OutAt = FVector::ZeroVector;
+	auto Count = [&](const FProcMeshSection* P, const TArray<FLinearColor>& Want, float Br)
+	{
+		for (int32 k = 0; P && k < P->ProcVertexBuffer.Num() && k < Want.Num(); ++k)
+		{
+			const FLinearColor C(Want[k].R * Br, Want[k].G * Br, Want[k].B * Br, Want[k].A);
+			const FColor Got = P->ProcVertexBuffer[k].Color, Raw = C.ToFColor(false);
+			++OutVerts;
+			OutAsBuild += Got == Raw ? 1 : 0;
+			OutAsOld += Got == C.ToFColor(true) ? 1 : 0;
+			OutLit += Raw.R > 0 && Raw.R < 255 ? 1 : 0;
+		}
+	};
+	// a section moved: its drawn corners are off the shape it was made with (an update reached it)
+	auto Moved = [](const FProcMeshSection* P, const TArray<FVector>& Base)
+	{
+		for (int32 k = 0; P && k < P->ProcVertexBuffer.Num() && k < Base.Num(); ++k)
+		{
+			if (!P->ProcVertexBuffer[k].Position.Equals(Base[k], 0.01)) return true;
+		}
+		return false;
+	};
+	auto Note = [&](const UProceduralMeshComponent* M) { if (OutModels++ == 0) OutAt = M->Bounds.Origin; };
+	if (Kind == 0 || Kind == 1)
+	{
+		const int32 N = Kind == 0 ? WavingModels.Num() : BendModels.Num();
+		for (int32 i = 0; i < N; ++i)
+		{
+			UProceduralMeshComponent* M = Kind == 0 ? WavingModels[i].Mesh.Get() : BendModels[i].Mesh.Get();
+			if (!M) continue;
+			Note(M);
+			const TArray<TArray<FVector>>& Base = Kind == 0 ? WavingModels[i].Base : BendModels[i].Base;
+			const TArray<TArray<FLinearColor>>& Col = Kind == 0 ? WavingModels[i].Col : BendModels[i].Col;
+			bool bMoved = false;
+			for (int32 s = 0; s < Base.Num() && s < Col.Num(); ++s) bMoved |= Moved(M->GetProcMeshSection(s), Base[s]);
+			if (!bMoved) continue;
+			++OutMoved;
+			for (int32 s = 0; s < Base.Num() && s < Col.Num(); ++s) Count(M->GetProcMeshSection(s), Col[s], 1.f);
+		}
+	}
+	else if (Kind == 2)
+	{
+		for (const FFlickerModel& Fm : FlickerModels)
+		{
+			UProceduralMeshComponent* M = Fm.Mesh.Get();
+			if (!M) continue;
+			Note(M);
+			if (Fm.Shown < 0) continue;
+			++OutMoved;
+			Count(M->GetProcMeshSection(Fm.Section), Fm.Col, Fm.Bright.IsValidIndex(Fm.Shown) ? Fm.Bright[Fm.Shown] : 1.f);
+		}
+	}
+	else if (Kind == 3)
+	{
+		for (const FGlassBurst& G : GlassBursts)
+		{
+			UProceduralMeshComponent* M = G.Mesh.Get();
+			if (!M) continue;
+			Note(M);
+			const FProcMeshSection* P = M->GetProcMeshSection(0);
+			if (!P) continue;
+			// (the shards fly from where SpawnGlass made them: their corners leave the made ones at once)
+			++OutMoved;
+			Count(P, G.Col, 1.f);
+		}
 	}
 }
 
