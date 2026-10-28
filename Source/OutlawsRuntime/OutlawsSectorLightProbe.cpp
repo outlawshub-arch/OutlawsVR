@@ -27,7 +27,7 @@
 
 OL_SHOT_MATCH(OLSectorLightProbe) { return OLFlags::Param(TEXT("OLSectorLightProbe")); }
 
-OL_SHOT_TEST(OLSectorLightProbe, 19)
+OL_SHOT_TEST(OLSectorLightProbe, 21)
 {
 	static int32 Passes = 0, Fails = 0, Light = -1, LastStop = -1, Matched = 0, Timed = 0, Frames = 0, Followed = 0, Samples = 0;
 	static double LastAt = 0.0, WatchUntil = 0.0, WatchFrom = 0.0, MaxDt = 0.0, Cost0 = 0.0, ModelCost0 = 0.0;
