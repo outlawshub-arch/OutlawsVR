@@ -1654,6 +1654,7 @@ void AOutlawsPlayer::DrawMenuCanvas(UCanvas* C, int32 Width, int32 Height)
 	// the foot line: a submenu says what takes the player back (the remaster's help line), the pause page the level's time so far
 	// (REQ-LEVELTIMER), and "more below" after it; (REQ-PROMPTCENTRE) the line centred as one under the rows, one gap between
 	// its parts (the back line was at the left, "more below" at the right)
+	float FootInkBottom = -1.f;          // (BUG-CHEATNOTICE: the line's lowest ink, its controllers too; -1 with no line)
 	{
 		FString Lead;
 		if (MenuStack.Num() > 0) Lead = bVR ? TEXT("B or Y: back") : TEXT("Esc: back");
@@ -1683,20 +1684,38 @@ void AOutlawsPlayer::DrawMenuCanvas(UCanvas* C, int32 Width, int32 Height)
 			const FBox2D B = Text(MenuSmallFont, Lead, Left + WL * 0.5f, FootY, bBack && IsMenuBackHot() ? Hot : Faint, MaxW);
 			if (bInk && B.bIsValid) { SheetFootInk.Add(B); SheetEdgeInk.Add(B); SheetFootBelow = FMath::Max(SheetFootBelow, float(B.Max.Y) - FootY); }
 			if (bInk && bBack) SheetBackInk = B;
+			if (B.bIsValid) FootInkBottom = FMath::Max(FootInkBottom, float(B.Max.Y));
 		}
 		if (!More.IsEmpty())
 		{
 			const FBox2D B = Text(MenuSmallFont, More, Left + Total - WR * 0.5f, FootY, Faint, MaxW);
 			if (bInk && B.bIsValid) { SheetFootInk.Add(B); SheetEdgeInk.Add(B); SheetFootBelow = FMath::Max(SheetFootBelow, float(B.Max.Y) - FootY); }
+			if (B.bIsValid) FootInkBottom = FMath::Max(FootInkBottom, float(B.Max.Y));
 		}
 	}
+	// BUG-CHEATNOTICE (user 28 Oct, snapshot 1: "Cheats unlocked" written over Back and its controllers on the Cheats page): the
+	// notice (Cheats unlocked, the host's cheats off, a dev check's note, a save's line) goes a small gap under the foot line's
+	// ink, Back, "more below" and their controllers, a line at a time; it sat on the line itself.  Lines that would run off the
+	// sheet's foot go over the page's top line instead (the title, "more above" or the first row), clear of everything either way
+	if (bInk) SheetToastInk.Reset();
 	if (MenuToast && !MenuToast->Text.IsEmpty())
 	{
 		TArray<FString> Lines;
 		MenuToast->Text.ToString().ParseIntoArrayLines(Lines);
+		const float Half = SheetSmallHalfPx, Step = 3.2f * S, Gap = 1.5f * S, Margin = 12.f;
+		const float Tall = Half * 2.f + Step * (Lines.Num() - 1);
+		float First = FootInkBottom >= 0.f ? FootInkBottom + Gap + Half : Y(PageFootZ());      // (no line: where it would be)
+		if (First - Half + Tall > float(Height) - Margin)
+		{
+			float TopInk = SheetRowInk.Num() > 0 ? float(SheetRowInk[0].Min.Y) : Y(RowZ(0));
+			if (SheetTitleInk.bIsValid) TopInk = FMath::Min(TopInk, float(SheetTitleInk.Min.Y));
+			if (SheetMoreUpInk.bIsValid) TopInk = FMath::Min(TopInk, float(SheetMoreUpInk.Min.Y));
+			if (TopInk - Gap - Tall >= Margin) First = TopInk - Gap - Tall + Half;
+		}
 		for (int32 i = 0; i < Lines.Num(); ++i)
 		{
-			Text(MenuSmallFont, Lines[i], ColX, Y(PageFootZ() - 3.2f * i), Red, ColW * 0.95f);      // (REQ-MENUCENTRE: down from the line, clear of the rows)
+			const FBox2D B = Text(MenuSmallFont, Lines[i], ColX, First + Step * i, Red, ColW * 0.95f);
+			if (bInk && B.bIsValid) SheetToastInk.Add(B);
 		}
 	}
 }
@@ -3836,7 +3855,23 @@ void AOutlawsPlayer::DrawFrontCanvas(UCanvas* C, int32 Width, int32 Height)
 		const float Right = WideParchmentRight() - MenuHelpInsetCm * 1920.f / SheetW;
 		WideHelpInk = Txt(SaveFont(5), HelpLine, Right - XL / K * 0.5f, bCharPage ? 1050.f : 1030.f, 1, Help, true);
 	}
-	if (MenuToast && !MenuToast->Text.IsEmpty()) Txt(SaveFont(2), MenuToast->Text.ToString(), HelpX, bCharPage ? 128.f : 990.f, 1, Col(0xf2, 0xaa, 0x44), true);
+	// (BUG-CHEATNOTICE) the notice between the last row and the help line when it fits there, else under the title as the
+	// character page's: on the flat screen New Game's "Performance test unlocked" sat on the help line (BUG-MENUGLYPH2 moved
+	// the line up to y 1030 under it)
+	SheetToastInk.Reset();          // (where it went, for the probe)
+	if (MenuToast && !MenuToast->Text.IsEmpty())
+	{
+		float ToastY = 128.f;
+		if (!bCharPage)
+		{
+			float RowsBottom = 0.f, XL = 0.f, YL = 0.f;
+			for (const FBox2D& B : FrontItemInk) if (B.bIsValid) RowsBottom = FMath::Max(RowsBottom, float(B.Max.Y));
+			const float HelpTop = WideHelpInk.bIsValid ? float(WideHelpInk.Min.Y) : 1062.f;
+			if (SaveFont(2)) C->TextSize(SaveFont(2), MenuToast->Text.ToString(), XL, YL);
+			if (HelpTop - RowsBottom >= YL / K + 8.f) ToastY = (RowsBottom + HelpTop) * 0.5f;
+		}
+		SheetToastInk.Add(Txt(SaveFont(2), MenuToast->Text.ToString(), HelpX, ToastY, 1, Col(0xf2, 0xaa, 0x44), true));
+	}
 	// which build this is, small under the help line on the main menu (for the testers' reports)
 	// (user 14 Oct: the public release is v0.9, a beta) the main menu says so before its build; Line() itself stays as it was for
 	// the co-op build comparison, the beacon and the logs

@@ -1206,6 +1206,7 @@ private:
 	TArray<FBox2D> SheetFootInk;
 	TArray<FBox2D> SheetEdgeInk;          // (REQ-SUBMENUSPACE) the title, "more above", the help line and "more below" as drawn
 	FBox2D SheetMoreUpInk = FBox2D(ForceInit);    // (REQ-PROMPTCENTRE) "more above" as drawn
+	TArray<FBox2D> SheetToastInk;                 // (BUG-CHEATNOTICE) the notice's lines as last drawn (a sheet's canvas pixels, a wide page's view)
 	int32 TestSheetRowCap = 0;                    // (-OLPromptCentreTest) at most this many rows a sheet page (0: as laid out), so it scrolls
 	FIntPoint SheetCanvasSize = FIntPoint(0, 0);
 	float SheetSmallHalfPx = 10.f;                // (BUG-GFXTALL) the small font's letters' half height on the sheet's canvas, as last drawn
