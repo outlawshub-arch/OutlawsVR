@@ -402,6 +402,20 @@ void AOutlawsLevelActor::BuildExplodeWalls(const FOutlawsLevel& L, const TMap<FS
 			F.OnlyWalls.Add(K);
 			F.WallBands.Add(K, 2 | 8);
 		}
+		// (BUG-OUTHOUSEWALL, user 28 Oct) a face of the plug that is a double adjoin (the outhouse's back wall: below to the
+		// explodable sliver, above to the room with the hole) is filled toward the plug's own sector only, its sign on its
+		// solid part, as the original draws it before the blast.  -OLOldOuthouseWall: both openings filled, as before
+		static const bool bOldOuthouse = OLFlags::Param(TEXT("OLOldOuthouseWall"));
+		for (const uint64 K : bOldOuthouse ? TArray<uint64>() : X.Walls)
+		{
+			const FOutlawsWall& W = L.Sectors[int32(K >> 32)].Walls[int32(K & 0xffffffffu)];
+			if (W.Adjoin < 0 || W.DAdjoin < 0) continue;
+			auto OwnSide = [&X](int32 Sec) { return X.Walls.ContainsByPredicate([Sec](uint64 J) { return int32(J >> 32) == Sec; }); };
+			if (OwnSide(W.DAdjoin)) F.FillToward.Add(K, W.DAdjoin);
+			else if (OwnSide(W.Adjoin)) F.FillToward.Add(K, W.Adjoin);
+			UE_LOG(LogOutlaws, Log, TEXT("OLRT explodable wall %d: sector %d wall %d (adjoins %d and %d) filled toward %d only"), i, int32(K >> 32), int32(K & 0xffffffffu),
+				W.Adjoin, W.DAdjoin, F.FillToward.Contains(K) ? F.FillToward[K] : -1);
+		}
 		FOutlawsGeometry Gs;
 		Gs.Build(Solid, TexInfo, bReverseWinding, &F);
 		int32 Tris = 0;
@@ -444,6 +458,32 @@ void AOutlawsLevelActor::BlowExplodeWall(FExplodeWall& X, bool bQuiet, const FVe
 		for (int32 k = 0; k < 3; ++k) SpawnDirt(X.Box.GetCenter() + FVector(0.0, 0.0, FMath::FRandRange(-40.f, 40.f)), Out, 10);
 	}
 	UE_LOG(LogOutlaws, Log, TEXT("OLRT explodable wall of sector %d blown%s"), X.Sector, bQuiet ? TEXT(" (restored from a save)") : TEXT(""));
+}
+
+int32 AOutlawsLevelActor::DebugExplodeWallCount() const
+{
+	return ExplodeWalls.Num();
+}
+
+bool AOutlawsLevelActor::DebugExplodeWallDrawn(int32 Index, FBox& OutDrawn, FBox& OutSector, int32& OutSectorIndex) const
+{
+	// (-OLOuthouseWallProbe) the plug as drawn (its own mesh's bounds) against its sector's floor to ceiling
+	OutDrawn = FBox(ForceInit);
+	if (!ExplodeWalls.IsValidIndex(Index)) return false;
+	const FExplodeWall& X = ExplodeWalls[Index];
+	OutSector = X.Box;
+	OutSectorIndex = X.Sector;
+	for (const TWeakObjectPtr<UPrimitiveComponent>& P : X.Parts)
+	{
+		const UProceduralMeshComponent* M = Cast<UProceduralMeshComponent>(P.Get());
+		if (M && M->GetName().StartsWith(TEXT("OutlawsExplodeWall")) && M->IsVisible()) OutDrawn += M->Bounds.GetBox();
+	}
+	return OutDrawn.IsValid != 0;
+}
+
+void AOutlawsLevelActor::DebugBlowExplodeWall(int32 Index)
+{
+	if (ExplodeWalls.IsValidIndex(Index) && !ExplodeWalls[Index].bBlown) BlowExplodeWall(ExplodeWalls[Index], false, ExplodeWalls[Index].Box.GetCenter() + FVector(0.0, 0.0, 100.0));
 }
 
 void AOutlawsLevelActor::BuildSkyCeilingCollision(const FOutlawsLevel& L)

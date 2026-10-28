@@ -309,6 +309,11 @@ public:
 	 *  (the still faces' rule), as sRGB-converted, not black or white; the largest section's middle and a side to see it from. */
 	void DebugScrollColours(int32& OutSections, int32& OutSlid, int32& OutVerts, int32& OutAsStill, int32& OutAsOld, int32& OutLit, FVector& OutAt, FVector& OutFacing,
 		FString& OutWhere) const;
+	/** (tests, BUG-OUTHOUSEWALL) the explodable walls: how many; wall i's drawn plug and its sector's floor-to-ceiling box,
+	 *  false when it has no plug drawn; blow wall i as dynamite would from above it. */
+	int32 DebugExplodeWallCount() const;
+	bool DebugExplodeWallDrawn(int32 Index, FBox& OutDrawn, FBox& OutSector, int32& OutSectorIndex) const;
+	void DebugBlowExplodeWall(int32 Index);
 	/** A story movie is on the screen (between levels): the player only watches, a trigger skips. */
 	bool IsMoviePlaying() const;
 	void SkipMovie();

@@ -541,7 +541,11 @@ void FOutlawsGeometry::Build(const FOutlawsLevel& L, const TMap<FString, FOutlaw
 
 			Openings.Reset();
 			AddOpening(L, L.Sector(W.Adjoin), A, B, FA, FB, CA, CB, Openings);
+			const int32 NumAdjoinOpenings = Openings.Num();          // (the rest are the double adjoin's)
 			AddOpening(L, L.Sector(W.DAdjoin), A, B, FA, FB, CA, CB, Openings);
+			// (BUG-OUTHOUSEWALL) the opening this wall's fill is kept to, its sector's: the rest stay open
+			const int32* FillTo = F.FillToward.Find(FOutlawsBuildFilter::Key(S.Index, WallIndex));
+			auto IsFilled = [&](int32 o) { return !FillTo || (*FillTo == W.DAdjoin ? o >= NumAdjoinOpenings : o < NumAdjoinOpenings); };
 
 			Bands.Reset();
 			static const bool bOldMillvis = OLFlags::Param(TEXT("OLOldMillvis"));     // (before-and-after shots)
@@ -636,9 +640,14 @@ void FOutlawsGeometry::Build(const FOutlawsLevel& L, const TMap<FString, FOutlaw
 					// empty (user 2026-09-27).  Each side draws its own copy, facing its own sector (one-sided, as
 					// the original draws only the near side's wall): the train's outer views show their 128-unit
 					// gctbgrn2 painting once, never the ring's 64-unit GCTBGRND from behind
-					for (const FOpening& O : Openings)
+					for (int32 o = 0; o < Openings.Num(); ++o)
 					{
+						const FOpening& O = Openings[o];
 						if ((O.T1 - O.B1) <= MinSegment && (O.T2 - O.B2) <= MinSegment) continue;
+						// (BUG-OUTHOUSEWALL, user 28 Oct) an explodable wall's plug fills only its own opening: the hideout's
+						// outhouse back wall (sector 207 wall 4) opens below to the explodable sliver 6 and above to the room
+						// with the hole (209); its fill ran over both, so the plank and crack face went up to the ceiling
+						if (!IsFilled(o)) continue;
 						Bands.Add({ EBand::MidTex, O.B1, O.B2, O.T1, O.T2, W.Mid, W.MidX, W.MidY, FMath::Min(O.B1, O.B2), true });
 						// (a picture shorter than its opening repeats up it: say so, with the size it is drawn at)
 						const FOutlawsTexInfo MI = Size(L.TexStem(W.Mid));
@@ -810,6 +819,23 @@ void FOutlawsGeometry::Build(const FOutlawsLevel& L, const TMap<FString, FOutlaw
 				{
 					MidAnchor = FMath::Min(AdjA->Ceil.Y, AdjD->Ceil.Y);
 				}
+				// (BUG-OUTHOUSEWALL) a filled double adjoin (an explodable wall's plug): the original draws it, before the
+				// blast, as a wall with the one other opening, and the sign as the Jedi engine draws one, only on the solid
+				// part, from that part's foot (TFE wall_drawBottom: signYBase from the floor; wall_drawTop: from the next
+				// ceiling).  The outhouse's GWCRACK so sits from the floor to the beam under the opening above, as in the
+				// original's shot, where it was drawn from the beam (the lower ceiling) through the opening to the ceiling
+				double SignLo = FMath::Min(FA, FB), SignHi = FMath::Max(CA, CB);
+				if (FillTo && Openings.Num() > 0)
+				{
+					double FillLow = TNumericLimits<double>::Max(), OpenLow = TNumericLimits<double>::Max(), OpenHigh = -TNumericLimits<double>::Max();
+					for (int32 o = 0; o < Openings.Num(); ++o)
+					{
+						if (IsFilled(o)) FillLow = FMath::Min(FillLow, Openings[o].Low());
+						else { OpenLow = FMath::Min(OpenLow, Openings[o].Low()); OpenHigh = FMath::Max(OpenHigh, Openings[o].High()); }
+					}
+					if (OpenHigh > OpenLow && FillLow < OpenLow) { MidAnchor = AnchorY; SignHi = FMath::Min(SignHi, OpenLow); }
+					else if (OpenHigh > OpenLow) { MidAnchor = OpenHigh; SignLo = FMath::Max(SignLo, OpenHigh); }
+				}
 				// a sign is never flipped, nor moved by its wall's flip: the engine reads its columns straight from u
 				// less the sign's offset, the flip only for the wall's own texture (TFE setupSignTexture, the exe likewise)
 				const double Along = -W.MidX + W.OvX;
@@ -817,7 +843,7 @@ void FOutlawsGeometry::Build(const FOutlawsLevel& L, const TMap<FString, FOutlaw
 				const double A0 = Along, A1 = Along + TWU;
 				const double U0 = Up, U1 = Up + THU;
 				const double CA0 = FMath::Max(A0, 0.0), CA1 = FMath::Min(A1, Len);
-				const double CU0 = FMath::Max(U0, FMath::Min(FA, FB)), CU1 = FMath::Min(U1, FMath::Max(CA, CB));
+				const double CU0 = FMath::Max(U0, SignLo), CU1 = FMath::Min(U1, SignHi);
 				if (CA1 - CA0 < 1e-4 || CU1 - CU0 < 1e-4) continue;
 				const double TX = EX / Len, TZ = EZ / Len;
 				const double NL = FMath::Max(1e-9, FMath::Sqrt(NX * NX + NZ * NZ));
