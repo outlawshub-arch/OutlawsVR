@@ -66,13 +66,28 @@
 namespace
 {
 	constexpr float StandHalfHeight = 87.f;     // 5.8 units tall (Dark Forces PLAYER_HEIGHT)
-	constexpr float CrouchHalfHeight = 42.f;    // 2.8 units: through 3-unit crawl spaces
+	// REQ-CROUCHFIT (user 2026-10-28, snapshot 19: a hideout secret behind an underwater gap he could not get low enough
+	// for): the crouch at the original's size. OutlawsAHOM.exe's player crouches to HEIGHT / CROUCH_DIV (6 / 4: the eye at
+	// 1.5 units) with its HEAD_HEIGHT 0.5 over that, a body of 2.0 units (60 cm); 56 cm here, so its 2-unit crawl spaces fit
+	// (the movement keeps a walking body a couple of centimetres over the floor)
+	constexpr float CrouchHalfHeight = 28.f;
+	// the crouch at the full 80 cm width: what a climb into a low space or a teleport under a roof fits first (the body then
+	// crouches on down as any crouch does), and the crouch before REQ-CROUCHFIT (-OLOldCrouchFit): 2.8 units, "through
+	// 3-unit crawl spaces"
+	constexpr float WideCrouchHalfHeight = 42.f;
 	// (user 2026-10-03, BUG-BOXGAP: slipped past townex's SHOVE_ME box, a 2.5-unit / 75 cm gap at the scope room's door)
 	// 80 cm across: closes that gap and stays well under the Jedi engine's own player (PLAYER_WIDTH 1.8 units, 54 cm), so
 	// every way the original's body fitted through still fits
 	constexpr float BodyRadius = 40.f;
+	// (REQ-CROUCHFIT) a capsule is never shorter than it is wide: under 82 cm the body narrows with its height, to 54 cm
+	// across at the crouch's 56. A narrowed body is still kept out of anywhere the 80 cm one would not go (NarrowAt), so
+	// BUG-BOXGAP's gap stays shut to a crouch too
+	constexpr float CrouchRadius = 27.f;
 	constexpr float StandEye = 160.f;           // desktop eye above the feet
-	constexpr float CrouchEye = 70.f;
+	constexpr float CrouchEye = 45.f;           // (REQ-CROUCHFIT) the original's crouched eye, 1.5 units
+	constexpr float OldCrouchEye = 70.f;        // (-OLOldCrouchFit)
+	constexpr float SwimSqueezeAhead = 50.f;    // (REQ-CROUCHFIT) how far on a swimmer looks for something lower than it
+	FString* GNarrowWhy = nullptr;              // (REQ-CROUCHFIT, the log) what NarrowAt found round the middle, when set
 }
 
 namespace
@@ -161,6 +176,7 @@ void AOutlawsPlayer::BeginPlay()
 		PlaceholderWeaponDir = FPaths::Combine(FOutlawsAssets::PlaceholderDir(), TEXT("ve_weapons/hd_xint"));
 	}
 	FallGraceUntil = 5.0;                // the level start drops the player onto the floor
+	OnCharacterMovementUpdated.AddUniqueDynamic(this, &AOutlawsPlayer::GuardBodyWidth);     // (REQ-CROUCHFIT)
 	bVR = UHeadMountedDisplayFunctionLibrary::IsHeadMountedDisplayEnabled();
 	{
 		// (BUG-FOVCLIP) the near plane and the eyes' cone, once the headset has its views and the wrist its parts
@@ -214,6 +230,7 @@ void AOutlawsPlayer::ApplyModeSettings()
 {
 	UCharacterMovementComponent* M = GetCharacterMovement();
 	M->MaxStepHeight = StepHeight;
+	M->SetCrouchedHalfHeight(CrouchFitHalf());       // (REQ-CROUCHFIT: -OLOldCrouchFit's 42)
 	M->MaxFlySpeed = SwimSpeedFraction * (bVR ? VRWalkSpeed : DesktopWalkSpeed);
 	M->MaxAcceleration = bVR ? VRAcceleration : Acceleration;
 	M->BrakingDecelerationWalking = 3000.f;
@@ -294,6 +311,171 @@ bool AOutlawsPlayer::OldCrouchRun()
 {
 	static const bool bOld = OLFlags::Param(TEXT("OLOldCrouchRun"));   // (REQ-CROUCHRUN's before: no crouched run)
 	return bOld;
+}
+
+bool AOutlawsPlayer::OldCrouchFit()
+{
+	static const bool bOld = OLFlags::Param(TEXT("OLOldCrouchFit"));   // (REQ-CROUCHFIT's before: the 84 cm crouch, none in the water)
+	return bOld;
+}
+
+float AOutlawsPlayer::CrouchFitHalf()
+{
+	return OldCrouchFit() ? WideCrouchHalfHeight : CrouchHalfHeight;
+}
+
+float AOutlawsPlayer::CrouchEyeHeight()
+{
+	return OldCrouchFit() ? OldCrouchEye : CrouchEye;
+}
+
+float AOutlawsPlayer::RadiusFor(float Half)
+{
+	// (REQ-CROUCHFIT) 80 cm across down to 82 cm tall, narrower below that with the height (a centimetre of it straight)
+	return OldCrouchFit() ? BodyRadius : FMath::Clamp(Half - 1.f, CrouchRadius, BodyRadius);
+}
+
+float AOutlawsPlayer::LowestHalf() const
+{
+	// the shortest the body gets (a full crouch, or the head as low as it goes): before REQ-CROUCHFIT the 80 cm body's
+	// radius and 2 cm, now the crouch's
+	return OldCrouchFit() ? GetCapsuleComponent()->GetUnscaledCapsuleRadius() + 2.f : CrouchHalfHeight;
+}
+
+bool AOutlawsPlayer::NarrowAt(const FVector& Center, float Half, float R, const FVector& Along, double* OutWidth) const
+{
+	if (OutWidth) *OutWidth = 1e9;
+	// REQ-CROUCHFIT: a body narrowed under its 80 cm (BUG-BOXGAP's width) by a crouch goes nowhere the 80 cm body would not:
+	// the way here, going Along, is too narrow when what is beside the middle on the left and on the right (well off to the
+	// side, not ahead or behind: a wall walked up to is no narrowing) is nearer together than the 80 cm body (a box and a
+	// door's jamb, a gap between two walls).  Sixteen thick lines out from the middle find what is round it (what stops the
+	// body: the level and its objects, never a body or an enemy fence; 12 cm thick, so a corner between two is still met, at
+	// the point it is met).  The middle only, and the straight part's ends on a
+	// taller body
+	const UWorld* World = GetWorld();
+	const UCapsuleComponent* Cap = GetCapsuleComponent();
+	const FVector2D Fwd = FVector2D(Along).GetSafeNormal();
+	if (!World || R >= BodyRadius - 0.5f || Fwd.IsNearlyZero()) return false;
+	const FVector2D Side(-Fwd.Y, Fwd.X);
+	const double Out = 2.0 * BodyRadius - R + 4.0;     // (a body against one side: the other may be 80 cm less its radius off)
+	constexpr double Spare = 1.5;              // (each side: a way 77 cm across is narrow, BUG-BOXGAP's 75 is)
+	FCollisionQueryParams Q(SCENE_QUERY_STAT(OutlawsBodyWidth), false, this);
+	if (const AOutlawsLevelActor* LQ = Level.Get()) LQ->IgnorePassedOverlaps(Q);
+	// (what the body itself is stopped by: an enemy fence the player walks through is no side)
+	FCollisionResponseParams RP;
+	Cap->InitSweepCollisionParams(Q, RP);
+	RP.CollisionResponse.SetResponse(ECC_Pawn, ECR_Ignore);
+	const ECollisionChannel Channel = Cap->GetCollisionObjectType();
+	TArray<double, TInlineAllocator<3>> Heights = { 0.0 };
+	if (Half - R > 12.f) { Heights.Add(-(Half - R) + 2.0); Heights.Add(Half - R - 2.0); }
+	TArray<FVector2D, TInlineAllocator<16>> Near;
+	for (const double Up : Heights)
+	{
+		const FVector P = Center + FVector(0.0, 0.0, Up);
+		Near.Reset();
+		for (int32 i = 0; i < 16; ++i)
+		{
+			const FVector D = FRotator(0.0, i * 22.5, 0.0).Vector();
+			FHitResult H;
+			// (thick lines: a corner between two of them is still met; a floor or a ceiling met on the slant, a slope's rise, is
+			// no side, the body's height deals with those)
+			if (World->SweepSingleByChannel(H, P, P + D * Out, FQuat::Identity, Channel, FCollisionShape::MakeSphere(12.f), Q, RP) && !H.bStartPenetrating
+				&& FMath::Abs(H.ImpactNormal.Z) < 0.7)
+			{
+				Near.Add(FVector2D(H.ImpactPoint - P));
+				if (GNarrowWhy) *GNarrowWhy += FString::Printf(TEXT(" %s %.0f cm at %.0f deg (normal z %.2f);"), H.GetComponent() ? *H.GetComponent()->GetName() : TEXT("?"), H.Distance, i * 22.5, H.ImpactNormal.Z);
+			}
+		}
+		double Left = 1e9, Right = 1e9;
+		for (const FVector2D& N : Near)
+		{
+			const double Lat = FVector2D::DotProduct(N, Side), Lon = FVector2D::DotProduct(N, Fwd);
+			if (FMath::Abs(Lat) < 1.5 * FMath::Abs(Lon)) continue;           // (ahead or behind)
+			if (Lat > 0.0) Left = FMath::Min(Left, Lat);
+			else Right = FMath::Min(Right, -Lat);
+		}
+		if (OutWidth) *OutWidth = FMath::Min(*OutWidth, Left + Right);
+		if (Left + Right < 2.0 * (BodyRadius - Spare) && !OutWidth) return true;
+	}
+	return OutWidth && *OutWidth < 2.0 * (BodyRadius - Spare);
+}
+
+bool AOutlawsPlayer::WidenBody(float WantR)
+{
+	// (REQ-CROUCHFIT) a narrowed body back out toward its 80 cm as its height allows, only into free room (shifted off a
+	// wall by up to the widening, never through one); no room and it stays narrow, NarrowAt still holding it, and tries
+	// again next frame
+	UCapsuleComponent* Cap = GetCapsuleComponent();
+	UWorld* World = GetWorld();
+	const float R = Cap->GetUnscaledCapsuleRadius(), Half = Cap->GetUnscaledCapsuleHalfHeight();
+	WantR = FMath::Min(WantR, Half);
+	if (!World || WantR <= R + 0.25f) return true;
+	FCollisionQueryParams Q(SCENE_QUERY_STAT(OutlawsBodyWiden), false, this);
+	FCollisionResponseParams RP;
+	Cap->InitSweepCollisionParams(Q, RP);
+	if (const AOutlawsLevelActor* LQ = Level.Get()) LQ->IgnorePassedOverlaps(Q);
+	const ECollisionChannel Channel = Cap->GetCollisionObjectType();
+	const FCollisionShape Wide = FCollisionShape::MakeCapsule(WantR, Half), Now = FCollisionShape::MakeCapsule(R, Half);
+	const FVector C = GetActorLocation();
+	auto Free = [&](const FVector& At) { return !World->OverlapBlockingTestByChannel(At, FQuat::Identity, Channel, Wide, Q, RP); };
+	FVector To = C;
+	bool bFree = Free(C);
+	// (the wider round bottom on a slope: a few centimetres up, the floor takes it back down)
+	if (!bFree && Free(C + FVector(0.0, 0.0, 3.0))) { To = C + FVector(0.0, 0.0, 3.0); bFree = true; }
+	for (int32 i = 0; i < 16 && !bFree; ++i)
+	{
+		const FVector At = C + FVector(0.0, 0.0, 3.0) + FRotator(0.0, i * 22.5, 0.0).Vector() * (WantR - R + 1.0);
+		FHitResult H;
+		if (!Free(At) || World->SweepSingleByChannel(H, C, At, FQuat::Identity, Channel, Now, Q, RP)) continue;
+		To = At;
+		bFree = true;
+	}
+	if (!bFree) return false;
+	Cap->SetCapsuleRadius(WantR, false);
+	if (!To.Equals(C, 0.01))
+	{
+		SetActorLocation(To, false, nullptr, ETeleportType::TeleportPhysics);
+		if (bVR) VROrigin->AddWorldOffset(FVector(C.X - To.X, C.Y - To.Y, 0.0));     // (the view does not slide with the shift)
+	}
+	return true;
+}
+
+void AOutlawsPlayer::GuardBodyWidth(float DeltaSeconds, FVector OldLocation, FVector OldVelocity)
+{
+	// (REQ-CROUCHFIT) after each of the movement's moves: a narrowed body that went from room enough for the 80 cm body into
+	// too little is put back across the ground (its rise or fall kept) and its way on stopped
+	const UCapsuleComponent* Cap = GetCapsuleComponent();
+	if (OldCrouchFit() || Cap->GetUnscaledCapsuleRadius() >= BodyRadius - 0.5f || IsClimbing() || MantleLeft > 0.f) return;
+	const FVector Now = GetActorLocation();
+	if (FVector::DistSquared2D(Now, OldLocation) < 0.01) return;
+	const float Half = Cap->GetUnscaledCapsuleHalfHeight(), R = Cap->GetUnscaledCapsuleRadius();
+	// (into a narrow place, or on along one: a body already in one, by a crouch, a climb or a teleport, may only go the way
+	// it widens)
+	const FVector Way = Now - OldLocation;
+	double WideNow = 1e9, WideWas = 1e9;
+	if (!NarrowAt(Now, Half, R, Way, &WideNow)) return;
+	NarrowAt(OldLocation, Half, R, Way, &WideWas);
+	if (WideNow > WideWas + 0.5) return;
+	static double LastWidths = -10.0;
+	if (FPlatformTime::Seconds() - LastWidths > 0.5)
+	{
+		LastWidths = FPlatformTime::Seconds();
+		UE_LOG(LogOutlaws, Log, TEXT("OLRT crouched body: the way %.0f cm across here, %.0f where it was"), WideNow, FMath::Min(WideWas, 9999.0));
+	}
+	SetActorLocation(FVector(OldLocation.X, OldLocation.Y, Now.Z), true, nullptr, ETeleportType::TeleportPhysics);
+	UCharacterMovementComponent* M = GetCharacterMovement();
+	M->Velocity.X = 0.0;
+	M->Velocity.Y = 0.0;
+	static double LastLog = -10.0;
+	if (FPlatformTime::Seconds() - LastLog > 1.0)
+	{
+		LastLog = FPlatformTime::Seconds();
+		FString Why;
+		GNarrowWhy = &Why;
+		NarrowAt(Now, Half, R, Way);
+		GNarrowWhy = nullptr;
+		UE_LOG(LogOutlaws, Log, TEXT("OLRT crouched body held at %s: narrower on than the 80 cm body (radius %.0f now); round it:%s"), *OldLocation.ToCompactString(), R, *Why);
+	}
 }
 
 float AOutlawsPlayer::CrouchSpeedNow(float CrouchSpeed, float WalkSpeed, float RunNow, bool bRunning, bool bOld)
@@ -880,6 +1062,7 @@ void AOutlawsPlayer::ResetForLevel()
 	if (const AOutlawsLevelActor* LP = Level.Get()) PlateHitsSeen = LP->PlateHits;
 	// a death on a ledge or mid-mantle left the body flying: back to normal movement
 	bSwimming = false;
+	bSwimSqueeze = false;                // (REQ-CROUCHFIT; a body it made small grows back with room, UpdateCrouch)
 	bVaulting = false;
 	GetCharacterMovement()->SetMovementMode(MOVE_Falling);
 	bMenuPistol = false;
@@ -1531,6 +1714,12 @@ void AOutlawsPlayer::FollowHead()
 	const FVector Before = GetActorLocation();
 	FHitResult Hit;
 	GetCharacterMovement()->SafeMoveUpdatedComponent(Delta, GetActorQuat(), true, Hit);
+	// (REQ-CROUCHFIT) nor does the head lead a narrowed body anywhere the 80 cm body would not go
+	const float Half = GetCapsuleComponent()->GetUnscaledCapsuleHalfHeight(), R = GetCapsuleComponent()->GetUnscaledCapsuleRadius();
+	if (!OldCrouchFit() && R < BodyRadius - 0.5f && NarrowAt(GetActorLocation(), Half, R, GetActorLocation() - Before) && !NarrowAt(Before, Half, R, GetActorLocation() - Before))
+	{
+		SetActorLocation(Before, false, nullptr, ETeleportType::TeleportPhysics);
+	}
 	FVector Moved = GetActorLocation() - Before;
 	Moved.Z = 0.0;
 	VROrigin->AddWorldOffset(-Moved);
@@ -1543,6 +1732,10 @@ void AOutlawsPlayer::UpdateCrouch()
 	{
 		return;
 	}
+	if (bSwimming)
+	{
+		SwimSqueeze();     // (REQ-CROUCHFIT) under water into something lower than the body: crouched to fit through
+	}
 	if (bVR)
 	{
 		UpdateBodyHeight();
@@ -1550,17 +1743,165 @@ void AOutlawsPlayer::UpdateCrouch()
 	}
 	if (bSwimming)
 	{
+		// (REQ-CROUCHFIT) the fly mode has no engine crouch: the desktop's swimmer is made small itself, and stands again
+		// once the standing body has room and nothing low is ahead
+		if (OldCrouchFit() || bIsCrouched) return;
+		if (bSwimSqueeze && SwimRoomToStand(StandHalfHeight))
+		{
+			bSwimSqueeze = false;
+			ShowMessage(TEXT("Stand"), 1.5f);
+		}
+		ResizeBody(bSwimSqueeze ? CrouchFitHalf() : StandHalfHeight);
 		return;
 	}
 	const bool bWant = bCrouchHeld;
 	if (bWant && !bIsCrouched)
 	{
+		// (REQ-CROUCHFIT) narrowed first: the engine's crouch keeps the radius, and a body is never shorter than it is wide
+		if (!OldCrouchFit()) GetCapsuleComponent()->SetCapsuleRadius(CrouchRadius, false);
 		Crouch();     // in mid-air this shrinks around the middle: the feet come up (crouch-jump)
 	}
 	else if (!bWant && bIsCrouched)
 	{
 		UnCrouch();   // refused while a low ceiling is overhead; tried again every frame
 	}
+	else if (!bIsCrouched && !OldCrouchFit())
+	{
+		// (a crouch the movement did not take, or a body the swim made small: back to the standing body where there is room)
+		if (GetCapsuleComponent()->GetUnscaledCapsuleHalfHeight() < StandHalfHeight - 0.5f) ResizeBody(StandHalfHeight);
+		else WidenBody(BodyRadius);
+	}
+}
+
+bool AOutlawsPlayer::SwimHeading(FVector& OutDir) const
+{
+	// (REQ-CROUCHFIT) the way the swimmer is going across: the stick's push, else what it is still gliding
+	const UCharacterMovementComponent* M = GetCharacterMovement();
+	OutDir = M->GetLastInputVector();
+	OutDir.Z = 0.0;
+	if (OutDir.SizeSquared() < 0.04)
+	{
+		OutDir = M->Velocity;
+		OutDir.Z = 0.0;
+		if (OutDir.SizeSquared() < 400.0) return false;
+	}
+	OutDir.Normalize();
+	return true;
+}
+
+bool AOutlawsPlayer::SwimLowAhead(float Half, float R, FHitResult& OutHit) const
+{
+	// (REQ-CROUCHFIT) a body of that size standing on the swimmer's feet, moved a step on the way it swims: stopped?
+	const UCapsuleComponent* Cap = GetCapsuleComponent();
+	const UWorld* World = GetWorld();
+	FVector Dir;
+	if (!World || !SwimHeading(Dir)) return false;
+	FCollisionQueryParams Q(SCENE_QUERY_STAT(OutlawsSwimAhead), false, this);
+	FCollisionResponseParams RP;
+	Cap->InitSweepCollisionParams(Q, RP);
+	if (const AOutlawsLevelActor* LQ = Level.Get()) LQ->IgnorePassedOverlaps(Q);
+	const FVector At = GetActorLocation() + FVector(0.0, 0.0, Half - Cap->GetUnscaledCapsuleHalfHeight() + 1.0);
+	return World->SweepSingleByChannel(OutHit, At, At + Dir * SwimSqueezeAhead, FQuat::Identity, Cap->GetCollisionObjectType(),
+		FCollisionShape::MakeCapsule(R, Half), Q, RP) && !OutHit.bStartPenetrating;
+}
+
+bool AOutlawsPlayer::SwimRoomToStand(float Want) const
+{
+	// (REQ-CROUCHFIT) a swimmer crouched to fit stands again with room for the standing body on its feet here and nothing
+	// low just ahead (else it would stand and crouch again at an opening's mouth)
+	const UCapsuleComponent* Cap = GetCapsuleComponent();
+	const UWorld* World = GetWorld();
+	if (!World) return false;
+	FCollisionQueryParams Q(SCENE_QUERY_STAT(OutlawsSwimStand), false, this);
+	FCollisionResponseParams RP;
+	Cap->InitSweepCollisionParams(Q, RP);
+	if (const AOutlawsLevelActor* LQ = Level.Get()) LQ->IgnorePassedOverlaps(Q);
+	const FVector Feet = GetActorLocation() - FVector(0.0, 0.0, Cap->GetUnscaledCapsuleHalfHeight());
+	const float R = RadiusFor(Want);
+	if (World->OverlapBlockingTestByChannel(Feet + FVector(0.0, 0.0, Want + 2.0), FQuat::Identity, Cap->GetCollisionObjectType(), FCollisionShape::MakeCapsule(R, Want), Q, RP)) return false;
+	FHitResult Ahead;
+	return !SwimLowAhead(Want, R, Ahead);
+}
+
+void AOutlawsPlayer::SwimSqueeze()
+{
+	// REQ-CROUCHFIT (snapshot 19: the hideout's flooded tunnel 308, 3 units high, from the pool 258): the original's
+	// swimmer crouches as it does on land (OutlawsAHOM.exe's move: the crouch held dives while the feet are over 2 units
+	// up, 0x1400b9189, and crouches nearer the floor; the crouch toggle crouches anywhere, 0x1400b78f6), and so swims
+	// through whatever its 2-unit crouched body does. Here, with no crouch to hold under water (the stick dives), the body
+	// crouches by itself when what it swims into is lower than it and the crouched body goes through: at the height in
+	// it nearest the eyes (the view stays put; it comes down into the small body as any crouch's does). It stands again
+	// with room (SwimRoomToStand)
+	UCharacterMovementComponent* M = GetCharacterMovement();
+	UCapsuleComponent* Cap = GetCapsuleComponent();
+	UWorld* World = GetWorld();
+	if (OldCrouchFit() || bSwimSqueeze || !World || M->MovementMode != MOVE_Flying || !bHeadUnder || bDeadView) return;
+	const float Half = Cap->GetUnscaledCapsuleHalfHeight(), R = Cap->GetUnscaledCapsuleRadius();
+	const float H = CrouchFitHalf(), Rc = RadiusFor(H);
+	if (Half <= H + 1.f) return;
+	FHitResult Hit;
+	if (!SwimLowAhead(Half, R, Hit)) return;
+	FVector Dir;
+	SwimHeading(Dir);
+	FCollisionQueryParams Q(SCENE_QUERY_STAT(OutlawsSwimSqueeze), false, this);
+	FCollisionResponseParams RP;
+	Cap->InitSweepCollisionParams(Q, RP);
+	if (const AOutlawsLevelActor* LQ = Level.Get()) LQ->IgnorePassedOverlaps(Q);
+	const FVector C = GetActorLocation();
+	const float Feet = float(C.Z) - Half;
+	// a wall all the way up (swimming along one, or into one) is no opening: lines at five heights first, any one through
+	// (a crouched body's height of opening holds at least one)
+	bool bAnyOpen = false;
+	for (int32 k = 0; k < 5 && !bAnyOpen; ++k)
+	{
+		const FVector P(C.X, C.Y, Feet + 15.0 + k * (2.0 * Half - 30.0) / 4.0);
+		FHitResult Line;
+		bAnyOpen = !World->LineTraceSingleByChannel(Line, P, P + Dir * (Hit.Distance + R + 30.0), Cap->GetCollisionObjectType(), Q, RP);
+	}
+	if (!bAnyOpen) return;
+	const float Eye = float(Camera->GetComponentLocation().Z);
+	// the crouched body's heights inside this one, the nearest its eye to the eyes first
+	TArray<float, TInlineAllocator<24>> Bottoms;
+	for (float B = Feet + 1.f; B + 2.f * H < Feet + 2.f * Half - 1.f; B += 10.f) Bottoms.Add(B);
+	Bottoms.Add(Feet + 2.f * (Half - H) - 1.f);
+	Bottoms.Sort([&](float A, float B) { return FMath::Abs(A + CrouchEyeHeight() - Eye) < FMath::Abs(B + CrouchEyeHeight() - Eye); });
+	const double Through = Hit.Distance + (R - Rc) + 40.0;      // (well into what stopped the body)
+	for (const float B : Bottoms)
+	{
+		const FVector At(C.X, C.Y, B + H);
+		FHitResult Small;
+		if (World->SweepSingleByChannel(Small, At, At + Dir * Through, FQuat::Identity, Cap->GetCollisionObjectType(), FCollisionShape::MakeCapsule(Rc, H), Q, RP)) continue;
+		if (NarrowAt(At + Dir * (Hit.Distance + R), H, Rc, Dir)) continue;     // (narrower there than the 80 cm body: shut to the crouch too)
+		const float Rise = B - Feet;
+		Cap->SetCapsuleSize(Rc, H, false);
+		SetActorLocation(At, false, nullptr, ETeleportType::TeleportPhysics);
+		bSwimSqueeze = true;
+		if (bVR)
+		{
+			// the crouch's own state, as a climb into a low space puts it on: it comes off by itself (UpdateBodyHeight)
+			ShownDrop += Rise;               // (the view where it was: the drop rides on from there)
+			bCrouchHeld = true;
+			bAutoCrouched = true;
+			bStandPending = false;
+			CrouchAmount = 1.f;
+			CrouchFull = CrouchDrop = FMath::Max(0.f, HeadHeight() - CrouchEyeHeight());
+		}
+		else
+		{
+			CameraEye -= Rise;
+		}
+		ShowMessage(TEXT("Crouch"), 1.5f);
+		UE_LOG(LogOutlaws, Log, TEXT("OLRT swim: %s ahead is lower than the body (half %.0f): crouched to fit, the feet %.0f cm up"),
+			Hit.GetComponent() ? *Hit.GetComponent()->GetName() : TEXT("something"), Half, Rise);
+		return;
+	}
+}
+
+float AOutlawsPlayer::SwimMiddleUp() const
+{
+	// (REQ-CROUCHFIT) where the swim measures the body's middle from the feet: a standing body's, or the crouched one's own
+	// while the swim is crouched to fit (a standing body's middle there was in the rock over a low tunnel)
+	return bSwimSqueeze ? GetCapsuleComponent()->GetUnscaledCapsuleHalfHeight() : StandHalfHeight;
 }
 
 void AOutlawsPlayer::OnStartCrouch(float HalfHeightAdjust, float ScaledHalfHeightAdjust)
@@ -1582,8 +1923,8 @@ float AOutlawsPlayer::ViewDrop()
 		// (eased off part way under something low, the body cannot grow yet: the eye lower by what it still lacks of the
 		// height it wants, UpdateBodyHeight's, till it has grown)
 		const UCapsuleComponent* Cap = GetCapsuleComponent();
-		const float MinHalf = Cap->GetUnscaledCapsuleRadius() + 2.f;
-		const float WantHalf = FMath::Min(FMath::Clamp((HeadHeight() - CrouchDrop + 12.f) * 0.5f, MinHalf, StandHalfHeight), FMath::Lerp(StandHalfHeight, CrouchHalfHeight, CrouchAmount));
+		const float MinHalf = LowestHalf();
+		const float WantHalf = FMath::Min(FMath::Clamp((HeadHeight() - CrouchDrop + 12.f) * 0.5f, MinHalf, StandHalfHeight), FMath::Lerp(StandHalfHeight, CrouchFitHalf(), CrouchAmount));
 		return CrouchDrop + 2.f * FMath::Max(0.f, WantHalf - Cap->GetUnscaledCapsuleHalfHeight());
 	}
 	if (bStandPending)
@@ -1655,7 +1996,7 @@ void AOutlawsPlayer::PlaceOrigin(float Dt)
 	VROrigin->SetRelativeLocation(FVector(VROrigin->GetRelativeLocation().X, VROrigin->GetRelativeLocation().Y, -Half - Drop + (bVR ? HeightOffset : 0.f) - (bVR ? DeathDrop : 0.f) + Rock + StepEase));
 	if (!bVR)
 	{
-		const float Target = bIsCrouched ? CrouchEye : StandEye;
+		const float Target = bIsCrouched || bSwimSqueeze ? CrouchEyeHeight() : StandEye;
 		CameraEye = Dt > 0.f ? FMath::FInterpTo(CameraEye, Target, Dt, 12.f) : Target;
 		Camera->SetRelativeLocation(FVector(0.0, 0.0, CameraEye - DeathDrop));
 	}
@@ -1890,7 +2231,7 @@ void AOutlawsPlayer::Turning(float Dt, bool& bOutTurning)
 			{
 				bCrouchHeld = true;
 				bAutoCrouched = false;
-				CrouchFull = FMath::Max(0.f, HeadHeight() - CrouchEye);    // the full drop to crouch eye height, once; then the head leads
+				CrouchFull = FMath::Max(0.f, HeadHeight() - CrouchEyeHeight());    // the full drop to crouch eye height, once; then the head leads
 				bStandPending = false;
 			}
 			else if (!bDownNow && bCrouchHeld)
@@ -1955,7 +2296,7 @@ void AOutlawsPlayer::Swimming()
 	}
 	float Surface = 0.f;
 	const float Feet = GetActorLocation().Z - GetCapsuleComponent()->GetUnscaledCapsuleHalfHeight();
-	const FVector C(GetActorLocation().X, GetActorLocation().Y, Feet + StandHalfHeight);   // a standing body's middle
+	const FVector C(GetActorLocation().X, GetActorLocation().Y, Feet + SwimMiddleUp());   // a standing body's middle (or the crouched one's, REQ-CROUCHFIT)
 	int32 TopSector = -1, InSector = -1;
 	bool bAir = false;
 	bool bWater = L->WaterSurfaceAt(C, Surface, TopSector, &InSector, &bAir) && C.Z < Surface;
@@ -2028,6 +2369,17 @@ void AOutlawsPlayer::Swimming()
 		if (M->Velocity.Z > 200.f) L->SpawnSplash(FVector(C.X, C.Y, bWater ? Surface : Feet), false);
 		bSwimming = false;
 		M->SetMovementMode(MOVE_Falling);
+		if (bSwimSqueeze)
+		{
+			// (REQ-CROUCHFIT) out of the water crouched to fit: crouched on as the land's crouch, which stands by itself with
+			// room (the headset's is the crouch's own state already; the desktop's the movement's crouch, at the same size)
+			bSwimSqueeze = false;
+			if (!bVR)
+			{
+				M->bWantsToCrouch = true;
+				M->Crouch(false);
+			}
+		}
 	}
 }
 
@@ -2142,7 +2494,7 @@ void AOutlawsPlayer::UpdateGravity(float Dt)
 		// sink against it made surfacing a struggle (the smoke test's swim up failed with teleport moves saved)
 		const float SinkCap = SwimSinkSpeed * (L ? L->Pace() : 1.f);
 		const double Now = GetWorld()->GetTimeSeconds();
-		float Middle = float(Feet.Z) + StandHalfHeight;                // a standing body's middle, as Swimming() measures it
+		float Middle = float(Feet.Z) + SwimMiddleUp();                 // a standing body's middle, as Swimming() measures it
 		const float FloatZ = SwimSurface - SwimFloatDepth;
 		// at the surface the water holds the body up (user 2026-09-29): no sink, and the stick and the strokes run
 		// along the surface (Locomotion, SwimStrokes), unless the head is tilted down past DivePitch while moving, a
@@ -2168,7 +2520,7 @@ void AOutlawsPlayer::UpdateGravity(float Dt)
 		{
 			const float Was = Middle;
 			AddActorWorldOffset(FVector(0.0, 0.0, FloatZ - Middle), true);
-			Middle = float(GetActorLocation().Z - GetCapsuleComponent()->GetScaledCapsuleHalfHeight()) + StandHalfHeight;
+			Middle = float(GetActorLocation().Z - GetCapsuleComponent()->GetScaledCapsuleHalfHeight()) + SwimMiddleUp();
 			SwimLog(FString::Printf(TEXT("held at the surface but %.0f cm under its float depth with no dive: put back up %.0f cm"), FloatZ - Was, Middle - Was));
 		}
 		if (bDiving && bSurfaceLocked) bDived = true;
@@ -2218,7 +2570,7 @@ void AOutlawsPlayer::UpdateGravity(float Dt)
 		{
 			M->Velocity.Z = M->MaxFlySpeed + (M->Velocity.Z - M->MaxFlySpeed) * FMath::Exp(-4.f * Dt);
 		}
-		SwimLastMiddle = float(GetActorLocation().Z - GetCapsuleComponent()->GetScaledCapsuleHalfHeight()) + StandHalfHeight;
+		SwimLastMiddle = float(GetActorLocation().Z - GetCapsuleComponent()->GetScaledCapsuleHalfHeight()) + SwimMiddleUp();
 		// (BUG-SURFACEJOLT) the swim's state, every 2 s while swimming (the campaign logs had none)
 		if (Now >= SwimLogNext)
 		{
@@ -2237,7 +2589,7 @@ void AOutlawsPlayer::SwimLog(const FString& What)
 	if (Now - SwimLogWindow > 1.0) { SwimLogWindow = Now; SwimLogCount = 0; }
 	if (++SwimLogCount > 8) return;
 	const UCharacterMovementComponent* M = GetCharacterMovement();
-	const float Middle = float(GetActorLocation().Z - GetCapsuleComponent()->GetScaledCapsuleHalfHeight()) + StandHalfHeight;
+	const float Middle = float(GetActorLocation().Z - GetCapsuleComponent()->GetScaledCapsuleHalfHeight()) + SwimMiddleUp();
 	UE_LOG(LogOutlaws, Log, TEXT("OLRT swim: %s (middle %.0f cm under the surface z %.0f, %.0f cm/s up)"), *What, SwimSurface - Middle, SwimSurface, M ? M->Velocity.Z : 0.0);
 }
 
@@ -2704,14 +3056,15 @@ void AOutlawsPlayer::FitUnderRoofAfterTeleport()
 	{
 		return !World->OverlapBlockingTestByChannel(Feet + FVector(0.0, 0.0, Half + 2.0), FQuat::Identity, Channel, FCollisionShape::MakeCapsule(R, Half), Q, RP);
 	};
-	if (CurHalf <= CrouchHalfHeight + 0.5f || Fits(CurHalf)) return;
+	// (REQ-CROUCHFIT: down to the full-width crouch, as this body is tried at its full width; a crouch then goes on down)
+	if (CurHalf <= WideCrouchHalfHeight + 0.5f || Fits(CurHalf)) return;
 	// the tallest body that fits, down to the crouch's; none, and something other than a roof is in the way: left as it was
 	float Half = -1.f;
-	for (float Try = CurHalf - 6.f; Try > CrouchHalfHeight; Try -= 6.f)
+	for (float Try = CurHalf - 6.f; Try > WideCrouchHalfHeight; Try -= 6.f)
 	{
 		if (Fits(Try)) { Half = Try; break; }
 	}
-	if (Half < 0.f && Fits(CrouchHalfHeight)) Half = CrouchHalfHeight;
+	if (Half < 0.f && Fits(WideCrouchHalfHeight)) Half = WideCrouchHalfHeight;
 	if (Half < 0.f) return;
 	UE_LOG(LogOutlaws, Log, TEXT("OLRT teleport: no room for the body (half %.0f) under the roof there, crouched to fit (half %.0f)"), CurHalf, Half);
 	if (bVR)
@@ -2725,7 +3078,7 @@ void AOutlawsPlayer::FitUnderRoofAfterTeleport()
 			bAutoCrouched = true;
 			bStandPending = false;
 			CrouchAmount = 1.f;
-			CrouchFull = CrouchDrop = FMath::Max(0.f, HeadHeight() - CrouchEye);
+			CrouchFull = CrouchDrop = FMath::Max(0.f, HeadHeight() - CrouchEyeHeight());
 			ShowMessage(TEXT("Crouch"), 1.5f);
 		}
 		return;
@@ -2786,7 +3139,7 @@ bool AOutlawsPlayer::StartMantle()
 	// the top is in, looked for at the lip itself just in from the wall, and that one's is kept when it is higher (a box under
 	// a low ceiling has the same one there: still no climb) (-OLOldSlopeClimb: as before)
 	static const bool bOldSlopeClimb = OLFlags::Param(TEXT("OLOldSlopeClimb"));
-	if (LC && !bOldSlopeClimb && LedgeCeil < LedgeTopZ + 2.0 * CrouchHalfHeight)
+	if (LC && !bOldSlopeClimb && LedgeCeil < LedgeTopZ + 2.0 * WideCrouchHalfHeight)
 	{
 		int32 LipSector = -1;
 		const double LipCeil = LC->CeilingZAt(FVector(GrabPoint.X, GrabPoint.Y, LedgeTopZ) + LedgeIn * 7.0, &LipSector);
@@ -2838,7 +3191,7 @@ bool AOutlawsPlayer::StartMantle()
 		{
 			if (!bNeedFloor && Past < R) continue;
 			const FVector At0 = bNeedFloor ? GroundAt(Lip + LedgeIn * Past) : Lip + LedgeIn * Past;
-			for (const float Try : { Want, FMath::Min(Want, CrouchHalfHeight) })
+			for (const float Try : { Want, FMath::Min(Want, WideCrouchHalfHeight) })     // (REQ-CROUCHFIT: at the full width)
 			{
 				// (BUG-SLOPES, the town's roofs: the upright body's round bottom cut into a rising roof, so no spot fitted
 				// and the climb was refused) a little higher, resting on the slope, up to 45 cm
@@ -2866,7 +3219,7 @@ bool AOutlawsPlayer::StartMantle()
 	// would need it: the body (crouched, a little slimmer) swept across from over the hanging spot to the landing; a mid
 	// texture that stops the body (bars), a wall, anything solid in between: no climb
 	{
-		const float SweepHalf = FMath::Min(Half, CrouchHalfHeight) * 0.9f;
+		const float SweepHalf = FMath::Min(Half, WideCrouchHalfHeight) * 0.9f;
 		const FVector Land = Base + FVector(0.0, 0.0, SweepHalf + 4.0);
 		// (over a rail the landing is lower than the lip: across at the lip's height, then down)
 		const double Top = FMath::Max(Land.Z, double(LedgeTopZ) + SweepHalf + 4.0);
@@ -2900,7 +3253,7 @@ bool AOutlawsPlayer::StartMantle()
 				bAutoCrouched = true;
 				bStandPending = false;
 				CrouchAmount = 1.f;
-				CrouchFull = CrouchDrop = FMath::Max(0.f, HeadHeight() - CrouchEye);
+				CrouchFull = CrouchDrop = FMath::Max(0.f, HeadHeight() - CrouchEyeHeight());
 				MantleDrop0 = ShownDrop;
 				ShowMessage(TEXT("Crouch"), 1.5f);
 			}
@@ -3221,12 +3574,25 @@ void AOutlawsPlayer::UpdateBodyHeight()
 {
 	// the body is as tall as the head is high (plus the skull above the eyes): duck low enough and
 	// any gap the headset fits under can be walked through.  The stick crouch lowers the view too.
-	const float MinHalf = GetCapsuleComponent()->GetUnscaledCapsuleRadius() + 2.f;
+	const float MinHalf = LowestHalf();
 	float Want = FMath::Clamp((HeadHeight() + 12.f) * 0.5f, MinHalf, StandHalfHeight);
 	// crouched by a climb into a low space: up again by itself once the whole head-sized body has room, on a floor
+	// (REQ-CROUCHFIT: or crouched to fit by the swim, in the water, with nothing low ahead: SwimRoomToStand)
 	if (!bCrouchHeld)
 	{
 		bAutoCrouched = false;             // (the stick stood it up)
+		bSwimSqueeze = false;
+	}
+	else if (bAutoCrouched && MantleLeft <= 0.f && bSwimSqueeze && bSwimming)
+	{
+		if (SwimRoomToStand(Want))
+		{
+			bCrouchHeld = false;
+			bAutoCrouched = false;
+			bSwimSqueeze = false;
+			bStandPending = true;
+			ShowMessage(TEXT("Stand"), 1.5f);
+		}
 	}
 	else if (bAutoCrouched && MantleLeft <= 0.f && GetCharacterMovement()->IsMovingOnGround())
 	{
@@ -3235,8 +3601,9 @@ void AOutlawsPlayer::UpdateBodyHeight()
 		FCollisionResponseParams RP;
 		Cap->InitSweepCollisionParams(Q, RP);
 		const FVector Feet = GetActorLocation() - FVector(0.0, 0.0, Cap->GetUnscaledCapsuleHalfHeight());
+		// (REQ-CROUCHFIT: the standing body at its own width, not the crouch's narrower one)
 		if (GetWorld() && !GetWorld()->OverlapBlockingTestByChannel(Feet + FVector(0.0, 0.0, Want + 2.0), FQuat::Identity, Cap->GetCollisionObjectType(),
-			FCollisionShape::MakeCapsule(Cap->GetUnscaledCapsuleRadius(), Want), Q, RP))
+			FCollisionShape::MakeCapsule(OldCrouchFit() ? Cap->GetUnscaledCapsuleRadius() : RadiusFor(Want), Want), Q, RP))
 		{
 			bCrouchHeld = false;
 			bAutoCrouched = false;
@@ -3247,7 +3614,7 @@ void AOutlawsPlayer::UpdateBodyHeight()
 	if (bCrouchHeld)
 	{
 		// (a part crouch is a part shorter body: the crouch's own height only at the full depth)
-		Want = FMath::Min(FMath::Clamp((HeadHeight() - CrouchDrop + 12.f) * 0.5f, MinHalf, StandHalfHeight), FMath::Lerp(StandHalfHeight, CrouchHalfHeight, CrouchAmount));
+		Want = FMath::Min(FMath::Clamp((HeadHeight() - CrouchDrop + 12.f) * 0.5f, MinHalf, StandHalfHeight), FMath::Lerp(StandHalfHeight, CrouchFitHalf(), CrouchAmount));
 	}
 	ResizeBody(Want);
 }
@@ -3257,15 +3624,18 @@ void AOutlawsPlayer::ResizeBody(float NewHalf)
 	UCapsuleComponent* Cap = GetCapsuleComponent();
 	UWorld* World = GetWorld();
 	const float Old = Cap->GetUnscaledCapsuleHalfHeight();
+	const float R = Cap->GetUnscaledCapsuleRadius();
+	// (REQ-CROUCHFIT) the width the body has at that height: narrowed with it at once, widened back where there is room
+	const float WantR = RadiusFor(NewHalf);
 	if (!World || FMath::Abs(NewHalf - Old) < 0.5f)
 	{
+		if (World && WantR > R + 0.25f) WidenBody(WantR);
 		return;
 	}
 	float Half = NewHalf;
 	if (NewHalf > Old)
 	{
 		// grow only into free space: sweep the top of the capsule up and stop under any ceiling
-		const float R = Cap->GetUnscaledCapsuleRadius();
 		const FVector TopSphere = GetActorLocation() + FVector(0.0, 0.0, Old - R);
 		const float Want = 2.f * (NewHalf - Old);
 		FCollisionQueryParams Q(SCENE_QUERY_STAT(OutlawsBodyGrow), false, this);
@@ -3280,12 +3650,15 @@ void AOutlawsPlayer::ResizeBody(float NewHalf)
 		}
 		if (Half < Old + 0.25f)
 		{
+			if (RadiusFor(Old) > R + 0.25f) WidenBody(RadiusFor(Old));
 			return;
 		}
 	}
 	// the feet stay where they are: the centre moves by the change in half height
-	Cap->SetCapsuleHalfHeight(Half, false);
+	if (WantR < R) Cap->SetCapsuleSize(WantR, Half, false);       // (narrowed first: never shorter than it is wide)
+	else Cap->SetCapsuleHalfHeight(Half, false);
 	AddActorWorldOffset(FVector(0.0, 0.0, Half - Old), false);
+	if (RadiusFor(Half) > Cap->GetUnscaledCapsuleRadius() + 0.25f) WidenBody(RadiusFor(Half));
 }
 
 void AOutlawsPlayer::AlignHandFrames()

@@ -1596,6 +1596,33 @@ private:
 	/** -OLOldCrouchRun (REQ-CROUCHRUN's A/B switch): crouched as before 28 Oct: no faster running, and on the desktop the
 	 *  fixed crouch speed (not scaled by the speed dial or a carried man as every other speed is). */
 	static bool OldCrouchRun();
+	/** -OLOldCrouchFit (REQ-CROUCHFIT's A/B switch): the crouch before 28 Oct: 84 cm tall at the full 80 cm width, the eye
+	 *  70 cm up, and none in the water (a swimmer was always the standing body). */
+	static bool OldCrouchFit();
+	/** REQ-CROUCHFIT (user 2026-10-28, snapshot 19): the crouched body's half height (28: 56 cm, under the original's 2-unit
+	 *  crouched body; 42 before), the crouched eye (45 cm, the original's 1.5 units; 70 before), the body's radius at a half
+	 *  height (narrower under 82 cm, to 27), and the shortest the body gets. */
+	static float CrouchFitHalf();
+	static float CrouchEyeHeight();
+	static float RadiusFor(float Half);
+	float LowestHalf() const;
+	/** REQ-CROUCHFIT: a body narrowed under its 80 cm (radius R) by a crouch is held out of anywhere the 80 cm one would not
+	 *  go (BUG-BOXGAP's gap): too narrow here, going Along, when what is left and right of the middle is nearer together
+	 *  than the 80 cm (OutWidth: how near, at the narrowest height). */
+	bool NarrowAt(const FVector& Center, float Half, float R, const FVector& Along, double* OutWidth = nullptr) const;
+	/** REQ-CROUCHFIT: the narrowed body widened back toward WantR where there is room (false: none yet). */
+	bool WidenBody(float WantR);
+	/** REQ-CROUCHFIT: after each of the movement's moves, a narrowed body that went into too narrow a place is put back. */
+	UFUNCTION()
+	void GuardBodyWidth(float DeltaSeconds, FVector OldLocation, FVector OldVelocity);
+	/** REQ-CROUCHFIT: swimming under water into something lower than the body that the crouched body goes through: the body
+	 *  crouches to fit by itself (bSwimSqueeze), and stands again with room (SwimRoomToStand). */
+	void SwimSqueeze();
+	bool SwimHeading(FVector& OutDir) const;
+	bool SwimLowAhead(float Half, float R, FHitResult& OutHit) const;
+	bool SwimRoomToStand(float Want) const;
+	float SwimMiddleUp() const;
+	bool bSwimSqueeze = false;
 	/** (REQ-STAMINA15, OutlawsPlayerStaminaProbe.cpp) -OLStaminaProbe, in any build (Shipping too, through OLFlags, not
 	 *  under WITH_OUTLAWS_TESTS): the times StaminaRate gives (a run from full to spent at each speed setting, carrying a
 	 *  man, the rests from spent to full, the jumps to spent) under both rules, then, in the level, a rest from spent to
