@@ -68,9 +68,10 @@ namespace
 	constexpr float StandHalfHeight = 87.f;     // 5.8 units tall (Dark Forces PLAYER_HEIGHT)
 	// REQ-CROUCHFIT (user 2026-10-28, snapshot 19: a hideout secret behind an underwater gap he could not get low enough
 	// for): the crouch at the original's size. OutlawsAHOM.exe's player crouches to HEIGHT / CROUCH_DIV (6 / 4: the eye at
-	// 1.5 units) with its HEAD_HEIGHT 0.5 over that, a body of 2.0 units (60 cm); 56 cm here, so its 2-unit crawl spaces fit
-	// (the movement keeps a walking body a couple of centimetres over the floor)
-	constexpr float CrouchHalfHeight = 28.f;
+	// 1.5 units) with its HEAD_HEIGHT 0.5 over that, a body of 2.0 units (60 cm).  Ours is 76 cm (planner 2026-10-28): low
+	// enough for the snapshot's 3-unit (90 cm) tunnel and the crawl spaces from 2.65 units up, and still 76 cm across, so
+	// BUG-BOXGAP's 75 cm gap stays shut to the body itself; the original's 2-unit crawl spaces stay shut to ours
+	constexpr float CrouchHalfHeight = 38.f;
 	// the crouch at the full 80 cm width: what a climb into a low space or a teleport under a roof fits first (the body then
 	// crouches on down as any crouch does), and the crouch before REQ-CROUCHFIT (-OLOldCrouchFit): 2.8 units, "through
 	// 3-unit crawl spaces"
@@ -79,12 +80,12 @@ namespace
 	// 80 cm across: closes that gap and stays well under the Jedi engine's own player (PLAYER_WIDTH 1.8 units, 54 cm), so
 	// every way the original's body fitted through still fits
 	constexpr float BodyRadius = 40.f;
-	// (REQ-CROUCHFIT) a capsule is never shorter than it is wide: under 82 cm the body narrows with its height, to 54 cm
-	// across at the crouch's 56. A narrowed body is still kept out of anywhere the 80 cm one would not go (NarrowAt), so
-	// BUG-BOXGAP's gap stays shut to a crouch too
-	constexpr float CrouchRadius = 27.f;
+	// (REQ-CROUCHFIT) a capsule is never shorter than it is wide: under 82 cm the body narrows with its height, to 76 cm
+	// across at the crouch's 76 (a 38 cm radius, never less: planner 2026-10-28). A narrowed body is still kept out of
+	// anywhere the 80 cm one would not go (NarrowAt), so BUG-BOXGAP's gap stays shut to a crouch too
+	constexpr float CrouchRadius = 38.f;
 	constexpr float StandEye = 160.f;           // desktop eye above the feet
-	constexpr float CrouchEye = 45.f;           // (REQ-CROUCHFIT) the original's crouched eye, 1.5 units
+	constexpr float CrouchEye = 62.f;           // (REQ-CROUCHFIT) 14 cm under the crouched body's top, as standing
 	constexpr float OldCrouchEye = 70.f;        // (-OLOldCrouchFit)
 	constexpr float SwimSqueezeAhead = 50.f;    // (REQ-CROUCHFIT) how far on a swimmer looks for something lower than it
 	FString* GNarrowWhy = nullptr;              // (REQ-CROUCHFIT, the log) what NarrowAt found round the middle, when set
@@ -322,6 +323,11 @@ bool AOutlawsPlayer::OldCrouchFit()
 float AOutlawsPlayer::CrouchFitHalf()
 {
 	return OldCrouchFit() ? WideCrouchHalfHeight : CrouchHalfHeight;
+}
+
+float AOutlawsPlayer::CrouchHalfAsBuilt()
+{
+	return CrouchHalfHeight;
 }
 
 float AOutlawsPlayer::CrouchEyeHeight()

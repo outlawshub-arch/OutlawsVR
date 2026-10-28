@@ -1599,10 +1599,11 @@ private:
 	/** -OLOldCrouchFit (REQ-CROUCHFIT's A/B switch): the crouch before 28 Oct: 84 cm tall at the full 80 cm width, the eye
 	 *  70 cm up, and none in the water (a swimmer was always the standing body). */
 	static bool OldCrouchFit();
-	/** REQ-CROUCHFIT (user 2026-10-28, snapshot 19): the crouched body's half height (28: 56 cm, under the original's 2-unit
-	 *  crouched body; 42 before), the crouched eye (45 cm, the original's 1.5 units; 70 before), the body's radius at a half
-	 *  height (narrower under 82 cm, to 27), and the shortest the body gets. */
+	/** REQ-CROUCHFIT (user 2026-10-28, snapshot 19): the crouched body's half height (38: 76 cm, planner 2026-10-28; 42
+	 *  before), the crouched eye (62 cm; 70 before), the body's radius at a half height (narrower under 82 cm, to 38), and
+	 *  the shortest the body gets.  CrouchHalfAsBuilt: the crouch's half height whatever the switch (the probe's scan). */
 	static float CrouchFitHalf();
+	static float CrouchHalfAsBuilt();
 	static float CrouchEyeHeight();
 	static float RadiusFor(float Half);
 	float LowestHalf() const;

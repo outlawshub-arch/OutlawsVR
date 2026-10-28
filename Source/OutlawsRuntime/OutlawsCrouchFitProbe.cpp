@@ -3,9 +3,9 @@
 // Each level in turn (the ones the gap scan lists by default, out\CROUCHFIT\py\gapscan2.py), started as a historical
 // mission.  (1) The scan again, from the level as built: every adjoined opening (a pair's adjoins joined end to end, the
 // NOPASS ones left out) with its clear height (the lowest ceiling less the highest floor of the two, the roomiest of its
-// quarter points), width and floor.  Listed: the original's crouched body (2.0 units) goes through it and ours before did
-// not (land under 2.85 units, water under 5.85: the swimmer was the standing body).  Blocked: lower than our crouched
-// body, at least 3 wide (the original's is shut too).  Narrow: under 2.55 wide between solid walls, room enough over it
+// quarter points), width and floor.  Listed: our crouched body (76 cm, 3.5 cm over it: 2.65 units) goes through it and ours
+// before did not (land under 2.85 units, water under 5.85: the swimmer was the standing body).  Blocked: lower than our
+// crouched body, at least 3 wide (from 2 units the original's goes through; ours must be stopped).  Narrow: under 2.55 wide between solid walls, room enough over it
 // (shut to the original's 3-unit body; ours must not be let through by the crouch's narrowing).
 // (2) Each, by the body itself: listed, the crouched body (the swim's crouched one in water) swept through it from 25 cm
 // on the near side to 25 cm on the far, on its floor, and not too narrow there (NarrowAt): PASS when through; under
@@ -15,7 +15,9 @@
 // (3) The game's own tick: in the hideout the snapshot's tunnel (pool 258, through 308 to 378) swum along the bottom on the
 // desktop and with the headset's body; a listed land crawl space walked through crouched, both ways too (the crouched eye's
 // height logged); in townex BUG-BOXGAP's gap beside the SHOVE_ME box (room 493 into 73 at the door's north end, 2.5 units)
-// walked at standing, crouched at three lines across it, and crouched with the headset's body: never through.
+// walked at standing, crouched at three lines across it, and crouched with the headset's body: never through.  And each
+// listed gap the sweep stopped, walked crouched (or swum): through, a pass; not, "LEFT", counted skipped (planner
+// 2026-10-28: the ones left go in the commit note).  A narrow one the 80 cm body goes through too is skipped (WIDE).
 // Lines "OLSHOT crouchfit ..." a case and "OLSHOT crouchfit RESULT".
 
 #include "OutlawsPlayer.h"
@@ -57,6 +59,8 @@ namespace
 		double ShutX = 1e9;                       // (shut cases) the plan x the body must stay short of
 		bool bSwim = false;
 		TArray<FVector2D> Via;                    // (plan) headed for each in turn, the next once within a unit of it
+		FString Left;                             // (a gap the sweep stopped) its line: not through by the walk too, LEFT
+		bool bSqueezed = false;                   // (a swim) started with the swim's crouch (no room to stand there)
 	};
 	const TCHAR* const CrouchFitLevels = TEXT("hideout+townex+canyon+civlwar1+civlwar2+cliff+granary+icecaves+mill+office+ranch+shgranry+shgulch+shwildns+town+train+villa+wharf");
 
@@ -69,7 +73,7 @@ namespace
 
 OL_SHOT_MATCH(OLCrouchFitProbe) { return OLFlags::Has(TEXT("OLCrouchFitProbe")); }
 
-OL_SHOT_TEST(OLCrouchFitProbe, 18)
+OL_SHOT_TEST(OLCrouchFitProbe, 22)
 {
 	static TArray<FString> Levels;
 	static int32 LevelI = 0, Passes = 0, Fails = 0, Skips = 0, WalkI = -1;
@@ -159,6 +163,7 @@ OL_SHOT_TEST(OLCrouchFitProbe, 18)
 			return;
 		}
 		const double U = FOutlawsGeometry::UnitsToCm;
+		const double ListedMin = (2.0 * CrouchHalfAsBuilt() + 3.5) / U, BlockedMax = 2.0 * CrouchHalfAsBuilt() / U;
 		// (1) the scan, as gapscan2.py has it
 		TSet<int32> Moving;
 		if (const FOutlawsInfRuntime* Inf = L->DebugInf())
@@ -227,8 +232,10 @@ OL_SHOT_TEST(OLCrouchFitProbe, 18)
 					G.bMoving = Moving.Contains(G.A) || Moving.Contains(G.B);
 					const double Step = FMath::Abs(Lv->SurfaceY(S, G.At, true) - Lv->SurfaceY(T, G.At, true));
 					if (G.H <= 0.05) continue;
-					if (G.H >= 1.99 && G.Width >= 2.99 && (G.bWet ? G.H < 5.85 : (G.H < 2.85 && Step <= 3.0))) G.Kind = ECrouchFitKind::Listed;
-					else if (G.H >= 1.0 && G.H < 1.92 && G.Width >= 2.99) G.Kind = ECrouchFitKind::Blocked;
+					// (the 76 cm crouch, planner 2026-10-28: listed from its height and 3.5 cm over it, the floor's few centimetres;
+					// lower than it is blocked, the original's 2-unit crawl spaces among them, said so in the line)
+					if (G.H >= ListedMin && G.Width >= 2.99 && (G.bWet ? G.H < 5.85 : (G.H < 2.85 && Step <= 3.0))) G.Kind = ECrouchFitKind::Listed;
+					else if (G.H >= 1.0 && G.H < BlockedMax && G.Width >= 2.99) G.Kind = ECrouchFitKind::Blocked;
 					else if (G.H >= 2.0 && G.Width >= 1.0 && G.Width < 2.55)
 					{
 						// between solid walls: the near sector's walls at both ends of the chain have no adjoin
@@ -250,7 +257,7 @@ OL_SHOT_TEST(OLCrouchFitProbe, 18)
 		}
 		int32 NListed = 0, NBlocked = 0, NNarrow = 0;
 		for (const FCrouchFitGap& G : Gaps) { NListed += G.Kind == ECrouchFitKind::Listed; NBlocked += G.Kind == ECrouchFitKind::Blocked; NNarrow += G.Kind == ECrouchFitKind::Narrow; }
-		UE_LOG(LogOutlaws, Display, TEXT("OLSHOT crouchfit %s scan: %d listed (the original through, ours before not), %d blocked (lower than the crouch), %d narrow (under 2.55 wide)"),
+		UE_LOG(LogOutlaws, Display, TEXT("OLSHOT crouchfit %s scan: %d listed (the crouch's height, ours before not), %d blocked (lower than the crouch), %d narrow (under 2.55 wide)"),
 			*L->LevelName, NListed, NBlocked, NNarrow);
 		// (2) by the body: sweeps of the crouched body (or the swim's), the 80 cm one for the narrow
 		FCollisionQueryParams Q(SCENE_QUERY_STAT(OutlawsCrouchFitProbe), false, this);
@@ -308,6 +315,8 @@ OL_SHOT_TEST(OLCrouchFitProbe, 18)
 		};
 		const float Hc = CrouchFitHalf(), Rc = RadiusFor(Hc);
 		int32 LP = 0, LF = 0, LS = 0;
+		TArray<FCrouchFitGap> ToWalk;
+		TArray<FString> ToWalkWhat;
 		for (const FCrouchFitGap& G : Gaps)
 		{
 			FString Why;
@@ -337,11 +346,21 @@ OL_SHOT_TEST(OLCrouchFitProbe, 18)
 					continue;
 				}
 				What = FString::Printf(TEXT("listed %s: %s %s (%s)"), *CrouchFitWhere(G), bOld ? TEXT("the body before") : G.bWet ? TEXT("the swim's crouch") : TEXT("the crouch"), bThrough ? TEXT("goes through") : TEXT("is stopped"), *Why);
+				// (planner 2026-10-28: a gap the sweep stops is walked with the game's tick below, the crouch held or the swim's
+				// own; through: a pass, else it is one of those left, logged LEFT and counted skipped)
+				if (!bThrough && !G.bMoving && !Why.Contains(TEXT("OutlawsDoor")) && !Why.Contains(TEXT("OutlawsLift")))
+				{
+					UE_LOG(LogOutlaws, Display, TEXT("OLSHOT crouchfit sweep stopped (%s): %s; walked below"), *L->LevelName, *What);
+					ToWalk.Add(G);
+					ToWalkWhat.Add(What);
+					continue;
+				}
 			}
 			else if (G.Kind == ECrouchFitKind::Blocked)
 			{
 				bOk = !Through(G, Rc, Hc, Why);
-				What = FString::Printf(TEXT("blocked %s: the crouch %s (%s)"), *CrouchFitWhere(G), bOk ? TEXT("is stopped") : TEXT("goes through"), *Why);
+				What = FString::Printf(TEXT("blocked %s%s: the crouch %s (%s)"), *CrouchFitWhere(G), G.H >= 1.99 ? TEXT(" (the original's 2-unit body through)") : TEXT(""),
+					bOk ? TEXT("is stopped") : TEXT("goes through"), *Why);
 			}
 			else
 			{
@@ -354,6 +373,14 @@ OL_SHOT_TEST(OLCrouchFitProbe, 18)
 				bOk = !bWide && bNarrow;
 				What = FString::Printf(TEXT("narrow %s: the 80 cm body %s (%s), the crouch %s"), *CrouchFitWhere(G), bWide ? TEXT("goes through") : TEXT("is stopped"), *Why80,
 					bOld ? TEXT("is the 80 cm body") : bNarrow ? TEXT("held out (narrower than the 80 cm)") : TEXT("let in"));
+				if (bWide)
+				{
+					// (the 80 cm body through too: wider in our level than the scan's walls have it, no gap the crouch opens)
+					++Skips;
+					++LS;
+					UE_LOG(LogOutlaws, Display, TEXT("OLSHOT crouchfit SKIP WIDE (%s): %s"), *L->LevelName, *What);
+					continue;
+				}
 			}
 			if (!bOk && (G.bMoving || Why.Contains(TEXT("OutlawsDoor")) || Why.Contains(TEXT("OutlawsLift"))))     // (a mover in the way: where the INF has it now)
 			{
@@ -429,6 +456,45 @@ OL_SHOT_TEST(OLCrouchFitProbe, 18)
 				Walks.Add(W);
 			}
 		}
+		// the gaps the sweep stopped, walked: on land crouched from 3 units short of it (the near side's floor), under water
+		// the standing swimmer along the bottom (the swim crouches to fit by itself), on through to 2 units past it
+		for (int32 i = 0; i < ToWalk.Num(); ++i)
+		{
+			const FCrouchFitGap& G = ToWalk[i];
+			// (from whatever sector is there, 3, 2, 1.2 or 0.7 units short of it: a stair's steps are thinner than that; with room
+			// for the crouched body, under water for the standing one or else the swim's crouch to start with)
+			FVector2D From = FVector2D::ZeroVector;
+			double FloorA = 0.0, RoomA = 0.0;
+			bool bRoom = false;
+			for (const double Back : { 3.0, 2.0, 1.2, 0.7 })
+			{
+				From = G.At - G.In * Back;
+				const FOutlawsSector* Sa = Lv->SectorAt(From.X, G.Floor + 0.5, From.Y);
+				if (!Sa) continue;
+				FloorA = Lv->SurfaceY(*Sa, From, true);
+				if (FMath::Abs(FloorA - G.Floor) > 1.0) continue;      // (a step from the gap's floor at most: not a room under it)
+				RoomA = (Lv->SurfaceY(*Sa, From, false) - FloorA) * U;
+				if (RoomA > 2.0 * Hc + 6.0) { bRoom = true; break; }
+			}
+			if (!bRoom)
+			{
+				++Skips;
+				UE_LOG(LogOutlaws, Display, TEXT("OLSHOT crouchfit LEFT (%s): %s; no room on its near side to walk from"), *L->LevelName, *ToWalkWhat[i]);
+				continue;
+			}
+			FCrouchFitWalk W;
+			W.Name = FString::Printf(TEXT("the stopped gap %d > %d (%.2f u, %s) %s"), G.A, G.B, G.H, G.bWet ? TEXT("water") : TEXT("land"), G.bWet ? TEXT("swum along the bottom") : TEXT("walked crouched"));
+			W.bSqueezed = G.bWet && RoomA < 2.0 * 87.0 + 6.0;
+			W.Start = Centre(From, FloorA, G.bWet && !W.bSqueezed ? 87.f : Hc);
+			W.Yaw = FMath::RadiansToDegrees(FMath::Atan2(G.In.X, G.In.Y));
+			W.bCrouch = !G.bWet;
+			W.bSwim = G.bWet;
+			W.Time = 7.f;
+			W.WantSector = G.B;
+			W.Via = { G.At, G.At + G.In * 2.0 };
+			W.Left = ToWalkWhat[i];
+			Walks.Add(W);
+		}
 		WalkI = -1;
 		ShotStep = 1;
 		return;
@@ -476,6 +542,11 @@ OL_SHOT_TEST(OLCrouchFitProbe, 18)
 				if (bOld)
 				{
 					UE_LOG(LogOutlaws, Display, TEXT("OLSHOT crouchfit walk (before, for the A/B) %s: %s; %s"), *W.Name, bThrough ? TEXT("through") : TEXT("not through"), *Seen);
+				}
+				else if (!W.Left.IsEmpty() && !bThrough)
+				{
+					++Skips;
+					UE_LOG(LogOutlaws, Display, TEXT("OLSHOT crouchfit LEFT (%s): %s; walked: not through; %s"), *L->LevelName, *W.Left, *Seen);
 				}
 				else
 				{
@@ -536,6 +607,11 @@ OL_SHOT_TEST(OLCrouchFitProbe, 18)
 				ShownDrop = CrouchFull;
 				ShownDropVel = 0.f;
 			}
+		}
+		if (W.bSqueezed)
+		{
+			Cap->SetCapsuleSize(RadiusFor(CrouchFitHalf()), CrouchFitHalf(), false);
+			bSwimSqueeze = true;
 		}
 		TeleportTo(W.Start, FRotator(0.0, W.Yaw, 0.0), false, true);
 		if (Controller) Controller->SetControlRotation(FRotator(0.0, W.Yaw, 0.0));
