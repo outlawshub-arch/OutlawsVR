@@ -20,8 +20,10 @@
  *    resolution, hitches over 30 ms (live play only);
  *  - the detailed capture, a row a frame into Saved/Perf/capture_<date_time>.csv while Saved/Perf/capture.on or
  *    Saved/capture.on exists (polled once a second; questperf record / stop; BUG-PERFFLAG: the Quest's Saved is writable for
- *    adb's shell, and Saved/Perf is made group-writable there too), with -OLPerfCapture (the whole run), or ol.perf.Capture 1.
- *    -OLPerfFlagProbe checks both flag files on the desktop.
+ *    adb's shell), with -OLPerfCapture (the whole run), or ol.perf.Capture 1.  -OLPerfFlagProbe checks both flag files on
+ *    the desktop.
+ * BUG-PERFFLAG2: on Android every file the game makes in Saved/Perf is chmod 0664 (MakeReadable), so adb's shell reads it
+ * through the "other" bits; at startup the files already there are too ("OLPERF files readable: <n> chmod 0664 (<m> failed)").
  * -OLNoPerfFiles: no files, the summary lines only (to measure the writer's cost against).
  */
 namespace OutlawsPerf
@@ -60,6 +62,10 @@ namespace OutlawsPerf
 	 *  console variable or -OLPerfCapture may start another at the next second's poll. */
 	OUTLAWSRUNTIME_API FString StartTestCapture();
 	OUTLAWSRUNTIME_API int64 EndTestCapture();
+	/** BUG-PERFFLAG2 (the user's Quest, 28 Oct): a file the game wrote in Saved/Perf made readable for adb's shell, chmod 0664
+	 *  (Android only; a refusal logged "OLPERF chmod 0664 of <path> failed (errno n)").  1 done, 0 nothing to do (the desktop),
+	 *  -1 refused.  Called where each file is written whole, and where an appended one is first made. */
+	OUTLAWSRUNTIME_API int32 MakeReadable(const FString& Path);
 
 	void Startup();
 	void Shutdown();

@@ -283,7 +283,9 @@ namespace
 		S += TEXT("-- manual marks, in order --\n");
 		if (Marks.Num() == 0) S += TEXT("(none)\n");
 		for (const FString& M : Marks) S += M;
-		FFileHelper::SaveStringToFile(S + TEXT("\n") + PriorPerformance, *FPaths::Combine(PerfDir, TEXT("performance.txt")));
+		const FString File = FPaths::Combine(PerfDir, TEXT("performance.txt"));
+		FFileHelper::SaveStringToFile(S + TEXT("\n") + PriorPerformance, *File);
+		OutlawsPerf::MakeReadable(File);         // (BUG-PERFFLAG2: adb's shell reads it)
 	}
 
 	void WriteLive(double Seconds)
@@ -316,7 +318,9 @@ namespace
 #else
 		S += TEXT("\n(per-pass GPU: `csvprofile start` / `stop`, which tools/olue/questperf does for you; our own row a frame: ol.perf.Capture 1)\n");
 #endif
-		FFileHelper::SaveStringToFile(S, *FPaths::Combine(PerfDir, TEXT("perf_live.txt")));
+		const FString File = FPaths::Combine(PerfDir, TEXT("perf_live.txt"));
+		FFileHelper::SaveStringToFile(S, *File);
+		OutlawsPerf::MakeReadable(File);         // (BUG-PERFFLAG2)
 	}
 
 	FString TimelinePending;
@@ -646,6 +650,7 @@ namespace
 		{
 			CaptureFile = FPaths::Combine(PerfDir, FString::Printf(TEXT("capture_%s.csv"), *FDateTime::Now().ToString(TEXT("%Y%m%d_%H%M%S"))));
 			FFileHelper::SaveStringToFile(CaptureHeader(), *CaptureFile);
+			OutlawsPerf::MakeReadable(CaptureFile);      // (BUG-PERFFLAG2: its rows are appended to it)
 			CaptureFrames = 0;
 			CaptureStart = FPlatformTime::Seconds();
 			bCapturing = true;
@@ -898,6 +903,7 @@ namespace
 				}
 				FFileHelper::SaveStringToFile(S + TEXT("\n"), *FPaths::Combine(PerfDir, TEXT("hang.txt")), FFileHelper::EEncodingOptions::AutoDetect,
 					&IFileManager::Get(), FILEWRITE_Append);
+				OutlawsPerf::MakeReadable(FPaths::Combine(PerfDir, TEXT("hang.txt")));      // (BUG-PERFFLAG2)
 				FPlatformMisc::LowLevelOutputDebugStringf(TEXT("OLPERF hang: game thread stuck %.0f s after frame %llu; see Saved/Perf/hang.txt"), Stalled, Frame);
 			}
 			return 0;
@@ -1179,6 +1185,20 @@ int64 OutlawsPerf::EndTestCapture()
 	return Frames;
 }
 
+int32 OutlawsPerf::MakeReadable(const FString& Path)
+{
+#if PLATFORM_ANDROID
+	// (BUG-PERFFLAG2) the owner's and its group's read and write, read for the rest: adb's shell (not the app's user, nor
+	// always in the file's group) reads it through the "other" bits
+	const FString Phys = IFileManager::Get().ConvertToAbsolutePathForExternalAppForWrite(*Path);
+	if (chmod(TCHAR_TO_UTF8(*Phys), 0664) == 0) return 1;
+	UE_LOG(LogOutlaws, Log, TEXT("OLPERF chmod 0664 of %s failed (errno %d)"), *Phys, errno);
+	return -1;
+#else
+	return 0;
+#endif
+}
+
 namespace
 {
 	// BUG-PERFFLAG: -OLPerfFlagProbe (any build, through OLFlags): each flag file made as questperf makes it over adb, the
@@ -1236,6 +1256,20 @@ namespace
 			++Fp.Step;
 			Fp.At = Now + 1.0;
 			if (Fp.Step == 3) return true;
+			{
+				// BUG-PERFFLAG2: the helper over every file in Saved/Perf, a line each (chmod 0664 on Android, nothing on the desktop)
+				TArray<FString> Files;
+				Fm.FindFiles(Files, *(PerfDir / TEXT("*")), true, false);
+				int32 Done = 0, NoOp = 0, Refused = 0;
+				for (const FString& F : Files)
+				{
+					const int32 R = OutlawsPerf::MakeReadable(FPaths::Combine(PerfDir, F));
+					(R > 0 ? Done : R < 0 ? Refused : NoOp)++;
+					UE_LOG(LogOutlaws, Display, TEXT("OLPERFFLAG readable %s: %s"), *F, R > 0 ? TEXT("chmod 0664") : R < 0 ? TEXT("chmod 0664 refused") : TEXT("nothing to do (not Android)"));
+				}
+				Check(Files.Num() > 0 && Refused == 0 && (PLATFORM_ANDROID ? Done == Files.Num() : NoOp == Files.Num()),
+					FString::Printf(TEXT("MakeReadable ran for the %d files in Saved/Perf: %d chmod 0664, %d refused, %d nothing to do"), Files.Num(), Done, Refused, NoOp));
+			}
 			UE_LOG(LogOutlaws, Display, TEXT("OLSHOT perfflag: %s (%d passed, %d failed)"), Fp.Fail == 0 && Fp.Pass > 0 ? TEXT("PASS") : TEXT("FAIL"), Fp.Pass, Fp.Fail);
 			FPlatformMisc::RequestExit(false);
 			return false;
@@ -1256,15 +1290,22 @@ void OutlawsPerf::Startup()
 		PerfDir = FPaths::ConvertRelativePathToFull(FPaths::Combine(OLShipLog::ReportSavedDir(), TEXT("Perf")));
 		OLFlags::Value(TEXT("OLPerfDir"), PerfDir);      // (a test's: two instances on one tree, the co-op bench)
 		IFileManager::Get().MakeDirectory(*PerfDir, true);
-#if PLATFORM_ANDROID
 		{
-			// BUG-PERFFLAG (the user's Quest, 28 Oct): the game made Saved/Perf drwxr-s--- (no group write), so adb's shell, in the
-			// folder's group ext_data_rw, could not make capture.on in it and questperf's capture never came on; Saved itself is
-			// drwxrws---.  The folder made group-writable as Saved is (a refusal is only logged)
-			const FString Phys = IFileManager::Get().ConvertToAbsolutePathForExternalAppForWrite(*PerfDir);
-			if (chmod(TCHAR_TO_UTF8(*Phys), 02770) != 0) UE_LOG(LogOutlaws, Log, TEXT("OLPERF chmod 2770 of %s failed (errno %d)"), *Phys, errno);
+			// BUG-PERFFLAG2 (the user's Quest, 28 Oct, build 3fee2e7): BUG-PERFFLAG's chmod 02770 of the folder lost its setgid
+			// bit (the app is not in its group ext_data_rw), so every file made there since was u0_a3:u0_a3 rw-rw---- and adb's
+			// shell pulled 0 bytes.  That chmod is gone (the flag is Saved/capture.on, which the shell can write); each file is
+			// made 0664 as the game writes it (MakeReadable), and the ones already here now, which repairs the unreadable ones
+			int32 Done = 0, Failed = 0;
+			TArray<FString> Here;
+			IFileManager::Get().FindFiles(Here, *(PerfDir / TEXT("*")), true, false);
+			for (const FString& F : Here)
+			{
+				const int32 R = MakeReadable(FPaths::Combine(PerfDir, F));
+				Done += R > 0 ? 1 : 0;
+				Failed += R < 0 ? 1 : 0;
+			}
+			UE_LOG(LogOutlaws, Log, TEXT("OLPERF files readable: %d chmod 0664 (%d failed)"), Done, Failed);
 		}
-#endif
 		// (BUG-PERFFLAG) the capture's flag files, polled once a second: in Perf, and in Saved beside it
 		CaptureOnPerf = FPaths::Combine(PerfDir, TEXT("capture.on"));
 		CaptureOnSaved = FPaths::ConvertRelativePathToFull(FPaths::Combine(OLShipLog::ReportSavedDir(), TEXT("capture.on")));
@@ -1296,6 +1337,15 @@ void OutlawsPerf::Startup()
 			const FString Hitches = FPaths::Combine(PerfDir, TEXT("hitches.csv"));
 			if (IFileManager::Get().FileExists(*Hitches)) IFileManager::Get().Move(*FPaths::Combine(PerfDir, TEXT("hitches_prev.csv")), *Hitches, true, true);
 			FFileHelper::SaveStringToFile(TEXT("t_s,kind,level,x,y,z,frame_ms,game_ms,render_ms,rhi_ms,gpu_ms,top_bucket,top_bucket_ms,what_happened\n"), *Hitches);
+		}
+		// (BUG-PERFFLAG2) the files appended to from here, and the last session's moved beside them
+		for (const TCHAR* Name : { TEXT("perf_timeline"), TEXT("perf_buckets"), TEXT("perf_counts"), TEXT("hitches") })
+		{
+			for (const TCHAR* Tail : { TEXT(".csv"), TEXT("_prev.csv") })
+			{
+				const FString F = FPaths::Combine(PerfDir, FString(Name) + Tail);
+				if (IFileManager::Get().FileExists(*F)) MakeReadable(F);
+			}
 		}
 		bCaptureFlag = OLFlags::Param(TEXT("OLPerfCapture"));
 	}

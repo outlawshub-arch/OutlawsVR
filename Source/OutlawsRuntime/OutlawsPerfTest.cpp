@@ -331,6 +331,7 @@ void AOutlawsLevelActor::TickPerfTest(float Dt)
 		{
 			UE_LOG(LogOutlaws, Warning, TEXT("OLRT performance test: the settings dump %s could not be written"), *Settings);
 		}
+		OutlawsPerf::MakeReadable(Settings);     // (BUG-PERFFLAG2: adb's shell reads it)
 	}
 	OutlawsPerfTest::Started(Capture.IsEmpty() ? FString(TEXT("(none: -OLNoPerfFiles)")) : Capture, Settings.IsEmpty() ? FString(TEXT("(none: -OLNoPerfFiles)")) : Settings);
 }
