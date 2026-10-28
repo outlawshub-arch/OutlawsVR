@@ -564,6 +564,56 @@ void AOutlawsLevelActor::BuildPaletteGrades(const FOutlawsAssets& A, const FOutl
 	}
 }
 
+bool AOutlawsLevelActor::OldFireBright()
+{
+	static const bool bOld = OLFlags::Param(TEXT("OLOldFireBright"));     // (REQ-FIREBRIGHT's before: every sprite by its sector's light)
+	return bOld;
+}
+
+void AOutlawsLevelActor::BuildFullBright(const FOutlawsAssets& A, const FOutlawsLevel& L)
+{
+	// REQ-FIREBRIGHT (user 2026-10-28): the Jedi engine lights a pixel through the level's colour map, a PCX whose rows are
+	// the light levels (and the shade tables under them): an entry no row ever changes is drawn as it is in the dark.  In the
+	// story's maps those are the shade tints 1..15, the fire ramp 16..19 and 250..254, and white; the remaster's GPU path
+	// keeps them so too (its HD art has a full-bright layer for the same pixels)
+	FullBrightIx.Init(false, 256);
+	const int32 Ci = L.Cmaps.IsValidIndex(MainPalette) ? MainPalette : 0;
+	const FString Name = L.Cmaps.IsValidIndex(Ci) ? L.Cmaps[Ci] : L.Palettes.IsValidIndex(MainPalette) ? L.Palettes[MainPalette] : FString();
+	TArray<uint8> Bytes;
+	OutlawsFormats::FPcxImage Img;
+	if (Name.IsEmpty() || !A.Get(Name.Contains(TEXT(".")) ? Name : Name + TEXT(".pcx"), Bytes) || !OutlawsFormats::DecodePcx(Bytes, Img) || Img.W != 256 || Img.H < 32
+		|| Img.Indices.Num() < Img.W * Img.H)
+	{
+		UE_LOG(LogOutlaws, Log, TEXT("OLRT full bright: no colour map for %s (%s): no art full bright"), *LevelName, Name.IsEmpty() ? TEXT("none named") : *Name);
+		return;
+	}
+	FString Kept;
+	int32 N = 0;
+	for (int32 c = 16; c < 256; ++c)
+	{
+		bool bSame = true;
+		for (int32 y = 0; y < Img.H && bSame; ++y) bSame = Img.Indices[y * 256 + c] == c;
+		if (!bSame) continue;
+		FullBrightIx[c] = true;
+		Kept += FString::Printf(TEXT("%s%d"), N++ ? TEXT(" ") : TEXT(""), c);
+	}
+	UE_LOG(LogOutlaws, Log, TEXT("OLRT full bright: %d entries of %s (%d rows) kept from the light: %s"), N, *Name, Img.H, N ? *Kept : TEXT("none"));
+}
+
+bool AOutlawsLevelActor::IsFullBrightArt(const OutlawsTextures::FSpriteAtlas& Atlas, float* OutShare) const
+{
+	// the share of the art's drawn pixels, the shade tints (1..15) aside, in colours the colour map never dims
+	uint64 Lit = 0, Full = 0;
+	for (int32 i = 16; i < Atlas.IndexUse.Num(); ++i)
+	{
+		Lit += Atlas.IndexUse[i];
+		if (FullBrightIx.IsValidIndex(i) && FullBrightIx[i]) Full += Atlas.IndexUse[i];
+	}
+	const float Share = Lit > 0 ? float(double(Full) / double(Lit)) : 0.f;
+	if (OutShare) *OutShare = Share;
+	return !OldFireBright() && Share >= 0.4f;
+}
+
 void AOutlawsLevelActor::GiveAllWeapons()
 {
 	// every weapon item and each ammunition to its limit (ITM MAX_COUNT)
@@ -4010,6 +4060,7 @@ AOutlawsSpriteActor* AOutlawsLevelActor::SpawnSceneSprite(const FString& Name, c
 	S->FPS = Atlas->FPS;
 	S->Grid = Atlas->Grid;
 	S->SpriteTexture = Atlas->Texture;
+	S->bFullBright = IsFullBrightArt(*Atlas);       // (REQ-FIREBRIGHT)
 	S->Quad->SetStaticMesh(SpriteQuad);
 	S->Quad->SetMaterial(0, SpriteMaterial);
 	S->FinishSpawning(Xf);

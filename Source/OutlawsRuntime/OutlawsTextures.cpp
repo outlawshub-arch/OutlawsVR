@@ -825,6 +825,7 @@ TSharedPtr<OutlawsTextures::FSpriteAtlas> OutlawsTextures::BuildSpriteAtlas(cons
 	struct FRendered { TArray<FColor> Px; int32 W = 0; int32 H = 0; int32 Bottom = 0; int32 Left = 0; bool bValid = false; TArray<FPlacedNode> Nodes; };
 	TMap<int32, FRendered> Rendered;
 	TArray<uint8> Ix;
+	Out->IndexUse.SetNumZeroed(256);
 	TArray<int32> AllFrames;
 	for (const TArray<TArray<int32>>& CR : ChorRows)
 	{
@@ -869,8 +870,10 @@ TSharedPtr<OutlawsTextures::FSpriteAtlas> OutlawsTextures::BuildSpriteAtlas(cons
 					for (int32 x = 0; x < C.W; ++x)
 					{
 						const int32 sx = bFX ? C.W - 1 - x : x;
-						const FColor Col = Lut[Ix[sy * C.W + sx]];
+						const uint8 V = Ix[sy * C.W + sx];
+						const FColor Col = Lut[V];
 						if (Col.A == 0) continue;
+						++Out->IndexUse[V];
 						Rd.Px[(Pl.Y0 - MinY + y) * Rd.W + (Pl.X0 - MinX + x)] = Col;
 					}
 				}

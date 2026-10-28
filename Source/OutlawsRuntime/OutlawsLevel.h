@@ -121,6 +121,7 @@ public:
 	TArray<FString> Textures;      // as listed (e.g. GFPLANKV.PCX, GW064WIN.ATX)
 	FVector2D Parallax = FVector2D(1024.0, 1024.0);
 	TArray<FString> Palettes;   // PALETTES: the PCX files whose palettes sectors pick (olpal, uwater...)
+	TArray<FString> Cmaps;      // CMAPS: their colour maps, PCX images 256 wide whose rows are the light levels (REQ-FIREBRIGHT)
 	FString Music;              // MUSIC: the level's music script (TOWNEX.MSC; NULL for none)
 	TArray<FOutlawsSector> Sectors;
 	TArray<FOutlawsObject> Objects;

@@ -155,6 +155,7 @@ AOutlawsSpriteActor* AOutlawsLevelActor::MakeSprite(const TSharedPtr<OutlawsText
 	S->FPS = Atlas->FPS;
 	S->Grid = Atlas->Grid;
 	S->SpriteTexture = Atlas->Texture;
+	S->bFullBright = IsFullBrightArt(*Atlas);       // (REQ-FIREBRIGHT: a fire that is a bad guy, firex, burns full bright too)
 	for (const OutlawsTextures::FSpriteAtlas::FChor& C : Atlas->Chors)
 	{
 		FOutlawsSpriteChor& D = S->Chors.AddDefaulted_GetRef();

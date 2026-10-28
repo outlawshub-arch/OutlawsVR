@@ -1725,6 +1725,18 @@ private:
 	TArray<FPaletteGrade> PaletteGrades;
 	int32 MainPalette = 0;
 	void BuildPaletteGrades(const class FOutlawsAssets& A, const class FOutlawsLevel& L);
+	void BuildFullBright(const class FOutlawsAssets& A, const class FOutlawsLevel& L);
+public:
+	/** REQ-FIREBRIGHT: the palette entries the main colour map keeps as they are on every row (no light dims them: the fire
+	 *  ramp, 16..19 and 250..254, and white in the story's maps), the shade entries 0..15 aside. */
+	TBitArray<> FullBrightIx;
+	/** REQ-FIREBRIGHT (user 2026-10-28, snapshot 17: shsimms' campfire, its flame dark red at the top): art drawn full bright
+	 *  whatever the light, by the original's rule: at least 40 % of its drawn pixels (the shade tints aside) are colours the
+	 *  level's colour map never dims.  The campfires and fires come out at 44..100 %, the next (a51cow) at 31 %, the lamps
+	 *  at 20 %, the characters under 1 %.  -OLOldFireBright: none (every sprite by its sector's light, as before). */
+	bool IsFullBrightArt(const OutlawsTextures::FSpriteAtlas& Atlas, float* OutShare = nullptr) const;
+	static bool OldFireBright();
+private:
 	void UpdateSoundGens(float Dt);
 
 	FVector PlayerStartLocation = FVector::ZeroVector;

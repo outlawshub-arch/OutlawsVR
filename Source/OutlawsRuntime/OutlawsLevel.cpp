@@ -272,6 +272,11 @@ bool FOutlawsLevel::ParseLvt(const FString& Text)
 			Palettes.Add(T[1]);
 			continue;
 		}
+		if (K.Equals(TEXT("CMAP:"), ESearchCase::IgnoreCase) && T.IsValidIndex(1))
+		{
+			Cmaps.Add(T[1]);
+			continue;
+		}
 		if (K.Equals(TEXT("PARALLAX"), ESearchCase::IgnoreCase))
 		{
 			Parallax = FVector2D(TokFloat(T, 1, 1024.0), TokFloat(T, 2, 1024.0));

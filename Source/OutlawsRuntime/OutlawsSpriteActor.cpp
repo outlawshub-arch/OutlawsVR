@@ -368,7 +368,7 @@ bool AOutlawsSpriteActor::LodQuadLook(bool bFade)
 	}
 	bLodQuadFade = bFade;
 	if (SpriteTexture) MID->SetTextureParameterValue(TEXT("Tex"), SpriteTexture);
-	MID->SetScalarParameterValue(TEXT("Brightness"), FMath::Pow(FMath::Clamp(LightLevel, 0, 31) / 31.f, 2.2f));
+	MID->SetScalarParameterValue(TEXT("Brightness"), LitBrightness());
 	CurrentCell = -1;
 	if (Shown >= 0) ApplyCell(Shown);
 	return true;
@@ -393,7 +393,7 @@ void AOutlawsSpriteActor::SetLightLevel(int32 Level)
 		return;
 	}
 	LightLevel = Level;
-	if (MID) MID->SetScalarParameterValue(TEXT("Brightness"), FMath::Pow(FMath::Clamp(LightLevel, 0, 31) / 31.f, 2.2f));
+	if (MID) MID->SetScalarParameterValue(TEXT("Brightness"), LitBrightness());
 }
 
 void AOutlawsSpriteActor::ShowModel(UPrimitiveComponent* InModel)
@@ -486,8 +486,8 @@ bool AOutlawsSpriteActor::EnsureMID()
 		MID->SetTextureParameterValue(TEXT("Tex"), SpriteTexture);
 	}
 	bHeldLookShown = false;
-	// sector light in display space, as the Jedi colormaps apply it (the world materials do the same)
-	MID->SetScalarParameterValue(TEXT("Brightness"), FMath::Pow(FMath::Clamp(LightLevel, 0, 31) / 31.f, 2.2f));
+	// sector light in display space, as the Jedi colormaps apply it (the world materials do the same); a flame full bright
+	MID->SetScalarParameterValue(TEXT("Brightness"), LitBrightness());
 	CurrentCell = -1;
 	return true;
 }

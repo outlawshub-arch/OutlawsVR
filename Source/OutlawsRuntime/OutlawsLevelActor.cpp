@@ -927,6 +927,7 @@ void AOutlawsLevelActor::Build()
 	}
 	SpritePalette = Palette;
 	BuildPaletteGrades(A, L);
+	BuildFullBright(A, L);                 // (REQ-FIREBRIGHT: before the objects are made)
 	const FString SkyStem = FOutlawsGeometry::PickSkyTexture(L);
 	TMap<FString, FOutlawsTexInfo> TexInfo;
 	int32 NumPcx = 0, NumHd = 0, NumMissing = 0;
@@ -1564,6 +1565,9 @@ void AOutlawsLevelActor::Build()
 			S->FPS = Atlas->FPS;
 			S->Grid = Atlas->Grid;
 			S->SpriteTexture = Atlas->Texture;
+			float FullShare = 0.f;
+			S->bFullBright = IsFullBrightArt(*Atlas, &FullShare);      // (REQ-FIREBRIGHT: a flame whatever the sector's light)
+			if (S->bFullBright) UE_LOG(LogOutlaws, Log, TEXT("OLRT full bright: %s (%s, %.0f %% of its art), sector light %d"), *O.Name, *Anim, FullShare * 100.f, Light);
 			for (const OutlawsTextures::FSpriteAtlas::FChor& C : Atlas->Chors)
 			{
 				FOutlawsSpriteChor& D = S->Chors.AddDefaulted_GetRef();

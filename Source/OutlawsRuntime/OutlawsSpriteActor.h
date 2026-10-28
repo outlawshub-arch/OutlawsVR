@@ -98,6 +98,12 @@ public:
 	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Outlaws")
 	int32 LightLevel = 31;
 
+	/** REQ-FIREBRIGHT: drawn full bright whatever the light (a flame: AOutlawsLevelActor::IsFullBrightArt), set before
+	 *  FinishSpawning; the HD look the same. */
+	bool bFullBright = false;
+	/** The material's Brightness: the sector light in display space, as the Jedi colour maps apply it, or 1 full bright. */
+	float LitBrightness() const { return bFullBright ? 1.f : FMath::Pow(FMath::Clamp(LightLevel, 0, 31) / 31.f, 2.2f); }
+
 	/** The sector light where the sprite now stands (a walking bad guy crossing into a lit sector). */
 	void SetLightLevel(int32 Level);
 

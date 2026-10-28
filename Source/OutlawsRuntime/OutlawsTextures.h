@@ -127,6 +127,9 @@ namespace OutlawsTextures
 		/** (REQ-GRABUPSCALE) Each cell's WAX frame (the grab upscaler's file names do not hang on the atlas's packing). */
 		TArray<int32> CellFrame;
 		FString Nwx;
+		/** REQ-FIREBRIGHT: the drawn pixels of each palette entry over every frame shown (256), for the level's colour map to
+		 *  say how much of the art is full bright (AOutlawsLevelActor::IsFullBrightArt). */
+		TArray<uint32> IndexUse;
 		/** The atlas's opacity at 1x (AtlasW x AtlasH, 1 where drawn): where a held figure's neck is (user 2026-09-29). */
 		TArray<uint8> Alpha;
 		int32 AtlasW = 0, AtlasH = 0;
