@@ -127,6 +127,7 @@ void AOutlawsLevelActor::Clear()
 	ScrollMeshes.Reset();                   // (their meshes went with ObjectMeshes)
 	LightFaces.Reset();                     // (REQ-SECTORLIGHT; their meshes too)
 	LightThings.Reset();
+	LightGroups.Reset();
 	bLightThingsFound = false;
 	ExplodeWalls.Reset();
 	OverlapPairs.Reset();                   // (their meshes too)
@@ -894,6 +895,14 @@ void AOutlawsLevelActor::SplitWorldDraws()
 	if (!WorldMesh || (!bAllParts && LightFaces.Num() == 0)) return;
 	TMap<int32, UProceduralMeshComponent*> PartOf;
 	for (const FLightFace& F : LightFaces) if (F.Mesh.Get() == WorldMesh) PartOf.Add(F.Section, nullptr);
+	// (REQ-SECTORLIGHT, cheaper: at first 1.87 ms a frame in cliff on the PC, 3.49 ms on the Quest's settings, most of it
+	// vertex colours sent again at each change of level) a light's solid sections go in one part for the light, each as
+	// a copy at every level the light reaches, only the copy at its present level shown: a change of level shows another
+	// copy and sends no vertex (TickSectorLights).  -OLOldLightRedraw: a part a section, its colours sent at each change
+	static const bool bOldRedraw = OLFlags::Param(TEXT("OLOldLightRedraw"));
+	TMap<int32, int32> FaceOf;                 // a lit world section -> its LightFaces index
+	for (int32 i = 0; i < LightFaces.Num(); ++i) if (LightFaces[i].Mesh.Get() == WorldMesh) FaceOf.Add(LightFaces[i].Section, i);
+	TMap<int32, TArray<int32>> LitBy;          // a light (its elevator) -> its solid world sections
 	int32 Parts = 0;
 	for (int32 s = 0; s < WorldMesh->GetNumSections(); ++s)
 	{
@@ -903,6 +912,12 @@ void AOutlawsLevelActor::SplitWorldDraws()
 		if (!bAllParts && !PartOf.Contains(s)) continue;
 		const EBlendMode Blend = Mat->GetBlendMode();
 		if (Blend != BLEND_Opaque && Blend != BLEND_Masked) continue;
+		const int32* Fi = bOldRedraw || !Inf ? nullptr : FaceOf.Find(s);
+		if (Fi && Inf->Elevators.IsValidIndex(LightFaces[*Fi].Elev))
+		{
+			LitBy.FindOrAdd(LightFaces[*Fi].Elev).Add(s);
+			continue;
+		}
 		FProcMeshSection Copy = *Sec;
 		Copy.bEnableCollision = false;
 		UProceduralMeshComponent* P = NewMeshComponent(TEXT("OutlawsWorldPart"), false);
@@ -918,7 +933,64 @@ void AOutlawsLevelActor::SplitWorldDraws()
 		UProceduralMeshComponent* const* P = F.Mesh.Get() == WorldMesh ? PartOf.Find(F.Section) : nullptr;
 		if (P && *P) { F.Mesh = *P; F.Section = 0; }
 	}
-	UE_LOG(LogOutlaws, Log, TEXT("OLRT world drawn as %d parts by texture (%d sections left in the world mesh)"), Parts, WorldMesh->GetNumSections() - Parts);
+	int32 LitSections = 0, Copies = 0;
+	for (const TPair<int32, TArray<int32>>& Kv : LitBy)
+	{
+		// the light's whole levels: its stops, and every level between its lowest and highest as it moves (one that jumps,
+		// SPEED 0 or less, shows its stops alone); a level none of them holds (a message off the stops) is drawn in a hidden
+		// copy when it comes (TickSectorLights)
+		const FOutlawsElevator& E = Inf->Elevators[Kv.Key];
+		const int32 NowLv = FMath::FloorToInt(E.Current);
+		TArray<int32> Lvs = { NowLv };
+		int32 Lo = NowLv, Hi = NowLv;
+		for (int32 k = 0; k < Inf->Inf.Items[E.Item].Classes[E.ClassIndex].Stops.Num(); ++k)
+		{
+			const int32 V = FMath::FloorToInt(Inf->StopValue(E, k));
+			Lvs.AddUnique(V);
+			Lo = FMath::Min(Lo, V);
+			Hi = FMath::Max(Hi, V);
+		}
+		for (int32 v = Lo; E.Speed > 0.0 && v <= Hi; ++v) Lvs.AddUnique(v);
+		UProceduralMeshComponent* P = NewMeshComponent(TEXT("OutlawsWorldPart"), false);
+		ObjectMeshes.Add(P);           // (it goes with the level: Clear)
+		int32 n = 0;
+		for (const int32 s : Kv.Value)
+		{
+			FLightFace& F = LightFaces[FaceOf[s]];
+			const FProcMeshSection* Sec = WorldMesh->GetProcMeshSection(s);
+			UMaterialInterface* Mat = WorldMesh->GetMaterial(s);
+			// the levels this face is drawn at (its sector's offset and its wall's light: some meet at the ends), 16 at most
+			const int32 Now = FOutlawsLevel::LightLevel(NowLv + F.Off, F.Wall);
+			F.CopyLv = { Now };
+			for (const int32 v : Lvs) if (F.CopyLv.Num() < 16) F.CopyLv.AddUnique(FOutlawsLevel::LightLevel(v + F.Off, F.Wall));
+			F.Mesh = P;
+			F.Section0 = n;
+			F.ShownCopy = 0;
+			F.Section = n;
+			F.Shown = float(Now) / 31.f;
+			for (int32 k = 0; k < F.CopyLv.Num(); ++k)
+			{
+				FProcMeshSection Copy = *Sec;
+				Copy.bEnableCollision = false;
+				Copy.bSectionVisible = k == 0;
+				// (the vertex colours as the builder makes them, CreateMeshSection_LinearColor's: no sRGB; alpha is the swirl's mark)
+				const uint8 B = FLinearColor(float(F.CopyLv[k]) / 31.f, 0.f, 0.f, 1.f).ToFColor(false).R;
+				for (FProcMeshVertex& V : Copy.ProcVertexBuffer) V.Color.R = V.Color.G = V.Color.B = B;
+				P->SetProcMeshSection(n + k, Copy);
+				P->SetMaterial(n + k, Mat);
+			}
+			n += F.CopyLv.Num();
+			WorldMesh->SetMeshSectionVisible(s, false);
+			++LitSections;
+		}
+		Copies += n;
+		++Parts;
+	}
+	if (LitBy.Num() > 0)
+	{
+		UE_LOG(LogOutlaws, Log, TEXT("OLRT sector lights drawn by %d parts: %d sections, %d copies at their levels"), LitBy.Num(), LitSections, Copies);
+	}
+	UE_LOG(LogOutlaws, Log, TEXT("OLRT world drawn as %d parts by texture (%d sections left in the world mesh)"), Parts, WorldMesh->GetNumSections() - (Parts - LitBy.Num() + LitSections));
 }
 
 uint32 GetOlGcCount();

@@ -1430,8 +1430,8 @@ public:
 		bool bParsedSame = false;             // the parsed level's AMBIENT (LightAt's) as the INF's, in every sector of it
 	};
 	FLightStats DebugLight(int32 Elevator) const;
-	double DebugLightSeconds = 0.0;
-	int32 DebugLightUpdates = 0, DebugLightTicks = 0;
+	double DebugLightSeconds = 0.0, DebugLightModelSeconds = 0.0;
+	int32 DebugLightUpdates = 0, DebugLightTicks = 0, DebugLightFaceUpdates = 0, DebugLightModelUpdates = 0;
 	bool HandEvent(int32 Sector, int32 Wall, uint32 Event);     // a hand's press on a wall (Wall -1: the sector), once per 0.7 s
 	FVector SteerCurrent(class ACharacter* Body, const FVector& Push);   // a water current round a closed gate; a swimmer beats it
 	FVector FlowSteer = FVector::ZeroVector;
@@ -2064,6 +2064,11 @@ private:
 		TArray<FLinearColor> Col;
 		float Shown = -1.f;                // the brightness drawn
 		FBox Box = FBox(ForceInit);        // its faces' bounds (how near the eye is to them)
+		// (cheaper) a world part's: a copy of its faces at each level it reaches, sections Section0 + k of its light's part,
+		// the one at the light's level shown (a change shows another, no vertex sent); CopyLv: the level each copy is drawn at
+		TArray<int32> CopyLv;
+		int32 Section0 = -1;
+		int32 ShownCopy = -1;
 	};
 	struct FLightThing
 	{
@@ -2075,9 +2080,20 @@ private:
 		TArray<int32> Sections;            // its model's own sections (not the ink shell), their vertices as made
 		TArray<TArray<FVector>> Pos;
 		TArray<TArray<FLinearColor>> Col;
+		TMap<int32, TArray<TArray<FColor>>> ColAt;     // (cheaper) its sections' colours at a light, made the first time it is drawn there
 	};
 	TArray<FLightFace> LightFaces;
 	TArray<FLightThing> LightThings;
+	// (cheaper) per CHANGE_LIGHT elevator: its faces and things, the level they were last looked at for, and whether one of
+	// them waits (out of range) to be drawn: a light whose drawn level did not move is passed over
+	struct FLightGroup
+	{
+		TArray<int32> Faces, Things;
+		int32 Lv = MIN_int32;
+		bool bWaiting = true;
+	};
+	TArray<FLightGroup> LightGroups;
+	TArray<FIntVector> LightModelsDue;    // (a frame's: LightThings index, its light; drawn nearest first)
 	bool bLightThingsFound = false;
 	void FindLightThings();
 	void TickSectorLights();

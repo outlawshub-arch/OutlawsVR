@@ -2805,6 +2805,11 @@ void AOutlawsLevelActor::TickScrolls()
 	}
 }
 
+// (REQ-SECTORLIGHT, cheaper) the game thread a frame the lit 3D models' redraws may take, nearest the eye first (the first
+// always goes): one 3D rock of cliff's is about 5,500 vertices sent again, 0.4 ms on the PC editor build
+static TAutoConsoleVariable<float> CVarOLSectorLightModelMs(TEXT("ol.SectorLightModelMs"), 0.2f,
+	TEXT("Milliseconds a frame the sector lights' 3D model redraws may take, nearest first (the first always goes)"));
+
 void AOutlawsLevelActor::FindLightThings()
 {
 	// (REQ-SECTORLIGHT) the sprites and 3D models the level put in a lit sector, once, after the level's things are made (not
@@ -2841,9 +2846,18 @@ void AOutlawsLevelActor::FindLightThings()
 			}
 		}
 	}
-	int32 Models = 0;
-	for (const FLightThing& T : LightThings) Models += T.Sections.Num() > 0 ? 1 : 0;
-	UE_LOG(LogOutlaws, Log, TEXT("OLRT sector lights: %d faces, %d sprites (%d of them 3D models) in lit sectors"), LightFaces.Num(), LightThings.Num(), Models);
+	int32 Models = 0, ModelVerts = 0;
+	for (const FLightThing& T : LightThings)
+	{
+		Models += T.Sections.Num() > 0 ? 1 : 0;
+		for (const TArray<FVector>& P : T.Pos) ModelVerts += P.Num();
+	}
+	UE_LOG(LogOutlaws, Log, TEXT("OLRT sector lights: %d faces, %d sprites (%d of them 3D models, %d vertices) in lit sectors"), LightFaces.Num(), LightThings.Num(), Models, ModelVerts);
+	// (cheaper) each light's faces and things together: a light whose drawn level holds is not looked at
+	LightGroups.Reset();
+	LightGroups.SetNum(Inf ? Inf->Elevators.Num() : 0);
+	for (int32 i = 0; i < LightFaces.Num(); ++i) if (LightGroups.IsValidIndex(LightFaces[i].Elev)) LightGroups[LightFaces[i].Elev].Faces.Add(i);
+	for (int32 i = 0; i < LightThings.Num(); ++i) if (LightGroups.IsValidIndex(LightThings[i].Elev)) LightGroups[LightThings[i].Elev].Things.Add(i);
 }
 
 void AOutlawsLevelActor::TickSectorLights()
@@ -2875,34 +2889,88 @@ void AOutlawsLevelActor::TickSectorLights()
 	const bool bEye = PC && PC->PlayerCameraManager;
 	const FVector Eye = bEye ? PC->PlayerCameraManager->GetCameraLocation() : FVector::ZeroVector;
 	auto Near = [bEye, &Eye](const FBox& At) { return !bEye || At.ComputeSquaredDistanceToPoint(Eye) < FMath::Square(4000.0); };
+	// (cheaper) a light is looked at only when its drawn level (the whole part) moved or one of its faces or models waits
+	// to be drawn (it was out of range, or the meshes were frozen); -OLOldLightRedraw: every one every frame, as at first
+	static const bool bOldRedraw = OLFlags::Param(TEXT("OLOldLightRedraw"));
 	int32 Updated = 0;
-	for (FLightFace& F : LightFaces)
+	for (int32 e = 0; e < LightGroups.Num() && Inf->Elevators.IsValidIndex(e); ++e)
 	{
-		UProceduralMeshComponent* M = F.Mesh.Get();
-		if (!M || bFreeze || !Inf->Elevators.IsValidIndex(F.Elev)) continue;
-		const float B = float(LevelOf(F.Elev, F.Off, F.Wall)) / 31.f;
-		if (B == F.Shown || !Near(F.Box)) continue;
-		F.Shown = B;
-		for (FLinearColor& C : F.Col) C.R = C.G = C.B = B;           // (alpha: the swirl's mark, kept)
-		// (the vertex colours as made: no sRGB, as CreateMeshSection_LinearColor's default; UpdateMeshSection_LinearColor's is the other way)
-		M->UpdateMeshSection_LinearColor(F.Section, F.Pos, TArray<FVector>(), TArray<FVector2D>(), F.Col, TArray<FProcMeshTangent>(), false);
-		if (ScrollMeshes.IsValidIndex(F.Scroll) && ScrollMeshes[F.Scroll].Sections.IsValidIndex(F.ScrollSection)) ScrollMeshes[F.Scroll].Sections[F.ScrollSection].Colors = F.Col;
-		++Updated;
-	}
-	for (FLightThing& T : LightThings)
-	{
-		AOutlawsSpriteActor* S = T.Sprite.Get();
-		if (!S || !Inf->Elevators.IsValidIndex(T.Elev)) continue;
-		const int32 Lv = LevelOf(T.Elev, T.Off, 0);
-		if (Lv != T.Shown)
+		FLightGroup& G = LightGroups[e];
+		if (G.Faces.Num() == 0 && G.Things.Num() == 0) continue;
+		const int32 Whole = FMath::FloorToInt(Inf->Elevators[e].Current);
+		if (!bOldRedraw && Whole == G.Lv && !G.bWaiting) continue;
+		G.Lv = Whole;
+		G.bWaiting = false;
+		for (const int32 i : G.Faces)
 		{
-			T.Shown = Lv;
-			S->SetLightLevel(Lv);
+			FLightFace& F = LightFaces[i];
+			UProceduralMeshComponent* M = F.Mesh.Get();
+			if (!M) continue;
+			const int32 Drawn = LevelOf(F.Elev, F.Off, F.Wall);
+			const float B = float(Drawn) / 31.f;
+			if (B == F.Shown) continue;
+			if (bFreeze || !Near(F.Box))
+			{
+				G.bWaiting = true;
+				continue;
+			}
+			F.Shown = B;
 			++Updated;
+			++DebugLightFaceUpdates;
+			if (F.CopyLv.Num() > 0)
+			{
+				// a world part's copies (SplitWorldDraws): the one at this level shown, the one shown hidden
+				int32 k = F.CopyLv.Find(Drawn);
+				if (k == INDEX_NONE)
+				{
+					// a level none holds (a message sent the light off its stops): the copy after the shown one redrawn at it
+					k = (F.ShownCopy + 1) % F.CopyLv.Num();
+					F.CopyLv[k] = Drawn;
+					for (FLinearColor& C : F.Col) C.R = C.G = C.B = B;
+					M->UpdateMeshSection_LinearColor(F.Section0 + k, F.Pos, TArray<FVector>(), TArray<FVector2D>(), F.Col, TArray<FProcMeshTangent>(), false);
+				}
+				if (k != F.ShownCopy)
+				{
+					M->SetMeshSectionVisible(F.Section0 + k, true);
+					if (F.ShownCopy >= 0) M->SetMeshSectionVisible(F.Section0 + F.ShownCopy, false);
+				}
+				F.ShownCopy = k;
+				F.Section = F.Section0 + k;
+				continue;
+			}
+			for (FLinearColor& C : F.Col) C.R = C.G = C.B = B;           // (alpha: the swirl's mark, kept)
+			// (the vertex colours as made: no sRGB, as CreateMeshSection_LinearColor's default; UpdateMeshSection_LinearColor's is the other way)
+			M->UpdateMeshSection_LinearColor(F.Section, F.Pos, TArray<FVector>(), TArray<FVector2D>(), F.Col, TArray<FProcMeshTangent>(), false);
+			if (ScrollMeshes.IsValidIndex(F.Scroll) && ScrollMeshes[F.Scroll].Sections.IsValidIndex(F.ScrollSection)) ScrollMeshes[F.Scroll].Sections[F.ScrollSection].Colors = F.Col;
 		}
-		UProceduralMeshComponent* M = Cast<UProceduralMeshComponent>(S->Model.Get());
-		if (M && T.Built > 0 && !bFreeze && Lv != T.ModelLv && T.Sections.Num() > 0 && Near(FBox(S->GetActorLocation(), S->GetActorLocation())))
+		for (const int32 i : G.Things)
 		{
+			FLightThing& T = LightThings[i];
+			AOutlawsSpriteActor* S = T.Sprite.Get();
+			if (!S) continue;
+			const int32 Lv = LevelOf(T.Elev, T.Off, 0);
+			if (Lv != T.Shown)
+			{
+				T.Shown = Lv;
+				S->SetLightLevel(Lv);
+				++Updated;
+			}
+			UProceduralMeshComponent* M = Cast<UProceduralMeshComponent>(S->Model.Get());
+			if (!M || T.Built <= 0 || Lv == T.ModelLv || T.Sections.Num() == 0) continue;
+			// (cheaper: cliff's 51 lit models are 279,000 vertices, nearly all of the cost) a model's colours are sent again
+			// only while it is drawn (seen in the last tenth of a second: not behind the eye or a wall, nor its sprite shown
+			// instead); one that comes into view takes its present level a frame or two later
+			if (bFreeze || !Near(FBox(S->GetActorLocation(), S->GetActorLocation())) || (!bOldRedraw && !M->WasRecentlyRendered(0.1f)))
+			{
+				G.bWaiting = true;
+				continue;
+			}
+			if (!bOldRedraw)
+			{
+				LightModelsDue.Add(FIntVector(i, e, 0));
+				continue;
+			}
+			const double M0 = FPlatformTime::Seconds();
 			T.ModelLv = Lv;
 			const float K = float(Lv) / float(T.Built);
 			for (int32 k = 0; k < T.Sections.Num(); ++k)
@@ -2917,8 +2985,61 @@ void AOutlawsLevelActor::TickSectorLights()
 				M->UpdateMeshSection_LinearColor(T.Sections[k], T.Pos[k], TArray<FVector>(), TArray<FVector2D>(), C, TArray<FProcMeshTangent>(), false);
 			}
 			++Updated;
+			++DebugLightModelUpdates;
+			DebugLightModelSeconds += FPlatformTime::Seconds() - M0;
 		}
 	}
+	// (cheaper) the drawn models due a new light, nearest the eye first, within ol.SectorLightModelMs of the game thread a
+	// frame (the first always): one left over waits for the next frame.  Each is sent its colours at that light, made once
+	// (no sRGB, as made) and kept for its next return there
+	LightModelsDue.Sort([this, &Eye](const FIntVector& X, const FIntVector& Y)
+	{
+		const AOutlawsSpriteActor* Sx = LightThings[X.X].Sprite.Get();
+		const AOutlawsSpriteActor* Sy = LightThings[Y.X].Sprite.Get();
+		return FVector::DistSquared(Sx->GetActorLocation(), Eye) < FVector::DistSquared(Sy->GetActorLocation(), Eye);
+	});
+	const double Budget = double(CVarOLSectorLightModelMs.GetValueOnGameThread()) / 1000.0;
+	double Spent = 0.0;
+	for (int32 n = 0; n < LightModelsDue.Num(); ++n)
+	{
+		if (n > 0 && Spent >= Budget)
+		{
+			LightGroups[LightModelsDue[n].Y].bWaiting = true;
+			continue;
+		}
+		const double M0 = FPlatformTime::Seconds();
+		FLightThing& T = LightThings[LightModelsDue[n].X];
+		UProceduralMeshComponent* M = Cast<UProceduralMeshComponent>(T.Sprite->Model.Get());
+		const int32 Lv = LevelOf(T.Elev, T.Off, 0);
+		T.ModelLv = Lv;
+		TArray<TArray<FColor>>* At = T.ColAt.Find(Lv);
+		if (!At)
+		{
+			const float K = float(Lv) / float(T.Built);
+			At = &T.ColAt.Add(Lv);
+			At->SetNum(T.Sections.Num());
+			for (int32 k = 0; k < T.Sections.Num(); ++k)
+			{
+				const TArray<FLinearColor>& Src = T.Col[k];
+				TArray<FColor>& Dst = (*At)[k];
+				Dst.SetNumUninitialized(Src.Num());
+				for (int32 v = 0; v < Src.Num(); ++v)
+				{
+					Dst[v] = FLinearColor(FMath::Min(1.f, Src[v].R * K), FMath::Min(1.f, Src[v].G * K), FMath::Min(1.f, Src[v].B * K), Src[v].A).ToFColor(false);
+				}
+			}
+		}
+		for (int32 k = 0; k < T.Sections.Num(); ++k)
+		{
+			M->UpdateMeshSection(T.Sections[k], T.Pos[k], TArray<FVector>(), TArray<FVector2D>(), TArray<FVector2D>(), TArray<FVector2D>(), TArray<FVector2D>(), (*At)[k], TArray<FProcMeshTangent>());
+		}
+		++Updated;
+		++DebugLightModelUpdates;
+		const double Took = FPlatformTime::Seconds() - M0;
+		Spent += Took;
+		DebugLightModelSeconds += Took;
+	}
+	LightModelsDue.Reset();
 	DebugLightSeconds += FPlatformTime::Seconds() - T0;
 	DebugLightUpdates += Updated;
 	++DebugLightTicks;
@@ -2942,7 +3063,13 @@ AOutlawsLevelActor::FLightStats AOutlawsLevelActor::DebugLight(int32 Elevator) c
 		BestFace = D;
 		// its drawn brightness, and what its sector's light and its wall's make it
 		const FProcMeshSection* Ps = F.Mesh->GetProcMeshSection(F.Section);
-		St.FaceBright = Ps && Ps->ProcVertexBuffer.Num() > 0 ? Ps->ProcVertexBuffer[0].Color.R / 255.f : -1.f;
+		St.FaceBright = Ps && Ps->ProcVertexBuffer.Num() > 0 && Ps->bSectionVisible ? Ps->ProcVertexBuffer[0].Color.R / 255.f : -1.f;     // (a copy hidden: not drawn)
+		// (cheaper) one copy of the face shown, no other
+		for (int32 k = 0; k < F.CopyLv.Num(); ++k)
+		{
+			const FProcMeshSection* Cs = F.Mesh->GetProcMeshSection(F.Section0 + k);
+			if (Cs && Cs->bSectionVisible != (F.Section0 + k == F.Section)) St.FaceBright = -2.f;
+		}
 		St.FaceWant = float(FOutlawsLevel::LightLevel(St.Shown + F.Off, F.Wall)) / 31.f;
 	}
 	for (const FLightThing& T : LightThings)
@@ -2956,7 +3083,8 @@ AOutlawsLevelActor::FLightStats AOutlawsLevelActor::DebugLight(int32 Elevator) c
 		++St.Models;
 		UProceduralMeshComponent* M = Cast<UProceduralMeshComponent>(T.Sprite->Model.Get());
 		const FProcMeshSection* Ps = M ? M->GetProcMeshSection(T.Sections[0]) : nullptr;
-		if (D < BestModel && Ps && Ps->ProcVertexBuffer.Num() > 0 && T.Col.Num() > 0 && T.Col[0].Num() > 0 && T.Built > 0)
+		// (a model drawn: one out of view takes its light when it comes back into view)
+		if (D < BestModel && Ps && Ps->ProcVertexBuffer.Num() > 0 && T.Col.Num() > 0 && T.Col[0].Num() > 0 && T.Built > 0 && M->WasRecentlyRendered(0.1f))
 		{
 			BestModel = D;
 			St.ModelShade = Ps->ProcVertexBuffer[0].Color.R / 255.f;                                    // (drawn now)

@@ -30,8 +30,8 @@ OL_SHOT_MATCH(OLSectorLightProbe) { return OLFlags::Param(TEXT("OLSectorLightPro
 OL_SHOT_TEST(OLSectorLightProbe, 19)
 {
 	static int32 Passes = 0, Fails = 0, Light = -1, LastStop = -1, Matched = 0, Timed = 0, Frames = 0, Followed = 0, Samples = 0;
-	static double LastAt = 0.0, WatchUntil = 0.0, MaxDt = 0.0, Cost0 = 0.0;
-	static int32 Ticks0 = 0, Updates0 = 0, ShotsLeft = 0;
+	static double LastAt = 0.0, WatchUntil = 0.0, WatchFrom = 0.0, MaxDt = 0.0, Cost0 = 0.0, ModelCost0 = 0.0;
+	static int32 Ticks0 = 0, Updates0 = 0, ShotsLeft = 0, Faces0 = 0, Models0 = 0;
 	static float Wait = 0.f;
 	static FString Seq;
 	if (!L || ShotStep < 0) return;
@@ -127,12 +127,16 @@ OL_SHOT_TEST(OLSectorLightProbe, 19)
 			{
 				Loop += C.Stops[k].Wait + (E.Speed > 0.0 ? FMath::Abs(C.Stops[(k + 1) % C.Stops.Num()].Value - C.Stops[k].Value) / E.Speed : 0.0);
 			}
-			WatchUntil = LastAt + FMath::Clamp(Loop * 1.2, 4.0, 12.0);
+			WatchUntil = LastAt + 0.3 + FMath::Clamp(Loop * 1.2, 4.0, 12.0);
 		}
+		WatchFrom = LastAt + 0.3;
 		LastAt = -1.0;
 		Cost0 = L->DebugLightSeconds;
 		Ticks0 = L->DebugLightTicks;
 		Updates0 = L->DebugLightUpdates;
+		Faces0 = L->DebugLightFaceUpdates;
+		Models0 = L->DebugLightModelUpdates;
+		ModelCost0 = L->DebugLightModelSeconds;
 		Look();
 		ShotStep = 1;
 		return;
@@ -140,6 +144,19 @@ OL_SHOT_TEST(OLSectorLightProbe, 19)
 	case 1:
 	{
 		const double Now = GetWorld()->GetTimeSeconds();
+		if (Now < WatchFrom)
+		{
+			// (REQ-SECTORLIGHT cheaper) the eye moved: 0.3 s for the models now in view to be drawn there (a model's light is
+			// sent while it is drawn), the cost counted from then
+			Cost0 = L->DebugLightSeconds;
+			Ticks0 = L->DebugLightTicks;
+			Updates0 = L->DebugLightUpdates;
+			Faces0 = L->DebugLightFaceUpdates;
+			Models0 = L->DebugLightModelUpdates;
+			ModelCost0 = L->DebugLightModelSeconds;
+			LastStop = Inf->Elevators[Light].Stop;
+			return;
+		}
 		const FOutlawsElevator& E = Inf->Elevators[Light];
 		const FOutlawsInfClass& C = Inf->Inf.Items[E.Item].Classes[E.ClassIndex];
 		MaxDt = FMath::Max(MaxDt, double(Dt));
@@ -183,9 +200,11 @@ OL_SHOT_TEST(OLSectorLightProbe, 19)
 		const AOutlawsLevelActor::FLightStats End = L->DebugLight(Light);
 		Check(Followed == Samples && Samples > 0, FString::Printf(TEXT("(2) %s: the sector's AMBIENT, its faces' brightness, the parsed level's AMBIENT (LightAt's), a sprite's light (%s) and a model's shade (%s) at the light's level in %d of %d frames"),
 			*E.Name, End.SpriteLight >= 0 ? TEXT("one") : TEXT("none here"), End.ModelWant >= 0.f ? TEXT("one") : TEXT("none here"), Followed, Samples));
-		UE_LOG(LogOutlaws, Display, TEXT("OLSHOT sectorlight cost: %.4f ms a frame for every light of %s (%d frames, %d section and sprite updates, %.4f ms each)"),
-			Ms, *L->LevelName, L->DebugLightTicks - Ticks0, L->DebugLightUpdates - Updates0,
-			(L->DebugLightSeconds - Cost0) * 1000.0 / FMath::Max(1, L->DebugLightUpdates - Updates0));
+		UE_LOG(LogOutlaws, Display, TEXT("OLSHOT sectorlight cost: %.4f ms a frame for every light of %s (%.2f ms a second; %d frames, %d section and sprite updates, %.4f ms each; %d faces, %d models taking %.4f ms a frame; %s)"),
+			Ms, *L->LevelName, (L->DebugLightSeconds - Cost0) * 1000.0 / FMath::Max(0.001, Now - WatchFrom), L->DebugLightTicks - Ticks0, L->DebugLightUpdates - Updates0,
+			(L->DebugLightSeconds - Cost0) * 1000.0 / FMath::Max(1, L->DebugLightUpdates - Updates0),
+			L->DebugLightFaceUpdates - Faces0, L->DebugLightModelUpdates - Models0, (L->DebugLightModelSeconds - ModelCost0) * 1000.0 / FMath::Max(1, L->DebugLightTicks - Ticks0),
+			OLFlags::Param(TEXT("OLOldLightRedraw")) ? TEXT("-OLOldLightRedraw") : TEXT("copies shown"));
 		ShotsLeft = 2;
 		Wait = ShotTime + 0.5f;
 		ShotStep = 2;
