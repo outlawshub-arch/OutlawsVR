@@ -1,15 +1,22 @@
 """Outlaws VR performance captures on the Quest (the LE/VE perf-watch idea, for the headset build).
 
-  python questperf.py record          start: logcat, the GPU's hardware counters (ovrgpuprofiler) and UE's
-                                      per-frame CSV capture (csvprofile), all into a new session folder
-  python questperf.py stop            stop them, pull Saved/Perf + the CSV from the headset, write report.txt
+  python questperf.py record          start: logcat, the GPU's hardware counters (ovrgpuprofiler), the game's own
+                                      row-a-frame capture (Saved/Perf/capture.on, Shipping and Development) and, in a
+                                      Development build, UE's per-frame CSV (csvprofile), all into a new session folder
+  python questperf.py stop            stop them, pull Saved/Perf, the captures and the game's log, write report.txt
+  python questperf.py capture on|off  just the game's own capture (the flag file), no logcat or GPU counters
   python questperf.py report [DIR]    (re)build report.txt for a session folder (default: the newest)
   python questperf.py pull            just pull Saved/Perf (performance.txt, perf_live.txt, hang.txt, timeline, buckets, counts, hitches)
   python questperf.py trace [SECS]    an Unreal Insights trace (default 30 s), exported to per-function timings
-  python questperf.py mark            a manual "lag right now" mark (in the headset: both sticks held 1.5 s)
-  python questperf.py cmd "stat fps"  any console command, e.g. to switch a feature off while hunting a hang
+  python questperf.py mark            a manual "lag right now" mark (Development; in the headset, any build: both sticks held 1.5 s)
+  python questperf.py cmd "stat fps"  any console command (Development builds: Shipping has no console)
+  python questperf.py auto [--level N | --map NAME]   armed: every start of that story level (default 2, The Town) is a
+                                      capture of its own, stopped at its end, with settings.txt and report.txt each
+  python questperf.py auto stop       stop an armed auto session;  compare [DIR]: compare.txt over its captures
 
-Sessions go to tools/olue/out/questperf/<date_time>/.  The game side is OutlawsPerf (OutlawsPerf.h).
+Sessions go to tools/olue/out/questperf/<date_time>/ (auto: auto_<date_time>/).  The game side is OutlawsPerf (OutlawsPerf.h).
+Only a Quest is used (the manufacturer Oculus or Meta): another Android device on adb is never picked.
+adb: OL_ADB, else ANDROID_HOME's platform-tools, else adb on the PATH.
 Untethered: `quest_wifi.py setup` once with the cable, then everything here works over Wi-Fi.
 """
 import csv
@@ -27,8 +34,19 @@ import time
 HERE = os.path.dirname(os.path.abspath(__file__))
 OUT = os.path.join(os.path.dirname(HERE), "out", "questperf")
 STATE = os.path.join(OUT, "current.json")
-# adb: the ADB environment variable, else ANDROID_HOME's platform-tools, else the PATH
-ADB = os.environ.get("ADB") or (os.path.join(os.environ["ANDROID_HOME"], "platform-tools", "adb.exe") if os.environ.get("ANDROID_HOME") else "adb")
+def find_adb():
+    """adb: the OL_ADB environment variable, else ANDROID_HOME's platform-tools, else adb on the PATH."""
+    if os.environ.get("OL_ADB"):
+        return os.environ["OL_ADB"]
+    home = os.environ.get("ANDROID_HOME")
+    if home:
+        p = os.path.join(home, "platform-tools", "adb.exe" if os.name == "nt" else "adb")
+        if os.path.exists(p):
+            return p
+    return "adb"
+
+
+ADB = find_adb()
 PKG = "com.outlawsvr.OutlawsUE"
 SAVED = "/sdcard/Android/data/%s/files/UnrealGame/OutlawsUE/OutlawsUE/Saved" % PKG
 # ovrgpuprofiler realtime metrics: utilisation, clock, memory traffic and stalls, where the shader time goes
@@ -55,6 +73,25 @@ def console(cmd):
 
 def game_running():
     return bool(adb("shell", "pidof", PKG))
+
+
+# PERF-SHIPSUMMARY: the game's own detailed capture (OutlawsPerf), in Shipping too where csvprofile and the console are
+# compiled out: a row a frame into Saved/Perf/capture_<date_time>.csv while Saved/Perf/capture.on exists.  The game looks
+# for the file once a second, so it can be made before the game starts (it starts capturing when it finds it).
+CAPTURE_ON = SAVED + "/Perf/capture.on"
+
+
+def device_captures():
+    listing = adb("shell", "ls %s/Perf/ 2>/dev/null" % SAVED)
+    return sorted(set(re.findall(r"(capture_\d{8}_\d{6}\.csv)", listing)))
+
+
+def capture_flag(on):
+    if on:
+        adb("shell", "mkdir -p %s/Perf && touch %s" % (SAVED, CAPTURE_ON))
+    else:
+        adb("shell", "rm -f %s" % CAPTURE_ON)
+    return adb("shell", "ls %s 2>/dev/null" % CAPTURE_ON) != ""
 
 
 def spawn(args, logfile):
@@ -137,11 +174,15 @@ def cmd_record():
     st["pids"].append(spawn([ADB, "logcat", "-v", "time"] + LOGCAT_FILTER, os.path.join(d, "logcat.txt")))
     st["pids"].append(spawn([sys.executable, os.path.abspath(__file__), "_gpu", os.path.join(d, "gpu_metrics.jsonl")],
                             os.path.join(d, "gpu_sidecar.log")))
+    st["captures_before"] = device_captures()
+    st["flag"] = capture_flag(True)
     console("r.GPUCsvStatsEnabled 1")              # the per-pass GPU/ columns (needs timestamp queries on)
-    st["csv"] = console("csvprofile start")
+    st["csv"] = console("csvprofile start")        # (a Development build only: Shipping has no CSV profiler and no console)
     json.dump(st, open(STATE, "w"))
     print("recording into", d)
-    print("  UE CSV capture:", "started" if st["csv"] else "NOT started (the game is not running: start it, then `questperf.py cmd \"csvprofile start\"`)")
+    print("  the game's own capture:", ("on (Saved/Perf/capture.on made; the game picks it up within a second, or when it starts)"
+                                        if st["flag"] else "NOT on: could not make %s" % CAPTURE_ON))
+    print("  UE CSV capture (Development builds):", "asked for" if st["csv"] else "not asked (the game is not running)")
     print("  play; in the headset hold both sticks in for 1.5 s to mark a lag moment (or `questperf.py mark`)")
     print("  then: python questperf.py stop")
 
@@ -150,22 +191,40 @@ def cmd_stop():
     if not os.path.exists(STATE):
         sys.exit("nothing is recording")
     st = json.load(open(STATE))
+    capture_flag(False)
     if game_running():
         console("csvprofile stop")
-        print("stopping the CSV capture (a few seconds to write) ...")
+        print("stopping the captures (a few seconds to write) ...")
         time.sleep(4)
     for pid in st["pids"]:
         kill(pid)
     os.remove(STATE)
-    pull(st["dir"], since=st["start"])
+    pull(st["dir"], since=st["start"], captures_before=st.get("captures_before"))
     report(st["dir"])
 
 
-def pull(d, since=0.0):
+def cmd_capture(on):
+    ok = capture_flag(on)
+    if on:
+        print("capture.on made: the game captures a row a frame from within a second (or from its start)" if ok else
+              "could not make " + CAPTURE_ON)
+    else:
+        print("capture.on removed: the game stops within a second; `questperf.py pull` brings the capture" if not ok else
+              "could not remove " + CAPTURE_ON)
+
+
+def pull(d, since=0.0, captures_before=None):
     os.makedirs(d, exist_ok=True)
     for name in ("performance.txt", "perf_live.txt", "perf_timeline.csv", "perf_timeline_prev.csv", "perf_buckets.csv",
                  "perf_counts.csv", "hitches.csv", "hang.txt"):
         adb("pull", "%s/Perf/%s" % (SAVED, name), os.path.join(d, name))
+    # the game's own captures: the ones made during this session (not on the headset before `record`), else the newest
+    caps = device_captures()
+    new = [c for c in caps if captures_before is not None and c not in captures_before]
+    for c in (new or caps[-1:]):
+        adb("pull", "%s/Perf/%s" % (SAVED, c), os.path.join(d, c))
+    # the game's log (Shipping: OutlawsShipLog's file, the game's own lines; the OLPERF summary lines are in it)
+    adb("pull", "%s/Logs/OutlawsUE.log" % SAVED, os.path.join(d, "game.log"))
     listing = adb("shell", "ls -l %s/Profiling/CSV 2>/dev/null" % SAVED)
     csvs = re.findall(r"(\S+\.csv(?:\.gz)?)\s*$", listing, re.M)
     # only a capture from this session: the names carry its start time, Profile(YYYYMMDD_HHMMSS).csv
@@ -227,6 +286,21 @@ def read_ue_csv(d):
     return head, data
 
 
+def read_game_capture(d):
+    """OutlawsPerf's capture_<date_time>.csv: a header row (t_s,...), a row a frame, and the header again at the end
+    (a bucket first run during the capture adds a column to the rows after it): the last header names the columns."""
+    files = sorted(glob.glob(os.path.join(d, "capture_*.csv")))
+    if not files:
+        return None, [], ""
+    with open(files[-1], encoding="utf-8", errors="replace") as f:
+        rows = list(csv.reader(f))
+    heads = [r for r in rows if r and r[0] == "t_s"]
+    if not heads:
+        return None, [], ""
+    data = [r for r in rows if r and r[0] != "t_s" and fnum(r[0]) is not None]
+    return heads[-1], data, os.path.basename(files[-1])
+
+
 def column_stats(head, data, name):
     if name not in head:
         return None
@@ -237,8 +311,8 @@ def column_stats(head, data, name):
     return statistics.fmean(vals), pct(vals, 95), max(vals)
 
 
-def report(d):
-    lines = []
+def report(d, prefix=None, quiet=False):
+    lines = list(prefix or [])
     w = lines.append
     w("Outlaws VR performance report: %s" % os.path.basename(d))
     w("=" * 100)
@@ -310,11 +384,43 @@ def report(d):
             w("\n  engine game-thread work (exclusive ms/frame), costliest first")
             for n, s in stats:
                 w("    %9.3f %9.3f %9.3f   %s" % (s[0], s[1], s[2], n))
-    else:
+    ghead, gdata, gname = read_game_capture(d)
+    if ghead:
+        play_rows = [r for r in gdata if r[ghead.index("in_play")] == "1"] if "in_play" in ghead else gdata
+        w("\n## The game's own capture (%s: %d frames, %d in live play; live play below)" % (gname, len(gdata), len(play_rows)))
+        for name in ("frame_ms", "game_ms", "render_ms", "rhi_ms", "gpu_ms", "xr_wait_ms", "gc_ms", "draws", "tris"):
+            s = column_stats(ghead, play_rows, name)
+            if s:
+                w("  %-12s avg %8.2f   p95 %8.2f   max %8.2f" % (name, *s))
+        if "frame_ms" in ghead:
+            i = ghead.index("frame_ms")
+            vals = [v for v in (fnum(r[i]) for r in play_rows if i < len(r)) if v is not None]
+            over = sum(1 for v in vals if v > budget * 1.05)
+            w("  frames over the %.1f ms budget: %d of %d (%.1f%%); over 30 ms: %d" % (
+                budget, over, len(vals), 100.0 * over / max(1, len(vals)), sum(1 for v in vals if v > 30)))
+            w("  (gpu_ms spans the frame's first to last GPU command, waits for the CPU included)")
+        first_bucket = ghead.index("textures_made") + 1 if "textures_made" in ghead else len(ghead)
+        stats = [(c, column_stats(ghead, play_rows, c)) for c in ghead[first_bucket:]]
+        stats = [(n, s) for n, s in stats if s and s[2] > 0]
+        if stats:
+            w("\n  our CPU buckets (ms/frame, game thread), costliest first")
+            w("    %9s %9s %9s   %s" % ("avg", "p95", "max", "name"))
+            for n, s in sorted(stats, key=lambda x: -x[1][0])[:25]:
+                w("    %9.3f %9.3f %9.3f   %s" % (s[0], s[1], s[2], n))
+
+    if not head and not ghead:
         live = os.path.join(d, "perf_live.txt")
         if os.path.exists(live):
-            w("\n## No UE CSV capture in this session; the last perf_live.txt instead")
+            w("\n## No per-frame capture in this session; the last perf_live.txt instead")
             w(open(live, encoding="utf-8", errors="replace").read())
+
+    gl = os.path.join(d, "game.log")
+    if os.path.exists(gl):
+        lines_s = [l.strip() for l in open(gl, encoding="utf-8", errors="replace") if "OLPERF summary" in l]
+        if lines_s:
+            w("\n## The game's summary lines (game.log, every 60 s and at each level's end; the last 30)")
+            for l in lines_s[-30:]:
+                w("  " + l[l.index("OLPERF summary"):])
 
     gm = os.path.join(d, "gpu_metrics.jsonl")
     if os.path.exists(gm):
@@ -356,14 +462,17 @@ def report(d):
 
     out = os.path.join(d, "report.txt")
     open(out, "w", encoding="utf-8").write("\n".join(lines) + "\n")
+    if quiet:
+        return
     print("\n".join(lines[:60]))
     if len(lines) > 60:
         print("... (%d more lines)" % (len(lines) - 60))
     print("\nreport:", out)
 
 
-# Unreal Insights: UNREAL_INSIGHTS, else under UE_ROOT (the UE 5.1 install folder)
-INSIGHTS = os.environ.get("UNREAL_INSIGHTS") or os.path.join(os.environ.get("UE_ROOT", "C:/Program Files/Epic Games/UE_5.1"), "Engine", "Binaries", "Win64", "UnrealInsights.exe")
+# Unreal Insights: UNREAL_INSIGHTS, else UE_ROOT's (the engine's folder)
+INSIGHTS = os.environ.get("UNREAL_INSIGHTS") or os.path.join(os.environ.get("UE_ROOT", "C:/Program Files/Epic Games/UE_5.1"), "Engine", "Binaries",
+                                                             "Win64", "UnrealInsights.exe")
 
 
 def cmd_trace(seconds):
@@ -414,14 +523,20 @@ def newest_session():
     return ds[-1]
 
 
+def is_quest(serial):
+    make = adb("-s", serial, "shell", "getprop", "ro.product.manufacturer").lower()
+    return make in ("oculus", "meta") or "quest" in adb("-s", serial, "shell", "getprop", "ro.product.model").lower()
+
+
 def pick_device():
     """One headset for every adb call (and the helpers this starts): USB when plugged in, else Wi-Fi (quest_wifi.py),
-    reconnecting to the saved Wi-Fi address when nothing is connected.  Both at once would make plain adb refuse."""
+    reconnecting to the saved Wi-Fi address when no Quest is connected.  Both at once would make plain adb refuse.
+    Only a Quest: another Android device on adb (a TV box over the network, say) must never be the one picked."""
     if os.environ.get("ANDROID_SERIAL"):
         return
     def ready():
         rows = [l.split() for l in adb("devices").splitlines()[1:] if len(l.split()) >= 2]
-        return [r[0] for r in rows if r[1] == "device"]
+        return [r[0] for r in rows if r[1] == "device" and is_quest(r[0])]
     serials = ready()
     ip_file = os.path.join(OUT, "quest_ip.txt")
     if not serials and os.path.exists(ip_file):
@@ -432,26 +547,48 @@ def pick_device():
         os.environ["ANDROID_SERIAL"] = (usb or serials)[0]
 
 
+def require_quest():
+    if not os.environ.get("ANDROID_SERIAL") or adb("get-state") != "device":
+        others = [l.split()[0] for l in adb("devices").splitlines()[1:] if l.strip()]
+        print("no Quest on adb%s (plug it in and allow USB debugging, or `quest_wifi.py setup` / `connect` for Wi-Fi)" % (
+            " (only: %s)" % ", ".join(others) if others else ""))
+        return False
+    return True
+
+
 def main():
     if len(sys.argv) < 2:
         sys.exit(__doc__)
     c = sys.argv[1]
-    if c != "_gpu":
+    offline = "--fake" in sys.argv or (c == "auto" and sys.argv[2:3] == ["stop"])
+    if c not in ("_gpu", "report", "compare") and not offline:
         pick_device()
+        if not require_quest():
+            sys.exit(1)
     if c == "_gpu":
         gpu_sidecar(sys.argv[2])
+    elif c in ("auto", "compare"):
+        import questperf_auto
+        questperf_auto.main(sys.modules[__name__], sys.argv[1:])
     elif c == "record":
         cmd_record()
     elif c == "stop":
         cmd_stop()
     elif c == "report":
-        report(sys.argv[2] if len(sys.argv) > 2 else newest_session())
+        d = sys.argv[2] if len(sys.argv) > 2 else newest_session()
+        if os.path.exists(os.path.join(d, "capture.json")):
+            import questperf_auto                  # (an auto capture's folder: its own report, the headline first)
+            questperf_auto.redo(sys.modules[__name__], d)
+        else:
+            report(d)
     elif c == "pull":
         d = os.path.join(OUT, datetime.datetime.now().strftime("%Y%m%d_%H%M%S") + "_pull")
         pull(d)
         report(d)
     elif c == "trace":
         cmd_trace(int(sys.argv[2]) if len(sys.argv) > 2 else 30)
+    elif c == "capture" and len(sys.argv) > 2 and sys.argv[2] in ("on", "off"):
+        cmd_capture(sys.argv[2] == "on")
     elif c == "mark":
         print("marked" if console("ol.perf.mark") else "the game did not take it (is it running?)")
     elif c == "cmd":
