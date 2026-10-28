@@ -605,17 +605,21 @@ bool AOutlawsPlayer::ShowMenuPage(const FString& File, bool bPush)
 		{
 			// REQ-PERFTESTMODE (user 28 Oct): the story's second level alone, captured, nothing saved (OutlawsPerfTest.cpp); last,
 			// once a whole turn on the spot with this page up has shown it
+			// REQ-PERFDIFF (user 28 Oct: "the performance testing should have a difficulty selection screen"): each row opens the
+			// story's difficulty page, Good / Bad / Ugly with its Back, the run started by the press there
 			FItem Pt;
-			Pt.Kind = EItemKind::Action;
+			Pt.Kind = EItemKind::Link;
 			Pt.Label = TEXT("Performance test");
 			Pt.Name = TEXT("perftest_start");
+			Pt.Target = TEXT("#difficulty:perftest");
 			Page->Items.Add(Pt);
 			// REQ-PERFSWEEP (user 28 Oct): beside it, shown by the same turn: The Town at a busy spot, one Graphics row at a
 			// time, each row's cost measured, every row put back after (OutlawsPerfSweep.cpp)
 			FItem Sw;
-			Sw.Kind = EItemKind::Action;
+			Sw.Kind = EItemKind::Link;
 			Sw.Label = TEXT("Settings sweep");
 			Sw.Name = TEXT("perfsweep_start");
+			Sw.Target = TEXT("#difficulty:perfsweep");
 			Page->Items.Add(Sw);
 		}
 		if (!MenuPage || MenuPage->File != File) CheatSpin = 0.f;      // (REQ-PERFTESTMODE: the turn counts from the page's own start)
@@ -1144,6 +1148,13 @@ bool AOutlawsPlayer::ShowMenuPage(const FString& File, bool bPush)
 		// (REQ-VOICEPAGE: a row the menu lit belongs to its page)
 		bMenuHoverHeld = false;
 		MenuHover[0] = MenuHover[1] = -1;
+	}
+	if (File == TEXT("#difficulty:perftest") || File == TEXT("#difficulty:perfsweep"))
+	{
+		// (REQ-PERFDIFF) a run's difficulty page lit on the last difficulty pressed this session, else Bad
+		const int32 Last = OutlawsPerfTest::NewGameDifficulty();
+		MenuHover[0] = MenuHover[1] = Last >= 0 ? Last : int32(EOutlawsDifficulty::Bad);
+		bMenuHoverHeld = true;
 	}
 	SetSheetShape(IsSavePage() || IsFrontPage(), !File.Equals(TEXT("main_game.rml"), ESearchCase::IgnoreCase));
 	FrontHits.Reset();
@@ -2015,18 +2026,6 @@ void AOutlawsPlayer::MenuActivate(int32 Hand, int32 Index)
 			}
 			return;
 		}
-		if (I.Name == TEXT("perftest_start") || I.Name == TEXT("perfsweep_start"))
-		{
-			// REQ-PERFTESTMODE (OutlawsPerfTest.cpp): New Game > Performance test; REQ-PERFSWEEP: > Settings sweep
-			AOutlawsLevelActor* L = Level.Get();
-			CloseMenu();
-			if (L && PerfTestOffered())
-			{
-				ClearScreenFx();
-				L->StartPerfTest(I.Name == TEXT("perfsweep_start"));
-			}
-			return;
-		}
 		if (I.Name.StartsWith(TEXT("start:")))
 		{
 			// "start:<story | level>:<difficulty>"
@@ -2039,7 +2038,17 @@ void AOutlawsPlayer::MenuActivate(int32 Hand, int32 Index)
 				OutlawsPerfTest::NoteNewGameDifficulty(int32(D));      // (REQ-PERFTESTMODE: a performance test's difficulty from here)
 				CloseMenu();
 				ClearScreenFx();          // the game starts clean, not fading out of the menu's tone (user 2026-09-27)
-				if (Parts[1] == TEXT("story")) L->StartStory(D);
+				if (Parts[1] == TEXT("perftest") || Parts[1] == TEXT("perfsweep"))
+				{
+					// REQ-PERFTESTMODE (OutlawsPerfTest.cpp): New Game > Performance test; REQ-PERFSWEEP: > Settings sweep;
+					// (REQ-PERFDIFF) the run at the difficulty picked on its page
+					if (PerfTestOffered())
+					{
+						OutlawsPerfTest::NotePicked();
+						L->StartPerfTest(Parts[1] == TEXT("perfsweep"));
+					}
+				}
+				else if (Parts[1] == TEXT("story")) L->StartStory(D);
 				else if (Parts[1] == TEXT("hom")) L->StartHom(D);
 				else L->StartMission(Parts[1], D);
 			}

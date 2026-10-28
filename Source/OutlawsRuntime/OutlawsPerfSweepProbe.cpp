@@ -147,6 +147,18 @@ void AOutlawsPlayer::TickPerfSweepProbe(float Dt)
 		if (i != INDEX_NONE) MenuActivate(1, i);
 		return i != INDEX_NONE;
 	};
+	// (REQ-PERFDIFF) a run's row opens the difficulty page, lit on the last difficulty pressed (else Bad); Pick pressed there
+	auto PressRun = [&](const TCHAR* Row, int32 Pick)
+	{
+		static const TCHAR* const Names[] = { TEXT("Good"), TEXT("Bad"), TEXT("Ugly") };
+		const int32 WantLit = NewGameDifficulty() >= 0 ? NewGameDifficulty() : int32(EOutlawsDifficulty::Bad);
+		const bool bRow = Press(Row);
+		const bool bPage = MenuPage && MenuPage->File.StartsWith(TEXT("#difficulty:perf"));
+		const int32 Lit = MenuHover[1] >= 0 ? MenuHover[1] : MenuHover[0];
+		SpCheck(bRow && bPage && Lit == WantLit && !IsOn(), FString::Printf(TEXT("sweep %d: %s opens the difficulty page (%s), lit on %d (wanted %d), %s picked"), Sp.Run, Row,
+			MenuPage ? *MenuPage->File : TEXT("none"), Lit, WantLit, Names[Pick]));
+		return bRow && bPage && Press(Names[Pick]);
+	};
 	// what is to be put back: the rows, the level's switches, the cvars, god mode, the settings file, the Saved folder
 	auto Keep = [&]()
 	{
@@ -269,7 +281,7 @@ void AOutlawsPlayer::TickPerfSweepProbe(float Dt)
 		Keep();
 		Sp.Run = 1;
 		Sp.Seen = 0;
-		const bool bPressed = Press(Sp.Mode == TEXT("spots") ? TEXT("Performance test") : TEXT("Settings sweep"));
+		const bool bPressed = PressRun(Sp.Mode == TEXT("spots") ? TEXT("Performance test") : TEXT("Settings sweep"), int32(EOutlawsDifficulty::Ugly));
 		SpCheck(bPressed && IsOn() && (IsSweep() == (Sp.Mode != TEXT("spots"))), FString::Printf(TEXT("sweep 1: %s pressed (%d files in Saved to keep, the settings file %s)"),
 			Sp.Mode == TEXT("spots") ? TEXT("Performance test (the survey)") : TEXT("Settings sweep"), Sp.SavedBefore.Num(), *Sp.IniMd5));
 		Wait(0.0, 240.0);
@@ -372,7 +384,7 @@ void AOutlawsPlayer::TickPerfSweepProbe(float Dt)
 		Keep();
 		Sp.Run = 2;
 		Sp.Seen = 0;
-		SpCheck(Press(TEXT("Settings sweep")) && IsSweep(), FString::Printf(TEXT("sweep 2: the row pressed again (%s)"), *Rows()));
+		SpCheck(PressRun(TEXT("Settings sweep"), int32(EOutlawsDifficulty::Good)) && IsSweep(), FString::Printf(TEXT("sweep 2: the row pressed again, Good picked (%s)"), *Rows()));
 		Sp.Step = 4;
 		Sp.At = Now;
 		Sp.Deadline = Now + 240.0;

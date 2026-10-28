@@ -36,6 +36,7 @@ namespace
 	int64 GPerfEndFrames = 0;
 	int32 GPerfNewGameDiff = -1;                   // the difficulty last pressed on New Game this session (-1 none)
 	bool GPerfSweep = false;                       // (REQ-PERFSWEEP) the run is a Settings sweep
+	bool GPerfPicked = false;                      // (REQ-PERFDIFF) its difficulty picked on its own page, until the run is over
 	FDelegateHandle GPerfExitHandle, GPerfTerminateHandle;
 
 	// (the game closed in the run: the engine's exit; on the Quest the app's end, which may come without it)
@@ -181,12 +182,21 @@ void OutlawsPerfTest::NoteNewGameDifficulty(int32 InDifficulty)
 
 int32 OutlawsPerfTest::NewGameDifficulty() { return GPerfNewGameDiff; }
 
+void OutlawsPerfTest::NotePicked() { GPerfPicked = true; }
+
+FString OutlawsPerfTest::DifficultyFrom()
+{
+	if (GPerfPicked) return TEXT("picked");
+	return GPerfNewGameDiff >= 0 ? TEXT("the last New Game choice") : TEXT("none chosen this session (Bad)");
+}
+
 void OutlawsPerfTest::Finished()
 {
 	if (GPerfState == EPerfTestState::Off) return;
 	if (GPerfSweep) SweepOver();                    // (REQ-PERFSWEEP: god mode back, the marker gone)
 	GPerfState = EPerfTestState::Off;
 	GPerfSweep = false;
+	GPerfPicked = false;
 	UE_LOG(LogOutlaws, Log, TEXT("OLRT performance test over: the main menu again (saves, achievements, best times and the settings file as ever from here)"));
 }
 
@@ -411,7 +421,7 @@ FString AOutlawsLevelActor::PerfTestSettings(const FString& CapturePath) const
 	Add(TEXT("level_title"), LevelTitle(LevelName));
 	Add(TEXT("level_one"), Order.IsValidIndex(0) ? Order[0] : FString(TEXT("hideout")));
 	Add(TEXT("difficulty"), OutlawsDifficulty::Name(Difficulty));
-	Add(TEXT("difficulty_from"), OutlawsPerfTest::NewGameDifficulty() >= 0 ? TEXT("the last New Game choice") : TEXT("none chosen this session (Bad)"));
+	Add(TEXT("difficulty_from"), OutlawsPerfTest::DifficultyFrom());
 	Add(TEXT("capture"), CapturePath);
 	Add(TEXT("headset"), OutlawsDeviceProfile::HeadsetName(OutlawsDeviceProfile::Headset()));
 	Add(TEXT("device_model"), OutlawsDeviceProfile::Model());

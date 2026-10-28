@@ -58,6 +58,10 @@ namespace OutlawsPerfTest
 	OUTLAWSRUNTIME_API void NoteNewGameDifficulty(int32 Difficulty);
 	/** The difficulty last pressed on New Game (0 Good, 1 Bad, 2 Ugly), -1 none yet. */
 	OUTLAWSRUNTIME_API int32 NewGameDifficulty();
+	/** REQ-PERFDIFF: the next run's difficulty was picked on its own difficulty page (the rows open it); kept until the run is over. */
+	OUTLAWSRUNTIME_API void NotePicked();
+	/** Where the run's difficulty came from, for the dumps: "picked", or the last New Game choice, or none (Bad). */
+	OUTLAWSRUNTIME_API FString DifficultyFrom();
 
 	/** The level actor's side (OutlawsPerfTest.cpp). */
 	void Begin(const FString& Level, const TMap<FString, int32>& Carry, bool bSweep = false);

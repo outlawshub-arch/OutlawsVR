@@ -9,6 +9,9 @@
 // folder's files (but Perf and Logs, and the editor's own folders) are md5-checked unchanged.  Then New Game > Main Game >
 // Ugly as ever: the story's first level with the start kit and its level-start autosave written again; End Game, and a third
 // run takes Ugly, the difficulty last pressed on New Game (the first two, with none pressed yet, Bad).
+// REQ-PERFDIFF: the row opens the difficulty page (lit on the last difficulty pressed this session, else Bad); its Back goes to
+// New Game with no run and nothing saved; the runs pick Good, Ugly and Bad there, each run at its pick ("picked" in the dump),
+// the level built with the bad guys of its pick (the build's "objects:" line; the three sets differ).
 // -OLPerfTestProbe=closed quits in the first run instead (its "game closed" end line is the runner's to find).
 // "OLPERFTEST check PASS|FAIL: ..." a check, then "OLSHOT perftest: PASS|FAIL" and the exit.  See OutlawsPlayer.h
 // (TickPerfTestProbe).
@@ -42,6 +45,7 @@ namespace
 		uint32 Seed1 = 0, Sum1 = 0;   // the first run's seed and roll, and its bad guys: the second's with the same seed
 		int32 Enemies1 = -1;
 		TMap<FString, FString> SavedBefore;
+		TMap<FString, int32> Enemies;  // (REQ-PERFDIFF) "<level> <difficulty>": the run's bad guys at its start
 		bool bDone = false;
 	};
 	FPerfProbe GPp;
@@ -146,9 +150,27 @@ void AOutlawsPlayer::TickPerfTestProbe(float Dt)
 		const FString Lv = OutlawsPerfTest::Level();
 		PpCheck(Lv == Pp.Expect && L->LevelName.Equals(Lv, ESearchCase::IgnoreCase), FString::Printf(TEXT("run %d: the level is the run's second, %s (%s; wanted %s)"), Pp.Run, *L->LevelName,
 			*AOutlawsLevelActor::LevelTitle(L->LevelName), *Pp.Expect));
-		// (the first two runs come before any New Game press: Bad; the third after Main Game > Ugly: Ugly)
-		const EOutlawsDifficulty WantDiff = Pp.Run == 3 ? EOutlawsDifficulty::Ugly : EOutlawsDifficulty::Bad;
-		const int32 WantChosen = Pp.Run == 3 ? int32(EOutlawsDifficulty::Ugly) : -1;
+		// (REQ-PERFDIFF: each run at the difficulty picked on its page: Good, Ugly, then Bad)
+		const EOutlawsDifficulty WantDiff = Pp.Run == 1 ? EOutlawsDifficulty::Good : Pp.Run == 2 ? EOutlawsDifficulty::Ugly : EOutlawsDifficulty::Bad;
+		const int32 WantChosen = int32(WantDiff);
+		{
+			// (REQ-PERFDIFF) the level's build placed the bad guys of the picked difficulty: its "objects: ... N enemies ...;
+			// difficulty X" line
+			TArray<FString> BuildLines;
+			L->GetBuildReport().ParseIntoArrayLines(BuildLines);
+			const FString* Obj = BuildLines.FindByPredicate([](const FString& S) { return S.Contains(TEXT("objects: ")) && S.Contains(TEXT(" enemies (")); });
+			int32 Placed = -1;
+			FString ByDiff;
+			if (Obj)
+			{
+				FString Head, Tail;
+				if (Obj->Split(TEXT(" enemies ("), &Head, &Tail)) { int32 Sp = INDEX_NONE; Head.FindLastChar(TEXT(' '), Sp); Placed = FCString::Atoi(*Head.Mid(Sp + 1)); }
+				if (Obj->Split(TEXT("; difficulty "), nullptr, &Tail)) ByDiff = Tail.Left(Tail.Find(TEXT(",")));
+			}
+			PpCheck(Placed >= 0 && ByDiff == OutlawsDifficulty::Name(WantDiff), FString::Printf(TEXT("run %d: %s built for %s: %d bad guys placed (%d up at the start); the build's line: %s"), Pp.Run, *L->LevelName,
+				*ByDiff, Placed, L->GetEnemies().Num(), Obj ? **Obj : TEXT("none")));
+			Pp.Enemies.Add(FString::Printf(TEXT("%s %s"), *L->LevelName, OutlawsDifficulty::Name(L->Difficulty)), Placed);
+		}
 		PpCheck(L->Difficulty == WantDiff && OutlawsPerfTest::NewGameDifficulty() == WantChosen, FString::Printf(TEXT("run %d: difficulty %s (wanted %s; New Game's last choice %d)"), Pp.Run,
 			OutlawsDifficulty::Name(L->Difficulty), OutlawsDifficulty::Name(WantDiff), OutlawsPerfTest::NewGameDifficulty()));
 		FString Bad, Carry;
@@ -182,7 +204,7 @@ void AOutlawsPlayer::TickPerfTestProbe(float Dt)
 		if (!Is(TEXT("build"), OutlawsBuildInfo::Line())) Wrong.Add(TEXT("build"));
 		if (!Is(TEXT("level"), L->LevelName)) Wrong.Add(TEXT("level"));
 		if (!Is(TEXT("difficulty"), OutlawsDifficulty::Name(WantDiff))) Wrong.Add(TEXT("difficulty"));
-		if (!Is(TEXT("difficulty_from"), Pp.Run == 3 ? TEXT("the last New Game choice") : TEXT("none chosen this session (Bad)"))) Wrong.Add(TEXT("difficulty_from"));
+		if (!Is(TEXT("difficulty_from"), TEXT("picked"))) Wrong.Add(TEXT("difficulty_from"));
 		if (!Is(TEXT("capture"), Cap)) Wrong.Add(TEXT("capture"));
 		if (!Starts(TEXT("resolution_percent"), FString::FromInt(OutlawsDeviceProfile::ResolutionPercent()))) Wrong.Add(TEXT("resolution_percent"));
 		if (!Is(TEXT("lamp_lights"), FString::FromInt(OutlawsDeviceProfile::LampLights()))) Wrong.Add(TEXT("lamp_lights"));
@@ -212,7 +234,9 @@ void AOutlawsPlayer::TickPerfTestProbe(float Dt)
 		}
 		else if (Pp.Run == 2 && (!L->RandoOn() || L->RandoRun.Seed == Pp.Seed1))
 		{
-			PpCheck(L->RandoSum == Pp.Sum1 && Enemies == Pp.Enemies1, FString::Printf(TEXT("run 2: the same seed, the same level: roll %08x and %d bad guys (run 1: %08x, %d)"), L->RandoSum, Enemies, Pp.Sum1, Pp.Enemies1));
+			// (REQ-PERFDIFF: the second run is at another difficulty, so its bad guys differ; the roll is the same)
+			PpCheck(L->RandoSum == Pp.Sum1, FString::Printf(TEXT("run 2: the same seed, the same level: roll %08x (run 1: %08x; bad guys %d at %s, run 1 %d)"), L->RandoSum, Pp.Sum1, Enemies,
+				OutlawsDifficulty::Name(L->Difficulty), Pp.Enemies1));
 		}
 		else if (Pp.Run == 2)      // (run 3 is at Ugly: other bad guys by the difficulty's bits)
 		{
@@ -240,6 +264,24 @@ void AOutlawsPlayer::TickPerfTestProbe(float Dt)
 		const int32 i = bMenuOpen && MenuPage ? MenuPage->Items.IndexOfByPredicate([Label](const OutlawsMenu::FItem& It) { return It.Label.Equals(Label, ESearchCase::IgnoreCase); }) : INDEX_NONE;
 		if (i != INDEX_NONE) MenuActivate(1, i);
 		return i != INDEX_NONE;
+	};
+	// (REQ-PERFDIFF) the row opens the difficulty page, lit on WantLit, no run yet; then Pick pressed there (-1: left by its Back)
+	auto PressRun = [&](int32 Pick, int32 WantLit)
+	{
+		static const TCHAR* const Names[] = { TEXT("Good"), TEXT("Bad"), TEXT("Ugly") };
+		const bool bRow = Press(TEXT("Performance test"));
+		const bool bPage = MenuPage && MenuPage->File == TEXT("#difficulty:perftest");
+		const int32 Lit = MenuHover[1] >= 0 ? MenuHover[1] : MenuHover[0];
+		PpCheck(bRow && bPage && Rows() == TEXT("Good | Bad | Ugly") && Lit == WantLit && !OutlawsPerfTest::IsOn(), FString::Printf(TEXT("run %d: Performance test opens the difficulty page (%s: %s), lit on %d (wanted %d), no run yet"),
+			Pp.Run, MenuPage ? *MenuPage->File : TEXT("none"), *Rows(), Lit, WantLit));
+		if (Pick < 0)
+		{
+			MenuBack();
+			PpCheck(MenuPage && MenuPage->File == TEXT("#newgame") && !OutlawsPerfTest::IsOn(), FString::Printf(TEXT("run %d: the difficulty page's Back goes to New Game, no run (%s)"), Pp.Run,
+				MenuPage ? *MenuPage->File : TEXT("none")));
+			return bRow && bPage;
+		}
+		return bRow && bPage && Press(Names[Pick]);
 	};
 	switch (Pp.Step)
 	{
@@ -283,7 +325,8 @@ void AOutlawsPlayer::TickPerfTestProbe(float Dt)
 		PpCheck(R == TEXT("Main Game | Historical Missions | Multiplayer | Tutorial | Performance test | Settings sweep"), FString::Printf(TEXT("New Game's page after the turn: %s"), *R));
 		Pp.SavedBefore = PpSavedMd5();
 		Pp.Run = 1;
-		const bool bPressed = Press(TEXT("Performance test"));
+		PressRun(-1, int32(EOutlawsDifficulty::Bad));                 // (Back first: New Game again, nothing started)
+		const bool bPressed = PressRun(int32(EOutlawsDifficulty::Good), int32(EOutlawsDifficulty::Bad));
 		TArray<FString> Order;
 		L->RandoLevelOrder(Order);
 		Pp.Expect = Order.IsValidIndex(1) ? Order[1] : FString();
@@ -351,7 +394,8 @@ void AOutlawsPlayer::TickPerfTestProbe(float Dt)
 		const bool bRow = Rows().EndsWith(TEXT("| Performance test | Settings sweep"));     // (REQ-PERFSWEEP: the sweep's row beside it)
 		Pp.SavedBefore = PpSavedMd5();
 		Pp.Run = 2;
-		PpCheck(bRow && Press(TEXT("Performance test")), FString::Printf(TEXT("run 2: the row stays shown and is pressed (%s)"), *Rows()));
+		const FString Shown = Rows();
+		PpCheck(bRow && PressRun(int32(EOutlawsDifficulty::Ugly), int32(EOutlawsDifficulty::Good)), FString::Printf(TEXT("run 2: the row stays shown and is pressed, Ugly picked (%s)"), *Shown));
 		Wait(0.0, 240.0);
 		return;
 	}
@@ -445,7 +489,7 @@ void AOutlawsPlayer::TickPerfTestProbe(float Dt)
 		Pp.SavedBefore = PpSavedMd5();
 		Pp.Run = 3;
 		const FString Shown = Rows();
-		const bool bPressed = Press(TEXT("Performance test"));
+		const bool bPressed = PressRun(int32(EOutlawsDifficulty::Bad), int32(EOutlawsDifficulty::Ugly));      // (lit on Main Game's Ugly)
 		// (the order as the run's own makes it, after the press, as the first run's: on the main menu no run is set, so with the
 		// mission order shuffled the order read before it was the story's unshuffled one)
 		TArray<FString> Order;
@@ -464,6 +508,15 @@ void AOutlawsPlayer::TickPerfTestProbe(float Dt)
 		Pp.Step = 14;             // (End Game from the pause menu, as the second run)
 		return;
 	default:
+	{
+		// (REQ-PERFDIFF) the bad guys placed by the difficulty picked: the level's own set for each (the original's difficulty bits:
+		// not more on each step, the three sets differ)
+		FString Said;
+		TSet<int32> Counts;
+		for (const TPair<FString, int32>& Kv : Pp.Enemies) { Said += FString::Printf(TEXT(" %s=%d"), *Kv.Key, Kv.Value); Counts.Add(Kv.Value); }
+		if (FString Mode; !(OLFlags::Value(TEXT("OLPerfTestProbe"), Mode) && Mode == TEXT("closed")))
+			PpCheck(Pp.Enemies.Num() == 3 && Counts.Num() > 1, FString::Printf(TEXT("the bad guys placed by the picked difficulty:%s"), *Said));
+	}
 		Pp.bDone = true;
 		UE_LOG(LogOutlaws, Display, TEXT("OLSHOT perftest: %s (%d passed, %d failed)"), Pp.Fail == 0 && Pp.Pass > 0 ? TEXT("PASS") : TEXT("FAIL"), Pp.Pass, Pp.Fail);
 		FPlatformMisc::RequestExit(false);

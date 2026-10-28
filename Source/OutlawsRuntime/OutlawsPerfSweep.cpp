@@ -502,8 +502,8 @@ FString AOutlawsLevelActor::PerfSweepTable(const FString& Why) const
 	TArray<FString> L;
 	L.Add(FString::Printf(TEXT("Settings sweep, %s (%s)"), *R.Started, *Why));
 	L.Add(FString::Printf(TEXT("build: %s"), *OutlawsBuildInfo::Line()));
-	L.Add(FString::Printf(TEXT("level: %s (%s), difficulty %s, bad guys x%.2f, randomizer %s, seed %u"), *LevelName, *LevelTitle(LevelName), OutlawsDifficulty::Name(Difficulty),
-		SoloBadGuysWanted(), RandoOn() ? TEXT("on") : TEXT("off"), RandoRun.Seed));
+	L.Add(FString::Printf(TEXT("level: %s (%s), difficulty %s (%s), bad guys x%.2f, randomizer %s, seed %u"), *LevelName, *LevelTitle(LevelName), OutlawsDifficulty::Name(Difficulty),
+		*OutlawsPerfTest::DifficultyFrom(), SoloBadGuysWanted(), RandoOn() ? TEXT("on") : TEXT("off"), RandoRun.Seed));
 	L.Add(FString::Printf(TEXT("headset: %s, profile %s"), OutlawsDeviceProfile::HeadsetName(OutlawsDeviceProfile::Headset()), OutlawsDeviceProfile::IsQuest2() ? TEXT("Quest 2") : TEXT("default")));
 	L.Add(FString::Printf(TEXT("spot: (%.0f, %.0f, %.0f), facing yaw %.0f (the marker %.0f m ahead at eye height)"), S.Spot.X, S.Spot.Y, S.Spot.Z, S.Yaw, SweepMarkerCm / 100.0));
 	const float Hz = OutlawsXRRefresh::CurrentRate();
