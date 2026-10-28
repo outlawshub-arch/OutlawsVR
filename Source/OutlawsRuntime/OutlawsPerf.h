@@ -18,8 +18,10 @@
  * (OLShipLog::ReportSavedDir: the external one on the Quest), and in every build:
  *  - a log line every 60 s and at each level's end ("OLPERF summary, ..."): avg, p95 and worst frame, the threads, the
  *    resolution, hitches over 30 ms (live play only);
- *  - the detailed capture, a row a frame into Saved/Perf/capture_<date_time>.csv while Saved/Perf/capture.on exists
- *    (polled once a second; questperf record / stop), with -OLPerfCapture (the whole run), or ol.perf.Capture 1.
+ *  - the detailed capture, a row a frame into Saved/Perf/capture_<date_time>.csv while Saved/Perf/capture.on or
+ *    Saved/capture.on exists (polled once a second; questperf record / stop; BUG-PERFFLAG: the Quest's Saved is writable for
+ *    adb's shell, and Saved/Perf is made group-writable there too), with -OLPerfCapture (the whole run), or ol.perf.Capture 1.
+ *    -OLPerfFlagProbe checks both flag files on the desktop.
  * -OLNoPerfFiles: no files, the summary lines only (to measure the writer's cost against).
  */
 namespace OutlawsPerf

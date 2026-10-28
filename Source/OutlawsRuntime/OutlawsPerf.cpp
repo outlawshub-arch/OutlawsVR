@@ -34,7 +34,12 @@
 #include "UObject/UObjectIterator.h"
 #include "UObject/UObjectGlobals.h"
 #include "ProfilingDebugging/CsvProfiler.h"
+#include "Containers/Ticker.h"
 #include <atomic>
+#if PLATFORM_ANDROID
+#include <sys/stat.h>
+#include <errno.h>
+#endif
 
 CSV_DEFINE_CATEGORY(Outlaws, true);
 
@@ -605,11 +610,13 @@ namespace
 	// PERF-SHIPSUMMARY: the detailed capture, the stand-in for csvprofile (compiled out of Shipping): a row every frame into
 	// Saved/Perf/capture_<date_time>.csv, gathered and appended every 2 s.  On while Saved/Perf/capture.on exists (polled once
 	// a second; tools/olue/questperf makes and removes it over adb), with -OLPerfCapture (the whole run), or ol.perf.Capture 1.
+	// BUG-PERFFLAG: or Saved/capture.on beside the Perf folder (the Quest's Saved is group-writable for adb's shell; Perf was not)
 	TAutoConsoleVariable<int32> CVarCapture(TEXT("ol.perf.Capture"), 0,
-		TEXT("1: a row a frame into Saved/Perf/capture_<date_time>.csv (as Saved/Perf/capture.on does)."));
+		TEXT("1: a row a frame into Saved/Perf/capture_<date_time>.csv (as Saved/Perf/capture.on or Saved/capture.on does)."));
 	bool bCapturing = false;
 	bool bCaptureFlag = false;
 	bool bTestCapture = false;                 // (REQ-PERFTESTMODE) a performance test run holds the capture on
+	FString CaptureOnPerf, CaptureOnSaved;     // (BUG-PERFFLAG) the flag files polled: Saved/Perf/capture.on, Saved/capture.on
 	FString CaptureFile;
 	FString CapturePending;
 	int32 CaptureRowsPending = 0;
@@ -817,9 +824,9 @@ namespace
 				ContextText = Ctx;
 			}
 #endif
-			// (PERF-SHIPSUMMARY) the detailed capture's switches, once a second
-			static const FString CaptureOn = FPaths::Combine(PerfDir, TEXT("capture.on"));
-			SetCapture(bCaptureFlag || bTestCapture || CVarCapture.GetValueOnGameThread() != 0 || IFileManager::Get().FileExists(*CaptureOn));
+			// (PERF-SHIPSUMMARY) the detailed capture's switches, once a second (BUG-PERFFLAG: either flag file)
+			SetCapture(bCaptureFlag || bTestCapture || CVarCapture.GetValueOnGameThread() != 0 || IFileManager::Get().FileExists(*CaptureOnPerf)
+				|| IFileManager::Get().FileExists(*CaptureOnSaved));
 			SecWindow = FWindow();
 			SecStart = Now;
 		}
@@ -1172,6 +1179,72 @@ int64 OutlawsPerf::EndTestCapture()
 	return Frames;
 }
 
+namespace
+{
+	// BUG-PERFFLAG: -OLPerfFlagProbe (any build, through OLFlags): each flag file made as questperf makes it over adb, the
+	// capture on within the next polls, the file moved away into Perf (never deleted) and the capture off again; Saved/capture.on
+	// first, then Saved/Perf/capture.on as before.  "OLPERFFLAG check PASS|FAIL: ..." a check, "OLSHOT perfflag: PASS|FAIL", quit.
+	struct FFlagProbe
+	{
+		int32 Step = 0;
+		double At = 0.0, Since = 0.0;
+		int32 Pass = 0, Fail = 0;
+	};
+	FFlagProbe GFlagProbe;
+
+	bool FlagProbeTick(float)
+	{
+		FFlagProbe& Fp = GFlagProbe;
+		const double Now = FPlatformTime::Seconds();
+		if (Now < Fp.At) return true;
+		IFileManager& Fm = IFileManager::Get();
+		auto Check = [&Fp](bool bOk, const FString& What)
+		{
+			UE_LOG(LogOutlaws, Display, TEXT("OLPERFFLAG check %s: %s"), bOk ? TEXT("PASS") : TEXT("FAIL"), *What);
+			(bOk ? Fp.Pass : Fp.Fail)++;
+		};
+		const bool bSavedFlag = Fp.Step < 3;
+		const FString& Flag = bSavedFlag ? CaptureOnSaved : CaptureOnPerf;
+		const TCHAR* Which = bSavedFlag ? TEXT("Saved/capture.on") : TEXT("Saved/Perf/capture.on");
+		switch (Fp.Step)
+		{
+		case 0:
+			Check(!Fm.FileExists(*CaptureOnSaved) && !Fm.FileExists(*CaptureOnPerf) && !bCapturing && !bCaptureFlag,
+				FString::Printf(TEXT("no flag file and no capture before the probe (%s, %s)"), *CaptureOnSaved, *CaptureOnPerf));
+			[[fallthrough]];
+		case 3:
+			// the flag made
+			FFileHelper::SaveStringToFile(FString(), *Flag);
+			Fp.Since = Now;
+			++Fp.Step;
+			Fp.At = Now + 0.1;
+			return true;
+		case 1:
+		case 4:
+			if (!bCapturing && Now - Fp.Since < 4.0) return true;
+			Check(bCapturing, FString::Printf(TEXT("%s made: the capture on after %.1f s (%s)"), Which, Now - Fp.Since, *CaptureFile));
+			// moved away (as questperf stop removes it), kept in Perf
+			Fm.Move(*FPaths::Combine(PerfDir, FString::Printf(TEXT("perfflag_probe_%s.txt"), bSavedFlag ? TEXT("saved") : TEXT("perf"))), *Flag, true, true);
+			Fp.Since = Now;
+			++Fp.Step;
+			Fp.At = Now + 0.1;
+			return true;
+		case 2:
+		case 5:
+			if (bCapturing && Now - Fp.Since < 4.0) return true;
+			Check(!bCapturing && !Fm.FileExists(*Flag), FString::Printf(TEXT("%s moved away: the capture off after %.1f s"), Which, Now - Fp.Since));
+			++Fp.Step;
+			Fp.At = Now + 1.0;
+			if (Fp.Step == 3) return true;
+			UE_LOG(LogOutlaws, Display, TEXT("OLSHOT perfflag: %s (%d passed, %d failed)"), Fp.Fail == 0 && Fp.Pass > 0 ? TEXT("PASS") : TEXT("FAIL"), Fp.Pass, Fp.Fail);
+			FPlatformMisc::RequestExit(false);
+			return false;
+		default:
+			return false;
+		}
+	}
+}
+
 void OutlawsPerf::Startup()
 {
 	if (GIsEditor || IsRunningCommandlet() || !FApp::CanEverRender()) return;
@@ -1183,6 +1256,24 @@ void OutlawsPerf::Startup()
 		PerfDir = FPaths::ConvertRelativePathToFull(FPaths::Combine(OLShipLog::ReportSavedDir(), TEXT("Perf")));
 		OLFlags::Value(TEXT("OLPerfDir"), PerfDir);      // (a test's: two instances on one tree, the co-op bench)
 		IFileManager::Get().MakeDirectory(*PerfDir, true);
+#if PLATFORM_ANDROID
+		{
+			// BUG-PERFFLAG (the user's Quest, 28 Oct): the game made Saved/Perf drwxr-s--- (no group write), so adb's shell, in the
+			// folder's group ext_data_rw, could not make capture.on in it and questperf's capture never came on; Saved itself is
+			// drwxrws---.  The folder made group-writable as Saved is (a refusal is only logged)
+			const FString Phys = IFileManager::Get().ConvertToAbsolutePathForExternalAppForWrite(*PerfDir);
+			if (chmod(TCHAR_TO_UTF8(*Phys), 02770) != 0) UE_LOG(LogOutlaws, Log, TEXT("OLPERF chmod 2770 of %s failed (errno %d)"), *Phys, errno);
+		}
+#endif
+		// (BUG-PERFFLAG) the capture's flag files, polled once a second: in Perf, and in Saved beside it
+		CaptureOnPerf = FPaths::Combine(PerfDir, TEXT("capture.on"));
+		CaptureOnSaved = FPaths::ConvertRelativePathToFull(FPaths::Combine(OLShipLog::ReportSavedDir(), TEXT("capture.on")));
+		UE_LOG(LogOutlaws, Log, TEXT("OLPERF capture flags polled once a second: %s, %s"), *CaptureOnPerf, *CaptureOnSaved);
+		if (OLFlags::Param(TEXT("OLPerfFlagProbe")))
+		{
+			GFlagProbe.At = FPlatformTime::Seconds() + 8.0;          // (the game settled first)
+			FTSTicker::GetCoreTicker().AddTicker(FTickerDelegate::CreateStatic(&FlagProbeTick));
+		}
 		FFileHelper::LoadFileToString(PriorPerformance, *FPaths::Combine(PerfDir, TEXT("performance.txt")));
 		if (PriorPerformance.Len() > 200000) PriorPerformance.LeftInline(200000);
 		const FString Timeline = FPaths::Combine(PerfDir, TEXT("perf_timeline.csv"));
