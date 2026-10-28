@@ -310,6 +310,7 @@ bool AOutlawsLevelActor::BuildSaveText(AOutlawsPlayer* P, FString& OutText, int3
 		O->SetObjectField(TEXT("entry_counts"), Ec);
 		O->SetNumberField(TEXT("entry_gold"), EntryGold);
 		O->SetNumberField(TEXT("entry_armour"), EntryArmour);
+		if (EntryArmourMax >= 0) O->SetNumberField(TEXT("entry_armour_max"), EntryArmourMax);     // (BUG-PLATERESTART)
 	}
 	FJsonArray Inv, Labels;
 	for (const FString& S : Inventory) Inv.Add(MakeShared<FJsonValueString>(S));
@@ -543,6 +544,7 @@ void AOutlawsLevelActor::ApplyLoad(const FJsonObject& O, bool bWorldOnly)
 		EntryCounts = Counts;
 		EntryGold = Gold;
 		EntryArmour = Armour;
+		EntryArmourMax = Armour > 0 ? ArmourMax : 0;        // (BUG-PLATERESTART: the plate carried in, at its size)
 		StartSaveDelay = 1.5f;
 		AutosaveWait = 0.f;
 		UE_LOG(LogOutlaws, Log, TEXT("OLRT load: the opening of %s, %d kinds of item carried in, gold %d, armour %d"), *LevelName, Counts.Num(), Gold, Armour);
@@ -583,6 +585,8 @@ void AOutlawsLevelActor::ApplyLoad(const FJsonObject& O, bool bWorldOnly)
 			}
 			EntryGold = O.HasField(TEXT("entry_gold")) ? int32(O.GetNumberField(TEXT("entry_gold"))) : 0;
 			EntryArmour = O.HasField(TEXT("entry_armour")) ? int32(O.GetNumberField(TEXT("entry_armour"))) : 0;
+			// (BUG-PLATERESTART) the entered plate's size; a save from before it has none: its restart keeps the size worn
+			EntryArmourMax = O.HasField(TEXT("entry_armour_max")) ? int32(O.GetNumberField(TEXT("entry_armour_max"))) : -1;
 		}
 		else if (!LevelName.Equals(TEXT("ranch"), ESearchCase::IgnoreCase))        // (Bob's Ranch is always entered stripped)
 		{
@@ -595,6 +599,7 @@ void AOutlawsLevelActor::ApplyLoad(const FJsonObject& O, bool bWorldOnly)
 			}
 			EntryGold = int32(O.GetNumberField(TEXT("gold")));
 			EntryArmour = int32(O.GetNumberField(TEXT("armour")));
+			EntryArmourMax = -1;                // (BUG-PLATERESTART: as such a save's restart always was)
 		}
 		else
 		{

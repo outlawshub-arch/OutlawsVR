@@ -1712,7 +1712,8 @@ void AOutlawsLevelActor::StartNextLevelThen(TFunction<void()> Then)
 		EntryCounts = Counts;
 		EntryGold = Gold;
 		EntryArmour = Armour;
-		UE_LOG(LogOutlaws, Log, TEXT("OLRT carried into %s: %d items, gold %d, armour %d"), *LevelName, Carry.Num(), Gold, Armour);
+		EntryArmourMax = Armour > 0 ? FMath::Max(ArmourMax, Armour) : 0;      // (BUG-PLATERESTART)
+		UE_LOG(LogOutlaws, Log, TEXT("OLRT carried into %s: %d items, gold %d, armour %d of %d"), *LevelName, Carry.Num(), Gold, Armour, EntryArmourMax);
 		if (Then) Then();
 	});
 }

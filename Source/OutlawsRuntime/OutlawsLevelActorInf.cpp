@@ -888,6 +888,9 @@ void AOutlawsLevelActor::FinishRestart()
 		Counts = EntryCounts;                  // (Build gave the start kit; the level's own entry kit replaces it)
 		Gold = EntryGold;
 		Armour = EntryArmour;
+		// (BUG-PLATERESTART, the planner's rule: a restart gives back what the level was entered with) the plate at its size
+		// then too, not a bigger one's picked up since (85 of 150 for the 85 of 100 carried in)
+		if (EntryArmourMax >= 0) ArmourMax = EntryArmourMax;
 		// (BUG-HOLSTERRELOAD) and the guns hold the rounds they held then: none comes back full for nothing (the next level
 		// loads its own from the carried ammunition, TopUpForLevelStart)
 		UWorld* Wd = GetWorld();

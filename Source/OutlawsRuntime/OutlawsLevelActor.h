@@ -2158,6 +2158,9 @@ private:
 	FString EntryLevel;
 	TMap<FString, int32> EntryCounts;
 	int32 EntryGold = 0, EntryArmour = 0;
+	// BUG-PLATERESTART: the worn plate's size then (ArmourMax; 0 none), so a bigger plate picked up since does not stay on
+	// the restart's entered armour; -1 unknown (a save from before it): the restart keeps the size worn, as it did
+	int32 EntryArmourMax = -1;
 	bool bDead = false;
 	float DeathTimer = 0.f;
 public:
