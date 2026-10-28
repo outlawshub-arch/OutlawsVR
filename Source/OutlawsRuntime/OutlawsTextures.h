@@ -29,9 +29,14 @@ namespace OutlawsTextures
 	OUTLAWSRUNTIME_API bool PrepareBC7(int32 W, int32 H, int32 Mips, const uint8* Data, int32 DataSize, TextureFilter Filter, FPreparedTex& Out);
 	/** Game thread: the texture from prepared levels (which it empties). */
 	OUTLAWSRUNTIME_API UTexture2D* CreatePrepared(FPreparedTex& P);
-	/** Any thread: a level texture's PCX look (bWantLo) and HD look (bWantHd), with Info, from one read of its files. */
+	/** Any thread: a level texture's PCX look (bWantLo) and HD look (bWantHd), with Info, from one read of its files.
+	 *  (BUG-GLASS8BIT) Shades: the level's SHADES (FOutlawsLevel::Shades) for a see-through texture's PCX look, its entries
+	 *  1 to 15 drawn as their colour at their strength; null: every entry but 0 solid. */
 	OUTLAWSRUNTIME_API void PrepareLevelTexture(const FOutlawsAssets& A, const FString& Name, bool bWantLo, bool bWantHd, const TArray<FColor>& Palette,
-		bool bLinear, FOutlawsTexInfo& Info, FPreparedTex& Lo, FPreparedTex& Hd);
+		bool bLinear, FOutlawsTexInfo& Info, FPreparedTex& Lo, FPreparedTex& Hd, const TArray<FColor>* Shades = nullptr);
+	/** (tests, BUG-GLASS8BIT) a PCX level texture's pixels as its PCX look is made (Shades as PrepareLevelTexture's). */
+	OUTLAWSRUNTIME_API bool LevelPcxPixels(const FOutlawsAssets& A, const FString& Name, const TArray<FColor>& Palette, const TArray<FColor>* Shades, int32& OutW,
+		int32& OutH, TArray<FColor>& OutPx);
 	OUTLAWSRUNTIME_API bool CpuBC7();
 	/** After a level build: one flush for the HD sprite atlases' draws, then their cell textures let go. */
 	OUTLAWSRUNTIME_API void ReleaseAtlasCells();
@@ -61,7 +66,7 @@ namespace OutlawsTextures
 	 * canvas is cropped to the HDX content size) and the top-left anchoring rule.
 	 */
 	OUTLAWSRUNTIME_API UTexture2D* LoadLevelTexture(const FOutlawsAssets& A, const FString& Name, bool bHD, const TArray<FColor>& Palette,
-		bool bLinear, FOutlawsTexInfo& Info, bool& bOutWasHd);
+		bool bLinear, FOutlawsTexInfo& Info, bool& bOutWasHd, const TArray<FColor>* Shades = nullptr);
 
 	/**
 	 * What kind of picture a sky is, from its PCX: a tiling sky (clouds all over, its top rows like its

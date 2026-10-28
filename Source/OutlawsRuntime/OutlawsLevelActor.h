@@ -300,6 +300,11 @@ public:
 	FString CarrySignature() const;
 	/** Debug (-OLShatterTest): break pane i. */
 	void DebugShatter(int32 Index) { if (Panes.IsValidIndex(Index)) ShatterPane(Index); }
+	/** (tests, BUG-GLASS8BIT) the pane of sector S's wall W (either side), -1 none; its break frames, broken, the frame shown. */
+	int32 DebugPaneAt(int32 S, int32 W) const { return Panes.IndexOfByPredicate([S, W](const FPane& P) { return (P.S == S && P.W == W) || (P.MS == S && P.MW == W); }); }
+	FString DebugPaneState(int32 Index) const;
+	/** (tests) the level's SHADES as parsed (FOutlawsLevel::Shades). */
+	TArray<FColor> DebugShades() const;
 	/** A story movie is on the screen (between levels): the player only watches, a trigger skips. */
 	bool IsMoviePlaying() const;
 	void SkipMovie();

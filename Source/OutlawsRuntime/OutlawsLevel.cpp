@@ -235,6 +235,7 @@ bool FOutlawsLevel::ParseLvt(const FString& Text)
 {
 	Textures.Empty();
 	Sectors.Empty();
+	Shades.Reset();
 	TArray<FString> Lines;
 	Text.ParseIntoArrayLines(Lines, false);
 
@@ -275,6 +276,18 @@ bool FOutlawsLevel::ParseLvt(const FString& Text)
 		if (K.Equals(TEXT("CMAP:"), ESearchCase::IgnoreCase) && T.IsValidIndex(1))
 		{
 			Cmaps.Add(T[1]);
+			continue;
+		}
+		if (K.Equals(TEXT("SHADE:"), ESearchCase::IgnoreCase) && T.IsValidIndex(5) && Sectors.Num() == 0)
+		{
+			// (BUG-GLASS8BIT) "SHADE: 2 200 200 200 25 L": palette entry 2 drawn as that colour at 25 %
+			const int32 Ix = TokInt(T, 1);
+			if (Ix >= 1 && Ix < 16)
+			{
+				if (Shades.Num() < 16) Shades.SetNumZeroed(16);
+				Shades[Ix] = FColor(uint8(FMath::Clamp(TokInt(T, 2), 0, 255)), uint8(FMath::Clamp(TokInt(T, 3), 0, 255)), uint8(FMath::Clamp(TokInt(T, 4), 0, 255)),
+					uint8(FMath::RoundToInt(FMath::Clamp(TokInt(T, 5), 0, 100) * 2.55f)));
+			}
 			continue;
 		}
 		if (K.Equals(TEXT("PARALLAX"), ESearchCase::IgnoreCase))

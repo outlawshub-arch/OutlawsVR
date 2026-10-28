@@ -72,7 +72,7 @@ namespace
 		Mip.BulkData.Unlock();
 	}
 
-	TArray<FColor> PcxToBGRA(const FPcxImage& Img, const TArray<FColor>& Fallback)
+	TArray<FColor> PcxToBGRA(const FPcxImage& Img, const TArray<FColor>& Fallback, const TArray<FColor>* Shades = nullptr)
 	{
 		const TArray<FColor>& Pal = Img.Palette.Num() == 256 ? Img.Palette : Fallback;
 		TArray<FColor> Px;
@@ -82,6 +82,9 @@ namespace
 			const uint8 Ix = Img.Indices[i];
 			FColor C = Pal.IsValidIndex(Ix) ? Pal[Ix] : FColor::Black;
 			C.A = Ix == 0 ? 0 : 255;       // index 0 transparent (masked materials use it; opaque ones ignore alpha)
+			// (BUG-GLASS8BIT) a see-through texture's shade entries (the level's SHADES, 1 to 15): their colour at their strength,
+			// as the original draws a broken window's shards over the room behind
+			if (Shades && Shades->IsValidIndex(Ix) && (*Shades)[Ix].A > 0) C = (*Shades)[Ix];
 			Px[i] = C;
 		}
 		return Px;
@@ -676,7 +679,7 @@ UTexture2D* OutlawsTextures::MakeTextureBC7(int32 W, int32 H, int32 Mips, const 
 }
 
 void OutlawsTextures::PrepareLevelTexture(const FOutlawsAssets& A, const FString& Name, bool bWantLo, bool bWantHd, const TArray<FColor>& Palette,
-	bool bLinear, FOutlawsTexInfo& Info, FPreparedTex& Lo, FPreparedTex& Hd)
+	bool bLinear, FOutlawsTexInfo& Info, FPreparedTex& Lo, FPreparedTex& Hd, const TArray<FColor>* Shades)
 {
 	Lo = FPreparedTex();
 	Hd = FPreparedTex();
@@ -757,12 +760,12 @@ void OutlawsTextures::PrepareLevelTexture(const FOutlawsAssets& A, const FString
 	}
 	if (bWantLo && bPcx)
 	{
-		PrepareBGRA(Img.W, Img.H, PcxToBGRA(Img, Palette), true, bLinear ? TF_Trilinear : TF_Nearest, TA_Wrap, Lo);
+		PrepareBGRA(Img.W, Img.H, PcxToBGRA(Img, Palette, Shades), true, bLinear ? TF_Trilinear : TF_Nearest, TA_Wrap, Lo);
 	}
 }
 
 UTexture2D* OutlawsTextures::LoadLevelTexture(const FOutlawsAssets& A, const FString& Name, bool bHD, const TArray<FColor>& Palette,
-	bool bLinear, FOutlawsTexInfo& Info, bool& bOutWasHd)
+	bool bLinear, FOutlawsTexInfo& Info, bool& bOutWasHd, const TArray<FColor>* Shades)
 {
 	bOutWasHd = false;
 	FPreparedTex Lo, Hd;
@@ -776,8 +779,21 @@ UTexture2D* OutlawsTextures::LoadLevelTexture(const FOutlawsAssets& A, const FSt
 		}
 	}
 	// no HD look (or not asked for): the PCX
-	PrepareLevelTexture(A, Name, true, false, Palette, bLinear, Info, Lo, Hd);
+	PrepareLevelTexture(A, Name, true, false, Palette, bLinear, Info, Lo, Hd, Shades);
 	return CreatePrepared(Lo);
+}
+
+bool OutlawsTextures::LevelPcxPixels(const FOutlawsAssets& A, const FString& Name, const TArray<FColor>& Palette, const TArray<FColor>* Shades, int32& OutW, int32& OutH,
+	TArray<FColor>& OutPx)
+{
+	const FString Resolved = ResolveTextureName(A, Name);
+	TArray<uint8> Bytes;
+	FPcxImage Img;
+	if (Resolved.IsEmpty() || !A.Get(Resolved, Bytes) || !DecodePcx(Bytes, Img)) return false;
+	OutW = Img.W;
+	OutH = Img.H;
+	OutPx = PcxToBGRA(Img, Palette, Shades);
+	return true;
 }
 
 TSharedPtr<OutlawsTextures::FSpriteAtlas> OutlawsTextures::BuildSpriteAtlas(const FOutlawsAssets& A, const FString& NwxName, const TArray<FColor>& Palette, bool bCreateTexture, bool bAllChors)

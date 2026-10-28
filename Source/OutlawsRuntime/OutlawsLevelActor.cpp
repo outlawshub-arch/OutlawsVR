@@ -1090,9 +1090,23 @@ void AOutlawsLevelActor::Build()
 		{
 			FString Name, Stem;
 			bool bSky = false;
+			bool bSeeThrough = false;      // (BUG-GLASS8BIT) a see-through mid somewhere: its PCX look takes the level's SHADES
 			FOutlawsTexInfo Info;
 			OutlawsTextures::FPreparedTex Lo, Hd;
 		};
+		// BUG-GLASS8BIT (user 28 Oct, snapshot 2: townex's broken windows grey with Remastered Graphics off): a broken window's
+		// shards are palette entries 2 to 4, which the original draws as the level's SHADES (white at 25, 50 and 75 %) over
+		// the room behind; the PCX look had them solid grey.  The see-through mids' PCX looks take the SHADES (of every masked
+		// mid in the story, only the broken windows' frames use entries 1 to 15)
+		static const bool bOldGlass8Bit = OLFlags::Param(TEXT("OLOldGlass8Bit"));     // (-OLOldGlass8Bit: solid as before, for shots)
+		TSet<FString> SeeThrough;
+		for (const FOutlawsSector& S : L.Sectors)
+		{
+			for (const FOutlawsWall& W : S.Walls)
+			{
+				if ((W.Flags1 & OutlawsFlags::WallMidTex) && W.Adjoin >= 0 && L.Textures.IsValidIndex(W.Mid)) SeeThrough.Add(FPaths::GetBaseFilename(L.Textures[W.Mid]).ToUpper());
+			}
+		}
 		TArray<FTexJob> Jobs;
 		TSet<FString> Seen;
 		for (const FString& Name : L.Textures)
@@ -1104,6 +1118,7 @@ void AOutlawsLevelActor::Build()
 			J.Name = Name;
 			J.Stem = Stem;
 			J.bSky = Stem == SkyStem;
+			J.bSeeThrough = SeeThrough.Contains(Stem) && !bOldGlass8Bit;
 		}
 		const bool bSerial = OLFlags::Param(TEXT("OLTexSerial"));
 		const int32 Batch = bSerial ? 1 : FMath::Clamp(FTaskGraphInterface::Get().GetNumWorkerThreads() * 2, 4, 32);
@@ -1113,7 +1128,7 @@ void AOutlawsLevelActor::Build()
 			ParallelFor(N, [&](int32 i)
 			{
 				FTexJob& J = Jobs[First + i];
-				OutlawsTextures::PrepareLevelTexture(A, J.Name, true, true, Palette, J.bSky, J.Info, J.Lo, J.Hd);
+				OutlawsTextures::PrepareLevelTexture(A, J.Name, true, true, Palette, J.bSky, J.Info, J.Lo, J.Hd, J.bSeeThrough ? &L.Shades : nullptr);
 			}, bSerial);
 			for (int32 i = 0; i < N; ++i)
 			{

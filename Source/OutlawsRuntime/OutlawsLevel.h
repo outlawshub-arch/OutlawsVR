@@ -122,7 +122,11 @@ public:
 	FVector2D Parallax = FVector2D(1024.0, 1024.0);
 	TArray<FString> Palettes;   // PALETTES: the PCX files whose palettes sectors pick (olpal, uwater...)
 	TArray<FString> Cmaps;      // CMAPS: their colour maps, PCX images 256 wide whose rows are the light levels (REQ-FIREBRIGHT)
-	FString Music;              // MUSIC: the level's music script (TOWNEX.MSC; NULL for none)
+	/** SHADES (BUG-GLASS8BIT): "SHADE: <index> <r> <g> <b> <percent> <L|G|T>", the original's see-through palette entries 1 to 15:
+	 *  a pixel of that index is drawn as that colour over what lies behind, at that strength (every story level: 1 to 4 white
+	 *  at 10, 25, 50 and 75 %, the glass; 5 to 7 black, 8 to 13 blue and red).  16 entries by index, A the strength (0: none). */
+	TArray<FColor> Shades;
+	FString Music;             // MUSIC: the level's music script (TOWNEX.MSC; NULL for none)
 	TArray<FOutlawsSector> Sectors;
 	TArray<FOutlawsObject> Objects;
 

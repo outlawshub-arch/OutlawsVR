@@ -4,6 +4,7 @@
 #include "OutlawsLevelActor.h"
 #include "OutlawsPerf.h"
 #include "OutlawsRuntime.h"
+#include "OutlawsFlags.h"
 #include "OutlawsLab.h"
 #include "OutlawsLevel.h"
 #include "OutlawsFormats.h"
@@ -558,7 +559,9 @@ void AOutlawsLevelActor::BuildPanes(const FOutlawsLevel& L, const TMap<FString, 
 					{
 						FOutlawsTexInfo Info;
 						bool bWasHd = false;
-						Tex = OutlawsTextures::LoadLevelTexture(*AssetsRef, Frame, bHDTextures, Palette, false, Info, bWasHd);
+						// (BUG-GLASS8BIT) the PCX look's shards in the level's SHADES, see-through as the original's
+						static const bool bOldGlass8Bit = OLFlags::Param(TEXT("OLOldGlass8Bit"));
+						Tex = OutlawsTextures::LoadLevelTexture(*AssetsRef, Frame, bHDTextures, Palette, false, Info, bWasHd, bOldGlass8Bit ? nullptr : &L.Shades);
 						if (Tex) Textures.Add(Key, Tex);
 					}
 					if (Tex) P.Frames.Add(Tex);
@@ -566,6 +569,19 @@ void AOutlawsLevelActor::BuildPanes(const FOutlawsLevel& L, const TMap<FString, 
 			}
 		}
 	}
+}
+
+FString AOutlawsLevelActor::DebugPaneState(int32 Index) const
+{
+	if (!Panes.IsValidIndex(Index)) return TEXT("none");
+	const FPane& P = Panes[Index];
+	const UMaterialInstanceDynamic* M = P.Mids.Num() > 0 ? P.Mids[0] : nullptr;
+	return FString::Printf(TEXT("%d frames, broken %d, frame %d, material %s"), P.Frames.Num(), P.bBroken ? 1 : 0, P.Shown, M && M->Parent ? *M->Parent->GetName() : TEXT("none"));
+}
+
+TArray<FColor> AOutlawsLevelActor::DebugShades() const
+{
+	return LevelData ? LevelData->Shades : TArray<FColor>();
 }
 
 UMaterialInterface* AOutlawsLevelActor::GlassTintMaterial()
