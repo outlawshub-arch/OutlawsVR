@@ -330,6 +330,8 @@ bool OutlawsTextures::SkyLook(const FOutlawsAssets& A, const FString& Name, cons
 	// the tiling ones: town, canyon, mill, mine)
 	Out.bTiles = !(Out.Band > 20.f || Out.Seam > 20.f || (Out.Seam > 8.f && Out.Seam > 8.f * Out.Adj));
 	Out.Top = FLinearColor(FColor(uint8(Top.X), uint8(Top.Y), uint8(Top.Z)));    // sRGB to linear
+	const FVector Row0 = RowMean(0);
+	Out.TopRow = FColor(uint8(FMath::RoundToInt(Row0.X)), uint8(FMath::RoundToInt(Row0.Y)), uint8(FMath::RoundToInt(Row0.Z)), 255);
 	return true;
 }
 

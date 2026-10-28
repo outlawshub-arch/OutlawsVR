@@ -1466,6 +1466,8 @@ public:
 	 *  level's opening, with what is carried into it (user 2026-10-02: End Game in a cutscene resumed in the level just
 	 *  won).  Loading it starts that level from its beginning. */
 	bool HasGradientSky() const { return bGradientSky; }      // (BUG-TRAINSKY, -OLVb2Test=sky)
+	/** (tests, BUG-TRAINSKY8BIT) what the gradient dome shows now: "gradient", or "flat <r> <g> <b> (<the picture read>)"; "none". */
+	FString DebugSkyLook() const;
 	bool IsBetweenLevels() const { return !bFrontEnd && !bDead && !NextLevelName.IsEmpty() && (LevelEndTimer >= 0.f || (Movie != nullptr && !Inf)); }
 	bool SaveLevelOpening();
 	bool bPendingOpeningSave = false;
@@ -1607,6 +1609,12 @@ private:
 	FVector2D CloudWindRate = FVector2D(0.012, 0.004);      // picture widths a second
 	bool bCloudLayer = true;           // -OLNoCloudLayer
 	bool bGradientSky = false;         // (BUG-TRAINSKY) this level's sky is the plain gradient dome (the train)
+	// (BUG-TRAINSKY8BIT) with Remastered Graphics off the dome is one flat colour, the top row of the outer walls' 8-bit picture
+	FLinearColor GradSkyTop = FLinearColor::Black, FlatSkyColour = FLinearColor::Black;
+	FColor FlatSkyPx = FColor::Black;
+	FString FlatSkyFrom;
+	/** The dome's picture by the look: the flat colour with Remastered Graphics off, the gradient with it on. */
+	void ApplyGradientSkyLook();
 	// the sky's own surfaces (exterior ceilings, floors, sky wall bands), drawn with the sky by direction
 	UPROPERTY(Transient)
 	TObjectPtr<UProceduralMeshComponent> SkySurfaceMesh;

@@ -78,6 +78,7 @@ namespace OutlawsTextures
 	{
 		bool bTiles = true;
 		FLinearColor Top = FLinearColor(0.07f, 0.12f, 0.31f);
+		FColor TopRow = FColor(0, 0, 0, 0);      // (BUG-TRAINSKY8BIT) the mean of its top row of pixels alone, as drawn (sRGB); A 0 when not read
 		float Band = 0.f, Seam = 0.f, Adj = 0.f;
 	};
 	OUTLAWSRUNTIME_API bool SkyLook(const FOutlawsAssets& A, const FString& Name, const TArray<FColor>& Palette, FOutlawsSkyLook& Out);

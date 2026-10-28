@@ -2637,7 +2637,28 @@ void AOutlawsLevelActor::SetHDTextures(bool bOn)
 			if (const TObjectPtr<UTexture2D>* T = Textures.Find(P.Stems[i])) P.Mids[i]->SetTextureParameterValue(TEXT("Tex"), *T);
 		}
 	}
+	ApplyGradientSkyLook();         // (BUG-TRAINSKY8BIT: the dome's flat 8-bit sky, or the gradient)
 	UE_LOG(LogOutlaws, Log, TEXT("OLRT remastered graphics %s (%d of %d textures have an HD version)"), bOn ? TEXT("on") : TEXT("off"), TexturesHd.Num(), TexturesLo.Num());
+}
+
+void AOutlawsLevelActor::ApplyGradientSkyLook()
+{
+	if (!bGradientSky || !SkySurfaceMid) return;
+	const bool bFlat = !bHDTextures;
+	if (const TObjectPtr<UTexture2D>* T = Textures.Find(bFlat ? TEXT("_FLATSKY") : TEXT("_GRADSKY"))) SkySurfaceMid->SetTextureParameterValue(TEXT("Tex"), *T);
+	SkySurfaceMid->SetVectorParameterValue(TEXT("FadeColour"), bFlat ? FlatSkyColour : GradSkyTop);
+}
+
+FString AOutlawsLevelActor::DebugSkyLook() const
+{
+	if (!bGradientSky || !SkySurfaceMid) return TEXT("none");
+	UTexture* Shown = nullptr;
+	SkySurfaceMid->GetTextureParameterValue(FHashedMaterialParameterInfo(TEXT("Tex")), Shown);
+	const TObjectPtr<UTexture2D>* Flat = Textures.Find(TEXT("_FLATSKY"));
+	const TObjectPtr<UTexture2D>* Grad = Textures.Find(TEXT("_GRADSKY"));
+	if (Flat && Shown == Flat->Get()) return FString::Printf(TEXT("flat %d %d %d (%s)"), FlatSkyPx.R, FlatSkyPx.G, FlatSkyPx.B, *FlatSkyFrom);
+	if (Grad && Shown == Grad->Get()) return TEXT("gradient");
+	return FString::Printf(TEXT("another picture (%s)"), Shown ? *Shown->GetName() : TEXT("none"));
 }
 
 void AOutlawsLevelActor::SetHDSounds(bool bOn)

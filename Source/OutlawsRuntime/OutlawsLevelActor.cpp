@@ -1325,7 +1325,6 @@ void AOutlawsLevelActor::Build()
 				}
 				UTexture2D* Grad = OutlawsTextures::MakeTextureBGRA(GW, GH, Rows, false, TF_Bilinear, TA_Clamp);
 				Textures.Add(TEXT("_GRADSKY"), Grad);
-				SkySurfaceMid->SetTextureParameterValue(TEXT("Tex"), Grad);
 				// (an animated sky stem hands its frames to every material of the stem each tick: this one is the gradient's now)
 				int32 Freed = 0;
 				if (FAtxState* Ax = AtxLoops.Find(SkyStem)) Freed = Ax->Mids.RemoveAll([this](const TWeakObjectPtr<UMaterialInstanceDynamic>& M) { return M.Get() == SkySurfaceMid; });
@@ -1333,8 +1332,32 @@ void AOutlawsLevelActor::Build()
 				SkySurfaceMid->SetScalarParameterValue(TEXT("Repeats"), 1.f);
 				SkySurfaceMid->SetScalarParameterValue(TEXT("RepV"), 1.f);
 				SkySurfaceMid->SetScalarParameterValue(TEXT("Wrap"), 0.f);
-				SkySurfaceMid->SetVectorParameterValue(TEXT("FadeColour"), FLinearColor(Zenith));
+				GradSkyTop = FLinearColor(Zenith);
 				UE_LOG(LogOutlaws, Log, TEXT("OLRT sky %s: the gradient dome (BUG-TRAINSKY): sky blue to halfway down, then to a whiter blue at the horizon"), *SkyStem);
+				// BUG-TRAINSKY8BIT (user 28 Oct, snapshot 3: with Remastered Graphics off a pale gradient over a bright blue band):
+				// the 8-bit look's sky is one flat blue, the mean of the top row of the picture on the level's outer walls (the
+				// walls with no neighbour round the open sky's sectors: the train's GCTBGRND, its own sky GWTRNSKY the same blue),
+				// so the walls' sky meets it; read here, not written in.  The gradient stays for the remastered look
+				{
+					TMap<FString, int32> Count;
+					for (const FOutlawsSector& Sec : L.Sectors)
+					{
+						if (!(Sec.Flags & OutlawsFlags::ExtCeiling)) continue;
+						for (const FOutlawsWall& W : Sec.Walls) if (W.Adjoin < 0 && L.Textures.IsValidIndex(W.Mid)) Count.FindOrAdd(L.Textures[W.Mid])++;
+					}
+					int32 Best = 0;
+					FlatSkyFrom = SkyName;
+					for (const TPair<FString, int32>& Kv : Count) if (Kv.Value > Best) { Best = Kv.Value; FlatSkyFrom = Kv.Key; }
+					OutlawsTextures::FOutlawsSkyLook Back;
+					FlatSkyPx = OutlawsTextures::SkyLook(A, FlatSkyFrom, Palette, Back) ? Back.TopRow : Zenith;
+					FlatSkyColour = FLinearColor(FlatSkyPx);
+					TArray<FColor> Flat;
+					Flat.Init(FlatSkyPx, 16);
+					Textures.Add(TEXT("_FLATSKY"), OutlawsTextures::MakeTextureBGRA(4, 4, Flat, false, TF_Bilinear, TA_Clamp));
+					UE_LOG(LogOutlaws, Log, TEXT("OLRT sky %s: the 8-bit look's flat sky (BUG-TRAINSKY8BIT): %d %d %d, the top row of %s (on %d outer walls)"), *SkyStem,
+						FlatSkyPx.R, FlatSkyPx.G, FlatSkyPx.B, *FlatSkyFrom, Best);
+				}
+				ApplyGradientSkyLook();
 			}
 			if (GetWorld() && GetWorld()->IsGameWorld() && bCloudLayer && !bGradientSky && !OLFlags::Param(TEXT("OLNoCloudLayer")))
 			{
