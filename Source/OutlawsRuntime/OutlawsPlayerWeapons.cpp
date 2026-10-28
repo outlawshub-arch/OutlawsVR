@@ -3745,9 +3745,13 @@ void AOutlawsPlayer::UpdateTools(float Dt)
 		FCollisionQueryParams Q(SCENE_QUERY_STAT(OutlawsToolStab), false, this);
 		FHitResult Hit;
 		const FVector Dir = Move.GetSafeNormal();
-		// a swing through a window or a bottle breaks it (user 2026-09-28); a blow only with the grip held (2026-09-29)
+		// a swing through a window or a bottle breaks it (user 2026-09-28); a blow only with the grip held (2026-09-29), but
+		// the shovel and the crowbar land grip or not (BUG-TOOLGRIP, user 2026-10-28: "doesn't really make sense" to hold the
+		// grip for a tool already in the hand).  -OLOldToolGrip: the grip held for them too
+		static const bool bOldToolGrip = OLFlags::Param(TEXT("OLOldToolGrip"));
+		const bool bClub = HeldTool[H] == TEXT("ishovel") || HeldTool[H] == TEXT("icrowbar");
 		if (Swing > OutlawsFeel::HitSpeedHard) L->ShatterAlong(Tip - Move, Tip);    // (glass: no grip needed)
-		if (Swing > OutlawsFeel::HitSpeedHard && Axis(H == 0 ? TEXT("OLVR_LeftGrip") : TEXT("OLVR_RightGrip")) >= 0.5f)
+		if (Swing > OutlawsFeel::HitSpeedHard && ((bClub && !bOldToolGrip) || Axis(H == 0 ? TEXT("OLVR_LeftGrip") : TEXT("OLVR_RightGrip")) >= 0.5f))
 		{
 			if (MeleeDynamite(Tip))
 			{

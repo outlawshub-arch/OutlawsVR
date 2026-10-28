@@ -3,7 +3,8 @@
 // through OLFlags, not under WITH_OUTLAWS_TESTS; nothing runs without the flag).  Each case stands one bad guy (or, in a
 // match, a bot) before the player, puts the tool in the right hand with its grip held and moves the hand frame through a
 // swing a frame at a time, calling UpdateTools (the fist: UpdatePunches) as the game's tick does; the bad guy's health (or
-// the match's strikes) before and after says whether the blow landed.  Lines "OLWHACK <level> <case>: PASS|FAIL|SKIP ..."
+// the match's strikes) before and after says whether the blow landed.  BUG-TOOLGRIP: the "grip let go" cases swing with the
+// grip released (a tool lands, with -OLOldToolGrip it does not; a fist never does).  Lines "OLWHACK <level> <case>: PASS|FAIL|SKIP ..."
 // and "OLWHACK RESULT".  With -OLShipSmoke each level is played until its cases are done (OutlawsShipSmoke::HoldLevel);
 // without it the game quits after the first level's cases.  See OutlawsPlayer.h (TickToolWhackProbe).
 
@@ -45,6 +46,7 @@ namespace
 		bool bDuck = false;         // ducking as the blow comes
 		bool bAfterDig = false;     // the spade driven into townex's DIG_ME first (through UpdateTools), then this blow
 		bool bExpectHit = true;     // false: a hit is the FAIL (resting, walking into him, a fist out of reach)
+		bool bNoGrip = false;       // the grip let go for the swing (BUG-TOOLGRIP)
 		bool IsFist() const { return Tool[0] == TEXT('f'); }
 		FString Name() const
 		{
@@ -54,8 +56,8 @@ namespace
 			const TCHAR* Am = Aim == EWhackAim::Head ? TEXT("head") : Aim == EWhackAim::Body ? TEXT("body") : TEXT("low");
 			const TCHAR* Wo = Who == EWhackWho::Extra ? TEXT(", a multiplied copy") : Who == EWhackWho::OtherKind ? TEXT(", another kind") : Who == EWhackWho::Player ? TEXT(", another player") : TEXT("");
 			const bool bFar = !bExpectHit && (Swing == EWhackSwing::Across || Swing == EWhackSwing::Chop || Swing == EWhackSwing::Punch);
-			return FString::Printf(TEXT("%s %s %s at %.0f cm%s%s%s%s"), Tl, Sw, Am, Range, bDuck ? TEXT(", ducking") : TEXT(""), Wo,
-				bAfterDig ? TEXT(", straight after a dig") : TEXT(""), bFar ? TEXT(", out of reach") : TEXT(""));
+			return FString::Printf(TEXT("%s %s %s at %.0f cm%s%s%s%s%s"), Tl, Sw, Am, Range, bDuck ? TEXT(", ducking") : TEXT(""), Wo,
+				bAfterDig ? TEXT(", straight after a dig") : TEXT(""), bFar && !bNoGrip ? TEXT(", out of reach") : TEXT(""), bNoGrip ? TEXT(", grip let go") : TEXT(""));
 		}
 	};
 	FWhackCase& AddCase(TArray<FWhackCase>& Out, const TCHAR* Tool, EWhackWho Who, EWhackSwing S, EWhackAim A, double R, bool bDuck, bool bHit)
@@ -71,9 +73,11 @@ namespace
 		return K;
 	}
 	// each tool across at the head, the body and low, 40, 80 and 120 cm off, standing and ducking; chopped at the head; resting
-	// on him; carried into him.  The fist the same way (a punch; 120 cm is out of an arm's reach), and resting on him
+	// on him; carried into him; across and chopped with the grip let go.  The fist the same way (a punch; 120 cm is out of an
+	// arm's reach), resting on him, and a punch with the grip let go (an open hand: no blow)
 	void AddMatrix(TArray<FWhackCase>& Out, EWhackWho Who, bool bAllChops)
 	{
+		const bool bOldToolGrip = OLFlags::Param(TEXT("OLOldToolGrip"));
 		for (const TCHAR* Tool : { TEXT("ishovel"), TEXT("icrowbar") })
 		{
 			for (const bool bDuck : { false, true })
@@ -84,12 +88,15 @@ namespace
 			else AddCase(Out, Tool, Who, EWhackSwing::Chop, EWhackAim::Head, 80.0, false, true);
 			AddCase(Out, Tool, Who, EWhackSwing::Rest, EWhackAim::Body, 80.0, false, false);
 			AddCase(Out, Tool, Who, EWhackSwing::WalkInto, EWhackAim::Body, 120.0, false, false);
+			AddCase(Out, Tool, Who, EWhackSwing::Across, EWhackAim::Head, 80.0, false, !bOldToolGrip).bNoGrip = true;
+			AddCase(Out, Tool, Who, EWhackSwing::Chop, EWhackAim::Head, 80.0, false, !bOldToolGrip).bNoGrip = true;
 		}
 		for (const bool bDuck : { false, true })
 			for (const double R : { 40.0, 80.0, 120.0 })
 				for (const EWhackAim A : { EWhackAim::Head, EWhackAim::Body, EWhackAim::Low })
 					AddCase(Out, TEXT("fist"), Who, EWhackSwing::Punch, A, R, bDuck, R < 100.0);
 		AddCase(Out, TEXT("fist"), Who, EWhackSwing::Rest, EWhackAim::Body, 40.0, false, false);
+		AddCase(Out, TEXT("fist"), Who, EWhackSwing::Punch, EWhackAim::Body, 40.0, false, false).bNoGrip = true;
 	}
 	TArray<FWhackCase> StoryCases()
 	{
@@ -413,7 +420,8 @@ void AOutlawsPlayer::TickToolWhackProbe(float Dt)
 	const int32 StrikesBefore = UOutlawsCoop::MatchStrikesSent();
 	const int32 DealtBefore = Co ? Co->MatchHitsDealtSoFar() : 0;
 	const int32 GripWas = TestAxes.Contains(TEXT("OLVR_RightGrip")) ? 1 : 0;
-	TestAxes.Add(TEXT("OLVR_RightGrip"), 1.f);
+	if (K.bNoGrip) TestAxes.Remove(TEXT("OLVR_RightGrip"));
+	else TestAxes.Add(TEXT("OLVR_RightGrip"), 1.f);
 	auto Landed = [&]() { return bPlayer ? UOutlawsCoop::MatchStrikesSent() > StrikesBefore : E->GetHealth() < Before; };
 	// the others within 3 m (a crowd with the multiplier): a blow one of them takes first is not his
 	TArray<TPair<TWeakObjectPtr<AOutlawsEnemy>, float>> Near;
@@ -500,7 +508,8 @@ void AOutlawsPlayer::TickToolWhackProbe(float Dt)
 		bToolTipValid[1] = false;              // (the tick's own UpdateTools after this starts over from the hand's place)
 		HandNote = FString::Printf(TEXT("; the fist %.0f cm out, tool %.0f cm, nearest striking length %.1f cm off his body"), Reach, Tip, bPlayer ? -1.0 : BestWhole);
 	}
-	if (!GripWas) TestAxes.Remove(TEXT("OLVR_RightGrip"));
+	if (GripWas) TestAxes.Add(TEXT("OLVR_RightGrip"), 1.f);
+	else TestAxes.Remove(TEXT("OLVR_RightGrip"));
 	const bool bHit = LandedAt >= 0;
 	if (!bHit && K.bExpectHit && !bPlayer)
 	{

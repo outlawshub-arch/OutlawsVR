@@ -1654,7 +1654,8 @@ private:
 	 *  80 and 120 cm, standing and ducking, chopped, resting on him, walked into him, a multiplied copy, a bad guy of another
 	 *  kind, straight after a dig), each swing a frame at a time through UpdateTools, and the fist the same way through
 	 *  UpdatePunches; "OLWHACK <level> <case>: PASS|FAIL|SKIP" and "OLWHACK RESULT".  With -OLShipSmoke each level is played
-	 *  until its cases are done. */
+	 *  until its cases are done.  BUG-TOOLGRIP: across and chopped with the grip let go too (a tool lands, with -OLOldToolGrip
+	 *  it does not), and a punch with it let go (no blow). */
 	static bool ToolWhackProbeOn();
 	void TickToolWhackProbe(float Dt);
 
