@@ -15,7 +15,6 @@ namespace OutlawsMenu { class FSource; struct FPage; struct FItem; }
 class AOutlawsLevelActor;
 class FOutlawsAssets;
 namespace OutlawsObj { struct FObjMesh; }
-namespace OutlawsHeldClash { struct FState; }
 struct FOutlawsThrownLook;
 
 /**
@@ -976,17 +975,6 @@ private:
 	float SmashCool = 0.f;
 	float ShoveCool[2] = { 0.f, 0.f };
 	void UpdateEnemyGrab(float Dt);
-	/** REQ-HELDCLASH (OutlawsPlayerHeldClash.cpp): after the hands have placed them, two held men collide where they are drawn
-	 *  (their frames' opaque pixels, within a body's thickness along the view), each pushed off the other as an offset from
-	 *  his hand; the smash comes on the first contact.  -OLOldSmash (OldSmash): the chests' 55 cm smash, no collision. */
-	void UpdateHeldClash(float Dt);
-	static bool OldSmash();
-	/** Both held men hurt by the smash, its sound and haptics, the cooldown (user 2026-09-29). */
-	void SmashHeld(class AOutlawsEnemy* A, class AOutlawsEnemy* B, const FVector& Rel, const TCHAR* How);
-	/** How far the other has pushed this hand's man off it (zero for any other man). */
-	FVector HeldClashOffset(int32 Hand, const class AOutlawsEnemy* E) const;
-	TSharedPtr<OutlawsHeldClash::FState> HeldClash;
-	int32 HeldSmashCount = 0;               // (the probe counts the smashes)
 	void LetGoEnemy(int32 Hand, bool bThrow, const FVector* Launch = nullptr);
 	/** The held one let go along the arc the trigger showed (ThrowVelocity). */
 	void ThrowEnemyAimed(int32 Hand);
@@ -1055,10 +1043,6 @@ private:
 	/** -OLShots -OLHeldSwayTest (REQ-HELDSWAY): a man held and moved sideways, then toward, then stopped and let go;
 	 *  the legs' lag and the bottom edge's turn logged each frame (OutlawsPlayerHeldSway.cpp). */
 	void HeldSwayTestTick(float Dt);
-	/** -OLShots -OLHeldClashTest[=perf] (REQ-HELDCLASH): two men held and brought together, side by side, one higher, one
-	 *  further along the view, and fast claps; the contacts against a 1 cm truth, the smashes counted, the cost logged
-	 *  (OutlawsPlayerHeldClashTest.cpp). */
-	void HeldClashTestTick(float Dt);
 	/** -OLShots -OLGrabUpscaleTest (REQ-GRABUPSCALE): a man held before the eyes shows his held frame's upscale (or, with
 	 *  -OLGrabUpscaleMissing, the HD atlas), and the atlas again after the let-go (OutlawsPlayerGrabUpscale.cpp). */
 	void GrabUpscaleTestTick(float Dt);

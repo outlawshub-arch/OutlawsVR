@@ -5889,18 +5889,24 @@ void AOutlawsPlayer::UpdateEnemyGrab(float Dt)
 	}
 	if (LG)
 	{
-		// two held bad guys smashed together: both hurt, by how hard (user 2026-09-29).  REQ-HELDCLASH: on their first contact
-		// as drawn (UpdateHeldClash, once the hands have placed them, below); -OLOldSmash: when the chests come within 55 cm
-		if (OldSmash())
+		// two held bad guys smashed together: both hurt, by how hard (user 2026-09-29)
+		AOutlawsEnemy* A = GrabbedEnemy[0].Get();
+		AOutlawsEnemy* B = GrabbedEnemy[1].Get();
+		const FVector Rel = HandVelocity[0] - HandVelocity[1];
+		if (A && B && A->bHeldByPlayer && B->bHeldByPlayer && SmashCool <= 0.f && Rel.Size() > OutlawsFeel::HitSpeedHard
+			&& FVector::Dist(A->GrabChest(), B->GrabChest()) < 55.0)
 		{
-			AOutlawsEnemy* A = GrabbedEnemy[0].Get();
-			AOutlawsEnemy* B = GrabbedEnemy[1].Get();
-			const FVector Rel = HandVelocity[0] - HandVelocity[1];
-			if (A && B && A->bHeldByPlayer && B->bHeldByPlayer && SmashCool <= 0.f && Rel.Size() > OutlawsFeel::HitSpeedHard
-				&& FVector::Dist(A->GrabChest(), B->GrabChest()) < 55.0)
-			{
-				SmashHeld(A, B, Rel, TEXT("the chests within 55 cm, -OLOldSmash"));
-			}
+			// two or three smashes fell them (user 2026-09-29): 38..45% of each one's full health a blow, with no place
+			// or point-blank multipliers (the point-blank x4 felled them in one)
+			const float Dmg = 0.4f;
+			const FVector AB = (B->GetActorLocation() - A->GetActorLocation()).GetSafeNormal();
+			A->TakeHit(A->GetMaxHealth() * FMath::FRandRange(0.38f, 0.45f), A->GrabChest(), -AB, B->GetActorLocation(), true, 0.f);
+			B->TakeHit(B->GetMaxHealth() * FMath::FRandRange(0.38f, 0.45f), B->GrabChest(), AB, A->GetActorLocation(), true, 0.f);
+			LG->PlaySoundAt(TEXT("connect"), (A->GrabChest() + B->GrabChest()) * 0.5);
+			PulseImpact(0, float(Rel.Size()));
+			PulseImpact(1, float(Rel.Size()));
+			SmashCool = 0.5f;
+			UE_LOG(LogOutlaws, Log, TEXT("OLRT two held bad guys smashed together at %.0f cm/s: %.2f each"), Rel.Size(), Dmg);
 		}
 		// one rammed into another bad guy with force: the struck one hurt and knocked, the held one half as much
 		for (int32 h = 0; h < 2; ++h)
@@ -6064,8 +6070,7 @@ void AOutlawsPlayer::UpdateEnemyGrab(float Dt)
 				: E->GetActorLocation() + (GripOf(H)->GetComponentLocation() - E->GrabChest());   // his neck in the fist
 			GrabGlide[H] = FMath::Min(1.f, GrabGlide[H] + Dt / 0.2f);          // a fifth of a second, quick then settling
 			const bool bSettled = GrabGlide[H] >= 1.f;
-			// (REQ-HELDCLASH) pushed off the other held man: his offset from the hand kept
-			E->SetActorLocation((bSettled ? Want : FMath::Lerp(GrabFrom[H], Want, FMath::InterpEaseOut(0.f, 1.f, GrabGlide[H], 3.f))) + HeldClashOffset(H, E), false);
+			E->SetActorLocation(bSettled ? Want : FMath::Lerp(GrabFrom[H], Want, FMath::InterpEaseOut(0.f, 1.f, GrabGlide[H], 3.f)), false);
 			// pushed through a window, it gives (user 2026-09-29): his chest and his middle sweep the panes
 			const FVector Now[2] = { E->GrabChest(), E->GetActorLocation() };
 			if (bSettled && LG)
@@ -6099,8 +6104,6 @@ void AOutlawsPlayer::UpdateEnemyGrab(float Dt)
 			Spr->HoldView(ToYaw);
 		}
 	}
-	// (REQ-HELDCLASH) both placed: they collide where they are drawn, the smash on the first contact
-	if (!OldSmash()) UpdateHeldClash(Dt);
 }
 
 void AOutlawsPlayer::PassBottle(int32 From, int32 To)
