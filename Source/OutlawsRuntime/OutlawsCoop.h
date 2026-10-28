@@ -1898,6 +1898,9 @@ private:
 	// -OLCoopTest=float (REQ-ENEMYFLOAT, OutlawsEnemyFloatTest.cpp) in the canyon: the host drops a bad guy into the water; the
 	// host's copy and the client's each show him floating at the line
 	void TickFloatTest(double Now, AOutlawsLevelActor* L, AOutlawsPlayer* P);
+	// -OLCoopTest=bosswall (BUG-BOSSWALL, OutlawsBossWallProbe.cpp) in the town: the host puts the boss in the boardwalk
+	// doorway where snapshot 5 had him pressed on the frame; the host's copy and the client's each get off it
+	void TickBossWallTest(double Now, AOutlawsLevelActor* L, AOutlawsPlayer* P);
 	int32 EfStep = 0, EfFails = 0, EfPasses = 0;
 	double EfAt = 0.0;
 	int32 BeStep = 0, BeFails = 0, BePasses = 0, BeDoor = -1, BeVisibleMoves = 0;

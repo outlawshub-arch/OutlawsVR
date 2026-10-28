@@ -3151,8 +3151,10 @@ FString AOutlawsLevelActor::DataFile(const TCHAR* Folder, const FString& File) c
 	return FPaths::ConvertRelativePathToFull(FPaths::Combine(FPaths::ProjectContentDir(), Folder, File));
 }
 
-bool AOutlawsLevelActor::PathStepToward(const FVector& FromFeet, const FVector& ToFeet, double MaxStepU, double HeightU, FVector& OutStep) const
+bool AOutlawsLevelActor::PathStepToward(const FVector& FromFeet, const FVector& ToFeet, double MaxStepU, double HeightU, FVector& OutStep,
+	FIntPoint* OutVia, const TArray<FIntPoint>* Avoid) const
 {
+	if (OutVia) *OutVia = FIntPoint(-1, -1);
 	if (!Inf) return false;
 	const FOutlawsLevel& Lv = Inf->Live;
 	auto At = [&](const FVector& P) { return Lv.SectorAt(FOutlawsGeometry::ToOutlaws(P, 0.2)); };
@@ -3181,6 +3183,7 @@ bool AOutlawsLevelActor::PathStepToward(const FVector& FromFeet, const FVector& 
 			const int32 Nx = W.Adjoin;
 			if (!Lv.Sectors.IsValidIndex(Nx) || Prev[Nx] >= 0) continue;
 			if (W.Flags1 & (OutlawsFlags::WallNoPass | OutlawsFlags::WallFence)) continue;
+			if (Avoid && Avoid->Contains(FIntPoint(S.Index, w))) continue;        // (BUG-BOSSWALL: he could not get through it)
 			const FOutlawsSector& T = Lv.Sectors[Nx];
 			const double Lo = FMath::Max(S.Floor.Y, T.Floor.Y), Hi = FMath::Min(S.Ceil.Y, T.Ceil.Y);
 			if (Hi - Lo < HeightU * 0.9 || T.Floor.Y - S.Floor.Y > MaxStepU) continue;
@@ -3194,6 +3197,7 @@ bool AOutlawsLevelActor::PathStepToward(const FVector& FromFeet, const FVector& 
 	while (Prev[Cur] != A->Index) Cur = Prev[Cur];
 	const FOutlawsWall& W = A->Walls[Via[Cur]];
 	if (!A->Verts.IsValidIndex(W.V1) || !A->Verts.IsValidIndex(W.V2)) return false;
+	if (OutVia) *OutVia = FIntPoint(A->Index, Via[Cur]);
 	const FVector2D Mid = (A->Verts[W.V1] + A->Verts[W.V2]) * 0.5;
 	// through the opening, up to two units on toward the next sector's middle
 	const FOutlawsSector& T = Lv.Sectors[Cur];
@@ -3203,6 +3207,34 @@ bool AOutlawsLevelActor::PathStepToward(const FVector& FromFeet, const FVector& 
 	const FVector2D P = Mid + (C - Mid).GetSafeNormal() * FMath::Min(2.0, (C - Mid).Size() * 0.5);
 	OutStep = FOutlawsGeometry::ToUE(P, T.Floor.Y);
 	return true;
+}
+
+FString AOutlawsLevelActor::DebugSectorWalls(const FVector& P, double RadiusU) const
+{
+	if (!Inf) return TEXT("no level");
+	const FOutlawsLevel& Lv = Inf->Live;
+	const FOutlawsSector* S = Lv.SectorAt(FOutlawsGeometry::ToOutlaws(P, 0.2));
+	if (!S) return TEXT("no sector");
+	const FVector2D Q = FOutlawsGeometry::ToOutlawsPlan(P);
+	FString Out = FString::Printf(TEXT("sector %d (floor %.2f ceil %.2f flags %u, %d walls) at %.2f %.2f:"), S->Index, S->Floor.Y, S->Ceil.Y, S->Flags, S->Walls.Num(), Q.X, Q.Y);
+	for (int32 w = 0; w < S->Walls.Num(); ++w)
+	{
+		const FOutlawsWall& W = S->Walls[w];
+		if (!S->Verts.IsValidIndex(W.V1) || !S->Verts.IsValidIndex(W.V2)) continue;
+		const FVector2D A = S->Verts[W.V1], B = S->Verts[W.V2];
+		const FVector2D AB = B - A;
+		const double T = FMath::Clamp(FVector2D::DotProduct(Q - A, AB) / FMath::Max(AB.SizeSquared(), 1e-9), 0.0, 1.0);
+		const double D = FVector2D::Distance(Q, A + AB * T);
+		if (D > RadiusU) continue;
+		FString Next;
+		if (Lv.Sectors.IsValidIndex(W.Adjoin))
+		{
+			const FOutlawsSector& N = Lv.Sectors[W.Adjoin];
+			Next = FString::Printf(TEXT(" to %d (floor %.2f ceil %.2f)"), N.Index, N.Floor.Y, N.Ceil.Y);
+		}
+		Out += FString::Printf(TEXT(" [w%d %.2f %.2f > %.2f %.2f, %.2f u off%s flags %u]"), w, A.X, A.Y, B.X, B.Y, D, *Next, W.Flags1);
+	}
+	return Out;
 }
 
 namespace

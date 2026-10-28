@@ -1130,8 +1130,13 @@ public:
 	/** Where to walk next from FromFeet toward ToFeet through the level's sectors (user 2026-09-28: a roaming boss
 	 *  finds its way round walls to the player): the opening out of the first sector on the way, a little into the
 	 *  next; ToFeet itself when both are in one sector.  Openings too low (a shut door), too high a step (MaxStepU,
-	 *  Outlaws units) or no-pass / fence are not taken.  False: no way (or off the map). */
-	bool PathStepToward(const FVector& FromFeet, const FVector& ToFeet, double MaxStepU, double HeightU, FVector& OutStep) const;
+	 *  Outlaws units) or no-pass / fence are not taken.  False: no way (or off the map).
+	 *  BUG-BOSSWALL: OutVia the opening taken (its sector, its wall; -1s for ToFeet itself), and the openings in Avoid (the
+	 *  same pairs) not tried: a hunter that could not get through one goes round by another. */
+	bool PathStepToward(const FVector& FromFeet, const FVector& ToFeet, double MaxStepU, double HeightU, FVector& OutStep,
+		FIntPoint* OutVia = nullptr, const TArray<FIntPoint>* Avoid = nullptr) const;
+	/** Tests (BUG-BOSSWALL): the sector at P and its walls within RadiusU (Outlaws units) of P: ends, opening, flags. */
+	FString DebugSectorWalls(const FVector& P, double RadiusU) const;
 	/** REQ-MPBOTS: the whole way from FromFeet to ToFeet over the same openings, shortest first: the crossing points (each
 	 *  MarginU in from its opening's ends) then ToFeet, and the way's length.  False: no way (or off the map).
 	 *  BUG-BOTPICKUP: MaxDropU (above 0) the deepest drop the body walks off; a glass pane (SHATTER) shut like no-pass. */

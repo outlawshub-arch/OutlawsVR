@@ -896,6 +896,7 @@ void UOutlawsCoop::TickTest(double Now)
 	else if (TestOnly == TEXT("bossend")) TickBossEndTest(Now, L, P);               // (BUG-RANCHDOOR, BUG-DRDEATHANIM: OutlawsCoopBossEnd.cpp; each)
 	else if (TestOnly == TEXT("piano")) TickPianoTest(Now, L, P);                   // (REQ-PIANO: OutlawsPianoTest.cpp; the host and its client each)
 	else if (TestOnly == TEXT("float")) TickFloatTest(Now, L, P);                   // (REQ-ENEMYFLOAT: OutlawsEnemyFloatTest.cpp; the host and its client each)
+	else if (TestOnly == TEXT("bosswall")) TickBossWallTest(Now, L, P);             // (BUG-BOSSWALL: OutlawsBossWallProbe.cpp; the host and its client each)
 	else if (TestOnly == TEXT("dm") || TestOnly == TEXT("dmstrike") || TestOnly == TEXT("lobbyrule") || TestOnly == TEXT("readyflip")) return;      // (REQ-MPLOBBY's lobby run: the script watches)                                         // (its clients only follow the host's steps)
 	else if (IsHost() && TestOnly.StartsWith(TEXT("latejoin"))) TickHostLateJoinTest(Now, L, P);     // (R7: alone first: OutlawsCoopJoin.cpp)
 	else if (IsHost()) TickHostTest(Now, L, P);

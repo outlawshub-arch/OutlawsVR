@@ -407,6 +407,8 @@ void AOutlawsEnemy::SetSub(int32 NewSub)
 	SubTime = 0.f;
 	StuckTime = 0.f;
 	bDoorTried = false;
+	SlideUntil = 0.0;                 // (BUG-BOSSWALL: a new move ends a slide; the hunt marks its own step after this)
+	bHuntStep = false;
 	switch (NewSub)
 	{
 	case SubFace:
@@ -861,6 +863,51 @@ void AOutlawsEnemy::MoveAlong(float Dt)
 	const FVector Here = GetActorLocation();
 	FVector To = MoveTarget - Here;
 	To.Z = 0.0;
+	if (SlideUntil > 0.0)
+	{
+		// (BUG-BOSSWALL) along the wall till the straight way to where he was going is clear (a look five times a second):
+		// then on there.  Still blocked at the slide's place or time: the move is thought again from here at once, as the
+		// Jedi actor turns back to its target when its walk time runs out (a hunter's next step through the openings, round
+		// by another opening when that one held him twice; anyone else's next move)
+		SlideCheck -= Dt;
+		if (SlideCheck <= 0.f)
+		{
+			SlideCheck = 0.2f;
+			FVector Goal = SlideGoal - Here;
+			Goal.Z = 0.0;
+			if (RoomToward(Goal.GetSafeNormal(), Goal.Size()) >= Goal.Size() - 10.0)
+			{
+				MoveTarget = SlideGoal;
+				SlideUntil = 0.0;
+				SubTime = 0.f;
+				StuckTime = 0.f;
+				bDoorTried = false;
+				return;
+			}
+		}
+		if (To.Size() < 50.0 || Now() >= SlideUntil)
+		{
+			const bool bHunt = bHunter;
+			if (bHuntStep && HuntVia.X >= 0)
+			{
+				// the second slide in 15 s on the way to one opening that did not clear the way to it: the hunt goes round by
+				// another opening, or straight at the player when there is none, for 15 s (the town's boardwalk building:
+				// the door's open leaf stood between him and its way out, a door not his to work)
+				const double T = Now();
+				if (HuntSlidVia == HuntVia && T - HuntSlidAt < 15.0 && !HuntAvoid.Contains(HuntVia))
+				{
+					HuntAvoid.Add(HuntVia);
+					HuntAvoidUntil.Add(T + 15.0);
+					UE_LOG(LogOutlawsAI, Log, TEXT("OLRT %s could not get through the opening of sector %d (wall %d): the hunt goes another way for 15 s"), *OutlawsName, HuntVia.X, HuntVia.Y);
+				}
+				HuntSlidVia = HuntVia;
+				HuntSlidAt = T;
+			}
+			SetSub(bHunt ? SubFace : SubDecide);
+			if (bHunt) HuntWait = 0.f;
+			return;
+		}
+	}
 	if (To.Size() < 50.0 || SubTime > 8.f)
 	{
 		SetSub(SubFace);
@@ -909,10 +956,113 @@ void AOutlawsEnemy::MoveAlong(float Dt)
 			return;
 		}
 	}
+	// (BUG-BOSSWALL) pressed on a wall (or a body) for a second: along it instead; -OLOldBossWall stops and thinks again.
+	// Not a match bot: its own driver steers it and steps it aside (OutlawsCoopBots.cpp)
+	if (StuckTime > 1.f && IsMoveSub(Sub) && CoopSelf < 0 && !OldBossWall() && StartWallSlide())
+	{
+		return;
+	}
 	if (StuckTime > 1.2f)
 	{
 		SetSub(SubFace);
 	}
+}
+
+bool AOutlawsEnemy::OldBossWall()
+{
+	static const bool bOld = OLFlags::Param(TEXT("OLOldBossWall"));
+	return bOld;
+}
+
+void AOutlawsEnemy::MoveBlockedBy(const FHitResult& Impact)
+{
+	Super::MoveBlockedBy(Impact);
+	// a wall's face, not a floor or a ramp under him
+	FVector N = Impact.ImpactNormal;
+	if (!Impact.bBlockingHit || FMath::Abs(N.Z) > 0.7) return;
+	N.Z = 0.0;
+	if (!N.Normalize()) return;
+	BlockNormal = N;
+	BlockPoint = Impact.ImpactPoint;
+	BlockWhat = Impact.GetComponent() ? Impact.GetComponent()->GetFName() : (Impact.GetActor() ? Impact.GetActor()->GetFName() : NAME_None);
+	BlockAt = Now();
+}
+
+bool AOutlawsEnemy::StartWallSlide()
+{
+	const double T = Now();
+	if (T - BlockAt > 0.25 || BlockNormal.IsNearlyZero()) return false;
+	const FVector Here = GetActorLocation();
+	FVector Want = MoveTarget - Here;
+	Want.Z = 0.0;
+	Want = Want.GetSafeNormal();
+	if (Want.IsNearlyZero()) Want = FRotator(0.0, Heading, 0.0).Vector();
+	// [TFE actor_changeDirFromCollision] the wall's own direction, the way within 90 degrees of his heading (the original
+	// jitters the test by up to 2.8 degrees, so a press square on goes either way); a second turn within a second of the last
+	// goes any way at all: here any way off the wall (the original's any way may be back into it, a second lost each time here)
+	const FVector Along(-BlockNormal.Y, BlockNormal.X, 0.0);
+	const double Dot = FVector::DotProduct(Along, Want);
+	const bool bAgain = T - LastSlideAt < 1.0 + 1.5 || SlideUntil > 0.0;      // (his own press needs a second: under 2.5 s since the last turn's start)
+	FVector Way;
+	if (bAgain)
+	{
+		Way = FRotator(0.0, BlockNormal.Rotation().Yaw + FMath::FRandRange(-80.f, 80.f), 0.0).Vector();
+	}
+	else
+	{
+		Way = FMath::Abs(Dot) < 0.05 ? (FMath::RandBool() ? Along : -Along) : (Dot > 0.0 ? Along : -Along);
+	}
+	// how far the body goes that way: up to 6 m, a 3 s walk (the original's walk time grows by 1.5 s a collision unseen)
+	double Dist = RoomToward(Way, 600.0);
+	if (Dist < 60.0 && !bAgain)
+	{
+		const double Back = RoomToward(-Way, 600.0);      // (no room his way along it: the other way)
+		if (Back > Dist) { Way = -Way; Dist = Back; }
+	}
+	for (int32 i = 0; bAgain && Dist < 60.0 && i < 5; ++i)
+	{
+		Way = FRotator(0.0, BlockNormal.Rotation().Yaw + FMath::FRandRange(-80.f, 80.f), 0.0).Vector();
+		Dist = RoomToward(Way, 600.0);
+	}
+	if (Dist < 60.0)
+	{
+		return false;
+	}
+	UE_LOG(LogOutlawsAI, Log, TEXT("OLRT %s pressed on %s %.1f s: slides %s along it, %.0f cm"), *OutlawsName, *BlockWhat.ToString(), StuckTime, bAgain ? TEXT("off (again)") : TEXT("on"), Dist);
+	if (SlideUntil <= 0.0) SlideGoal = MoveTarget;        // (a slide off a slide keeps the move's own goal)
+	MoveTarget = Here + Way * Dist;
+	LastSlideAt = T;
+	SlideUntil = T + 3.0;
+	SlideCheck = 0.2f;
+	++Slides;
+	SubTime = 0.f;
+	StuckTime = 0.f;
+	bDoorTried = false;
+	return true;
+}
+
+double AOutlawsEnemy::RoomToward(const FVector& Dir, double Far) const
+{
+	// how far the body goes along Dir before anything but a body stops it (PickPoint's sweep, the step's height up)
+	if (Dir.IsNearlyZero() || Far <= 0.0) return Far;
+	const float Half = GetCapsuleComponent()->GetScaledCapsuleHalfHeight();
+	const float Rad = GetCapsuleComponent()->GetScaledCapsuleRadius();
+	const FCollisionShape Body = FCollisionShape::MakeCapsule(Rad * 0.9f, FMath::Max(Half * 0.9f - Def.MaxStep * 10.f, Rad));
+	const FVector Start = GetActorLocation() + FVector(0.0, 0.0, Def.MaxStep * 10.0);
+	FCollisionQueryParams Q(SCENE_QUERY_STAT(OutlawsEnemySlide), true, this);
+	FHitResult Hit;
+	return GetWorld()->SweepSingleByChannel(Hit, Start, Start + Dir * Far, FQuat::Identity, ECC_Pawn, Body, Q, WorldOnly()) ? FMath::Max(0.0, double(Hit.Distance) - 10.0) : Far;
+}
+
+FString AOutlawsEnemy::DebugMoveState() const
+{
+	const double T = Now();
+	FString Avoid;
+	for (int32 i = 0; i < HuntAvoid.Num(); ++i) if (HuntAvoidUntil[i] > T) Avoid += FString::Printf(TEXT(" %d/%d"), HuntAvoid[i].X, HuntAvoid[i].Y);
+	return FString::Printf(TEXT("sub %d to %s (%.0f cm off), speed %.0f, stuck %.2f s; blocked %s by %s normal %s at %s; slide %s, %d slides; hunt step %d via %d/%d, avoiding%s"),
+		Sub, *MoveTarget.ToCompactString(), FVector::Dist2D(MoveTarget, GetActorLocation()), GetVelocity().Size2D(), StuckTime,
+		T - BlockAt < 60.0 ? *FString::Printf(TEXT("%.2f s ago"), T - BlockAt) : TEXT("never"), *BlockWhat.ToString(), *BlockNormal.ToCompactString(), *BlockPoint.ToCompactString(),
+		SlideUntil > 0.0 ? *FString::Printf(TEXT("%.1f s left"), SlideUntil - T) : TEXT("none"), Slides, bHuntStep ? 1 : 0, HuntVia.X, HuntVia.Y, Avoid.IsEmpty() ? TEXT(" none") : *Avoid);
 }
 
 void AOutlawsEnemy::BeginShotWindup()
@@ -2315,20 +2465,34 @@ void AOutlawsEnemy::Tick(float Dt)
 			Alert(false);
 		}
 		HuntWait -= Dt;
-		if (State == EOutlawsEnemyState::Chase && !bSeen && HuntWait <= 0.f
+		// (BUG-BOSSWALL) not while he slides along a wall or is pressed on one: the step every 1.5 s began the same move again
+		// before the stuck rule's 1.5 s ran out, so he stayed pressed on the door frame
+		const bool bOldWall = OldBossWall() || CoopSelf >= 0;          // (a match bot as before)
+		if (State == EOutlawsEnemyState::Chase && !bSeen && HuntWait <= 0.f && (bOldWall || (SlideUntil <= 0.0 && StuckTime <= 0.f))
 			&& (Sub == SubFace || Sub == SubDecide || Sub == SubAdvance || Sub == SubRetreat || Sub == SubCover))
 		{
 			HuntWait = 1.5f;
 			TargetPos = Feet;
 			const float Half = GetCapsuleComponent()->GetScaledCapsuleHalfHeight();
 			FVector Step;
-			if (!L->PathStepToward(GetActorLocation() - FVector(0.0, 0.0, Half), Feet, Def.MaxStep, 2.0 * Half / UnitCm, Step))
+			FIntPoint Via(-1, -1);
+			// (BUG-BOSSWALL) not through an opening he could not get through lately: another way, else straight at them
+			const double T = Now();
+			for (int32 i = HuntAvoid.Num() - 1; i >= 0; --i)
+			{
+				if (HuntAvoidUntil[i] <= T) { HuntAvoid.RemoveAt(i); HuntAvoidUntil.RemoveAt(i); }
+			}
+			if (!L->PathStepToward(GetActorLocation() - FVector(0.0, 0.0, Half), Feet, Def.MaxStep, 2.0 * Half / UnitCm, Step, &Via,
+				!bOldWall && HuntAvoid.Num() > 0 ? &HuntAvoid : nullptr))
 			{
 				Step = Feet;           // no way through the openings: straight at them (a door on the way may open)
+				Via = FIntPoint(-1, -1);
 			}
 			MoveTarget = Step + FVector(0.0, 0.0, Half);
 			bRunning = false;
 			SetSub(SubAdvance);
+			bHuntStep = true;
+			HuntVia = Via;
 		}
 	}
 

@@ -232,6 +232,16 @@ public:
 	FString DebugBossState() const;
 	/** Tests: each of SightCheck's gates for the player now (range, angle, light, the trace and what stops it). */
 	FString DebugSight() const;
+	/** Tests (BUG-BOSSWALL): the move under way, how long he has been stuck on it, the last thing his movement was blocked
+	 *  by (what, its normal, how long ago), a slide along it under way, and the hunt's opening and the ones it now avoids. */
+	FString DebugMoveState() const;
+	FVector DebugMoveTarget() const { return MoveTarget; }
+	int32 DebugSlides() const { return Slides; }
+	/** BUG-BOSSWALL: -OLOldBossWall, a chasing bad guy stuck on a wall stops and thinks again (no slide along it, no other way
+	 *  round for a hunter). */
+	static bool OldBossWall();
+	/** BUG-BOSSWALL: what his movement ran into, kept for the slide along it (ACharacter's hook, from the movement's impact). */
+	virtual void MoveBlockedBy(const FHitResult& Impact) override;
 	// an outlaw's voice alone (RADIUS 0: the ranch's BOBVCE, 4 px tall, 999 health, no damage): taunts, nothing else
 	bool bVoiceOnly = false;
 	/** Not a bad guy for the boss count (chickens). */
@@ -398,6 +408,30 @@ private:
 	bool bRunning = false;
 	float StuckTime = 0.f;
 	bool bDoorTried = false;
+	// BUG-BOSSWALL (snapshot 5, townex: Sanchez pressed on the boardwalk building's door frame 20 s and more): the last wall
+	// (or body) the movement ran into, and a slide along it as the Jedi engine turns an actor at a collision
+	// (actor_changeDirFromCollision): along the wall, the way nearer his heading, or any way off it when the last turn was
+	// just before; on to his goal once the straight way there is clear, else the move is thought again.  A hunter's way
+	// through an opening two slides in 15 s did not clear is not tried for 15 s.
+	FVector BlockNormal = FVector::ZeroVector;
+	FVector BlockPoint = FVector::ZeroVector;
+	FName BlockWhat;
+	double BlockAt = -10.0;
+	double SlideUntil = 0.0;              // world seconds: the slide under way ends then (or on arrival) ...
+	FVector SlideGoal = FVector::ZeroVector;        // ... or once the straight way to where he was going is clear
+	float SlideCheck = 0.f;
+	double LastSlideAt = -10.0;
+	int32 Slides = 0;                     // (tests: slides begun)
+	bool bHuntStep = false;               // the move under way is the hunt's step through HuntVia
+	FIntPoint HuntVia = FIntPoint(-1, -1);          // that step's opening: (sector, wall)
+	FIntPoint HuntSlidVia = FIntPoint(-1, -1);      // the opening of the last slide on a hunt step, and when
+	double HuntSlidAt = -100.0;
+	TArray<FIntPoint> HuntAvoid;          // openings the hunt does not try ...
+	TArray<double> HuntAvoidUntil;        // ... till then (world seconds)
+	/** Begin the slide along the wall he is pressed on: false when nothing blocked him lately (no floor ahead, say). */
+	bool StartWallSlide();
+	/** How far (cm, up to Far) his body goes along Dir from where he stands before the world stops it. */
+	double RoomToward(const FVector& Dir, double Far) const;
 	bool bDropped = false;
 	bool bDormant = false;
 	// (BUG-FALLSCREAM) the fall cry's thresholds: 6 m below where the fall began, 10 m/s down
