@@ -408,6 +408,7 @@ void AOutlawsEnemy::SetSub(int32 NewSub)
 	StuckTime = 0.f;
 	bDoorTried = false;
 	SlideUntil = 0.0;                 // (BUG-BOSSWALL: a new move ends a slide; the hunt marks its own step after this)
+	NoFloorTime = 0.f;
 	bHuntStep = false;
 	switch (NewSub)
 	{
@@ -935,10 +936,37 @@ void AOutlawsEnemy::MoveAlong(float Dt)
 	const float Rad = GetCapsuleComponent()->GetScaledCapsuleRadius();
 	FVector Floor;
 	// (REQ-ENEMYFLOAT) afloat, water ahead is somewhere to wade
-	const bool bFloor = FloorAt(Here + Dir * (Rad + 30.0), Half + Def.MaxDrop * UnitCm, Floor) || (bFloating && SwimAt(Here + Dir * (Rad + 30.0)));
-	if (bFloor)
+	const FVector Ahead = Here + Dir * (Rad + 30.0);
+	const bool bFloor = FloorAt(Ahead, Half + Def.MaxDrop * UnitCm, Floor) || (bFloating && SwimAt(Ahead));
+	// (BUG-NOFLOORSTUCK, lane BOSSWALL's hideout scan 2026-10-28) the look for floor ahead went through the wall beside the
+	// opening he was after (sector 333's wall 12 by its opening 8 to 87) and found none behind it, so he never walked into
+	// the wall, nothing blocked him and BUG-BOSSWALL's slide never began: he stood 25 s.  A wall between him and that spot
+	// is a wall, not a drop: he walks on into it and slides along it.  A real drop on a hunt step for a second: that
+	// opening is left out of the hunt for 15 s, as an opening that held him twice.  -OLOldNoFloorStuck: as before
+	const bool bNew = CoopSelf < 0 && !OldNoFloorStuck();
+	bool bWallAhead = false;
+	if (!bFloor && bNew)
+	{
+		FCollisionQueryParams QW(SCENE_QUERY_STAT(OutlawsEnemyWallAhead), true, this);
+		FHitResult Wall;
+		bWallAhead = GetWorld()->LineTraceSingleByChannel(Wall, Here, Ahead, ECC_Visibility, QW, WorldOnly()) && FMath::Abs(Wall.ImpactNormal.Z) < 0.7;
+	}
+	NoFloorTime = !bFloor && !bWallAhead ? NoFloorTime + Dt : 0.f;
+	if (bFloor || bWallAhead)
 	{
 		AddMovementInput(Dir, 1.f);
+	}
+	if (bNew && NoFloorTime > 1.f && bHuntStep && HuntVia.X >= 0 && IsMoveSub(Sub))
+	{
+		if (!HuntAvoid.Contains(HuntVia))
+		{
+			HuntAvoid.Add(HuntVia);
+			HuntAvoidUntil.Add(Now() + 15.0);
+			UE_LOG(LogOutlawsAI, Log, TEXT("OLRT %s has no floor ahead on the way to the opening of sector %d (wall %d): the hunt goes another way for 15 s"), *OutlawsName, HuntVia.X, HuntVia.Y);
+		}
+		SetSub(SubFace);
+		HuntWait = 0.f;
+		return;
 	}
 	FaceYaw(GetVelocity().Size2D() > 20.f ? GetVelocity().Rotation().Yaw : Dir.Rotation().Yaw, Dt);
 	const bool bSlow = GetVelocity().Size2D() < GetCharacterMovement()->MaxWalkSpeed * 0.25f;
@@ -971,6 +999,12 @@ void AOutlawsEnemy::MoveAlong(float Dt)
 bool AOutlawsEnemy::OldBossWall()
 {
 	static const bool bOld = OLFlags::Param(TEXT("OLOldBossWall"));
+	return bOld;
+}
+
+bool AOutlawsEnemy::OldNoFloorStuck()
+{
+	static const bool bOld = OLFlags::Param(TEXT("OLOldNoFloorStuck"));
 	return bOld;
 }
 
@@ -1059,8 +1093,8 @@ FString AOutlawsEnemy::DebugMoveState() const
 	const double T = Now();
 	FString Avoid;
 	for (int32 i = 0; i < HuntAvoid.Num(); ++i) if (HuntAvoidUntil[i] > T) Avoid += FString::Printf(TEXT(" %d/%d"), HuntAvoid[i].X, HuntAvoid[i].Y);
-	return FString::Printf(TEXT("sub %d to %s (%.0f cm off), speed %.0f, stuck %.2f s; blocked %s by %s normal %s at %s; slide %s, %d slides; hunt step %d via %d/%d, avoiding%s"),
-		Sub, *MoveTarget.ToCompactString(), FVector::Dist2D(MoveTarget, GetActorLocation()), GetVelocity().Size2D(), StuckTime,
+	return FString::Printf(TEXT("sub %d to %s (%.0f cm off), speed %.0f, stuck %.2f s (no floor %.2f s, on the move %.2f s); blocked %s by %s normal %s at %s; slide %s, %d slides; hunt step %d via %d/%d, avoiding%s"),
+		Sub, *MoveTarget.ToCompactString(), FVector::Dist2D(MoveTarget, GetActorLocation()), GetVelocity().Size2D(), StuckTime, NoFloorTime, SubTime,
 		T - BlockAt < 60.0 ? *FString::Printf(TEXT("%.2f s ago"), T - BlockAt) : TEXT("never"), *BlockWhat.ToString(), *BlockNormal.ToCompactString(), *BlockPoint.ToCompactString(),
 		SlideUntil > 0.0 ? *FString::Printf(TEXT("%.1f s left"), SlideUntil - T) : TEXT("none"), Slides, bHuntStep ? 1 : 0, HuntVia.X, HuntVia.Y, Avoid.IsEmpty() ? TEXT(" none") : *Avoid);
 }

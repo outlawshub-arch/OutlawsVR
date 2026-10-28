@@ -240,6 +240,9 @@ public:
 	/** BUG-BOSSWALL: -OLOldBossWall, a chasing bad guy stuck on a wall stops and thinks again (no slide along it, no other way
 	 *  round for a hunter). */
 	static bool OldBossWall();
+	/** BUG-NOFLOORSTUCK: -OLOldNoFloorStuck, no floor found ahead stops him even with a wall between (no walk into it, no
+	 *  other way for a hunter). */
+	static bool OldNoFloorStuck();
 	/** BUG-BOSSWALL: what his movement ran into, kept for the slide along it (ACharacter's hook, from the movement's impact). */
 	virtual void MoveBlockedBy(const FHitResult& Impact) override;
 	// an outlaw's voice alone (RADIUS 0: the ranch's BOBVCE, 4 px tall, 999 health, no damage): taunts, nothing else
@@ -428,6 +431,7 @@ private:
 	double HuntSlidAt = -100.0;
 	TArray<FIntPoint> HuntAvoid;          // openings the hunt does not try ...
 	TArray<double> HuntAvoidUntil;        // ... till then (world seconds)
+	float NoFloorTime = 0.f;              // (BUG-NOFLOORSTUCK) seconds on this move with no floor ahead and no wall before it
 	/** Begin the slide along the wall he is pressed on: false when nothing blocked him lately (no floor ahead, say). */
 	bool StartWallSlide();
 	/** How far (cm, up to Far) his body goes along Dir from where he stands before the world stops it. */
