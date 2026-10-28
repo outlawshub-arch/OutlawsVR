@@ -52,6 +52,12 @@ namespace OutlawsPerf
 	/** The last whole frame's world start (OnWorldTickStart to the actor ticks), ms: on the headset the XR runtime's
 	 *  xrWaitFrame (its pacing, counted in GGameThreadTime), with the net tick; the throttle takes it off the game thread. */
 	OUTLAWSRUNTIME_API double XRWaitMs();
+	/** REQ-PERFTESTMODE (OutlawsPerfTest.cpp): a performance test run's own detailed capture, a fresh capture_<date_time>.csv
+	 *  started at once (one already running is closed first) and kept on until EndTestCapture whatever the other switches
+	 *  say; its full path (empty: -OLNoPerfFiles).  EndTestCapture stops it and gives its frames (its rows); capture.on, the
+	 *  console variable or -OLPerfCapture may start another at the next second's poll. */
+	OUTLAWSRUNTIME_API FString StartTestCapture();
+	OUTLAWSRUNTIME_API int64 EndTestCapture();
 
 	void Startup();
 	void Shutdown();

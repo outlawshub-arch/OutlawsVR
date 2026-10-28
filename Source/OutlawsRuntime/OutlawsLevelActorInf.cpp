@@ -1,6 +1,7 @@
 // AOutlawsLevelActor, INF half: doors, lifts, moving floors and ceilings, switches.
 #include "OutlawsLevelActor.h"
 #include "OutlawsFlags.h"
+#include "OutlawsPerfTest.h"
 #include "OutlawsPcmWave.h"
 #include "UObject/UObjectGlobals.h"
 #include "RenderingThread.h"
@@ -632,6 +633,7 @@ void AOutlawsLevelActor::DamagePlayer(float Damage, float LocationMult, bool bSk
 			P->OnDied();
 		}
 		UE_LOG(LogOutlaws, Log, TEXT("OLRT player died"));
+		OutlawsPerfTest::NoteDeath();              // (REQ-PERFTESTMODE: a performance test run's marker; its respawn stays in the run)
 	}
 	else if (Damage > 0.f && !bQuietHurt && World && World->GetTimeSeconds() >= NextGrunt && !GotShotSound.IsEmpty())
 	{

@@ -2153,6 +2153,7 @@ void AOutlawsLevelActor::Tick(float DeltaSeconds)
 			TickSaves(DeltaSeconds);
 		}
 		TickTutorial(DeltaSeconds);                   // (REQ-TUTORIAL, OutlawsTutorial.cpp)
+		TickPerfTest(DeltaSeconds);                   // (REQ-PERFTESTMODE, OutlawsPerfTest.cpp)
 #if WITH_OUTLAWS_TESTS
 		static const bool bTutorialTest = OLFlags::HasValue(TEXT("OLTutorialTest"));
 		if (bTutorialTest) TickTutorialTest(DeltaSeconds);

@@ -5,6 +5,7 @@
 #include "OutlawsLevelActor.h"
 #include "OutlawsPlayer.h"
 #include "OutlawsCoop.h"
+#include "OutlawsPerfTest.h"
 #include "Dom/JsonObject.h"
 #include "Dom/JsonValue.h"
 #include "Engine/World.h"
@@ -258,6 +259,12 @@ TArray<FString> OutlawsAchievements::Earn(AOutlawsLevelActor* L, const TArray<FS
 	TArray<FString> New;
 	for (const FString& Id : Ids) if (Find(Id) && !IsEarned(L, Id)) New.AddUnique(Id);
 	if (New.Num() == 0) return New;
+	if (OutlawsPerfTest::IsOn())
+	{
+		// (REQ-PERFTESTMODE: nothing earned in a performance test run, nor toasted)
+		UE_LOG(LogOutlaws, Log, TEXT("OLACH not earned in a performance test run: %s (%s)"), *FString::Join(New, TEXT(", ")), Where);
+		return TArray<FString>();
+	}
 	const bool bCoop = L && UOutlawsCoop::IsActive(L);
 	const FString Diff = L ? OutlawsDifficulty::Name(L->Difficulty) : TEXT("Good");
 	OutlawsUnlocks::ProfileChange(L, [&](const TSharedPtr<FJsonObject>& P)

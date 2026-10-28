@@ -6,6 +6,7 @@
 #include "OutlawsFlags.h"
 #include "OutlawsBeacon.h"
 #include "OutlawsPlayer.h"
+#include "OutlawsPerfTest.h"
 #include "OutlawsStats.h"
 #include "OutlawsBoxHand.h"
 #include "OutlawsPerf.h"
@@ -600,6 +601,17 @@ bool AOutlawsPlayer::ShowMenuPage(const FString& File, bool bPush)
 			T.Name = TEXT("tutorial_start");
 			Page->Items.Add(T);
 		}
+		if (bPerfTestShown && PerfTestOffered())
+		{
+			// REQ-PERFTESTMODE (user 28 Oct): the story's second level alone, captured, nothing saved (OutlawsPerfTest.cpp); last,
+			// once a whole turn on the spot with this page up has shown it
+			FItem Pt;
+			Pt.Kind = EItemKind::Action;
+			Pt.Label = TEXT("Performance test");
+			Pt.Name = TEXT("perftest_start");
+			Page->Items.Add(Pt);
+		}
+		if (!MenuPage || MenuPage->File != File) CheatSpin = 0.f;      // (REQ-PERFTESTMODE: the turn counts from the page's own start)
 	}
 	else if (File == TEXT("#character"))
 	{
@@ -915,6 +927,14 @@ bool AOutlawsPlayer::ShowMenuPage(const FString& File, bool bPush)
 			Page->Items.RemoveAll([](const FItem& It)
 			{
 				return It.Action == TEXT("ev_restart_level") || It.Target.Equals(TEXT("save_game.rml"), ESearchCase::IgnoreCase) || It.Target.Equals(TEXT("load_game.rml"), ESearchCase::IgnoreCase);
+			});
+		}
+		else if (OutlawsPerfTest::IsOn())
+		{
+			// REQ-PERFTESTMODE: no Save or Load in a performance test run (Restart Level stays: the run goes on, as after a death)
+			Page->Items.RemoveAll([](const FItem& It)
+			{
+				return It.Target.Equals(TEXT("save_game.rml"), ESearchCase::IgnoreCase) || It.Target.Equals(TEXT("load_game.rml"), ESearchCase::IgnoreCase);
 			});
 		}
 		if (bCheatsShown)
@@ -1985,6 +2005,18 @@ void AOutlawsPlayer::MenuActivate(int32 Hand, int32 Index)
 			}
 			return;
 		}
+		if (I.Name == TEXT("perftest_start"))
+		{
+			// REQ-PERFTESTMODE (OutlawsPerfTest.cpp): New Game > Performance test
+			AOutlawsLevelActor* L = Level.Get();
+			CloseMenu();
+			if (L && PerfTestOffered())
+			{
+				ClearScreenFx();
+				L->StartPerfTest();
+			}
+			return;
+		}
 		if (I.Name.StartsWith(TEXT("start:")))
 		{
 			// "start:<story | level>:<difficulty>"
@@ -2014,7 +2046,9 @@ void AOutlawsPlayer::MenuActivate(int32 Hand, int32 Index)
 			// End Game: the autosave first (user 2026-10-01), then the main menu
 			// (between two levels, in the fade or the cutscene, there is no level to save: the next level's opening instead,
 			// user 2026-10-02)
-			if (AOutlawsLevelActor* LS = Level.Get(); LS && !LS->IsFrontEnd() && !LS->IsPlayerDead())
+			// (REQ-PERFTESTMODE: a performance test run saves nothing; its capture ends here)
+			if (OutlawsPerfTest::IsOn()) OutlawsPerfTest::End(TEXT("quit from the pause menu"));
+			else if (AOutlawsLevelActor* LS = Level.Get(); LS && !LS->IsFrontEnd() && !LS->IsPlayerDead())
 			{
 				if (!LS->SaveGame(-1)) LS->SaveLevelOpening();
 			}
@@ -2207,7 +2241,10 @@ void AOutlawsPlayer::MenuActivate(int32 Hand, int32 Index)
 		}
 		else if (I.Action == TEXT("ev_quit_confirm"))
 		{
-			SaveSettings();
+			// (REQ-PERFTESTMODE: Exit in a performance test run: the game closed, nothing written; a setting changed in the
+			// run was saved as it was changed)
+			if (OutlawsPerfTest::IsOn()) OutlawsPerfTest::End(TEXT("game closed"));
+			else SaveSettings();
 			FGenericPlatformMisc::RequestExit(false);
 		}
 		else if (I.bGoBack || I.Action == TEXT("ev_dialog_close"))
@@ -2534,19 +2571,31 @@ void AOutlawsPlayer::UpdateMenu(float Dt)
 	const FVector Eye = Camera->GetComponentLocation();
 	const float HeadYaw = Camera->GetComponentRotation().Yaw;
 	const float HeadPitch = bFrontMenu ? 0.f : FMath::Clamp(float(Camera->GetComponentRotation().Pitch), -70.f, 70.f);
-	// a whole turn on the spot (either way; turning back undoes it) shows the Cheats row on the pause page (user 2026-10-01)
-	if (!bCheatsShown && !bFrontMenu)
+	// a whole turn on the spot (either way; turning back undoes it) shows the Cheats row on the pause page (user 2026-10-01);
+	// REQ-PERFTESTMODE (user 28 Oct): the same turn with New Game's page up shows its Performance test row (single player)
+	const bool bNewGameTurn = bFrontMenu && !bPerfTestShown && MenuPage->File == TEXT("#newgame") && PerfTestOffered();
+	if ((!bCheatsShown && !bFrontMenu) || bNewGameTurn)
 	{
 		CheatSpin += FRotator::NormalizeAxis(HeadYaw - CheatSpinLastYaw);
 		if (FMath::Abs(CheatSpin) >= 360.f)
 		{
-			bCheatsShown = true;
-			if (MenuPage->File == TEXT("main_game.rml")) bMenuRebuild = true;
-			MenuToastText(TEXT("Cheats unlocked"));
+			if (bNewGameTurn)
+			{
+				bPerfTestShown = true;
+				bMenuRebuild = true;
+				MenuToastText(TEXT("Performance test unlocked"));
+				UE_LOG(LogOutlaws, Log, TEXT("OLRT performance test shown (a whole turn with New Game's page up)"));
+			}
+			else
+			{
+				bCheatsShown = true;
+				if (MenuPage->File == TEXT("main_game.rml")) bMenuRebuild = true;
+				MenuToastText(TEXT("Cheats unlocked"));
+				UE_LOG(LogOutlaws, Log, TEXT("OLRT cheats shown (a whole turn with the menu up)"));
+			}
 			MenuToastLeft = 3.f;
 			Pulse(0, 0.5f);
 			Pulse(1, 0.5f);
-			UE_LOG(LogOutlaws, Log, TEXT("OLRT cheats shown (a whole turn with the menu up)"));
 		}
 	}
 	CheatSpinLastYaw = HeadYaw;

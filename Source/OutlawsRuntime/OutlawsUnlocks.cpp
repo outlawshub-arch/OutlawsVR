@@ -5,6 +5,7 @@
 #include "OutlawsLevelActor.h"
 #include "OutlawsCoop.h"
 #include "OutlawsAchievements.h"
+#include "OutlawsPerfTest.h"
 #include "Dom/JsonObject.h"
 #include "Dom/JsonValue.h"
 #include "Serialization/JsonReader.h"
@@ -135,6 +136,12 @@ namespace
 	// this one read it), then written; a damaged file is kept beside it first
 	bool WriteStore(TFunctionRef<void(const TSharedPtr<FJsonObject>&)> Change)
 	{
+		// (REQ-PERFTESTMODE: a performance test run writes no achievement, best time, collectible, tally or unlock)
+		if (OutlawsPerfTest::IsOn())
+		{
+			UE_LOG(LogOutlaws, Log, TEXT("OLUNLOCK the achievements file not written: a performance test run"));
+			return false;
+		}
 		FStore& S = Store();
 		const FString Path = OutlawsUnlocks::StorePath();
 		// (REQ-LEVELTIMER: two games on one machine, a co-op pair, may both end a level this instant: one at a time, each reading
@@ -230,8 +237,8 @@ bool OutlawsUnlocks::StoreDamaged()
 void OutlawsUnlocks::NoteLevelWon(AOutlawsLevelActor* L)
 {
 	// the main story's last level: no level after it, and the level is one of the story's (OUTLAWS.RCS, a shuffled run's last
-	// included); a Historical Mission (Marshal Training, or a single mission level) never
-	if (!L || L->bHom || L->IsFrontEnd() || !L->UnlockNoLevelAfter()) return;
+	// included); a Historical Mission (Marshal Training, or a single mission level) never, nor a performance test run
+	if (!L || L->bHom || L->IsFrontEnd() || !L->UnlockNoLevelAfter() || OutlawsPerfTest::IsOn()) return;
 	TArray<FString> Story, Movies;
 	if (!L->RandoStory(Story, Movies) || !Story.Contains(L->LevelName.ToLower())) return;
 	L->UnlockStoryPending = int32(L->Difficulty);

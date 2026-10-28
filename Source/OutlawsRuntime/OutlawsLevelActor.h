@@ -343,7 +343,20 @@ public:
 	TSharedPtr<struct FOutlawsTutorialRun> TutorialRun;
 	void TickTutorial(float Dt);
 	void TickTutorialTest(float Dt);
-	bool bHom = false;                       // a Historical Missions session (the office and its missions)
+	/** REQ-PERFTESTMODE (OutlawsPerfTest.cpp): New Game > Performance test: the story's second level alone (the run's second
+	 *  with the mission order shuffled) as a story start there, at Bad, with what a hideout finish carries in, the capture on
+	 *  from the moment play begins and nothing written until the main menu is back (OutlawsPerfTest.h). */
+	void StartPerfTest();
+	/** The run's start once its level is in play, and its end when that level is left some other way. */
+	void TickPerfTest(float Dt);
+	/** StartNextLevelThen's question: a run in its level goes back to the main menu instead of on (no level 3). */
+	bool PerfTestLeave();
+	/** What a finish of the run's first level carries in: James's start kit and the guns and ammunition the level places
+	 *  for this difficulty (after the Randomizer's roll of it). */
+	void PerfTestCarry(const FString& LevelOne);
+	/** The settings dump's lines ("key: value"), from the values applied now. */
+	FString PerfTestSettings(const FString& CapturePath) const;
+	bool bHom = false;                      // a Historical Missions session (the office and its missions)
 	/** HM1: SPAWN_LEVEL "<mission> <return sector>" from an office poster: the player is asked "Ride out to ...?" first. */
 	void HomSpawnLevel(const FString& Args);
 	/** HM1: the player said yes: the mission starts (its own start kit), the session and the way back kept. */

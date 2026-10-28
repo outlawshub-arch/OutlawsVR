@@ -92,6 +92,9 @@ namespace OutlawsDeviceProfile
 	OUTLAWSRUNTIME_API void Apply(const TCHAR* Why);
 	/** The eye buffer as last measured ("1680x1760 per eye"), for the HUD. */
 	OUTLAWSRUNTIME_API FString EyeBufferText();
+	/** The resume line's state ("refresh 72 Hz (asked 72), vr.PixelDensity ..., cpu/gpu level ..., clocks ..."), for
+	 *  REQ-PERFTESTMODE's settings dump. */
+	OUTLAWSRUNTIME_API FString StateText();
 
 	/** Q2PROFILE: which headset, from ro.hardware (hollywood, eureka, panther, seacliff, monterey), then Build.MODEL
 	 *  ("Quest 2", "Quest 3", "Quest 3S", "Quest Pro"; a plain "Quest" is a Quest 2), then the GPU (Adreno 650 / 740).

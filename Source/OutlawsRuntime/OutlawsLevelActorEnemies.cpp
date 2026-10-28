@@ -6,6 +6,7 @@
 #include "OutlawsPolygon.h"
 #include "OutlawsUnlocks.h"
 #include "OutlawsAchievements.h"
+#include "OutlawsPerfTest.h"
 #include "Algo/Reverse.h"
 #include "Components/CapsuleComponent.h"
 #include "UObject/UObjectIterator.h"
@@ -1247,7 +1248,7 @@ bool AOutlawsLevelActor::PickBackdropLevel(FString& Out) const
 	if (Have.Num() > 1) Have.Remove(Last);
 	FRandomStream Rng(int32(FDateTime::UtcNow().GetTicks() ^ (FPlatformTime::Cycles64() * 2654435761ull)));
 	Out = Have[Rng.RandHelper(Have.Num())];
-	FFileHelper::SaveStringToFile(Out, *LastFile);
+	if (!OutlawsPerfTest::IsOn()) FFileHelper::SaveStringToFile(Out, *LastFile);      // (REQ-PERFTESTMODE: back from a run, nothing written)
 	return true;
 }
 
@@ -1505,8 +1506,9 @@ void AOutlawsLevelActor::ChangeDifficulty(EOutlawsDifficulty To)
 	// the autosave follows the choice (a death after this comes back at the new difficulty), its bad guys still the ones
 	// its level was built with
 	// (only the autosave of the level being played: one left by another game is not touched)
-	// (never in co-op: the autosave there is single player's)
-	const bool bSave = !UOutlawsCoop::IsActive(this) && ReadSaveInfo(-1).Level.Equals(LevelName, ESearchCase::IgnoreCase) && PatchSaveDifficulty(-1, To, Was);
+	// (never in co-op: the autosave there is single player's; REQ-PERFTESTMODE: nor in a performance test run, whose level the
+	// player's own autosave may be of)
+	const bool bSave = !UOutlawsCoop::IsActive(this) && !OutlawsPerfTest::IsOn() && ReadSaveInfo(-1).Level.Equals(LevelName, ESearchCase::IgnoreCase) && PatchSaveDifficulty(-1, To, Was);
 	UE_LOG(LogOutlaws, Log, TEXT("OLRT difficulty %s -> %s: %d bad guys rescaled (placed for %s), autosave %s"), OutlawsDifficulty::Name(Was), OutlawsDifficulty::Name(To), N,
 		OutlawsDifficulty::Name(SpawnDifficulty), bSave ? TEXT("follows") : TEXT("untouched"));
 }
@@ -1644,6 +1646,10 @@ void AOutlawsLevelActor::StartNextLevelThen(TFunction<void()> Then)
 		ShowFrontMenu();
 		return;
 	}
+	if (PerfTestLeave())
+	{
+		return;                    // (REQ-PERFTESTMODE: a performance test run's level is the last: the main menu)
+	}
 	if (Movie)
 	{
 		Movie->Destroy();
@@ -1774,6 +1780,13 @@ void AOutlawsLevelActor::CompleteLevel(const FString& Why)
 		return;
 	}
 	NextLevelName = StoryNext(NextMovie);
+	if (OutlawsPerfTest::IsRunning())
+	{
+		// REQ-PERFTESTMODE: the run's level won: its capture ends at the exit; no cutscene, the counts on the black, then the
+		// main menu (PerfTestLeave), no level after it
+		OutlawsPerfTest::End(TEXT("level exit"));
+		NextMovie.Reset();
+	}
 	if (bHom && !LevelName.Equals(TEXT("office"), ESearchCase::IgnoreCase)) HomMissionEnd();      // (HM1: back to the office)
 	if (UOutlawsCoop::IsActive(this) && !UOutlawsCoop::OnLevelWon(this, Why))
 	{
@@ -1783,7 +1796,7 @@ void AOutlawsLevelActor::CompleteLevel(const FString& Why)
 	OutlawsAchievements::NoteLevelComplete(this, Health, NextLevelName);     // (REQ-EXTRAS: True Grit, a Handful mission's end)
 	UOutlawsStats::NoteLevelEnd(this);       // (REQ-LEVELTIMER: the time settled against the best times when the end card is made)
 	UE_LOG(LogOutlaws, Log, TEXT("OLRT level complete (%s): movie %s, next level %s"), *Why, *NextMovie, *NextLevelName);
-	bPendingOpeningSave = bAutosave && !bHom;   // (once the end timer is set below: the autosave becomes the next level's opening)
+	bPendingOpeningSave = bAutosave && !bHom && !OutlawsPerfTest::IsOn();   // (once the end timer is set below: the autosave becomes the next level's opening)
 	// to black over 1.5 s from the last blow, no words, and the cinema fades in (user 2026-10-02: every level fades out to
 	// its cutscene and in from it; 2026-09-27's hard cuts for the hideout, train, sawmill, mine and ranch are gone)
 	bCutToMovie = false;

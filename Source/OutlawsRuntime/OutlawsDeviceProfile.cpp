@@ -690,6 +690,7 @@ void OutlawsDeviceProfile::Apply(const TCHAR* Why)
 }
 
 FString OutlawsDeviceProfile::EyeBufferText() { return OldpEyeText; }
+FString OutlawsDeviceProfile::StateText() { return OldpStateText(); }
 
 namespace
 {

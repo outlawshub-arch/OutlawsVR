@@ -8,6 +8,7 @@
 #include "OutlawsLevelActor.h"
 #include "OutlawsStats.h"
 #include "OutlawsPerf.h"
+#include "OutlawsPerfTest.h"
 #include "OutlawsRuntime.h"
 #include "OutlawsInfRuntime.h"
 #include "OutlawsEnemy.h"
@@ -96,6 +97,7 @@ bool AOutlawsLevelActor::DeathSave(int32& OutSlot) const
 {
 	// (the user's Quest: dying after a load, before the next autosave, loaded an autosave of another level)
 	OutSlot = -1;
+	if (OutlawsPerfTest::IsOn()) return false;         // (REQ-PERFTESTMODE: a run's death restarts its level, never a save of the player's)
 	if (GDeathSlot >= 0)
 	{
 		const FSaveInfo S = ReadSaveInfo(GDeathSlot);
@@ -178,7 +180,8 @@ bool AOutlawsLevelActor::SaveLevelOpening()
 	// (co-op: the host's goes to its own co-op autosave, R7; the client never saves)
 	const bool bCoop = UOutlawsCoop::IsActive(this);
 	int32 Slot = -1;
-	if (!IsBetweenLevels() || (bCoop && !UOutlawsCoop::MaySave(this, Slot)) || bTutorial)      // (REQ-TUTORIAL: nothing saved)
+	// (REQ-TUTORIAL, REQ-PERFTESTMODE: nothing saved)
+	if (!IsBetweenLevels() || (bCoop && !UOutlawsCoop::MaySave(this, Slot)) || bTutorial || OutlawsPerfTest::IsOn())
 	{
 		return false;
 	}
@@ -251,6 +254,12 @@ bool AOutlawsLevelActor::SaveGame(int32 Slot)
 	int32 NumEnemies = 0, NumPickups = 0;
 	if (!BuildSaveText(P, Text, NumEnemies, NumPickups))
 	{
+		return false;
+	}
+	if (OutlawsPerfTest::IsOn())
+	{
+		// (REQ-PERFTESTMODE: a performance test run's autosave is made as in play, its cost in the capture, and never written)
+		UE_LOG(LogOutlaws, Log, TEXT("OLRT %s %d: made (%d characters), not written in a performance test run"), Slot < 0 ? TEXT("autosave") : TEXT("save"), Slot, Text.Len());
 		return false;
 	}
 	const FString Path = SavePath(Slot);

@@ -13,6 +13,7 @@
 #include "OutlawsStats.h"
 #include "OutlawsFlags.h"
 #include "OutlawsPerf.h"
+#include "OutlawsPerfTest.h"
 #include "OutlawsRuntime.h"
 #include "OutlawsCoop.h"
 #include "OutlawsEnemy.h"
@@ -293,7 +294,8 @@ void UOutlawsStats::ResolveFinish()
 	ResultKey = TimeKeyFor(L);
 	ResultDiff = FMath::Clamp(EasiestDiff < 99 ? EasiestDiff : int32(L->Difficulty), 0, 2);
 	ResultWhyNot.Reset();
-	if (bSkipped) ResultWhyNot = TEXT("level skipped");
+	if (OutlawsPerfTest::IsOn()) ResultWhyNot = TEXT("performance test");      // (REQ-PERFTESTMODE: nothing kept)
+	else if (bSkipped) ResultWhyNot = TEXT("level skipped");
 	else if (bCheated) ResultWhyNot = TEXT("cheats used");
 	else if (L->RandoOn()) ResultWhyNot = TEXT("Randomizer run");
 	else if (!bCoop && L->SoloBadGuysWanted() > 1.001f) ResultWhyNot = TEXT("bad guys multiplier");

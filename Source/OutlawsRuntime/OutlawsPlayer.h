@@ -1145,8 +1145,12 @@ private:
 	// the Cheats row: hidden till the player turns a whole circle on the spot with the pause menu up (user 2026-10-01)
 	bool bCheatsShown = false;
 	bool bCheatReplay = false;
-	float CheatSpin = 0.f;                // degrees turned (signed) since the menu came up
+	float CheatSpin = 0.f;                // degrees turned (signed) since the menu came up (New Game's page: since it came up)
 	float CheatSpinLastYaw = 0.f;
+	// REQ-PERFTESTMODE (OutlawsPerfTest.h): New Game's Performance test row, shown by the same whole turn with that page up
+	bool bPerfTestShown = false;
+	/** Single player only: never in a co-op session or a match. */
+	bool PerfTestOffered() const;
 	float MenuScrollWait = 0.f;
 	float MenuToastLeft = 0.f;
 	UPROPERTY(Transient)
@@ -1658,6 +1662,14 @@ private:
 	 *  it does not), and a punch with it let go (no blow). */
 	static bool ToolWhackProbeOn();
 	void TickToolWhackProbe(float Dt);
+	/** (REQ-PERFTESTMODE, OutlawsPerfTestProbe.cpp) -OLPerfTestProbe, in any build, from the main menu: no Performance test row
+	 *  on New Game's page before the turn (nor after a turn on the title page), the row after a whole turn there (the pause
+	 *  Cheats left hidden); picked, the run's second level up with the carry, the capture and the settings dump with the
+	 *  values applied; a death and its respawn kept in the run; the exit back to the main menu; then a second run quit with
+	 *  End Game from the pause menu; the Saved folder (but Perf and Logs) unchanged by each.  "OLPERFTEST ..." a check, then
+	 *  "OLSHOT perftest: PASS|FAIL", and it quits. */
+	static bool PerfTestProbeOn();
+	void TickPerfTestProbe(float Dt);
 
 	UPROPERTY(Transient)
 	TObjectPtr<class UStaticMeshComponent> FadeVeil;

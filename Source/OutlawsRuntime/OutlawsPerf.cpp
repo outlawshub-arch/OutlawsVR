@@ -609,6 +609,7 @@ namespace
 		TEXT("1: a row a frame into Saved/Perf/capture_<date_time>.csv (as Saved/Perf/capture.on does)."));
 	bool bCapturing = false;
 	bool bCaptureFlag = false;
+	bool bTestCapture = false;                 // (REQ-PERFTESTMODE) a performance test run holds the capture on
 	FString CaptureFile;
 	FString CapturePending;
 	int32 CaptureRowsPending = 0;
@@ -818,7 +819,7 @@ namespace
 #endif
 			// (PERF-SHIPSUMMARY) the detailed capture's switches, once a second
 			static const FString CaptureOn = FPaths::Combine(PerfDir, TEXT("capture.on"));
-			SetCapture(bCaptureFlag || CVarCapture.GetValueOnGameThread() != 0 || IFileManager::Get().FileExists(*CaptureOn));
+			SetCapture(bCaptureFlag || bTestCapture || CVarCapture.GetValueOnGameThread() != 0 || IFileManager::Get().FileExists(*CaptureOn));
 			SecWindow = FWindow();
 			SecStart = Now;
 		}
@@ -1150,6 +1151,25 @@ void OutlawsPerf::CountTexture(int32 W, int32 H)
 double OutlawsPerf::XRWaitMs()
 {
 	return StartMsLast;
+}
+
+FString OutlawsPerf::StartTestCapture()
+{
+	if (PerfDir.IsEmpty()) return FString();
+	// (REQ-PERFTESTMODE) the run's rows in a file of their own: one capture already going (capture.on) is closed first
+	if (bCapturing) SetCapture(false);
+	bTestCapture = true;
+	SetCapture(true);
+	return CaptureFile;
+}
+
+int64 OutlawsPerf::EndTestCapture()
+{
+	if (!bTestCapture) return 0;
+	bTestCapture = false;
+	const int64 Frames = bCapturing ? CaptureFrames : 0;
+	SetCapture(false);
+	return Frames;
 }
 
 void OutlawsPerf::Startup()
