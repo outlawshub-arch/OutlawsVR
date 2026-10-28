@@ -66,6 +66,23 @@ namespace OutlawsPerf
 	 *  (Android only; a refusal logged "OLPERF chmod 0664 of <path> failed (errno n)").  1 done, 0 nothing to do (the desktop),
 	 *  -1 refused.  Called where each file is written whole, and where an appended one is first made. */
 	OUTLAWSRUNTIME_API int32 MakeReadable(const FString& Path);
+	/** REQ-PERFSWEEP (OutlawsPerfSweep.cpp): one measured window of live play (a Settings sweep phase), the game's own numbers
+	 *  in every build, -OLNoPerfFiles too (the buckets then empty): averages a frame over the frames from BeginWindow to
+	 *  EndWindow.  Game work is the game thread's time less the wait for the headset's frame (the capture's game_ms less
+	 *  xr_wait_ms, as questperf takes it); GPU the RHI's GPU frame timestamps (gpu_ms); over, the frames longer than 1.05 x
+	 *  BudgetMs (questperf's rule); fps, the frames over the window's real seconds; the buckets costliest first, the totals
+	 *  and the XR wait left out. */
+	struct FWindow
+	{
+		int64 Frames = 0;
+		double Seconds = 0.0, FrameMs = 0.0, GameMs = 0.0, GameWorkMs = 0.0, RenderMs = 0.0, RhiMs = 0.0, GpuMs = 0.0;
+		double OverPct = 0.0, Fps = 0.0, Draws = 0.0, Tris = 0.0;
+		TArray<TPair<FString, double>> Buckets;
+	};
+	OUTLAWSRUNTIME_API void BeginWindow(double BudgetMs);
+	OUTLAWSRUNTIME_API FWindow EndWindow();
+	/** The lag detector's budget: 1000 / ol.perf.TargetFps (which follows the refresh rate asked). */
+	OUTLAWSRUNTIME_API double BudgetMs();
 
 	void Startup();
 	void Shutdown();

@@ -35,6 +35,7 @@ namespace
 	int32 GPerfDeaths = 0;
 	int64 GPerfEndFrames = 0;
 	int32 GPerfNewGameDiff = -1;                   // the difficulty last pressed on New Game this session (-1 none)
+	bool GPerfSweep = false;                       // (REQ-PERFSWEEP) the run is a Settings sweep
 	FDelegateHandle GPerfExitHandle, GPerfTerminateHandle;
 
 	// (the game closed in the run: the engine's exit; on the Quest the app's end, which may come without it)
@@ -122,9 +123,10 @@ int32 OutlawsPerfTest::Deaths() { return GPerfDeaths; }
 const FString& OutlawsPerfTest::LastEndWhy() { return GPerfEndWhy; }
 int64 OutlawsPerfTest::LastEndFrames() { return GPerfEndFrames; }
 
-void OutlawsPerfTest::Begin(const FString& InLevel, const TMap<FString, int32>& InCarry)
+void OutlawsPerfTest::Begin(const FString& InLevel, const TMap<FString, int32>& InCarry, bool bInSweep)
 {
 	GPerfState = EPerfTestState::Starting;
+	GPerfSweep = bInSweep;
 	GPerfLevel = InLevel.ToLower();
 	GPerfCarry = InCarry;
 	GPerfDeaths = 0;
@@ -142,6 +144,7 @@ void OutlawsPerfTest::Started(const FString& InCapture, const FString& InSetting
 	GPerfState = EPerfTestState::Running;
 	GPerfCapture = InCapture;
 	GPerfSettings = InSettings;
+	if (GPerfSweep) return;                         // (REQ-PERFSWEEP: the sweep's own start line, once the player is at its spot)
 	UE_LOG(LogOutlaws, Log, TEXT("OLPERF test start: level %s, capture %s, settings %s"), *GPerfLevel, *GPerfCapture, *GPerfSettings);
 }
 
@@ -149,10 +152,20 @@ void OutlawsPerfTest::End(const TCHAR* Why)
 {
 	if (GPerfState != EPerfTestState::Running) return;
 	GPerfState = EPerfTestState::Leaving;           // (nothing written still, until the main menu)
+	// (REQ-PERFSWEEP) a sweep's rows put back and its table written first, with the capture still on; its own end line after
+	if (GPerfSweep) SweepFinish(Why);
 	GPerfEndFrames = OutlawsPerf::EndTestCapture();
 	GPerfEndWhy = Why;
+	if (GPerfSweep)
+	{
+		const FSweep& S = Sweep();
+		UE_LOG(LogOutlaws, Log, TEXT("OLPERF sweep end: %s (%d of %d), sweep %s"), Why, S.Done, S.Phases.Num(), *S.Path);
+		return;
+	}
 	UE_LOG(LogOutlaws, Log, TEXT("OLPERF test end: %s (%lld frames)"), Why, GPerfEndFrames);
 }
+
+bool OutlawsPerfTest::IsSweep() { return GPerfSweep && GPerfState != EPerfTestState::Off; }
 
 void OutlawsPerfTest::NoteDeath()
 {
@@ -171,8 +184,10 @@ int32 OutlawsPerfTest::NewGameDifficulty() { return GPerfNewGameDiff; }
 void OutlawsPerfTest::Finished()
 {
 	if (GPerfState == EPerfTestState::Off) return;
+	if (GPerfSweep) SweepOver();                    // (REQ-PERFSWEEP: god mode back, the marker gone)
 	GPerfState = EPerfTestState::Off;
-	UE_LOG(LogOutlaws, Log, TEXT("OLRT performance test over: the main menu again (saves, achievements and best times as ever from here)"));
+	GPerfSweep = false;
+	UE_LOG(LogOutlaws, Log, TEXT("OLRT performance test over: the main menu again (saves, achievements, best times and the settings file as ever from here)"));
 }
 
 bool AOutlawsPlayer::PerfTestOffered() const
@@ -182,7 +197,7 @@ bool AOutlawsPlayer::PerfTestOffered() const
 
 // ---- the level actor's side -------------------------------------------------------------------------------------------------
 
-void AOutlawsLevelActor::StartPerfTest()
+void AOutlawsLevelActor::StartPerfTest(bool bSweep)
 {
 	// a story start at the run's second level, as StartStory starts the first: the page's Randomizer and seed, the Bad guys
 	// multiplier and the graphics as they are now; the difficulty last pressed on New Game this session (user 28 Oct, via the
@@ -197,15 +212,31 @@ void AOutlawsLevelActor::StartPerfTest()
 	PlayTime = 0.0;
 	Inventory.Reset();
 	InventoryLabels.Reset();
-	BeginRandoRun(TEXT("performance test"));
+	BeginRandoRun(bSweep ? TEXT("settings sweep") : TEXT("performance test"));
 	TArray<FString> Order;
 	RandoLevelOrder(Order);
-	const FString One = Order.IsValidIndex(0) ? Order[0] : FString(TEXT("hideout"));
-	const FString Two = Order.IsValidIndex(1) ? Order[1] : FString(TEXT("townex"));
+	FString One = Order.IsValidIndex(0) ? Order[0] : FString(TEXT("hideout"));
+	FString Two = Order.IsValidIndex(1) ? Order[1] : FString(TEXT("townex"));
+	if (bSweep)
+	{
+		// (REQ-PERFSWEEP) always The Town, its spot's level, with what the level before it in the run's order carries in (the
+		// hideout's when the shuffled order starts there)
+		const int32 At = Order.IndexOfByKey(TEXT("townex"));
+		One = At > 0 ? Order[At - 1] : FString(TEXT("hideout"));
+		Two = TEXT("townex");
+	}
 	PerfTestCarry(One);
-	OutlawsPerfTest::Begin(Two, Counts);
-	UE_LOG(LogOutlaws, Log, TEXT("OLRT performance test: %s (%s), the run's level 2 (level 1 %s), difficulty %s, carried in: %s; nothing saved until the main menu"),
-		*Two, *LevelTitle(Two), *One, OutlawsDifficulty::Name(Difficulty), *CarrySignature());
+	OutlawsPerfTest::Begin(Two, Counts, bSweep);
+	if (bSweep)
+	{
+		UE_LOG(LogOutlaws, Log, TEXT("OLRT settings sweep: %s (%s) (the level before it %s), difficulty %s, carried in: %s; nothing saved, the settings file neither, until the main menu"),
+			*Two, *LevelTitle(Two), *One, OutlawsDifficulty::Name(Difficulty), *CarrySignature());
+	}
+	else
+	{
+		UE_LOG(LogOutlaws, Log, TEXT("OLRT performance test: %s (%s), the run's level 2 (level 1 %s), difficulty %s, carried in: %s; nothing saved until the main menu"),
+			*Two, *LevelTitle(Two), *One, OutlawsDifficulty::Name(Difficulty), *CarrySignature());
+	}
 	NextLevelName = Two;
 	NextMovie.Reset();
 	EntryLevel.Reset();
@@ -315,12 +346,24 @@ void AOutlawsLevelActor::TickPerfTest(float Dt)
 		OutlawsPerfTest::Finished();
 		return;
 	}
+	if (OutlawsPerfTest::IsSweep() && !OutlawsPerfTest::IsStarting())
+	{
+		TickPerfSweep(Dt);                     // (REQ-PERFSWEEP: its phases, then its end card; OutlawsPerfSweep.cpp)
+		return;
+	}
 	if (!OutlawsPerfTest::IsStarting()) return;
 	UWorld* World = GetWorld();
 	AOutlawsPlayer* P = World && World->GetFirstPlayerController() ? Cast<AOutlawsPlayer>(World->GetFirstPlayerController()->GetPawn()) : nullptr;
 	if (!P || bNeedPlace || bDead || PendingLoad.IsValid() || IsMoviePlaying() || !LevelName.Equals(OutlawsPerfTest::Level(), ESearchCase::IgnoreCase)) return;
 	// play begins: the capture on, the settings dump beside it with the capture's stamp
 	const FString Capture = OutlawsPerf::StartTestCapture();
+	if (OutlawsPerfTest::IsSweep())
+	{
+		// (REQ-PERFSWEEP) the sweep's table takes the dump's lines; the player to its spot, its lead-in
+		OutlawsPerfTest::Started(Capture.IsEmpty() ? FString(TEXT("(none: -OLNoPerfFiles)")) : Capture, FString());
+		PerfSweepBegin(Capture);
+		return;
+	}
 	FString Settings;
 	if (!Capture.IsEmpty())
 	{

@@ -84,8 +84,10 @@ namespace OutlawsDeviceProfile
 	/** Restore defaults on the Graphics page: every row back to the headset's default. */
 	OUTLAWSRUNTIME_API void RestoreDefaults();
 
-	/** The settings file: read the choices (and apply them), write them back. */
-	OUTLAWSRUNTIME_API void LoadSettings(const TMap<FString, FString>& Settings);
+	/** The settings file: read the choices (and apply them), write them back.  (REQ-PERFSWEEP: the Settings sweep sets its
+	 *  phases' rows, and puts the player's back, the same way from a copy of GatherSettings's keys, Why naming it in the
+	 *  graphics line; nothing is written either way.) */
+	OUTLAWSRUNTIME_API void LoadSettings(const TMap<FString, FString>& Settings, const TCHAR* Why = TEXT("settings loaded"));
 	OUTLAWSRUNTIME_API void GatherSettings(TMap<FString, FString>& Out);
 
 	/** Set the knobs to the rows' values (only what a choice or the Quest 2 profile asks for) and log them. */

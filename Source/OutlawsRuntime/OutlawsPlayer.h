@@ -1680,6 +1680,14 @@ private:
 	 *  "OLSHOT perftest: PASS|FAIL", and it quits. */
 	static bool PerfTestProbeOn();
 	void TickPerfTestProbe(float Dt);
+	/** (REQ-PERFSWEEP, OutlawsPerfSweepProbe.cpp) -OLPerfSweepProbe, in any build, from the main menu: the Settings sweep row
+	 *  beside Performance test after the turn; a whole sweep (each phase's rows applied as it says, the settings file
+	 *  unchanged, every phase measured with sane numbers, the table, every row put back, god mode back at the main menu),
+	 *  then one quit from the pause menu in its third phase; Saved (but Perf and Logs) unchanged.  =closed quits the game in
+	 *  its second phase; =spots surveys the user's three busy spots of The Town instead (bad guys awake, draws, timings by
+	 *  heading).  "OLPERFSWEEP ..." a check, then "OLSHOT perfsweep: PASS|FAIL", and it quits. */
+	static bool PerfSweepProbeOn();
+	void TickPerfSweepProbe(float Dt);
 
 	UPROPERTY(Transient)
 	TObjectPtr<class UStaticMeshComponent> FadeVeil;

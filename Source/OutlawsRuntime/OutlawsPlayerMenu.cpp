@@ -610,6 +610,13 @@ bool AOutlawsPlayer::ShowMenuPage(const FString& File, bool bPush)
 			Pt.Label = TEXT("Performance test");
 			Pt.Name = TEXT("perftest_start");
 			Page->Items.Add(Pt);
+			// REQ-PERFSWEEP (user 28 Oct): beside it, shown by the same turn: The Town at a busy spot, one Graphics row at a
+			// time, each row's cost measured, every row put back after (OutlawsPerfSweep.cpp)
+			FItem Sw;
+			Sw.Kind = EItemKind::Action;
+			Sw.Label = TEXT("Settings sweep");
+			Sw.Name = TEXT("perfsweep_start");
+			Page->Items.Add(Sw);
 		}
 		if (!MenuPage || MenuPage->File != File) CheatSpin = 0.f;      // (REQ-PERFTESTMODE: the turn counts from the page's own start)
 	}
@@ -931,10 +938,13 @@ bool AOutlawsPlayer::ShowMenuPage(const FString& File, bool bPush)
 		}
 		else if (OutlawsPerfTest::IsOn())
 		{
-			// REQ-PERFTESTMODE: no Save or Load in a performance test run (Restart Level stays: the run goes on, as after a death)
-			Page->Items.RemoveAll([](const FItem& It)
+			// REQ-PERFTESTMODE: no Save or Load in a performance test run (Restart Level stays: the run goes on, as after a death);
+			// REQ-PERFSWEEP: nor Restart Level in a Settings sweep (no death to restart from in its god mode; its spot is kept)
+			const bool bSweep = OutlawsPerfTest::IsSweep();
+			Page->Items.RemoveAll([bSweep](const FItem& It)
 			{
-				return It.Target.Equals(TEXT("save_game.rml"), ESearchCase::IgnoreCase) || It.Target.Equals(TEXT("load_game.rml"), ESearchCase::IgnoreCase);
+				return It.Target.Equals(TEXT("save_game.rml"), ESearchCase::IgnoreCase) || It.Target.Equals(TEXT("load_game.rml"), ESearchCase::IgnoreCase)
+					|| (bSweep && It.Action == TEXT("ev_restart_level"));
 			});
 		}
 		if (bCheatsShown)
@@ -2005,15 +2015,15 @@ void AOutlawsPlayer::MenuActivate(int32 Hand, int32 Index)
 			}
 			return;
 		}
-		if (I.Name == TEXT("perftest_start"))
+		if (I.Name == TEXT("perftest_start") || I.Name == TEXT("perfsweep_start"))
 		{
-			// REQ-PERFTESTMODE (OutlawsPerfTest.cpp): New Game > Performance test
+			// REQ-PERFTESTMODE (OutlawsPerfTest.cpp): New Game > Performance test; REQ-PERFSWEEP: > Settings sweep
 			AOutlawsLevelActor* L = Level.Get();
 			CloseMenu();
 			if (L && PerfTestOffered())
 			{
 				ClearScreenFx();
-				L->StartPerfTest();
+				L->StartPerfTest(I.Name == TEXT("perfsweep_start"));
 			}
 			return;
 		}

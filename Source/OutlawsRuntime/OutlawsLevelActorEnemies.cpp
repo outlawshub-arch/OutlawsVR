@@ -1999,6 +1999,13 @@ TMap<FString, FString> AOutlawsLevelActor::ReadSettings()
 
 void AOutlawsLevelActor::WriteSettings(const TMap<FString, FString>& Settings)
 {
+	if (OutlawsPerfTest::IsSweep())
+	{
+		// REQ-PERFSWEEP: the Settings sweep changes the rows itself and puts the player's back; nothing reaches the file till
+		// the main menu (a row pressed in its pause menu is undone at its next phase and at its end)
+		UE_LOG(LogOutlaws, Log, TEXT("OLRT settings sweep: the settings file left as it was (held for the sweep)"));
+		return;
+	}
 	FString Text = TEXT("; Outlaws VR settings (the in-game menu writes this)\n");
 	TArray<FString> Keys;
 	Settings.GetKeys(Keys);

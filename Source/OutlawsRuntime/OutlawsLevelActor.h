@@ -346,8 +346,18 @@ public:
 	/** REQ-PERFTESTMODE (OutlawsPerfTest.cpp): New Game > Performance test: the story's second level alone (the run's second
 	 *  with the mission order shuffled) as a story start there, at the difficulty last pressed on New Game (else Bad), with
 	 *  what a hideout finish carries in, the capture on
-	 *  from the moment play begins and nothing written until the main menu is back (OutlawsPerfTest.h). */
-	void StartPerfTest();
+	 *  from the moment play begins and nothing written until the main menu is back (OutlawsPerfTest.h).  bSweep: REQ-PERFSWEEP's
+	 *  Settings sweep, the same start in The Town always (OutlawsPerfSweep.cpp). */
+	void StartPerfTest(bool bSweep = false);
+	/** REQ-PERFSWEEP (OutlawsPerfSweep.cpp): the sweep's start once play begins (the player's rows kept, god mode, the spot
+	 *  and its marker, the phases, the start line), its phases and end card each tick, the rows set for a phase or put back,
+	 *  the player put at the spot (the feet found under it) facing Yaw, and the table. */
+	void PerfSweepBegin(const FString& CapturePath);
+	void TickPerfSweep(float Dt);
+	void PerfSweepApply(int32 Phase);
+	void PerfSweepRestore(bool bWorld);
+	bool PerfSweepPlace(const FVector& Spot, float Yaw, bool bTurn, FVector* OutFeet = nullptr);
+	FString PerfSweepTable(const FString& Why) const;
 	/** The run's start once its level is in play, and its end when that level is left some other way. */
 	void TickPerfTest(float Dt);
 	/** StartNextLevelThen's question: a run in its level goes back to the main menu instead of on (no level 3). */

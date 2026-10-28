@@ -589,7 +589,7 @@ FString OutlawsDeviceProfile::GammaText()
 	return FMath::IsNearlyEqual(OldpGamma, 1.f, 0.01f) ? FString(TEXT("1.0 (default)")) : FString::Printf(TEXT("%.1f"), OldpGamma);
 }
 
-void OutlawsDeviceProfile::LoadSettings(const TMap<FString, FString>& S)
+void OutlawsDeviceProfile::LoadSettings(const TMap<FString, FString>& S, const TCHAR* Why)
 {
 	OldpChosenRes = OldpParseChoice(S, TEXT("RenderScale"), 50, 150);
 	OldpChosenLamps = OldpParseChoice(S, TEXT("LampLights"), 0, 4);
@@ -607,7 +607,7 @@ void OutlawsDeviceProfile::LoadSettings(const TMap<FString, FString>& S)
 	const FString* Q2 = S.Find(TEXT("Quest2Mode"));
 	bOldpQuest2Mode = Q2 && Q2->ToBool();
 	OldpRedecide(false);
-	Apply(TEXT("settings loaded"));
+	Apply(Why);
 }
 
 void OutlawsDeviceProfile::GatherSettings(TMap<FString, FString>& Out)

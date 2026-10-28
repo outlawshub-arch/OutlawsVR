@@ -280,7 +280,7 @@ void AOutlawsPlayer::TickPerfTestProbe(float Dt)
 	case 4:
 	{
 		const FString R = Rows();
-		PpCheck(R == TEXT("Main Game | Historical Missions | Multiplayer | Tutorial | Performance test"), FString::Printf(TEXT("New Game's page after the turn: %s"), *R));
+		PpCheck(R == TEXT("Main Game | Historical Missions | Multiplayer | Tutorial | Performance test | Settings sweep"), FString::Printf(TEXT("New Game's page after the turn: %s"), *R));
 		Pp.SavedBefore = PpSavedMd5();
 		Pp.Run = 1;
 		const bool bPressed = Press(TEXT("Performance test"));
@@ -348,7 +348,7 @@ void AOutlawsPlayer::TickPerfTestProbe(float Dt)
 	{
 		// the second run: the row still there, picked again
 		ShowMenuPage(TEXT("#newgame"), true);
-		const bool bRow = Rows().EndsWith(TEXT("| Performance test"));
+		const bool bRow = Rows().EndsWith(TEXT("| Performance test | Settings sweep"));     // (REQ-PERFSWEEP: the sweep's row beside it)
 		Pp.SavedBefore = PpSavedMd5();
 		Pp.Run = 2;
 		PpCheck(bRow && Press(TEXT("Performance test")), FString::Printf(TEXT("run 2: the row stays shown and is pressed (%s)"), *Rows()));

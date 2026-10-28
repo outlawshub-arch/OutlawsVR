@@ -627,6 +627,32 @@ namespace
 	int64 CaptureFrames = 0;
 	double CaptureStart = 0.0;
 
+	// REQ-PERFSWEEP: a Settings sweep phase's measured window (OutlawsPerf::BeginWindow / EndWindow): live frames' sums, and
+	// each bucket's by its index
+	struct FWindowSums
+	{
+		bool bOn = false;
+		double Start = 0.0, Budget = 0.0;
+		int64 Frames = 0, Over = 0;
+		double Frame = 0, Game = 0, Work = 0, Render = 0, Rhi = 0, Gpu = 0, Draws = 0, Prims = 0;
+		TArray<double> Buckets;
+	};
+	FWindowSums WinSums;
+
+	void WindowAdd(const FPerfFrame& F, int32 Slot)
+	{
+		FWindowSums& W = WinSums;
+		++W.Frames;
+		W.Frame += F.FrameMs; W.Game += F.GameMs; W.Render += F.RenderMs; W.Rhi += F.RhiMs; W.Gpu += F.GpuMs;
+		W.Work += FMath::Max(0.0, F.GameMs - StartMsLast);       // (as the capture's row pairs them: game_ms less xr_wait_ms)
+		W.Over += F.FrameMs > W.Budget * 1.05 ? 1 : 0;
+		W.Draws += F.Draws; W.Prims += F.Prims;
+		if (Slot < 0) return;            // (-OLNoPerfFiles: no buckets gathered)
+		FScopeLock Lock(&BucketLock);
+		if (W.Buckets.Num() < BucketStats.Num()) W.Buckets.SetNumZeroed(BucketStats.Num());
+		for (int32 b = 0; b < BucketStats.Num(); ++b) W.Buckets[b] += BucketStats[b].Recent[Slot];
+	}
+
 	FString CaptureHeader()
 	{
 		FString S = TEXT("t_s,level,frame_ms,game_ms,render_ms,rhi_ms,gpu_ms,draws,tris,in_play,load,xr_wait_ms,gc_ms,textures_made");
@@ -706,6 +732,7 @@ namespace
 				if (LevelSum.Frames == 0 && LevelRef.IsValid()) SummaryLevel = LevelRef->LevelName;
 				MinuteSum.Add(F);
 				LevelSum.Add(F);
+				if (WinSums.bOn) WindowAdd(F, -1);      // (REQ-PERFSWEEP)
 			}
 			if (Now - SecStart >= 1.0)
 			{
@@ -752,6 +779,7 @@ namespace
 #endif
 			}
 		}
+		if (WinSums.bOn && bPlaying) WindowAdd(F, Slot);        // (REQ-PERFSWEEP: a Settings sweep phase's live frames)
 		SecWindow.Add(F);
 		LiveWindow.Add(F);
 
@@ -1197,6 +1225,51 @@ int32 OutlawsPerf::MakeReadable(const FString& Path)
 #else
 	return 0;
 #endif
+}
+
+void OutlawsPerf::BeginWindow(double InBudgetMs)
+{
+	WinSums = FWindowSums();
+	WinSums.bOn = true;
+	WinSums.Start = FPlatformTime::Seconds();
+	WinSums.Budget = InBudgetMs;
+}
+
+OutlawsPerf::FWindow OutlawsPerf::EndWindow()
+{
+	FWindow Out;
+	const FWindowSums W = WinSums;
+	WinSums = FWindowSums();
+	if (!W.bOn) return Out;
+	const double N = double(FMath::Max<int64>(1, W.Frames));
+	Out.Frames = W.Frames;
+	Out.Seconds = FPlatformTime::Seconds() - W.Start;
+	Out.FrameMs = W.Frame / N;
+	Out.GameMs = W.Game / N;
+	Out.GameWorkMs = W.Work / N;
+	Out.RenderMs = W.Render / N;
+	Out.RhiMs = W.Rhi / N;
+	Out.GpuMs = W.Gpu / N;
+	Out.OverPct = 100.0 * double(W.Over) / N;
+	Out.Fps = Out.Seconds > 0.0 ? double(W.Frames) / Out.Seconds : 0.0;
+	Out.Draws = W.Draws / N;
+	Out.Tris = W.Prims / N;
+	{
+		FScopeLock Lock(&BucketLock);
+		for (int32 b = 0; b < W.Buckets.Num() && b < BucketStats.Num(); ++b)
+		{
+			const FString& Name = BucketStats[b].Name;
+			if (W.Buckets[b] <= 0.0 || Name.Contains(TEXT("(total)")) || Name.Contains(TEXT("XR wait"))) continue;     // (the parts, not the sums or the wait)
+			Out.Buckets.Emplace(Name, W.Buckets[b] / N);
+		}
+	}
+	Out.Buckets.Sort([](const TPair<FString, double>& A, const TPair<FString, double>& B) { return A.Value > B.Value; });
+	return Out;
+}
+
+double OutlawsPerf::BudgetMs()
+{
+	return 1000.0 / FMath::Max(1.f, CVarTargetFps.GetValueOnGameThread());
 }
 
 namespace

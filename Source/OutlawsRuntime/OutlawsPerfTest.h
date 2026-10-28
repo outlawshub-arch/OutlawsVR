@@ -17,8 +17,31 @@
 //   OLPERF test end: <level exit | quit from the pause menu | game closed> (<frames> frames)
 // The level actor's side (the start, the carry, the dump) is in OutlawsPerfTest.cpp; -OLPerfTestProbe in
 // OutlawsPerfTestProbe.cpp.
+//
+// REQ-PERFSWEEP (user 28 Oct, via the planner: which Graphics rows cost the most; all top against all lowest gave only the
+// total): New Game > Settings sweep, beside Performance test (the same turn shows both).  The same start as a run (the carry,
+// the difficulty, the seed and the Bad guys multiplier, the capture on, nothing written) but always in The Town (townex),
+// god mode for its length, the bad guys as ever.  The player is put at a busy spot from the user's run 1 facing a glowing
+// marker, a card asks them to stand still; then every Graphics row at its top (the refresh at the highest the headset
+// offers) and each row in turn, A (all top) B (that row at its lowest) A B, 15 s a phase, the first 3 s after a switch not
+// measured: Resolution 120 / 70 (then a phase each at 100 and 85, B-tagged, in no pair), Lamp Lights 4 / 0, Remastered
+// Graphics, Object Detail Far / Near, Stochastic Textures, Tinting, Quest 2 Mode off / on (the other rows held at the top: what
+// it adds by itself), and last All top / lowest.  Every row changes live (no reload); a row that cannot change is skipped and
+// said so.  A small card shows the phase ("4 of 32: Resolution at lowest").  Each phase's game work, render, RHI and GPU ms,
+// fps, frames over budget, bad guys awake and top buckets (OutlawsPerf::BeginWindow) go to the log and to
+// Saved/Perf/sweep_<the capture's stamp>.txt: each row's saving ranked, with its two pairs' spread, the all pair against the
+// rows' sum, and every phase.  The settings file is held for the sweep (AOutlawsLevelActor::WriteSettings) and every row,
+// the refresh, Quest 2 Mode and the level's switches are put back when it ends or is quit; at its end a top-3 card, then the
+// main menu.  The log lines (questperf adds the GPU counters per phase):
+//   OLPERF sweep start: level <map>, phases <n>, spot (<x>, <y>, <z>), sweep <full path of sweep_<stamp>.txt>, capture <full path of the capture csv>
+//   OLPERF sweep skipped: <row> (<why>)
+//   OLPERF sweep phase <i> of <n>: <row> <value> (<A|B>)
+//   OLPERF sweep phase <i> measured: <frames> frames, game work <ms>, render <ms>, RHI <ms>, GPU <ms>, fps <f>, over <pct> %, awake <n>
+//   OLPERF sweep end: <done | quit from the pause menu | game closed> (<phases done> of <n>), sweep <full path>
+// OutlawsPerfSweep.cpp; -OLPerfSweepProbe in OutlawsPerfSweepProbe.cpp.
 
 #include "CoreMinimal.h"
+#include "OutlawsPerf.h"
 
 namespace OutlawsPerfTest
 {
@@ -37,10 +60,52 @@ namespace OutlawsPerfTest
 	OUTLAWSRUNTIME_API int32 NewGameDifficulty();
 
 	/** The level actor's side (OutlawsPerfTest.cpp). */
-	void Begin(const FString& Level, const TMap<FString, int32>& Carry);
+	void Begin(const FString& Level, const TMap<FString, int32>& Carry, bool bSweep = false);
 	void Started(const FString& CapturePath, const FString& SettingsPath);
 	void Finished();
 	bool IsStarting();
+
+	/** REQ-PERFSWEEP: the run is a Settings sweep (from its start to the main menu again): the settings file is held too. */
+	OUTLAWSRUNTIME_API bool IsSweep();
+	/** A sweep phase's Graphics rows: the top, or one (or every) row lower. */
+	struct FSweepSet
+	{
+		int32 Resolution = 120;
+		int32 Lamps = 4;
+		bool bRemastered = true;
+		int32 Detail = 2;            // (0 Near, 1 Normal, 2 Far)
+		bool bStochastic = true;
+		bool bTinting = true;
+		bool bQuest2 = false;
+	};
+	struct FSweepPhase
+	{
+		FString Row, Value;          // as the log line names them ("Lamp Lights", "0")
+		bool bB = false;             // B: the row lower (A: every row at its top)
+		bool bStep = false;          // a Resolution step after its pairs (100, 85): B-tagged, in no pair
+		FSweepSet Set;
+		bool bMeasured = false;
+		OutlawsPerf::FWindow M;
+		double Awake = 0.0;          // bad guys awake: the mean of one count a second
+	};
+	struct FSweep
+	{
+		TArray<FSweepPhase> Phases;
+		int32 Now = 0;               // the phase now, from 1 (0: the lead-in)
+		int32 Done = 0;              // phases measured
+		TArray<FString> Skipped;     // "<row> (<why>)"
+		FString Path;
+		FVector Spot = FVector::ZeroVector;
+		FVector Marker = FVector::ZeroVector;    // (zero: none could be made)
+		float Yaw = 0.f;
+		double PhaseSec = 15.0, SettleSec = 3.0;
+		TArray<FString> Top3;        // the end card's lines
+	};
+	/** The sweep as it stands (the probe's checks). */
+	OUTLAWSRUNTIME_API const FSweep& Sweep();
+	/** OutlawsPerfSweep.cpp: End's sweep part (the rows put back, the table written) and the main menu's (god mode back). */
+	void SweepFinish(const TCHAR* Why);
+	void SweepOver();
 
 	/** What the run is and did (the probe's checks). */
 	OUTLAWSRUNTIME_API const FString& Level();
