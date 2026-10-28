@@ -1445,6 +1445,10 @@ public:
 	FLightStats DebugLight(int32 Elevator) const;
 	double DebugLightSeconds = 0.0, DebugLightModelSeconds = 0.0;
 	int32 DebugLightUpdates = 0, DebugLightTicks = 0, DebugLightFaceUpdates = 0, DebugLightModelUpdates = 0;
+	// (BUG-ALIENLIGHT, tests) the longest one frame's sector lights took (a hitch), and the time and count of the frames
+	// that sent an update (the cost line's "each" was every frame's time over the updates)
+	double DebugLightMaxFrame = 0.0, DebugLightUpdateFrameSeconds = 0.0;
+	int32 DebugLightUpdateFrames = 0;
 	bool HandEvent(int32 Sector, int32 Wall, uint32 Event);     // a hand's press on a wall (Wall -1: the sector), once per 0.7 s
 	FVector SteerCurrent(class ACharacter* Body, const FVector& Push);   // a water current round a closed gate; a swimmer beats it
 	FVector FlowSteer = FVector::ZeroVector;

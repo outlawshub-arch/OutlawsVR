@@ -3184,7 +3184,10 @@ void AOutlawsLevelActor::TickSectorLights()
 		DebugLightModelSeconds += Took;
 	}
 	LightModelsDue.Reset();
-	DebugLightSeconds += FPlatformTime::Seconds() - T0;
+	const double Frame = FPlatformTime::Seconds() - T0;
+	DebugLightSeconds += Frame;
+	DebugLightMaxFrame = FMath::Max(DebugLightMaxFrame, Frame);
+	if (Updated > 0) { DebugLightUpdateFrameSeconds += Frame; ++DebugLightUpdateFrames; }
 	DebugLightUpdates += Updated;
 	++DebugLightTicks;
 }

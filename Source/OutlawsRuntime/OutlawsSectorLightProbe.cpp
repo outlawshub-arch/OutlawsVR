@@ -31,7 +31,8 @@ OL_SHOT_TEST(OLSectorLightProbe, 21)
 {
 	static int32 Passes = 0, Fails = 0, Light = -1, LastStop = -1, Matched = 0, Timed = 0, Frames = 0, Followed = 0, Samples = 0;
 	static double LastAt = 0.0, WatchUntil = 0.0, WatchFrom = 0.0, MaxDt = 0.0, Cost0 = 0.0, ModelCost0 = 0.0;
-	static int32 Ticks0 = 0, Updates0 = 0, ShotsLeft = 0, Faces0 = 0, Models0 = 0;
+	static int32 Ticks0 = 0, Updates0 = 0, ShotsLeft = 0, Faces0 = 0, Models0 = 0, UpFrames0 = 0;
+	static double UpCost0 = 0.0;
 	static float Wait = 0.f;
 	static FString Seq;
 	if (!L || ShotStep < 0) return;
@@ -137,6 +138,9 @@ OL_SHOT_TEST(OLSectorLightProbe, 21)
 		Faces0 = L->DebugLightFaceUpdates;
 		Models0 = L->DebugLightModelUpdates;
 		ModelCost0 = L->DebugLightModelSeconds;
+		L->DebugLightMaxFrame = 0.0;
+		UpCost0 = L->DebugLightUpdateFrameSeconds;
+		UpFrames0 = L->DebugLightUpdateFrames;
 		Look();
 		ShotStep = 1;
 		return;
@@ -154,6 +158,9 @@ OL_SHOT_TEST(OLSectorLightProbe, 21)
 			Faces0 = L->DebugLightFaceUpdates;
 			Models0 = L->DebugLightModelUpdates;
 			ModelCost0 = L->DebugLightModelSeconds;
+			L->DebugLightMaxFrame = 0.0;           // (BUG-ALIENLIGHT: the longest frame and the update frames from here)
+			UpCost0 = L->DebugLightUpdateFrameSeconds;
+			UpFrames0 = L->DebugLightUpdateFrames;
 			LastStop = Inf->Elevators[Light].Stop;
 			return;
 		}
@@ -205,6 +212,9 @@ OL_SHOT_TEST(OLSectorLightProbe, 21)
 			(L->DebugLightSeconds - Cost0) * 1000.0 / FMath::Max(1, L->DebugLightUpdates - Updates0),
 			L->DebugLightFaceUpdates - Faces0, L->DebugLightModelUpdates - Models0, (L->DebugLightModelSeconds - ModelCost0) * 1000.0 / FMath::Max(1, L->DebugLightTicks - Ticks0),
 			OLFlags::Param(TEXT("OLOldLightRedraw")) ? TEXT("-OLOldLightRedraw") : TEXT("copies shown"));
+		// (BUG-ALIENLIGHT) "each" above is every frame's time over the updates; what one change of light costs, and the worst frame
+		UE_LOG(LogOutlaws, Display, TEXT("OLSHOT sectorlight frames: %d frames sent an update, %.4f ms each on average; the longest frame of the sector lights %.4f ms"),
+			L->DebugLightUpdateFrames - UpFrames0, (L->DebugLightUpdateFrameSeconds - UpCost0) * 1000.0 / FMath::Max(1, L->DebugLightUpdateFrames - UpFrames0), L->DebugLightMaxFrame * 1000.0);
 		ShotsLeft = 2;
 		Wait = ShotTime + 0.5f;
 		ShotStep = 2;
