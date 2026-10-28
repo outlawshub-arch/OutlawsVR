@@ -2770,6 +2770,11 @@ void AOutlawsLevelActor::TickScrolls()
 	// the offset slides the texture as the Jedi engine's texture offsets do: floors and ceilings take
 	// it on both axes (u with x, v with z), walls along their length (u) and up (v, flipped for UE's
 	// v-down), wrapped to one texture repeat
+	// BUG-SCROLLSRGB (found 28 Oct): the colours (the sector's light) written as the build writes them, with no sRGB conversion:
+	// UpdateMeshSection_LinearColor converts by default where CreateMeshSection_LinearColor does not, so every scrolling surface
+	// (water, the mill's belts, the train's ground, the piano's roll) drew brighter than its sector after its first slide, the
+	// still faces beside it not.  -OLOldScrollSRGB: converted as before, for shots
+	static const bool bOldScrollSrgb = OLFlags::Param(TEXT("OLOldScrollSRGB"));
 	for (FScrollMesh& SM : ScrollMeshes)
 	{
 		if (!SM.Mesh || !Inf->Scrolls.IsValidIndex(SM.Scroll))
@@ -2800,7 +2805,51 @@ void AOutlawsLevelActor::TickScrolls()
 			const FOutlawsMeshSection& S = SM.Sections[j];
 			TArray<FVector2D> UVs = S.UVs;
 			for (FVector2D& U : UVs) U += D;
-			if (!OutlawsPerf::FreezeMeshUpdates()) SM.Mesh->UpdateMeshSection_LinearColor(j, S.Positions, S.Normals, UVs, S.Colors, TArray<FProcMeshTangent>());
+			if (!OutlawsPerf::FreezeMeshUpdates()) SM.Mesh->UpdateMeshSection_LinearColor(j, S.Positions, S.Normals, UVs, S.Colors, TArray<FProcMeshTangent>(), bOldScrollSrgb);
+		}
+	}
+}
+
+void AOutlawsLevelActor::DebugScrollColours(int32& OutSections, int32& OutSlid, int32& OutVerts, int32& OutAsStill, int32& OutAsOld, int32& OutLit, FVector& OutAt, FVector& OutFacing,
+	FString& OutWhere) const
+{
+	// (-OLScrollSrgbProbe) each scroll section's vertex colours as last given the GPU, against the build's colours unconverted (as
+	// the still faces have them) and sRGB-converted (as TickScrolls wrote them before BUG-SCROLLSRGB); the largest section's middle
+	OutSections = OutSlid = OutVerts = OutAsStill = OutAsOld = OutLit = 0;
+	double Biggest = -1.0;
+	for (const FScrollMesh& SM : ScrollMeshes)
+	{
+		UProceduralMeshComponent* M = SM.Mesh.Get();
+		if (!M) continue;
+		const bool bSlid = SM.Shown.X >= 0.0;
+		for (int32 j = 0; j < SM.Sections.Num(); ++j)
+		{
+			const FOutlawsMeshSection& S = SM.Sections[j];
+			const FProcMeshSection* P = M->GetProcMeshSection(j);
+			if (!P || S.Positions.Num() == 0) continue;
+			++OutSections;
+			if (!bSlid) continue;
+			++OutSlid;
+			for (int32 k = 0; k < P->ProcVertexBuffer.Num() && k < S.Colors.Num(); ++k)
+			{
+				const FColor Got = P->ProcVertexBuffer[k].Color, Raw = S.Colors[k].ToFColor(false);
+				++OutVerts;
+				OutAsStill += Got == Raw ? 1 : 0;
+				OutAsOld += Got == S.Colors[k].ToFColor(true) ? 1 : 0;
+				OutLit += Raw.R > 0 && Raw.R < 255 ? 1 : 0;
+			}
+			const FBox B(S.Positions);
+			const double Size = B.GetSize().Size();
+			if (Size > Biggest)
+			{
+				Biggest = Size;
+				OutAt = M->GetComponentTransform().TransformPosition(B.GetCenter());
+				FVector N = FVector::ZeroVector;
+				for (const FVector& Nv : S.Normals) N += Nv;
+				N = N.GetSafeNormal();
+				OutFacing = FMath::Abs(N.Z) > 0.7 || N.IsNearlyZero() ? FVector(1.0, 0.0, 0.0) : FVector(N.X, N.Y, 0.0).GetSafeNormal();
+				OutWhere = FString::Printf(TEXT("%s at %s, %.0f cm across, %s"), *S.Texture, *OutAt.ToCompactString(), Size, FMath::Abs(N.Z) > 0.7 ? TEXT("a floor or ceiling") : TEXT("a wall"));
+			}
 		}
 	}
 }

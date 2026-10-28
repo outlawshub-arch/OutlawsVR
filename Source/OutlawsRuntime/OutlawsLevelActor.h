@@ -305,6 +305,10 @@ public:
 	FString DebugPaneState(int32 Index) const;
 	/** (tests) the level's SHADES as parsed (FOutlawsLevel::Shades). */
 	TArray<FColor> DebugShades() const;
+	/** (tests, BUG-SCROLLSRGB) the scroll sections' vertex colours as drawn: sections, those slid, vertices, as the build gave them
+	 *  (the still faces' rule), as sRGB-converted, not black or white; the largest section's middle and a side to see it from. */
+	void DebugScrollColours(int32& OutSections, int32& OutSlid, int32& OutVerts, int32& OutAsStill, int32& OutAsOld, int32& OutLit, FVector& OutAt, FVector& OutFacing,
+		FString& OutWhere) const;
 	/** A story movie is on the screen (between levels): the player only watches, a trigger skips. */
 	bool IsMoviePlaying() const;
 	void SkipMovie();
