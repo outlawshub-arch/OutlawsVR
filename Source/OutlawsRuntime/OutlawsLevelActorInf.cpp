@@ -682,9 +682,32 @@ UMaterialInterface* AOutlawsLevelActor::SpriteMaterialFor(AOutlawsSpriteActor* S
 			Specks.Num(), At.AtlasW, At.AtlasH);
 	}
 	if (!At.FireMask) return SpriteMaterial;
+	if (bHDTextures) FireMaskLayerFor(At);       // (REQ-FIREBRIGHT3: the HD look's mask from the remaster's own layer)
 	S->FireMask = At.FireMask;
 	S->FireMaskHd = At.FireMaskHd;
 	return SpriteFireMaterial;
+}
+
+void AOutlawsLevelActor::FireMaskLayerFor(OutlawsTextures::FSpriteAtlas& At)
+{
+	// REQ-FIREBRIGHT3 (planner 2026-10-29: pale specks on the logs in HD): the HD look's mask from the remaster's own
+	// full-bright layer where the sprite has one (camfire1's lights 99 % of the flame's heart, 0..36 % of the log browns),
+	// made once, the first time the HD look is wanted; else the 8-bit colours' mask, filtered, stands
+	if (At.bFireMaskLayerTried || !At.FireMask || !AssetsRef) return;
+	At.bFireMaskLayerTried = true;
+	TArray<FColor> Px;
+	int32 W = 0, H = 0, Lit = 0;
+	if (!OutlawsTextures::DecodeSpriteAtlasFullBrightMask(*AssetsRef, At, Px, W, H, &Lit))
+	{
+		UE_LOG(LogOutlaws, Log, TEXT("OLRT full bright HD mask: %s has no full-bright layer, the 8-bit colours' mask filtered"), *At.Nwx);
+		return;
+	}
+	UTexture2D* T = OutlawsTextures::MakeTextureBGRA(W, H, Px, false, TF_Bilinear, TA_Clamp);
+	if (!T) return;
+	Textures.Add(FString::Printf(TEXT("FIREMASKLAYER:%s:%p"), *At.Nwx, &At), T);      // (keeps it referenced)
+	At.FireMaskHd = T;
+	At.bFireMaskLayer = true;
+	UE_LOG(LogOutlaws, Log, TEXT("OLRT full bright HD mask: %s from the remaster's full-bright layer, %d of %d texels kept bright (%dx%d)"), *At.Nwx, Lit, W * H, W, H);
 }
 
 void AOutlawsLevelActor::GiveAllWeapons()

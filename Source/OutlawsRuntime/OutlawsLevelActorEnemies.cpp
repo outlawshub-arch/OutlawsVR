@@ -2539,6 +2539,7 @@ UTexture* AOutlawsLevelActor::SpriteHdFor(const TSharedPtr<OutlawsTextures::FSpr
 			SpriteAtlasesHd.Add(T);
 		}
 	}
+	if (Atlas->TextureHd && Atlas->FireMask) FireMaskLayerFor(*Atlas);      // (REQ-FIREBRIGHT3)
 	return Atlas->TextureHd;
 }
 
@@ -2590,7 +2591,7 @@ void AOutlawsLevelActor::SetHDTextures(bool bOn)
 {
 	bHDTextures = bOn;
 	// sprites: every atlas's HD look (built on first use), matched to the sprites by their original
-	TMap<UTexture*, UTexture*> SpriteHd;
+	TMap<UTexture*, UTexture*> SpriteHd, FireMaskHd;
 	int32 NumHdAtlases = 0;
 	for (const TPair<FString, TSharedPtr<OutlawsTextures::FSpriteAtlas>>& Kv : AtlasCache)
 	{
@@ -2598,12 +2599,14 @@ void AOutlawsLevelActor::SetHDTextures(bool bOn)
 		UTexture* Hd = bOn ? SpriteHdFor(Kv.Value) : nullptr;
 		SpriteHd.Add(Kv.Value->Texture, Hd);
 		NumHdAtlases += Hd ? 1 : 0;
+		if (Kv.Value->FireMask) FireMaskHd.Add(Kv.Value->FireMask, Kv.Value->FireMaskHd);    // (REQ-FIREBRIGHT3: the layer's, once made)
 	}
 	if (UWorld* World = GetWorld())
 	{
 		for (TActorIterator<AOutlawsSpriteActor> It(World); It; ++It)
 		{
 			if (It->GetOwner() != this) continue;
+			if (UTexture* const* M = It->FireMask ? FireMaskHd.Find(It->FireMask.Get()) : nullptr) It->FireMaskHd = *M;
 			UTexture* Lo = It->SpriteTextureLo ? It->SpriteTextureLo.Get() : It->SpriteTexture.Get();
 			UTexture* const* Hd = SpriteHd.Find(Lo);
 			It->SetLook(bOn && Hd ? *Hd : nullptr);

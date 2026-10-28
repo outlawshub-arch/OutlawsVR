@@ -1793,6 +1793,9 @@ public:
 	static bool OldFireBright2();
 	/** REQ-FIREBRIGHT2: a palette entry of full-bright art that stays bright whatever the light (its mask's 0). */
 	bool FireKeepsBright(uint8 V) const;
+	/** REQ-FIREBRIGHT3: the atlas's HD mask (FireMaskHd) from the remaster's own full-bright layer where its SPX has one, made
+	 *  once when the HD look is first wanted (SpriteMaterialFor, SpriteHdFor); else the 8-bit colours' mask stays. */
+	void FireMaskLayerFor(OutlawsTextures::FSpriteAtlas& At);
 private:
 	void UpdateSoundGens(float Dt);
 

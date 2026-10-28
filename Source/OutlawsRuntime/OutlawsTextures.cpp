@@ -1217,6 +1217,62 @@ bool OutlawsTextures::DecodeSpriteAtlasHdPixels(const FOutlawsAssets& A, const F
 	return true;
 }
 
+bool OutlawsTextures::DecodeSpriteAtlasFullBrightMask(const FOutlawsAssets& A, const FSpriteAtlas& Atlas, TArray<FColor>& Out, int32& OutW, int32& OutH, int32* OutLitPx)
+{
+	// REQ-FIREBRIGHT3: the remaster's own full-bright layer (an SPX frame's second layer, Flags bit 0: camfire1's flame, not
+	// its logs) where every node's frame has one, as the fire material's mask at 4x: 255 - the layer's alpha, so 0 (kept
+	// bright) where the layer draws the colour and 255 (dims with the light) where it does not
+	constexpr int32 HdCellScale = 4;
+	OutW = OutH = 0;
+	if (OutLitPx) *OutLitPx = 0;
+	TArray<uint8> Spx;
+	TArray<FSprxFrame> Frames;
+	if (Atlas.Nodes.Num() == 0 || !A.Get(FPaths::GetBaseFilename(Atlas.Nwx) + TEXT(".spx"), Spx) || !ParseSprx(Spx, Frames))
+	{
+		return false;
+	}
+	const int32 AW = Atlas.Cols * Atlas.CellW * HdCellScale, AH = Atlas.Rows * Atlas.CellH * HdCellScale;
+	TArray<FColor> Canvas;
+	Canvas.Init(FColor(255, 255, 255, 255), AW * AH);
+	TArray<FColor> Base, Lit;
+	int32 NumLit = 0;
+	for (const FSpriteAtlas::FNode& N : Atlas.Nodes)
+	{
+		if (!Frames.IsValidIndex(N.Cell)) return false;
+		const FSprxFrame& F = Frames[N.Cell];
+		if (!(F.Flags & 1)) return false;     // (no full-bright layer: the 8-bit colours' mask stands)
+		const int32 Layers = 2 + ((F.Flags & 2) ? 1 : 0);
+		const int32 PerLayer = (F.End - F.Offset) / Layers;
+		if (F.Format != SprxBC7 || F.W != N.W * HdCellScale || F.H != N.H * HdCellScale || F.Offset < 0
+			|| F.Offset + PerLayer + Bc7MipBytes(F.W, F.H) > Spx.Num() || Bc7MipBytes(F.W, F.H) > PerLayer)
+		{
+			return false;
+		}
+		Bc7::DecodeImage(Spx.GetData() + F.Offset, F.W, F.H, Base);
+		Bc7::DecodeImage(Spx.GetData() + F.Offset + PerLayer, F.W, F.H, Lit);
+		for (int32 y = 0; y < F.H; ++y)
+		{
+			const int32 Sy = N.bFlipY ? F.H - 1 - y : y;
+			const int32 Dy = N.Y * HdCellScale + y;
+			if (Dy < 0 || Dy >= AH) continue;
+			for (int32 x = 0; x < F.W; ++x)
+			{
+				const int32 Dx = N.X * HdCellScale + x;
+				const int32 j = Sy * F.W + (N.bFlipX ? F.W - 1 - x : x);
+				if ((Base[j].A == 0 && Lit[j].A == 0) || Dx < 0 || Dx >= AW) continue;
+				const float M = 1.f - Lit[j].A / 255.f;           // (the texture is sRGB: stored so it samples back as this)
+				Canvas[Dy * AW + Dx] = FLinearColor(M, M, M, 1.f).ToFColor(true);
+				NumLit += Lit[j].A >= 128;
+			}
+		}
+	}
+	Out = MoveTemp(Canvas);
+	OutW = AW;
+	OutH = AH;
+	if (OutLitPx) *OutLitPx = NumLit;
+	return true;
+}
+
 bool OutlawsTextures::DecodeSpxCellPixels(const TArray<uint8>& Data, const TArray<FSprxFrame>& Frames, int32 Cell, TArray<FColor>& Out, int32& OutW, int32& OutH)
 {
 	OutW = OutH = 0;

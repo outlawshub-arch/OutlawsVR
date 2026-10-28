@@ -142,6 +142,9 @@ namespace OutlawsTextures
 		TArray<uint8> Indices;
 		UTexture* FireMask = nullptr;
 		UTexture* FireMaskHd = nullptr;
+		/** REQ-FIREBRIGHT3: FireMaskHd is the remaster's own full-bright layer (DecodeSpriteAtlasFullBrightMask), once tried. */
+		bool bFireMaskLayer = false;
+		bool bFireMaskLayerTried = false;
 		/** The atlas's opacity at 1x (AtlasW x AtlasH, 1 where drawn): where a held figure's neck is (user 2026-09-29). */
 		TArray<uint8> Alpha;
 		int32 AtlasW = 0, AtlasH = 0;
@@ -170,6 +173,13 @@ namespace OutlawsTextures
 	 * is not 4x its cell.
 	 */
 	OUTLAWSRUNTIME_API bool DecodeSpriteAtlasHdPixels(const FOutlawsAssets& A, const FSpriteAtlas& Atlas, TArray<FColor>& Out, int32& OutW, int32& OutH);
+
+	/** REQ-FIREBRIGHT3: the HD look's fire mask from the remaster's own full-bright layer (each SPX frame's second layer, Flags
+	 *  bit 0), laid out as DecodeSpriteAtlasHdPixels lays the colour: 0 where the layer keeps a texel bright, 255 where it
+	 *  dims with the light.  False when a node's frame has no such layer (the 8-bit colours' mask stands); OutLitPx: the
+	 *  texels the layer keeps bright. */
+	OUTLAWSRUNTIME_API bool DecodeSpriteAtlasFullBrightMask(const FOutlawsAssets& A, const FSpriteAtlas& Atlas, TArray<FColor>& Out, int32& OutW, int32& OutH,
+		int32* OutLitPx = nullptr);
 
 	/** (REQ-MUZZLEFLASH3D) One remaster SPX cell (BC7 mip 0) on the CPU, as it is stored (no flip), from the SPX file's
 	 *  bytes and ParseSprx's frames.  False when the cell is missing or not BC7. */

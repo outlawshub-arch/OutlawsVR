@@ -1739,6 +1739,9 @@ void AOutlawsPlayer::UpdatePlayWarm(AOutlawsLevelActor* L)
 		TEXT("/Game/Outlaws/Runtime/M_OLR_ItemInk.M_OLR_ItemInk") };
 	if (!OldFirstUse()) for (const TCHAR* P : More) if (UMaterialInterface* M = LoadObject<UMaterialInterface>(nullptr, P)) Mats.Add(M);
 	if (L->SpriteMaterial) Mats.Add(L->SpriteMaterial);      // (the blast and the fuse's fire)
+	// (REQ-FIREBRIGHT3) and the fires' material (REQ-FIREBRIGHT2's M_OLR_SpriteFire), so the first campfire seen does not
+	// make its PSO then
+	if (L->SpriteFireMaterial && !AOutlawsLevelActor::OldFireBright2()) Mats.Add(L->SpriteFireMaterial);
 	UStaticMesh* Plane = LoadObject<UStaticMesh>(nullptr, TEXT("/Engine/BasicShapes/Plane.Plane"));
 	const TArray<FVector> Pos = { FVector(0, -1, -1), FVector(0, 1, -1), FVector(0, 1, 1), FVector(0, -1, 1) };
 	const TArray<int32> Tri = { 0, 2, 1, 0, 3, 2 };
@@ -2119,7 +2122,8 @@ bool AOutlawsPlayer::TestShadersReady(float& Quiet, float Hold)
 	// tail of engine debug shaders that may never finish), then Hold seconds more; at most 5 minutes
 	static const TCHAR* const Paths[] = { TEXT("/Game/Outlaws/Runtime/M_OLR_World.M_OLR_World"), TEXT("/Game/Outlaws/Runtime/M_OLR_WorldMasked.M_OLR_WorldMasked"),
 		TEXT("/Game/Outlaws/Core/M_OL_Sprite.M_OL_Sprite"), TEXT("/Game/Outlaws/Core/M_OL_Sky.M_OL_Sky"), TEXT("/Game/Outlaws/Runtime/M_OLR_SkySurface.M_OLR_SkySurface"),
-		TEXT("/Game/Outlaws/Runtime/M_OLR_Held.M_OLR_Held"), TEXT("/Game/Outlaws/Runtime/M_OLR_Water.M_OLR_Water") };
+		TEXT("/Game/Outlaws/Runtime/M_OLR_Held.M_OLR_Held"), TEXT("/Game/Outlaws/Runtime/M_OLR_Water.M_OLR_Water"),
+		TEXT("/Game/Outlaws/Runtime/M_OLR_SpriteFire.M_OLR_SpriteFire") };      // (REQ-FIREBRIGHT3: the fires' own, REQ-FIREBRIGHT2)
 	static double Since = FPlatformTime::Seconds();
 	const ERHIFeatureLevel::Type Fl = GetWorld()->FeatureLevel;
 	int32 Waiting = 0;

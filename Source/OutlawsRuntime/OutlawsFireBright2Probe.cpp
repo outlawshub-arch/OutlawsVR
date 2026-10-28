@@ -6,6 +6,9 @@
 // two materials' shaders at this feature level); then the campfire from 3 m in the 8-bit look and the HD one,
 // firebright2_after_8bit.png and firebright2_after_hd.png (-OLOldFireBright2: firebright2_before_*) in Saved\OLShots.
 // Lines "OLSHOT firebright2 check PASS|FAIL: ..." and "OLSHOT firebright2 RESULT".
+// REQ-FIREBRIGHT3: the HD look's mask is the remaster's own full-bright layer (camfire1.spx's second layer), and (5) the
+// first sight of the campfire (turned away from it 1.5 s, then to it): its frames against the ones before, after the
+// shaders are ready (TestShadersReady waits for M_OLR_SpriteFire too).  -OLNoPrebuild for the before of (5).
 
 #include "OutlawsPlayer.h"
 #include "OutlawsLevelActor.h"
@@ -33,8 +36,9 @@ OL_SHOT_MATCH(OLFireBright2Probe) { return OLFlags::Param(TEXT("OLFireBright2Pro
 OL_SHOT_TEST(OLFireBright2Probe, 1250)
 {
 	static int32 Passes = 0, Fails = 0;
-	static float Wait = 0.f;
+	static float Wait = 0.f, Quiet = -1.f;
 	static TWeakObjectPtr<AOutlawsSpriteActor> Fire;
+	static TArray<float> Before, After;          // (5) the frame times turned away, then the first ones on the campfire
 	if (!L || ShotStep < 0) return;
 	const bool bOld = AOutlawsLevelActor::OldFireBright2();
 	auto Check = [](bool bOk, const FString& What)
@@ -70,7 +74,7 @@ OL_SHOT_TEST(OLFireBright2Probe, 1250)
 	{
 	case 0:
 	{
-		if (ShotTime < 4.f || !bUp) return;
+		if (ShotTime < 4.f || !bUp || !TestShadersReady(Quiet, 1.f)) return;
 		L->bInvincible = true;
 		if (L->bHDTextures) L->SetHDTextures(false);       // (the 8-bit look first)
 		// (1) every sprite: the full-bright art per pixel, the rest as before
@@ -156,14 +160,42 @@ OL_SHOT_TEST(OLFireBright2Probe, 1250)
 		{
 			const FVector At = F->GetActorLocation();
 			const FVector Dir = FRotator(0.0, 72.0, 0.0).Vector();       // (REQ-FIREBRIGHT's look, the snapshot's yaw 72)
-			TeleportTo(At - Dir * 300.0 + FVector(0.0, 0.0, 90.0), FRotator(0.0, 72.0, 0.0), false, true);
-			if (Controller) Controller->SetControlRotation(FRotator(-12.0, 72.0, 0.0));
-			UE_LOG(LogOutlaws, Display, TEXT("OLSHOT firebright2 (4) the campfire %s at %s (light %d)"), *F->OutlawsName, *At.ToString(), F->LightLevel);
+			TeleportTo(At - Dir * 300.0 + FVector(0.0, 0.0, 90.0), FRotator(0.0, 252.0, 0.0), false, true);
+			if (Controller) Controller->SetControlRotation(FRotator(-12.0, 252.0, 0.0));      // (5) turned away first
+			UE_LOG(LogOutlaws, Display, TEXT("OLSHOT firebright2 (4) the campfire %s at %s (light %d); seen before (5): %d"), *F->OutlawsName, *At.ToString(), F->LightLevel,
+				F->Quad && F->Quad->WasRecentlyRendered(0.5f) ? 1 : 0);
 		}
 		else
 		{
 			Check(false, TEXT("(4) no campfire in this level for the shots"));
 		}
+		Before.Reset();
+		After.Reset();
+		Wait = ShotTime + 1.5f;
+		ShotStep = 5;
+		return;
+	}
+	case 5:
+		// (5) the frames turned away from the campfire, then to it
+		if (ShotTime > Wait - 1.f) Before.Add(Dt);
+		if (ShotTime < Wait) return;
+		if (Controller) Controller->SetControlRotation(FRotator(-12.0, 72.0, 0.0));
+		ShotStep = 6;
+		return;
+	case 6:
+	{
+		After.Add(Dt);
+		if (After.Num() < 8) return;
+		TArray<float> S = Before;
+		S.Sort();
+		const float Median = S.Num() ? S[S.Num() / 2] : 0.f, MaxBefore = S.Num() ? S.Last() : 0.f;
+		float MaxAfter = 0.f;
+		FString Ms;
+		for (const float T : After) { MaxAfter = FMath::Max(MaxAfter, T); Ms += FString::Printf(TEXT(" %.1f"), T * 1000.f); }
+		const bool bPrebuild = !OLFlags::Param(TEXT("OLNoPrebuild"));
+		Check(MaxAfter <= FMath::Max(Median * 2.f, Median + 0.008f) || MaxAfter <= MaxBefore + 0.002f, FString::Printf(TEXT("(5) first sight of the campfire (%s, feature level %d, prebuild %s): its first 8 frames%s ms, at most %.1f ms; turned away %d frames, median %.1f ms, most %.1f ms"),
+			Fire.IsValid() ? *Fire->OutlawsName : TEXT("none"), int32(GetWorld()->FeatureLevel), bPrebuild ? TEXT("on") : TEXT("off (-OLNoPrebuild)"), *Ms, MaxAfter * 1000.f, Before.Num(),
+			Median * 1000.f, MaxBefore * 1000.f));
 		Wait = ShotTime + 2.f;
 		ShotStep = 1;
 		return;
@@ -190,6 +222,19 @@ OL_SHOT_TEST(OLFireBright2Probe, 1250)
 			const bool bHdArt = F->SpriteTextureLo && F->SpriteTexture != F->SpriteTextureLo;
 			Check(bHdArt && MaskOf(M) == F->FireMaskHd.Get() && F->FireMaskHd, FString::Printf(TEXT("(4) the HD look: the campfire's HD art %d, its mask the filtered one (%s)"),
 				bHdArt ? 1 : 0, MaskOf(M) ? *MaskOf(M)->GetName() : TEXT("none")));
+			// (REQ-FIREBRIGHT3) that mask the remaster's own full-bright layer: camfire1.spx has one on every frame
+			const TSharedPtr<OutlawsTextures::FSpriteAtlas> At = L->LoadSpriteSet(TEXT("camfire1.nwx"));
+			const UTexture2D* Mk = Cast<UTexture2D>(F->FireMaskHd.Get());
+			const int32 Mw = Mk ? Mk->GetSizeX() : 0, Mh = Mk ? Mk->GetSizeY() : 0;
+			TArray<FColor> Px;
+			int32 W = 0, H = 0, Lit = 0, Drawn = 0;
+			if (At && L->GetAssets() && OutlawsTextures::DecodeSpriteAtlasHdPixels(*L->GetAssets(), *At, Px, W, H)) for (const FColor& C : Px) Drawn += C.A >= 128;
+			if (At && L->GetAssets()) OutlawsTextures::DecodeSpriteAtlasFullBrightMask(*L->GetAssets(), *At, Px, W, H, &Lit);
+			const float Share = Drawn ? float(Lit) / Drawn : 0.f;
+			// (the 8-bit colours' mask is 1x the atlas, the layer's 4x; LoadSpriteSet's is the set's every-choreography atlas, not the fire's own, so without its masks)
+			Check(At && Mw == At->AtlasW * 4 && Mh == At->AtlasH * 4 && Share > 0.2f && Share < 0.8f,
+				FString::Printf(TEXT("(4) the HD mask from camfire1.spx's full-bright layer (%dx%d, the atlas %dx%d): %d of the HD art's %d drawn texels (%.1f %%) kept bright"),
+				Mw, Mh, At ? At->AtlasW : 0, At ? At->AtlasH : 0, Lit, Drawn, Share * 100.f));
 		}
 		Shot(TEXT("hd"));
 		Wait = ShotTime + 1.5f;
