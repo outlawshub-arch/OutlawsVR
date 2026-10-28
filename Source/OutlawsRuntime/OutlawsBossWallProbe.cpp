@@ -7,8 +7,10 @@
 // made a hunter put there, the player past the opening out of his view; (4) an ordinary bad guy (no hunter) there, sent
 // straight at that step.  Each: the longest spell he stands still on a move (under 25 cm in a second, not shooting), how
 // long from the first such press till he is a metre off it, how long till he sees the player; his move, what blocked it and
-// the sector's walls by him as he is first pressed.  Pass: off it within 6 s of the first press, no press over 3 s, and a
+// the sector's walls by him as he is first pressed.  Pass: off it within 6.5 s of the first press, no press over 3 s, and a
 // hunter sees the player in the case's time.  Lines "OLSHOT bosswall check PASS|FAIL" and "OLSHOT bosswall RESULT".
+// All times are his own (BUG-BOSSWALL 2026-10-29: the bad guys run at the player's pace, EnemyPace, 0.3 of real time for a
+// player standing still, so real seconds read three times long; the real ones are printed beside them).
 // Co-op: -OLCoopAuto -OLCoopTest=bosswall -OLCoopLevel=townex on the host and its client (UOutlawsCoop::TickBossWallTest).
 #include "OutlawsEnemy.h"
 #include "OutlawsRuntime.h"
@@ -40,36 +42,44 @@ namespace OutlawsBossWallProbeLocal
 	/** A press measured on one bad guy: still on a move (under 25 cm a second), how long, and when he got off it. */
 	struct FRun
 	{
+		// (Time and the rest in his own time; the Real* twins in real seconds, for the report)
 		double Time = 0, Pressed = 0, LongestPress = 0, FirstPressAt = -1, FreeAt = -1, SeenAt = -1, Path = 0, StillSince = 0;
+		double RealTime = 0, RealLongestPress = 0, RealFirstPressAt = -1, RealFreeAt = -1, RealSeenAt = -1, RealStillSince = 0, PaceSum = 0;
 		FVector PressAt = FVector::ZeroVector, Start = FVector::ZeroVector, Last = FVector::ZeroVector, Anchor = FVector::ZeroVector;
 		int32 Slides0 = 0, Shots0 = 0;
 		bool bDumped = false;
-		/** One frame: bMoving (on a move, not shooting) and where he is; true while he is pressed. */
-		bool Step(double Dt, const FVector& Now, bool bMoving)
+		/** One frame of Dt real seconds at his Pace: bMoving (on a move, not shooting) and where he is; true while he is pressed. */
+		bool Step(double Dt, double Pace, const FVector& Now, bool bMoving)
 		{
-			Time += Dt;
+			Time += Dt * Pace;
+			RealTime += Dt;
+			PaceSum += Dt * Pace;
 			Path += FVector::Dist2D(Now, Last);
 			Last = Now;
-			if (!bMoving || FVector::Dist2D(Now, Anchor) > 25.0) { Anchor = Now; StillSince = Time; }
+			if (!bMoving || FVector::Dist2D(Now, Anchor) > 25.0) { Anchor = Now; StillSince = Time; RealStillSince = RealTime; }
 			const double Still = Time - StillSince;
-			// (a spell counts from where he stopped: under 25 cm for 1 s)
+			// (a spell counts from where he stopped: under 25 cm for 1 s of his)
 			const bool bPress = bMoving && Still > 1.0;
 			if (bPress)
 			{
-				Pressed += Dt;
+				Pressed += Dt * Pace;
 				LongestPress = FMath::Max(LongestPress, Still);
-				if (FirstPressAt < 0.0) { FirstPressAt = StillSince; PressAt = Anchor; }
+				RealLongestPress = FMath::Max(RealLongestPress, RealTime - RealStillSince);
+				if (FirstPressAt < 0.0) { FirstPressAt = StillSince; RealFirstPressAt = RealStillSince; PressAt = Anchor; }
 			}
-			if (FirstPressAt >= 0.0 && FreeAt < 0.0 && FVector::Dist2D(Now, PressAt) > 100.0) FreeAt = Time;
+			if (FirstPressAt >= 0.0 && FreeAt < 0.0 && FVector::Dist2D(Now, PressAt) > 100.0) { FreeAt = Time; RealFreeAt = RealTime; }
 			return bPress;
 		}
+		void Seen() { if (SeenAt < 0.0) { SeenAt = Time; RealSeenAt = RealTime; } }
 		double Free() const { return FirstPressAt < 0.0 ? 0.0 : (FreeAt < 0.0 ? -1.0 : FreeAt - FirstPressAt); }
+		double RealFree() const { return RealFirstPressAt < 0.0 ? 0.0 : (RealFreeAt < 0.0 ? -1.0 : RealFreeAt - RealFirstPressAt); }
 		FString Describe() const
 		{
-			return FString::Printf(TEXT("%s; still on a move %.1f s in all, the longest spell %.1f s; a metre off the first press %s; sees the player %s; walked %.1f m"),
-				FirstPressAt < 0.0 ? TEXT("never pressed") : *FString::Printf(TEXT("first pressed at %.1f s at %s"), FirstPressAt, *PressAt.ToCompactString()), Pressed, LongestPress,
-				FirstPressAt < 0.0 ? TEXT("(none)") : (Free() < 0.0 ? TEXT("never") : *FString::Printf(TEXT("%.1f s after it"), Free())),
-				SeenAt < 0.0 ? TEXT("never") : *FString::Printf(TEXT("at %.1f s"), SeenAt), Path / 100.0);
+			return FString::Printf(TEXT("in his own time (pace %.2f; real seconds in brackets): %s; still on a move %.1f s in all, the longest spell %.1f s (%.1f); a metre off the first press %s; sees the player %s; walked %.1f m in %.1f s (%.1f)"),
+				RealTime > 0.0 ? PaceSum / RealTime : 1.0,
+				FirstPressAt < 0.0 ? TEXT("never pressed") : *FString::Printf(TEXT("first pressed at %.1f s (%.1f) at %s"), FirstPressAt, RealFirstPressAt, *PressAt.ToCompactString()), Pressed, LongestPress, RealLongestPress,
+				FirstPressAt < 0.0 ? TEXT("(none)") : (Free() < 0.0 ? TEXT("never") : *FString::Printf(TEXT("%.1f s (%.1f) after it"), Free(), RealFree())),
+				SeenAt < 0.0 ? TEXT("never") : *FString::Printf(TEXT("at %.1f s (%.1f)"), SeenAt, RealSeenAt), Path / 100.0, Time, RealTime);
 		}
 	};
 	/** (3) and (4): where the hunt's step from a spot lies square behind something solid. */
@@ -368,8 +378,8 @@ namespace OutlawsBossWallProbeLocal
 			return false;
 		}
 		const FVector Now = E->GetActorLocation();
-		const bool bPress = R.Step(Dt, Now, IsMoving(E));
-		if (R.SeenAt < 0.0 && E->DebugBossState().Contains(TEXT("sees 1"))) R.SeenAt = R.Time;
+		const bool bPress = R.Step(Dt, E->CustomTimeDilation, Now, IsMoving(E));
+		if (R.SeenAt < 0.0 && E->DebugBossState().Contains(TEXT("sees 1"))) R.Seen();
 		if (bPress && !R.bDumped)
 		{
 			// what he is after, what holds him, the walls by him, and the hunt's next opening from here
@@ -472,8 +482,8 @@ void UOutlawsCoop::TickBossWallTest(double Now, AOutlawsLevelActor* L, AOutlawsP
 	{
 		AOutlawsEnemy* B = BwBoss.Get();
 		if (!B || B->IsDead()) { BwCheck(false, TEXT("the boss is gone")); BwStep = 5; BwAt = Now + 6.0; return; }
-		BwRun.Step(Dt, B->GetActorLocation(), IsMoving(B));
-		if (BwRun.SeenAt < 0.0 && B->DebugBossState().Contains(TEXT("sees 1"))) BwRun.SeenAt = BwRun.Time;
+		BwRun.Step(Dt, B->CustomTimeDilation, B->GetActorLocation(), IsMoving(B));
+		if (BwRun.SeenAt < 0.0 && B->DebugBossState().Contains(TEXT("sees 1"))) BwRun.Seen();
 		if (BwRun.Time < 30.0) return;
 		const double Free = BwRun.Free();
 		BwCheck(Free >= 0.0 && Free <= 6.5 && BwRun.LongestPress <= 3.0 && BwRun.SeenAt >= 0.0, FString::Printf(TEXT("the host's %s: %s, %d slides; now %s"), *B->GetOutlawsName(), *BwRun.Describe(),
@@ -517,8 +527,9 @@ void UOutlawsCoop::TickBossWallTest(double Now, AOutlawsLevelActor* L, AOutlawsP
 		AOutlawsEnemy* B = BwBoss.Get();
 		if (!B) { BwCheck(false, TEXT("the boss's copy is gone")); BwStep = 22; return; }
 		// (the copy's move is the host's, its sub-state not sent: still under 25 cm a second counts within 1.5 m of the
-		// corner by the door's leaf where the snapshot's boss stood pressed, UE 8340 -1240)
-		BwRun.Step(Dt, B->GetActorLocation(), !B->IsDead() && FVector::Dist2D(B->GetActorLocation(), FVector(8340.0, -1240.0, 0.0)) < 150.0);
+		// corner by the door's leaf where the snapshot's boss stood pressed, UE 8340 -1240; the copy is not paced itself, it
+		// follows the host's at the shared pace: EnemyPace)
+		BwRun.Step(Dt, L->EnemyPace(), B->GetActorLocation(), !B->IsDead() && FVector::Dist2D(B->GetActorLocation(), FVector(8340.0, -1240.0, 0.0)) < 150.0);
 		if (BwRun.Time < 28.0) return;
 		const double Free = BwRun.Free();
 		BwCheck(Free >= 0.0 && Free <= 6.5 && BwRun.LongestPress <= 3.0, FString::Printf(TEXT("the client's copy of %s: %s; now %s"), *B->GetOutlawsName(), *BwRun.Describe(), *B->GetActorLocation().ToCompactString()));
