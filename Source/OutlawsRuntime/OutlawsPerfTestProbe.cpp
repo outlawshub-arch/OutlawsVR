@@ -12,6 +12,8 @@
 // REQ-PERFDIFF: the row opens the difficulty page (lit on the last difficulty pressed this session, else Bad); its Back goes to
 // New Game with no run and nothing saved; the runs pick Good, Ugly and Bad there, each run at its pick ("picked" in the dump),
 // the level built with the bad guys of its pick (the build's "objects:" line; the three sets differ).
+// REQ-PERFCARD: the results card to the right of the counts after the exit, alone after each End Game, its rows against the
+// capture's live frames read a second way; shots perfcard_run1_flat, perfcard_run2_vr, perfcard_run3_flat in Saved\OLShots.
 // -OLPerfTestProbe=closed quits in the first run instead (its "game closed" end line is the runner's to find).
 // "OLPERFTEST check PASS|FAIL: ..." a check, then "OLSHOT perftest: PASS|FAIL" and the exit.  See OutlawsPlayer.h
 // (TickPerfTestProbe).
@@ -24,12 +26,14 @@
 #include "OutlawsMenuDoc.h"
 #include "OutlawsBuildInfo.h"
 #include "OutlawsDeviceProfile.h"
+#include "OutlawsStats.h"
 #include "GameFramework/Controller.h"
 #include "HAL/FileManager.h"
 #include "HAL/PlatformMisc.h"
 #include "Misc/FileHelper.h"
 #include "Misc/Paths.h"
 #include "Misc/SecureHash.h"
+#include "UnrealClient.h"
 
 namespace
 {
@@ -46,6 +50,7 @@ namespace
 		int32 Enemies1 = -1;
 		TMap<FString, FString> SavedBefore;
 		TMap<FString, int32> Enemies;  // (REQ-PERFDIFF) "<level> <difficulty>": the run's bad guys at its start
+		bool bWasVR = false;           // (REQ-PERFCARD: the layout put back after the VR shot)
 		bool bDone = false;
 	};
 	FPerfProbe GPp;
@@ -283,6 +288,42 @@ void AOutlawsPlayer::TickPerfTestProbe(float Dt)
 		}
 		return bRow && bPage && Press(Names[Pick]);
 	};
+	// (REQ-PERFCARD) the results card as shown (WantPanels: 2 beside the counts, 1 alone) against the capture's own numbers, read
+	// here a second way (the live frames, their mean, the slowest, those over 30 ms), and a shot of it
+	auto CardCheck = [&](const TCHAR* When, int32 WantPanels)
+	{
+		TArray<FString> Lines;
+		FFileHelper::LoadFileToStringArray(Lines, *OutlawsPerfTest::CapturePath());
+		int32 CF = -1, CP = -1, Live = 0, Over30 = 0;
+		double Sum = 0.0, Worst = 0.0;
+		for (const FString& Line : Lines)
+		{
+			TArray<FString> T;
+			Line.ParseIntoArray(T, TEXT(","), false);
+			if (Line.StartsWith(TEXT("t_s,"))) { CF = T.IndexOfByKey(TEXT("frame_ms")); CP = T.IndexOfByKey(TEXT("in_play")); continue; }
+			if (CF < 0 || CP < 0 || !T.IsValidIndex(CP) || !T.IsValidIndex(CF) || T[CP] != TEXT("1")) continue;
+			const double F = FCString::Atod(*T[CF]);
+			++Live; Sum += F; Worst = FMath::Max(Worst, F); Over30 += F > 30.0 ? 1 : 0;
+		}
+		const OutlawsPerfTest::FCardNumbers& N = OutlawsPerfTest::CardShown();
+		const double Fps = Sum > 0.0 ? 1000.0 * Live / Sum : 0.0;
+		const bool bNumbers = Live > 0 && N.Frames == Live && N.Stutters == Over30 && FMath::IsNearlyEqual(N.WorstMs, Worst, 0.001) && FMath::IsNearlyEqual(N.Fps, Fps, 0.01)
+			&& N.LowFps <= N.Fps + 0.01 && N.OnTimePct >= 0.0 && N.OnTimePct <= 100.0;
+		TArray<FOutlawsStatsPanel> Panels;
+		bool bTwo = false;
+		UOutlawsStats::Panels(this, Panels, bTwo);
+		const FOutlawsStatsPanel* Card = Panels.Num() > 0 ? &Panels.Last() : nullptr;
+		const bool bShown = Panels.Num() == WantPanels && Card && Card->Name == TEXT("Performance") && Card->Rows == OutlawsPerfTest::CardRows()
+			&& Card->Rows.Num() == 14 && Card->Rows[0].Value.StartsWith(FString::Printf(TEXT("%.0f fps"), Fps)) && Card->Rows[6].Value == FString::FromInt(Over30)
+			&& Card->Rows[3].Value == FString::Printf(TEXT("%.0f ms"), Worst);
+		FString Said;
+		if (Card) for (const TPair<FString, FString>& R : Card->Rows) Said += FString::Printf(TEXT("%s%s %s"), Said.IsEmpty() ? TEXT("") : TEXT(" | "), *R.Key, *R.Value);
+		PpCheck(bNumbers && bShown, FString::Printf(TEXT("run %d, %s: %d card(s) up (wanted %d), the last \"%s\": %s (the capture: %d live frames, %.1f fps, worst %.1f ms, %d over 30 ms)"), Pp.Run, When,
+			Panels.Num(), WantPanels, Card ? *Card->Name : TEXT("none"), *Said, Live, Fps, Worst, Over30));
+		const FString Shot = FString::Printf(TEXT("perfcard_run%d_%s"), Pp.Run, bVR ? TEXT("vr") : TEXT("flat"));
+		FScreenshotRequest::RequestScreenshot(FPaths::ProjectSavedDir() / TEXT("OLShots") / Shot + TEXT(".png"), false, false);
+		UE_LOG(LogOutlaws, Display, TEXT("OLPERFTEST shot %s.png"), *Shot);
+	};
 	switch (Pp.Step)
 	{
 	case 0:
@@ -371,13 +412,14 @@ void AOutlawsPlayer::TickPerfTestProbe(float Dt)
 	case 9:
 		// the level's exit
 		L->CompleteLevel(TEXT("the performance test probe's exit"));
-		Wait(0.5, 10.0);
+		Wait(2.0, 10.0);
 		return;
 	case 10:
 	{
 		const int64 Rows0 = CaptureRows();
 		PpCheck(!OutlawsPerfTest::IsRunning() && OutlawsPerfTest::LastEndWhy() == TEXT("level exit") && OutlawsPerfTest::LastEndFrames() > 0 && Rows0 == OutlawsPerfTest::LastEndFrames(),
 			FString::Printf(TEXT("run 1: the exit ended it: %s, %lld frames, %lld rows in the capture"), *OutlawsPerfTest::LastEndWhy(), OutlawsPerfTest::LastEndFrames(), Rows0));
+		CardCheck(TEXT("the exit"), 2);
 		Wait(1.0, 120.0);
 		return;
 	}
@@ -421,6 +463,8 @@ void AOutlawsPlayer::TickPerfTestProbe(float Dt)
 		}
 		PpCheck(bMenuOpen && !bSave && !bLoad && bRestart && End != INDEX_NONE, FString::Printf(TEXT("run %d: the pause page has no Save or Load (Restart Level and End Game kept): %s"), Pp.Run, *Rows()));
 		if (End != INDEX_NONE) MenuActivate(1, End);
+		Pp.bWasVR = bVR;
+		if (Pp.Run == 2) bVR = true;          // (REQ-PERFCARD: the second run's card shot laid out for VR, the third's on the flat screen)
 		Wait(0.5, 10.0);
 		return;
 	}
@@ -430,16 +474,18 @@ void AOutlawsPlayer::TickPerfTestProbe(float Dt)
 		if (MenuPage) Yes = MenuPage->Items.IndexOfByPredicate([](const OutlawsMenu::FItem& It) { return It.Action == TEXT("ev_exit_game_confirm"); });
 		PpCheck(Yes != INDEX_NONE, FString::Printf(TEXT("run %d: End Game asks first (%s: %s)"), Pp.Run, MenuPage ? *MenuPage->File : TEXT("none"), *Rows()));
 		if (Yes != INDEX_NONE) MenuActivate(1, Yes);
-		Wait(0.5, 10.0);
+		Wait(2.0, 10.0);
 		return;
 	}
 	case 16:
 		PpCheck(!OutlawsPerfTest::IsRunning() && OutlawsPerfTest::LastEndWhy() == TEXT("quit from the pause menu") && OutlawsPerfTest::LastEndFrames() > 0 && CaptureRows() == OutlawsPerfTest::LastEndFrames(),
 			FString::Printf(TEXT("run %d: End Game ended it: %s, %lld frames, %lld rows in the capture"), Pp.Run, *OutlawsPerfTest::LastEndWhy(), OutlawsPerfTest::LastEndFrames(), CaptureRows()));
+		CardCheck(TEXT("End Game"), 1);
 		Wait(1.0, 120.0);
 		return;
 	case 17:
 		if (!AtMenu() || OutlawsPerfTest::IsOn()) { Late(TEXT("the main menu after End Game")); return; }
+		bVR = Pp.bWasVR;
 		PpCheck(true, FString::Printf(TEXT("run %d: the main menu back after End Game"), Pp.Run));
 		SavedCheck(TEXT("the run and End Game"));
 		Wait(1.0, 10.0);

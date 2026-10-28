@@ -184,6 +184,9 @@ public:
 	static void ShowOn(AOutlawsLevelActor* L, AOutlawsMovieScreen* Screen);
 	/** No cutscene to play: the panels alone on the black for a few seconds, then the next level (false: none to show). */
 	static bool HoldBetweenLevels(AOutlawsLevelActor* L);
+	/** REQ-PERFCARD: a performance test quit from the pause menu: its results card alone on the black for a while, then the main
+	 *  menu (false: no card to show). */
+	static bool HoldPerfCard(AOutlawsLevelActor* L);
 
 	// co-op (the links hand these over)
 	void OnClientStats(int32 Who, const FOutlawsLevelStats& In);

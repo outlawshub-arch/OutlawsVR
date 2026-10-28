@@ -593,6 +593,21 @@ bool UOutlawsStats::Panels(const UObject* Context, TArray<FOutlawsStatsPanel>& O
 		bTwo = true;
 		return true;
 	}
+	// REQ-PERFCARD (user 28 Oct): a performance test's results card, the counts' style and size, to their right; alone when the
+	// run was quit from the pause menu (no counts show then)
+	FOutlawsStatsPanel PerfCard;
+	const bool bPerfCard = OutlawsPerfTest::CardRows().Num() > 0 && OutlawsPerfTest::CardLevel().Equals(S->Level, ESearchCase::IgnoreCase);
+	if (bPerfCard)
+	{
+		PerfCard.Name = TEXT("Performance");
+		PerfCard.Sub = Title;
+		PerfCard.Rows = OutlawsPerfTest::CardRows();
+		if (OutlawsPerfTest::CardAlone())
+		{
+			Out.Add(PerfCard);
+			return true;
+		}
+	}
 	const FString Name = L->MpPlayerName.TrimStartAndEnd().IsEmpty() ? FString(TEXT("James Anderson")) : L->MpPlayerName.TrimStartAndEnd();
 	TArray<TPair<FString, FString>> Best;
 	TimeRows(L, Best);          // (REQ-LEVELTIMER: after the finish, the best time and the new best)
@@ -606,6 +621,11 @@ bool UOutlawsStats::Panels(const UObject* Context, TArray<FOutlawsStatsPanel>& O
 		Card.Sub = TEXT("Marshal Training");
 		Card.Rows = L->HomCardRows;
 		Out.Add(Card);
+		bTwo = true;
+	}
+	if (bPerfCard)
+	{
+		Out.Add(PerfCard);
 		bTwo = true;
 	}
 	return true;
@@ -693,6 +713,30 @@ bool UOutlawsStats::HoldBetweenLevels(AOutlawsLevelActor* L)
 	L->FadeCamera(1.f, 0.f, 1.0f, false);
 	const UCameraComponent* Cam = P->FindComponentByClass<UCameraComponent>();
 	UE_LOG(LogOutlaws, Log, TEXT("OLSTATS no cutscene after %s: the counts on the black for %.0f s"), *S->Level, StatsHoldSeconds);
+	L->Movie->HoldStats(Cam ? Cam->GetComponentLocation() : P->GetActorLocation(), Cam ? Cam->GetForwardVector() : P->GetActorForwardVector(), StatsHoldSeconds);
+	L->SetActorTickEnabled(true);
+	return true;
+}
+
+bool UOutlawsStats::HoldPerfCard(AOutlawsLevelActor* L)
+{
+	UOutlawsStats* S = L ? Get(L) : nullptr;
+	UWorld* World = L ? L->GetWorld() : nullptr;
+	AOutlawsPlayer* P = S ? S->LocalPlayer() : nullptr;
+	if (!S || !World || !P || L->IsFrontEnd() || L->Movie || OutlawsPerfTest::CardRows().Num() == 0 || !OutlawsPerfTest::CardLevel().Equals(S->Level, ESearchCase::IgnoreCase)) return false;
+	// as HoldBetweenLevels, the card alone (Panels), then the main menu as End Game goes there
+	OutlawsPerfTest::SetCardAlone(true);
+	L->Clear();
+	P->GetCharacterMovement()->DisableMovement();
+	P->GetCharacterMovement()->Velocity = FVector::ZeroVector;
+	FActorSpawnParameters SP;
+	SP.ObjectFlags |= RF_Transient;
+	L->Movie = World->SpawnActor<AOutlawsMovieScreen>(AOutlawsMovieScreen::StaticClass(), FTransform::Identity, SP);
+	if (!L->Movie) return false;
+	L->Movie->OnFinished.AddUObject(L, &AOutlawsLevelActor::ReturnToFrontEnd);
+	L->FadeCamera(1.f, 0.f, 1.0f, false);
+	const UCameraComponent* Cam = P->FindComponentByClass<UCameraComponent>();
+	UE_LOG(LogOutlaws, Log, TEXT("OLSTATS performance test quit in %s: its results card alone on the black for %.0f s"), *S->Level, StatsHoldSeconds);
 	L->Movie->HoldStats(Cam ? Cam->GetComponentLocation() : P->GetActorLocation(), Cam ? Cam->GetForwardVector() : P->GetActorForwardVector(), StatsHoldSeconds);
 	L->SetActorTickEnabled(true);
 	return true;

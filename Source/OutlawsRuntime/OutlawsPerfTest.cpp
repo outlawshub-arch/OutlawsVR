@@ -37,6 +37,11 @@ namespace
 	int32 GPerfNewGameDiff = -1;                   // the difficulty last pressed on New Game this session (-1 none)
 	bool GPerfSweep = false;                       // (REQ-PERFSWEEP) the run is a Settings sweep
 	bool GPerfPicked = false;                      // (REQ-PERFDIFF) its difficulty picked on its own page, until the run is over
+	// (REQ-PERFCARD) the ended run's results card, until the main menu
+	FString GPerfCardLevel;
+	TArray<TPair<FString, FString>> GPerfCardRows;
+	OutlawsPerfTest::FCardNumbers GPerfCardShown;
+	bool GPerfCardAlone = false;
 	FDelegateHandle GPerfExitHandle, GPerfTerminateHandle;
 
 	// (the game closed in the run: the engine's exit; on the Quest the app's end, which may come without it)
@@ -164,7 +169,113 @@ void OutlawsPerfTest::End(const TCHAR* Why)
 		return;
 	}
 	UE_LOG(LogOutlaws, Log, TEXT("OLPERF test end: %s (%lld frames)"), Why, GPerfEndFrames);
+	// (REQ-PERFCARD) the results card from the capture just closed, its settings from the run's dump; none as the game closes
+	GPerfCardRows.Reset();
+	GPerfCardLevel.Reset();
+	if (FCString::Strcmp(Why, TEXT("game closed")) == 0) return;
+	TMap<FString, FString> Settings;
+	TArray<FString> Lines;
+	FFileHelper::LoadFileToStringArray(Lines, *GPerfSettings);
+	for (const FString& Line : Lines)
+	{
+		FString K, V;
+		if (Line.Split(TEXT(": "), &K, &V)) Settings.Add(K, V);
+	}
+	const double Hz = FCString::Atod(*Settings.FindRef(TEXT("refresh_rate")));       // ("72 Hz", or "not available": 0)
+	if (CardNumbers(GPerfCapture, Hz, GPerfCardShown))
+	{
+		GPerfCardRows = CardRowsFor(GPerfCardShown, Settings);
+		GPerfCardLevel = GPerfLevel;
+		FString Said;
+		for (const TPair<FString, FString>& R : GPerfCardRows) Said += FString::Printf(TEXT("%s%s %s"), Said.IsEmpty() ? TEXT("") : TEXT(" | "), *R.Key, *R.Value);
+		UE_LOG(LogOutlaws, Log, TEXT("OLPERF test card (%d live frames): %s"), GPerfCardShown.Frames, *Said);
+	}
 }
+
+bool OutlawsPerfTest::CardNumbers(const FString& Capture, double Hz, FCardNumbers& Out)
+{
+	Out = FCardNumbers();
+	Out.Hz = Hz;
+	TArray<FString> Lines;
+	if (Capture.IsEmpty() || !FFileHelper::LoadFileToStringArray(Lines, *Capture)) return false;
+	int32 CF = -1, CG = -1, CR = -1, CGpu = -1, CPlay = -1, CWait = -1;
+	TArray<double> Frames;
+	double SumG = 0.0, SumR = 0.0, SumGpu = 0.0;
+	TArray<FString> T;
+	for (const FString& Line : Lines)
+	{
+		if (Line.StartsWith(TEXT("t_s,")))
+		{
+			// (the header: at the start and again at the end, a bucket's column perhaps added between)
+			TArray<FString> Head;
+			Line.ParseIntoArray(Head, TEXT(","), false);
+			CF = Head.IndexOfByKey(TEXT("frame_ms")); CG = Head.IndexOfByKey(TEXT("game_ms")); CR = Head.IndexOfByKey(TEXT("render_ms"));
+			CGpu = Head.IndexOfByKey(TEXT("gpu_ms")); CPlay = Head.IndexOfByKey(TEXT("in_play")); CWait = Head.IndexOfByKey(TEXT("xr_wait_ms"));
+			continue;
+		}
+		if (Line.IsEmpty() || CF < 0 || CPlay < 0) continue;
+		Line.ParseIntoArray(T, TEXT(","), false);
+		if (!T.IsValidIndex(CPlay) || T[CPlay] != TEXT("1") || !T.IsValidIndex(CF)) continue;
+		const double F = FCString::Atod(*T[CF]);
+		Frames.Add(F);
+		const double Wait = T.IsValidIndex(CWait) ? FCString::Atod(*T[CWait]) : 0.0;
+		SumG += T.IsValidIndex(CG) ? FMath::Max(0.0, FCString::Atod(*T[CG]) - Wait) : 0.0;
+		SumR += T.IsValidIndex(CR) ? FCString::Atod(*T[CR]) : 0.0;
+		SumGpu += T.IsValidIndex(CGpu) ? FCString::Atod(*T[CGpu]) : 0.0;
+		Out.Stutters += F > 30.0 ? 1 : 0;
+	}
+	Out.Frames = Frames.Num();
+	if (Frames.Num() == 0) return false;
+	double Sum = 0.0;
+	for (const double F : Frames) Sum += F;
+	const double Budget = 1000.0 / (Hz > 0.0 ? Hz : 72.0);      // (no rate known: the Quest's lowest)
+	int32 OnTime = 0;
+	for (const double F : Frames) OnTime += F <= Budget * 1.05 ? 1 : 0;
+	const double N = double(Frames.Num());
+	Out.Fps = Sum > 0.0 ? 1000.0 * N / Sum : 0.0;
+	Out.OnTimePct = 100.0 * OnTime / N;
+	TArray<double> Slow = Frames;
+	Slow.Sort([](double A, double B) { return A > B; });
+	Out.WorstMs = Slow[0];
+	const int32 N1 = FMath::Max(1, Frames.Num() / 100);
+	double S1 = 0.0;
+	for (int32 i = 0; i < N1; ++i) S1 += Slow[i];
+	Out.LowFps = S1 > 0.0 ? 1000.0 * N1 / S1 : 0.0;
+	Out.GameMs = SumG / N;
+	Out.RenderMs = SumR / N;
+	Out.GpuMs = SumGpu / N;
+	Out.Limit = Out.GpuMs >= Out.GameMs && Out.GpuMs >= Out.RenderMs ? TEXT("the GPU") : Out.RenderMs >= Out.GameMs ? TEXT("rendering") : TEXT("the game");
+	return true;
+}
+
+TArray<TPair<FString, FString>> OutlawsPerfTest::CardRowsFor(const FCardNumbers& N, const TMap<FString, FString>& S)
+{
+	// short rows in plain words (user 28 Oct), then the run's settings a row each, as the dump has them
+	auto Get = [&S](const TCHAR* K) { FString V = S.FindRef(K).TrimStartAndEnd(); int32 At = V.Find(TEXT(" (")); return At > 0 ? V.Left(At) : V; };
+	TArray<TPair<FString, FString>> R;
+	R.Emplace(TEXT("Frame rate"), N.Hz > 0.0 ? FString::Printf(TEXT("%.0f fps of %.0f Hz"), N.Fps, N.Hz) : FString::Printf(TEXT("%.0f fps"), N.Fps));
+	R.Emplace(TEXT("Frames on time"), FString::Printf(TEXT("%.0f %%"), N.OnTimePct));
+	R.Emplace(TEXT("Worst 1 %"), FString::Printf(TEXT("%.0f fps"), N.LowFps));
+	R.Emplace(TEXT("Worst frame"), FString::Printf(TEXT("%.0f ms"), N.WorstMs));
+	R.Emplace(TEXT("Game, render, GPU"), FString::Printf(TEXT("%.1f, %.1f, %.1f ms"), N.GameMs, N.RenderMs, N.GpuMs));
+	R.Emplace(TEXT("Held back by"), N.Limit);
+	R.Emplace(TEXT("Stutters over 30 ms"), FString::FromInt(N.Stutters));
+	const FString HzText = Get(TEXT("refresh_rate"));
+	R.Emplace(TEXT("Resolution"), FString::Printf(TEXT("%s %%%s"), *Get(TEXT("resolution_percent")), HzText.EndsWith(TEXT("Hz")) ? *(TEXT(", ") + HzText) : TEXT("")));
+	R.Emplace(TEXT("Lamps"), Get(TEXT("lamp_lights")));
+	R.Emplace(TEXT("Remastered"), Get(TEXT("hd_art")));
+	R.Emplace(TEXT("Object Detail"), Get(TEXT("object_detail")));
+	R.Emplace(TEXT("Quest 2 Mode"), Get(TEXT("quest2_mode")));
+	R.Emplace(TEXT("Difficulty"), Get(TEXT("difficulty")));
+	R.Emplace(TEXT("Bad guys"), Get(TEXT("bad_guys")));
+	return R;
+}
+
+const FString& OutlawsPerfTest::CardLevel() { return GPerfCardLevel; }
+const TArray<TPair<FString, FString>>& OutlawsPerfTest::CardRows() { return GPerfCardRows; }
+const OutlawsPerfTest::FCardNumbers& OutlawsPerfTest::CardShown() { return GPerfCardShown; }
+bool OutlawsPerfTest::CardAlone() { return GPerfCardAlone; }
+void OutlawsPerfTest::SetCardAlone(bool bAlone) { GPerfCardAlone = bAlone; }
 
 bool OutlawsPerfTest::IsSweep() { return GPerfSweep && GPerfState != EPerfTestState::Off; }
 
@@ -197,6 +308,9 @@ void OutlawsPerfTest::Finished()
 	GPerfState = EPerfTestState::Off;
 	GPerfSweep = false;
 	GPerfPicked = false;
+	GPerfCardRows.Reset();                          // (REQ-PERFCARD: shown, the main menu up)
+	GPerfCardLevel.Reset();
+	GPerfCardAlone = false;
 	UE_LOG(LogOutlaws, Log, TEXT("OLRT performance test over: the main menu again (saves, achievements, best times and the settings file as ever from here)"));
 }
 

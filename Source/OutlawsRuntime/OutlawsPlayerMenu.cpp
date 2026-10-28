@@ -2067,12 +2067,15 @@ void AOutlawsPlayer::MenuActivate(int32 Hand, int32 Index)
 			// (between two levels, in the fade or the cutscene, there is no level to save: the next level's opening instead,
 			// user 2026-10-02)
 			// (REQ-PERFTESTMODE: a performance test run saves nothing; its capture ends here)
+			const bool bPerfRun = OutlawsPerfTest::IsRunning() && !OutlawsPerfTest::IsSweep();
 			if (OutlawsPerfTest::IsOn()) OutlawsPerfTest::End(TEXT("quit from the pause menu"));
 			else if (AOutlawsLevelActor* LS = Level.Get(); LS && !LS->IsFrontEnd() && !LS->IsPlayerDead())
 			{
 				if (!LS->SaveGame(-1)) LS->SaveLevelOpening();
 			}
 			CloseMenu();
+			// (REQ-PERFCARD: a performance test's results card alone on the black first, then the main menu)
+			if (bPerfRun && UOutlawsStats::HoldPerfCard(Level.Get())) return;
 			if (AOutlawsLevelActor* L = Level.Get()) L->ReturnToFrontEnd();
 			return;
 		}

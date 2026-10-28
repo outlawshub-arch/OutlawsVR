@@ -63,6 +63,30 @@ namespace OutlawsPerfTest
 	/** Where the run's difficulty came from, for the dumps: "picked", or the last New Game choice, or none (Bad). */
 	OUTLAWSRUNTIME_API FString DifficultyFrom();
 
+	/** REQ-PERFCARD (user 28 Oct): a performance test's results, from its capture's live play frames (in_play 1, as questperf's
+	 *  report reads them): the frame rate from the frames' own times against the refresh, the share on time (within 5 % of the
+	 *  refresh's budget), the worst 1 % (the mean of the slowest 1 % of frames, as fps), the worst frame, the game's own work
+	 *  (its time less the wait for the headset's frame), render and GPU ms a frame and the largest of the three, stutters
+	 *  (frames over 30 ms). */
+	struct FCardNumbers
+	{
+		int32 Frames = 0;
+		double Hz = 0.0, Fps = 0.0, OnTimePct = 0.0, LowFps = 0.0, WorstMs = 0.0, GameMs = 0.0, RenderMs = 0.0, GpuMs = 0.0;
+		int32 Stutters = 0;
+		FString Limit;               // "the game", "rendering" or "the GPU"
+	};
+	OUTLAWSRUNTIME_API bool CardNumbers(const FString& Capture, double Hz, FCardNumbers& Out);
+	/** The card's rows for those numbers and the run's settings dump ("key: value" lines). */
+	OUTLAWSRUNTIME_API TArray<TPair<FString, FString>> CardRowsFor(const FCardNumbers& N, const TMap<FString, FString>& Settings);
+	/** The ended run's card (made when a performance test's level ends, a sweep never; kept until the main menu): its level and
+	 *  rows, empty when there is none; the numbers it shows. */
+	OUTLAWSRUNTIME_API const FString& CardLevel();
+	OUTLAWSRUNTIME_API const TArray<TPair<FString, FString>>& CardRows();
+	OUTLAWSRUNTIME_API const FCardNumbers& CardShown();
+	/** The run was quit from the pause menu, which shows no counts: the card is shown alone on the black (UOutlawsStats). */
+	OUTLAWSRUNTIME_API bool CardAlone();
+	OUTLAWSRUNTIME_API void SetCardAlone(bool bAlone);
+
 	/** The level actor's side (OutlawsPerfTest.cpp). */
 	void Begin(const FString& Level, const TMap<FString, int32>& Carry, bool bSweep = false);
 	void Started(const FString& CapturePath, const FString& SettingsPath);
