@@ -355,6 +355,7 @@ bool AOutlawsLevelActor::UseItemModel(AOutlawsSpriteActor* S, const FString& Ani
 			Shape = FVector(Rs.FRandRange(0.85f, 1.18f), Rs.FRandRange(0.85f, 1.18f), Rs.FRandRange(0.82f, 1.15f));
 		}
 	}
+	S->ModelYaw = Yaw;
 	// (STUTTER) a drop: turned by its component, its sections a copy of the first drop's
 	bool bByTurn = GOlItemModelByTurn && !D->bAnyYaw && !ModelName.StartsWith(TEXT("ROCK")) && !D->bFlicker && !D->bWave && !D->bBend && !D->bHang && !D->bFlames;
 	for (const TPair<FString, FOutlawsMeshSection>& Kv : D->Sections)

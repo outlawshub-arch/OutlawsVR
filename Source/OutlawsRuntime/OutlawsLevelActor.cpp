@@ -506,8 +506,9 @@ float AOutlawsLevelActor::WallFacingYaw(const FVector& Where, int32 SectorIndex,
 	const FVector2D P = FOutlawsGeometry::ToOutlawsPlan(Where);
 	TArray<int32> Secs = { SectorIndex };
 	for (const FOutlawsWall& W : L->Sectors[SectorIndex].Walls) if (L->Sectors.IsValidIndex(W.Adjoin)) Secs.AddUnique(W.Adjoin);
-	double Best = 400.0 / U;
-	FVector2D Away = FVector2D::ZeroVector;
+	const double Reach = 400.0 / U;
+	struct FAwayFrom { double D; FVector2D Away; };
+	TArray<FAwayFrom, TInlineAllocator<24>> Walls;
 	for (const int32 s : Secs)
 	{
 		const FOutlawsSector& S = L->Sectors[s];
@@ -516,10 +517,55 @@ float AOutlawsLevelActor::WallFacingYaw(const FVector& Where, int32 SectorIndex,
 			if (W.Adjoin >= 0 || !S.Verts.IsValidIndex(W.V1) || !S.Verts.IsValidIndex(W.V2)) continue;
 			const FVector2D C = FMath::ClosestPointOnSegment2D(P, S.Verts[W.V1], S.Verts[W.V2]);
 			const double D = FVector2D::Distance(P, C);
-			if (D < Best && D > 1e-3) { Best = D; Away = (P - C) / D; }
+			if (D < Reach && D > 1e-3) Walls.Add({ D, (P - C) / D });
 		}
 	}
-	if (Away.IsZero()) return Fallback;
+	if (Walls.Num() == 0) return Fallback;
+	Walls.StableSort([](const FAwayFrom& A, const FAwayFrom& B) { return A.D < B.D; });
+	FVector2D Away = Walls[0].Away;
+	// (BUG-STATUEYAW, user 2026-10-28, snapshots 1-4: townex's statues faced along the path, "rotate them 90 degrees
+	// clockwise") the booths are 8 units square and the statues stand 2.7 to 3 units off a side wall and 5.5 off the back,
+	// so each faced the other side wall 5 units away.  When the nearest wall leaves less than 2 m in front, the thing
+	// turns away from the wall within 4 m whose way has the most room (a ray through the open sides, up to 4 m), if that
+	// is at least 2 m and twice as much: out of a booth, an alcove or a nook.  231 of the 5022 placed models in the story
+	// levels turn.  -OLOldStatueYaw: the nearest wall always
+	static const bool bOldYaw = OLFlags::Param(TEXT("OLOldStatueYaw"));
+	auto Room = [L, Reach](int32 Sec, const FVector2D& From, const FVector2D& Dir)
+	{
+		double T0 = 0.0;
+		for (int32 Step = 0; Step < 48 && L->Sectors.IsValidIndex(Sec); ++Step)
+		{
+			const FOutlawsSector& S = L->Sectors[Sec];
+			double Hit = TNumericLimits<double>::Max();
+			int32 Next = -2;
+			for (const FOutlawsWall& W : S.Walls)
+			{
+				if (!S.Verts.IsValidIndex(W.V1) || !S.Verts.IsValidIndex(W.V2)) continue;
+				const FVector2D A = S.Verts[W.V1], E = S.Verts[W.V2] - S.Verts[W.V1], Wv = A - From;
+				const double Den = FVector2D::CrossProduct(Dir, E);
+				if (FMath::Abs(Den) < 1e-12) continue;
+				const double T = FVector2D::CrossProduct(Wv, E) / Den, At = FVector2D::CrossProduct(Wv, Dir) / Den;
+				if (T > T0 + 1e-6 && At >= -1e-9 && At <= 1.0 + 1e-9 && T < Hit) { Hit = T; Next = W.Adjoin; }
+			}
+			if (Next == -2 || Hit >= Reach) return Reach;
+			if (!L->Sectors.IsValidIndex(Next)) return Hit;      // a solid wall
+			Sec = Next;
+			T0 = Hit;
+		}
+		return Reach;
+	};
+	const double Short = 200.0 / U, Room0 = bOldYaw ? Reach : Room(SectorIndex, P, Away);
+	if (Room0 < Short)
+	{
+		double Most = Room0;
+		FVector2D Open = Away;
+		for (const FAwayFrom& W : Walls)      // nearest first: a tie stays with the nearer wall
+		{
+			const double R = Room(SectorIndex, P, W.Away);
+			if (R > Most + 1e-3) { Most = R; Open = W.Away; }
+		}
+		if (Most >= Short && Most >= 2.0 * Room0) Away = Open;
+	}
 	// (Outlaws x, z) -> Unreal (Y, X); +Y turned by the yaw onto that way
 	return float(FMath::RadiansToDegrees(FMath::Atan2(Away.X, Away.Y))) - 90.f;
 }

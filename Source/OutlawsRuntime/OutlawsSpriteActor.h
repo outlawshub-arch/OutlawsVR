@@ -128,6 +128,7 @@ public:
 	/** The model's sprite stem (BOTTLE01...) and its world_scale: the sprite's size over the real thing's. */
 	FString ModelStem;
 	float ModelScale = 1.f;
+	float ModelYaw = 0.f;       // (BUG-STATUEYAW) the yaw its front (+Y) was turned to, degrees
 	/** The model shown (the quad hidden). */
 	void ShowModel(class UPrimitiveComponent* InModel);
 	/** Back to the sprite for good (a prop's reaction: the barrel breaks as the game drew it). */
