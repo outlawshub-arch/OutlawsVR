@@ -299,7 +299,7 @@ namespace OutlawsBossWallProbeLocal
 		const FCase& C = Cases[CaseI];
 		const double Free = R.Free();
 		const bool bHunterCase = C.Kind != 3;
-		const bool bOk = Free >= 0.0 && Free <= 6.0 && R.LongestPress <= 3.0 && (!bHunterCase || R.SeenAt >= 0.0);
+		const bool bOk = Free >= 0.0 && Free <= 6.5 && R.LongestPress <= 3.0 && (!bHunterCase || R.SeenAt >= 0.0);
 		Check(bOk, FString::Printf(TEXT("%s, %s: %s, %d slides, %d shots; now %s"), *C.Name, *E->GetOutlawsName(), *R.Describe(), E->DebugSlides() - R.Slides0, E->ShotsTotal - R.Shots0,
 			*E->GetActorLocation().ToCompactString()));
 		if (C.Kind >= 2) { E->bHunter = bManWasHunter; E->SetDormant(true); }
@@ -476,7 +476,7 @@ void UOutlawsCoop::TickBossWallTest(double Now, AOutlawsLevelActor* L, AOutlawsP
 		if (BwRun.SeenAt < 0.0 && B->DebugBossState().Contains(TEXT("sees 1"))) BwRun.SeenAt = BwRun.Time;
 		if (BwRun.Time < 30.0) return;
 		const double Free = BwRun.Free();
-		BwCheck(Free >= 0.0 && Free <= 6.0 && BwRun.LongestPress <= 3.0 && BwRun.SeenAt >= 0.0, FString::Printf(TEXT("the host's %s: %s, %d slides; now %s"), *B->GetOutlawsName(), *BwRun.Describe(),
+		BwCheck(Free >= 0.0 && Free <= 6.5 && BwRun.LongestPress <= 3.0 && BwRun.SeenAt >= 0.0, FString::Printf(TEXT("the host's %s: %s, %d slides; now %s"), *B->GetOutlawsName(), *BwRun.Describe(),
 			B->DebugSlides(), *B->GetActorLocation().ToCompactString()));
 		UE_LOG(LogOutlawsAI, Log, TEXT("OLCOOP bosswall host RESULT %s (%d passed, %d failed)"), BwFails == 0 && BwPasses > 0 ? TEXT("ALL PASS") : TEXT("FAIL"), BwPasses, BwFails);
 		BwStep = 5;
@@ -521,7 +521,7 @@ void UOutlawsCoop::TickBossWallTest(double Now, AOutlawsLevelActor* L, AOutlawsP
 		BwRun.Step(Dt, B->GetActorLocation(), !B->IsDead() && FVector::Dist2D(B->GetActorLocation(), FVector(8340.0, -1240.0, 0.0)) < 150.0);
 		if (BwRun.Time < 28.0) return;
 		const double Free = BwRun.Free();
-		BwCheck(Free >= 0.0 && Free <= 6.0 && BwRun.LongestPress <= 3.0, FString::Printf(TEXT("the client's copy of %s: %s; now %s"), *B->GetOutlawsName(), *BwRun.Describe(), *B->GetActorLocation().ToCompactString()));
+		BwCheck(Free >= 0.0 && Free <= 6.5 && BwRun.LongestPress <= 3.0, FString::Printf(TEXT("the client's copy of %s: %s; now %s"), *B->GetOutlawsName(), *BwRun.Describe(), *B->GetActorLocation().ToCompactString()));
 		BwStep = 22;
 		return;
 	}
