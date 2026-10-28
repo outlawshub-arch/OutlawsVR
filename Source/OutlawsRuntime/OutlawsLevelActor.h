@@ -344,7 +344,8 @@ public:
 	void TickTutorial(float Dt);
 	void TickTutorialTest(float Dt);
 	/** REQ-PERFTESTMODE (OutlawsPerfTest.cpp): New Game > Performance test: the story's second level alone (the run's second
-	 *  with the mission order shuffled) as a story start there, at Bad, with what a hideout finish carries in, the capture on
+	 *  with the mission order shuffled) as a story start there, at the difficulty last pressed on New Game (else Bad), with
+	 *  what a hideout finish carries in, the capture on
 	 *  from the moment play begins and nothing written until the main menu is back (OutlawsPerfTest.h). */
 	void StartPerfTest();
 	/** The run's start once its level is in play, and its end when that level is left some other way. */

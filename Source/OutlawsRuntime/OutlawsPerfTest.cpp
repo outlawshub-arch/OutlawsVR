@@ -34,6 +34,7 @@ namespace
 	TMap<FString, int32> GPerfCarry;
 	int32 GPerfDeaths = 0;
 	int64 GPerfEndFrames = 0;
+	int32 GPerfNewGameDiff = -1;                   // the difficulty last pressed on New Game this session (-1 none)
 	FDelegateHandle GPerfExitHandle, GPerfTerminateHandle;
 
 	// (the game closed in the run: the engine's exit; on the Quest the app's end, which may come without it)
@@ -160,6 +161,13 @@ void OutlawsPerfTest::NoteDeath()
 	UE_LOG(LogOutlaws, Log, TEXT("OLPERF test death %d"), GPerfDeaths);
 }
 
+void OutlawsPerfTest::NoteNewGameDifficulty(int32 InDifficulty)
+{
+	GPerfNewGameDiff = FMath::Clamp(InDifficulty, 0, 2);
+}
+
+int32 OutlawsPerfTest::NewGameDifficulty() { return GPerfNewGameDiff; }
+
 void OutlawsPerfTest::Finished()
 {
 	if (GPerfState == EPerfTestState::Off) return;
@@ -177,8 +185,10 @@ bool AOutlawsPlayer::PerfTestOffered() const
 void AOutlawsLevelActor::StartPerfTest()
 {
 	// a story start at the run's second level, as StartStory starts the first: the page's Randomizer and seed, the Bad guys
-	// multiplier and the graphics as they are now; Bad, the original's normal (one difficulty for every run, to compare)
-	Difficulty = EOutlawsDifficulty::Bad;
+	// multiplier and the graphics as they are now; the difficulty last pressed on New Game this session (user 28 Oct, via the
+	// planner: the player's own), else Bad, the original's normal
+	const int32 Chosen = OutlawsPerfTest::NewGameDifficulty();
+	Difficulty = Chosen >= 0 ? static_cast<EOutlawsDifficulty>(Chosen) : EOutlawsDifficulty::Bad;
 	bHom = false;
 	bTutorial = false;
 	TutorialRun.Reset();
@@ -357,6 +367,7 @@ FString AOutlawsLevelActor::PerfTestSettings(const FString& CapturePath) const
 	Add(TEXT("level_title"), LevelTitle(LevelName));
 	Add(TEXT("level_one"), Order.IsValidIndex(0) ? Order[0] : FString(TEXT("hideout")));
 	Add(TEXT("difficulty"), OutlawsDifficulty::Name(Difficulty));
+	Add(TEXT("difficulty_from"), OutlawsPerfTest::NewGameDifficulty() >= 0 ? TEXT("the last New Game choice") : TEXT("none chosen this session (Bad)"));
 	Add(TEXT("capture"), CapturePath);
 	Add(TEXT("headset"), OutlawsDeviceProfile::HeadsetName(OutlawsDeviceProfile::Headset()));
 	Add(TEXT("device_model"), OutlawsDeviceProfile::Model());

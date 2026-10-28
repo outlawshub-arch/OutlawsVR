@@ -2026,6 +2026,7 @@ void AOutlawsPlayer::MenuActivate(int32 Hand, int32 Index)
 			if (L && Parts.Num() >= 3)
 			{
 				const EOutlawsDifficulty D = static_cast<EOutlawsDifficulty>(FMath::Clamp(FCString::Atoi(*Parts[2]), 0, 2));
+				OutlawsPerfTest::NoteNewGameDifficulty(int32(D));      // (REQ-PERFTESTMODE: a performance test's difficulty from here)
 				CloseMenu();
 				ClearScreenFx();          // the game starts clean, not fading out of the menu's tone (user 2026-09-27)
 				if (Parts[1] == TEXT("story")) L->StartStory(D);

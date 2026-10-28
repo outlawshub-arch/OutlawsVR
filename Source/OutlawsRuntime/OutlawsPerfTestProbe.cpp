@@ -7,9 +7,11 @@
 // with as many rows as the end line's frames and the main menu back; then a second run quit with End Game from the pause
 // menu (no Save or Load rows there; with a typed seed, the same roll and bad guys as the first).  Around each run the Saved
 // folder's files (but Perf and Logs, and the editor's own folders) are md5-checked unchanged.  Then New Game > Main Game >
-// Bad as ever: the story's first level with the start kit and its level-start autosave written again.  -OLPerfTestProbe=closed
-// quits in the first run instead (its "game closed" end line is the runner's to find).  "OLPERFTEST check PASS|FAIL: ..." a
-// check, then "OLSHOT perftest: PASS|FAIL" and the exit.  See OutlawsPlayer.h (TickPerfTestProbe).
+// Ugly as ever: the story's first level with the start kit and its level-start autosave written again; End Game, and a third
+// run takes Ugly, the difficulty last pressed on New Game (the first two, with none pressed yet, Bad).
+// -OLPerfTestProbe=closed quits in the first run instead (its "game closed" end line is the runner's to find).
+// "OLPERFTEST check PASS|FAIL: ..." a check, then "OLSHOT perftest: PASS|FAIL" and the exit.  See OutlawsPlayer.h
+// (TickPerfTestProbe).
 
 #include "OutlawsPlayer.h"
 #include "OutlawsPerfTest.h"
@@ -144,7 +146,11 @@ void AOutlawsPlayer::TickPerfTestProbe(float Dt)
 		const FString Lv = OutlawsPerfTest::Level();
 		PpCheck(Lv == Pp.Expect && L->LevelName.Equals(Lv, ESearchCase::IgnoreCase), FString::Printf(TEXT("run %d: the level is the run's second, %s (%s; wanted %s)"), Pp.Run, *L->LevelName,
 			*AOutlawsLevelActor::LevelTitle(L->LevelName), *Pp.Expect));
-		PpCheck(L->Difficulty == EOutlawsDifficulty::Bad, FString::Printf(TEXT("run %d: difficulty %s (wanted Bad)"), Pp.Run, OutlawsDifficulty::Name(L->Difficulty)));
+		// (the first two runs come before any New Game press: Bad; the third after Main Game > Ugly: Ugly)
+		const EOutlawsDifficulty WantDiff = Pp.Run == 3 ? EOutlawsDifficulty::Ugly : EOutlawsDifficulty::Bad;
+		const int32 WantChosen = Pp.Run == 3 ? int32(EOutlawsDifficulty::Ugly) : -1;
+		PpCheck(L->Difficulty == WantDiff && OutlawsPerfTest::NewGameDifficulty() == WantChosen, FString::Printf(TEXT("run %d: difficulty %s (wanted %s; New Game's last choice %d)"), Pp.Run,
+			OutlawsDifficulty::Name(L->Difficulty), OutlawsDifficulty::Name(WantDiff), OutlawsPerfTest::NewGameDifficulty()));
 		FString Bad, Carry;
 		for (const TPair<FString, int32>& Kv : OutlawsPerfTest::Carry())
 		{
@@ -161,7 +167,7 @@ void AOutlawsPlayer::TickPerfTestProbe(float Dt)
 		PpCheck(FPaths::FileExists(Set) && FPaths::GetCleanFilename(Set) == FString::Printf(TEXT("perftest_%s_settings.txt"), *Stamp) && FPaths::IsSamePath(FPaths::GetPath(Set), FPaths::GetPath(Cap)),
 			FString::Printf(TEXT("run %d: the settings dump beside it with its stamp: %s"), Pp.Run, *Set));
 		const TMap<FString, FString> S = PpReadSettings(Set);
-		static const TCHAR* const Keys[] = { TEXT("build"), TEXT("started"), TEXT("level"), TEXT("level_title"), TEXT("level_one"), TEXT("difficulty"), TEXT("capture"), TEXT("headset"),
+		static const TCHAR* const Keys[] = { TEXT("build"), TEXT("started"), TEXT("level"), TEXT("level_title"), TEXT("level_one"), TEXT("difficulty"), TEXT("difficulty_from"), TEXT("capture"), TEXT("headset"),
 			TEXT("device_model"), TEXT("vr"), TEXT("profile"), TEXT("quest2_mode"), TEXT("resolution_percent"), TEXT("vr_pixel_density"), TEXT("screen_percentage"), TEXT("eye_buffer"),
 			TEXT("refresh_rate"), TEXT("refresh_rate_asked"), TEXT("lamp_lights"), TEXT("hd_art"), TEXT("object_detail"), TEXT("stochastic"), TEXT("tinting"), TEXT("brightness"),
 			TEXT("perf_hud"), TEXT("grab_glow"), TEXT("movement_speed"), TEXT("bad_guys"), TEXT("randomizer"), TEXT("randomizer_enemies"), TEXT("randomizer_items"), TEXT("randomizer_order"),
@@ -175,7 +181,8 @@ void AOutlawsPlayer::TickPerfTestProbe(float Dt)
 		TArray<FString> Wrong;
 		if (!Is(TEXT("build"), OutlawsBuildInfo::Line())) Wrong.Add(TEXT("build"));
 		if (!Is(TEXT("level"), L->LevelName)) Wrong.Add(TEXT("level"));
-		if (!Is(TEXT("difficulty"), TEXT("Bad"))) Wrong.Add(TEXT("difficulty"));
+		if (!Is(TEXT("difficulty"), OutlawsDifficulty::Name(WantDiff))) Wrong.Add(TEXT("difficulty"));
+		if (!Is(TEXT("difficulty_from"), Pp.Run == 3 ? TEXT("the last New Game choice") : TEXT("none chosen this session (Bad)"))) Wrong.Add(TEXT("difficulty_from"));
 		if (!Is(TEXT("capture"), Cap)) Wrong.Add(TEXT("capture"));
 		if (!Starts(TEXT("resolution_percent"), FString::FromInt(OutlawsDeviceProfile::ResolutionPercent()))) Wrong.Add(TEXT("resolution_percent"));
 		if (!Is(TEXT("lamp_lights"), FString::FromInt(OutlawsDeviceProfile::LampLights()))) Wrong.Add(TEXT("lamp_lights"));
@@ -203,11 +210,11 @@ void AOutlawsPlayer::TickPerfTestProbe(float Dt)
 			Pp.Sum1 = L->RandoSum;
 			Pp.Enemies1 = Enemies;
 		}
-		else if (!L->RandoOn() || L->RandoRun.Seed == Pp.Seed1)
+		else if (Pp.Run == 2 && (!L->RandoOn() || L->RandoRun.Seed == Pp.Seed1))
 		{
 			PpCheck(L->RandoSum == Pp.Sum1 && Enemies == Pp.Enemies1, FString::Printf(TEXT("run 2: the same seed, the same level: roll %08x and %d bad guys (run 1: %08x, %d)"), L->RandoSum, Enemies, Pp.Sum1, Pp.Enemies1));
 		}
-		else
+		else if (Pp.Run == 2)      // (run 3 is at Ugly: other bad guys by the difficulty's bits)
 		{
 			UE_LOG(LogOutlaws, Display, TEXT("OLPERFTEST run 2: a new random seed (%u, run 1 %u): the levels not compared"), L->RandoRun.Seed, Pp.Seed1);
 		}
@@ -368,7 +375,7 @@ void AOutlawsPlayer::TickPerfTestProbe(float Dt)
 			bRestart |= It.Action == TEXT("ev_restart_level");
 			if (It.Action == TEXT("ev_end_game")) End = i;
 		}
-		PpCheck(bMenuOpen && !bSave && !bLoad && bRestart && End != INDEX_NONE, FString::Printf(TEXT("run 2: the pause page has no Save or Load (Restart Level and End Game kept): %s"), *Rows()));
+		PpCheck(bMenuOpen && !bSave && !bLoad && bRestart && End != INDEX_NONE, FString::Printf(TEXT("run %d: the pause page has no Save or Load (Restart Level and End Game kept): %s"), Pp.Run, *Rows()));
 		if (End != INDEX_NONE) MenuActivate(1, End);
 		Wait(0.5, 10.0);
 		return;
@@ -377,31 +384,33 @@ void AOutlawsPlayer::TickPerfTestProbe(float Dt)
 	{
 		int32 Yes = INDEX_NONE;
 		if (MenuPage) Yes = MenuPage->Items.IndexOfByPredicate([](const OutlawsMenu::FItem& It) { return It.Action == TEXT("ev_exit_game_confirm"); });
-		PpCheck(Yes != INDEX_NONE, FString::Printf(TEXT("run 2: End Game asks first (%s: %s)"), MenuPage ? *MenuPage->File : TEXT("none"), *Rows()));
+		PpCheck(Yes != INDEX_NONE, FString::Printf(TEXT("run %d: End Game asks first (%s: %s)"), Pp.Run, MenuPage ? *MenuPage->File : TEXT("none"), *Rows()));
 		if (Yes != INDEX_NONE) MenuActivate(1, Yes);
 		Wait(0.5, 10.0);
 		return;
 	}
 	case 16:
 		PpCheck(!OutlawsPerfTest::IsRunning() && OutlawsPerfTest::LastEndWhy() == TEXT("quit from the pause menu") && OutlawsPerfTest::LastEndFrames() > 0 && CaptureRows() == OutlawsPerfTest::LastEndFrames(),
-			FString::Printf(TEXT("run 2: End Game ended it: %s, %lld frames, %lld rows in the capture"), *OutlawsPerfTest::LastEndWhy(), OutlawsPerfTest::LastEndFrames(), CaptureRows()));
+			FString::Printf(TEXT("run %d: End Game ended it: %s, %lld frames, %lld rows in the capture"), Pp.Run, *OutlawsPerfTest::LastEndWhy(), OutlawsPerfTest::LastEndFrames(), CaptureRows()));
 		Wait(1.0, 120.0);
 		return;
 	case 17:
 		if (!AtMenu() || OutlawsPerfTest::IsOn()) { Late(TEXT("the main menu after End Game")); return; }
-		PpCheck(true, TEXT("run 2: the main menu back after End Game"));
+		PpCheck(true, FString::Printf(TEXT("run %d: the main menu back after End Game"), Pp.Run));
 		SavedCheck(TEXT("the run and End Game"));
 		Wait(1.0, 10.0);
+		if (Pp.Run == 3) Pp.Step = 99;
 		return;
 	case 18:
 	{
-		// after the runs, New Game > Main Game > Bad as ever: the story's first level with the start kit, and its level-start
-		// autosave written again (the outside md5 check puts the Saved folder back after the probe)
+		// after the runs, New Game > Main Game > Ugly as ever: the story's first level with the start kit, and its level-start
+		// autosave written again (the outside md5 check puts the Saved folder back after the probe); Ugly is the New Game
+		// choice a third run takes
 		ShowMenuPage(TEXT("#newgame"), true);
 		const bool bMain = Press(TEXT("Main Game"));
-		const bool bBad = bMain && MenuPage && MenuPage->File == TEXT("#difficulty:story") && Press(TEXT("Bad"));
+		const bool bUgly = bMain && MenuPage && MenuPage->File == TEXT("#difficulty:story") && Press(TEXT("Ugly"));
 		Pp.SavedBefore.Add(TEXT("#autosave"), FString::Printf(TEXT("%lld"), IFileManager::Get().GetTimeStamp(*AOutlawsLevelActor::SavePath(-1)).GetTicks()));
-		PpCheck(bBad && !OutlawsPerfTest::IsOn(), TEXT("New Game > Main Game > Bad pressed: the story starts, no performance test run"));
+		PpCheck(bUgly && !OutlawsPerfTest::IsOn(), TEXT("New Game > Main Game > Ugly pressed: the story starts, no performance test run"));
 		Wait(1.0, 180.0);
 		return;
 	}
@@ -413,7 +422,7 @@ void AOutlawsPlayer::TickPerfTestProbe(float Dt)
 		Pp.Expect = Order.IsValidIndex(0) ? Order[0] : FString(TEXT("hideout"));
 		if (L->IsFrontEnd() || L->IsRebuildPending() || !L->LevelName.Equals(Pp.Expect, ESearchCase::IgnoreCase) || L->GetEnemies().Num() == 0) { Late(TEXT("the story's first level")); return; }
 		const bool bKit = Pp.Expect == TEXT("ranch") || (L->GetCount(TEXT("ibullit")) == 24 && L->GetCount(TEXT("icart")) == 16);
-		PpCheck(!OutlawsPerfTest::IsOn() && bKit && L->Difficulty == EOutlawsDifficulty::Bad,
+		PpCheck(!OutlawsPerfTest::IsOn() && bKit && L->Difficulty == EOutlawsDifficulty::Ugly,
 			FString::Printf(TEXT("the story's start unchanged: %s at %s with the start kit (%s)"), *L->LevelName, OutlawsDifficulty::Name(L->Difficulty), *L->CarrySignature()));
 		Wait(1.0, 40.0);
 		return;
@@ -424,9 +433,31 @@ void AOutlawsPlayer::TickPerfTestProbe(float Dt)
 		const FString NowStamp = FString::Printf(TEXT("%lld"), IFileManager::Get().GetTimeStamp(*AOutlawsLevelActor::SavePath(-1)).GetTicks());
 		if (NowStamp == Was) { Late(TEXT("the story's level-start autosave")); return; }
 		PpCheck(AOutlawsLevelActor::ReadSaveInfo(-1).Level.Equals(Pp.Expect, ESearchCase::IgnoreCase), TEXT("the story's level-start autosave is written again (the saves as ever after a run)"));
-		Pp.Step = 99;
+		// back to the main menu for a third run
+		L->ReturnToFrontEnd();
+		Wait(1.0, 120.0);
 		return;
 	}
+	case 21:
+	{
+		if (!AtMenu()) { Late(TEXT("the main menu after the story's start")); return; }
+		ShowMenuPage(TEXT("#newgame"), true);
+		Pp.SavedBefore = PpSavedMd5();
+		Pp.Run = 3;
+		TArray<FString> Order;
+		L->RandoLevelOrder(Order);
+		Pp.Expect = Order.IsValidIndex(1) ? Order[1] : FString();
+		PpCheck(Press(TEXT("Performance test")) && OutlawsPerfTest::IsOn(), FString::Printf(TEXT("run 3: Performance test pressed after Main Game > Ugly (%s)"), *Rows()));
+		Wait(0.0, 240.0);
+		return;
+	}
+	case 22:
+		if (!OutlawsPerfTest::IsRunning()) { Late(TEXT("the third run's start")); return; }
+		L->bInvincible = true;
+		RunChecks();
+		Wait(3.0, 10.0);
+		Pp.Step = 14;             // (End Game from the pause menu, as the second run)
+		return;
 	default:
 		Pp.bDone = true;
 		UE_LOG(LogOutlaws, Display, TEXT("OLSHOT perftest: %s (%d passed, %d failed)"), Pp.Fail == 0 && Pp.Pass > 0 ? TEXT("PASS") : TEXT("FAIL"), Pp.Pass, Pp.Fail);

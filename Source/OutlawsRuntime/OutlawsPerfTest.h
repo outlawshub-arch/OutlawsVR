@@ -3,9 +3,10 @@
 // REQ-PERFTESTMODE (user 28 Oct): New Game > Performance test, for perf runs.  The row is hidden until a whole turn on the
 // spot with New Game's page up (the pause menu's Cheats rule and its detector, AOutlawsPlayer::UpdateMenu), single player
 // only.  It plays the story's second level alone (the run's second, RandoLevelOrder, with the mission order shuffled), as a
-// story start there at Bad: what a finish of the first level carries in (James's start kit and the guns and ammunition that
-// level places, after the Randomizer's roll of it), full health and stamina, the Bad guys multiplier, the Randomizer and its
-// seed and the graphics as a New Game takes them.  When play begins the game's own per-frame capture goes on (OutlawsPerf,
+// story start there at the difficulty last pressed on New Game this session, else Bad (user 28 Oct, via the planner): what a
+// finish of the first level carries in (James's start kit and the guns and ammunition that level places, after the
+// Randomizer's roll of it), full health and stamina, the Bad guys multiplier, the Randomizer and its seed and the graphics as
+// a New Game takes them.  When play begins the game's own per-frame capture goes on (OutlawsPerf,
 // as Saved/Perf/capture.on does) with a settings dump beside it, Saved/Perf/perftest_<the capture's stamp>_settings.txt,
 // one "key: value" line each.  A death and its respawn stay in the run.  The level's exit (the score card first) or End
 // Game from the pause menu ends it and goes back to the main menu, no level 3; so does a game closed.  Nothing is written
@@ -29,6 +30,11 @@ namespace OutlawsPerfTest
 	OUTLAWSRUNTIME_API void End(const TCHAR* Why);
 	/** A death in the run: its marker line. */
 	OUTLAWSRUNTIME_API void NoteDeath();
+	/** The run's difficulty: the one last pressed on a New Game difficulty page (Main Game, Marshal Training or a mission)
+	 *  this session, remembered until the game closes (never written); Bad when none was.  The menu notes each press. */
+	OUTLAWSRUNTIME_API void NoteNewGameDifficulty(int32 Difficulty);
+	/** The difficulty last pressed on New Game (0 Good, 1 Bad, 2 Ugly), -1 none yet. */
+	OUTLAWSRUNTIME_API int32 NewGameDifficulty();
 
 	/** The level actor's side (OutlawsPerfTest.cpp). */
 	void Begin(const FString& Level, const TMap<FString, int32>& Carry);
