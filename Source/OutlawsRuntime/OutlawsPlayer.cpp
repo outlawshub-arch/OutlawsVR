@@ -290,6 +290,18 @@ bool AOutlawsPlayer::OldStamina()
 	return bOld;
 }
 
+bool AOutlawsPlayer::OldCrouchRun()
+{
+	static const bool bOld = OLFlags::Param(TEXT("OLOldCrouchRun"));   // (REQ-CROUCHRUN's before: no crouched run)
+	return bOld;
+}
+
+float AOutlawsPlayer::CrouchSpeedNow(float CrouchSpeed, float WalkSpeed, float RunNow, bool bRunning, bool bOld)
+{
+	// the run's share over the walk (the Jedi engine's run shifts a crouched step left as it does a standing one: twice)
+	return bRunning && !bOld && WalkSpeed > 0.f ? CrouchSpeed * RunNow / WalkSpeed : CrouchSpeed;
+}
+
 float AOutlawsPlayer::StaminaRate(bool bRunOnGround, bool bMoving, bool bCrouched, float Pace, bool bCarrying, bool bOld)
 {
 	// recovery at the exe's own rates (REQ-STAMINA15, user 2026-10-27: "out of breath in VR", it comes back twice as fast):
@@ -1707,7 +1719,13 @@ void AOutlawsPlayer::Locomotion(float Dt, bool& bOutMoving)
 	// running at the stamina's pace: spent, it is no faster than walking
 	const float WalkSpeed = bVR ? VRWalkSpeed : DesktopWalkSpeed;
 	const float RunNow = FMath::Lerp(WalkSpeed, bVR ? VRRunSpeed : DesktopRunSpeed, StaminaFrac());
-	M->MaxWalkSpeed = bVR && GetCapsuleComponent()->GetUnscaledCapsuleHalfHeight() < 60.f ? VRCrouchSpeed : (bRunning ? RunNow : WalkSpeed);
+	// REQ-CROUCHRUN (user 2026-10-28): crouched, a run is as much quicker than the crouch walk as the standing run is than the
+	// walk.  The desktop's crouch is the engine's, at MaxWalkSpeedCrouched: it now takes the speed dial and a carried man as
+	// the walk does (it was a fixed 480, as quick as the walk at the dial's default); -OLOldCrouchRun: both as before
+	const bool bOldCrouch = OldCrouchRun();
+	const float CrouchNow = CrouchSpeedNow(bVR ? VRCrouchSpeed : DesktopCrouchSpeed, WalkSpeed, RunNow, bRunning, bOldCrouch);
+	M->MaxWalkSpeed = bVR && GetCapsuleComponent()->GetUnscaledCapsuleHalfHeight() < 60.f ? CrouchNow : (bRunning ? RunNow : WalkSpeed);
+	if (!bVR) M->MaxWalkSpeedCrouched = CrouchNow;
 	// swimming: half the land speed, running included
 	M->MaxFlySpeed = SwimSpeedFraction * (bRunning ? RunNow : WalkSpeed);
 	// the VR menu's movement speed (a quarter up to the full speed)
@@ -1716,6 +1734,7 @@ void AOutlawsPlayer::Locomotion(float Dt, bool& bOutMoving)
 		const float Pace = LS->Pace();
 		M->MaxWalkSpeed *= Pace;
 		M->MaxFlySpeed *= Pace;
+		if (!bVR && !bOldCrouch) M->MaxWalkSpeedCrouched *= Pace;
 		// the long jump of the lower speeds (OnJumped) is over at the landing, or once it falls past where it took off (a drop
 		// beyond that is a fall like any other)
 		if (bJumpBoost && (!M->IsFalling() || (M->Velocity.Z < 0.0 && GetActorLocation().Z - GetCapsuleComponent()->GetScaledCapsuleHalfHeight() < JumpOffZ - 10.0)))
@@ -1729,6 +1748,7 @@ void AOutlawsPlayer::Locomotion(float Dt, bool& bOutMoving)
 	{
 		M->MaxWalkSpeed *= CarrySpeedScale;
 		M->MaxFlySpeed *= CarrySpeedScale;
+		if (!bVR && !bOldCrouch) M->MaxWalkSpeedCrouched *= CarrySpeedScale;
 	}
 	// VR: walk, run and crouch speeds meet in the same short ease as the stick, not in one frame
 	if (bVR)

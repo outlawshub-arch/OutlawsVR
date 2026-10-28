@@ -1603,6 +1603,14 @@ private:
 	static float StaminaJumpCost(bool bCarrying, bool bOld);
 	/** -OLOldStamina (REQ-STAMINA15's A/B switch): the running, jumping and recovery rates before 27 Oct. */
 	static bool OldStamina();
+	/** REQ-CROUCHRUN (user 2026-10-28, snapshot 19's note: no crouch run): the crouched speed before the speed dial and a
+	 *  carried man: the crouch walk, and running, the crouch walk times the standing run's share over the walk at this
+	 *  stamina (RunNow over WalkSpeed: twice it rested, no faster spent), as the Jedi engine doubles a crouched step as it
+	 *  does a standing one; bOld (-OLOldCrouchRun): the crouch walk, running or not. */
+	static float CrouchSpeedNow(float CrouchSpeed, float WalkSpeed, float RunNow, bool bRunning, bool bOld);
+	/** -OLOldCrouchRun (REQ-CROUCHRUN's A/B switch): crouched as before 28 Oct: no faster running, and on the desktop the
+	 *  fixed crouch speed (not scaled by the speed dial or a carried man as every other speed is). */
+	static bool OldCrouchRun();
 	/** (REQ-STAMINA15, OutlawsPlayerStaminaProbe.cpp) -OLStaminaProbe, in any build (Shipping too, through OLFlags, not
 	 *  under WITH_OUTLAWS_TESTS): the times StaminaRate gives (a run from full to spent at each speed setting, carrying a
 	 *  man, the rests from spent to full, the jumps to spent) under both rules, then, in the level, a rest from spent to

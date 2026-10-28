@@ -528,8 +528,16 @@ void AOutlawsRemotePlayer::TickSprite(float Dt, const FOutlawsCoopPose& P, const
 	float Gait = 1.f;
 	if (Shown == EAnim::Walk) Gait = Speed / WalkSpeed;
 	else if (Shown == EAnim::Run) Gait = Speed / (WalkSpeed * 2.f);
-	else if (Shown == EAnim::CrouchWalk) Gait = Speed / (WalkSpeed * 0.5f);
-	S->CustomTimeDilation = FMath::Clamp(Gait, 0.5f, 1.5f);
+	S->CustomTimeDilation = Shown == EAnim::CrouchWalk ? CrouchWalkLegs(Speed, Pace) : FMath::Clamp(Gait, 0.5f, 1.5f);
+}
+
+float AOutlawsRemotePlayer::CrouchWalkLegs(float Speed, float Pace)
+{
+	// REQ-CROUCHRUN (user 2026-10-28): a crouched run goes twice the crouch walk (the run's share over the walk), and the art
+	// has no crouched run of its own: the crouch walk's legs go up to twice its pace, so they keep up with the ground
+	static const bool bOld = OLFlags::Param(TEXT("OLOldCrouchRun"));
+	const float WalkSpeed = 960.f * (Pace > 0.f ? Pace : 0.5f);
+	return FMath::Clamp(Speed / (WalkSpeed * 0.5f), 0.5f, bOld ? 1.5f : 2.f);
 }
 
 bool AOutlawsRemotePlayer::SamplePose(double Now, FPoseSample& Out, bool& bOutCut)

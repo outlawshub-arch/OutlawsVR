@@ -150,6 +150,11 @@ public:
 	/** REQ-CHESTPLATE (tests): the boiler plate drawn on this player's chest now (false: none drawn). */
 	bool ChestPlateShown(FVector& OutAt, FRotator& OutRot) const;
 
+	/** The crouch walk's legs for a crouched player going Speed (cm/s) at that player's Pace: the art's own pace at half
+	 *  the walk, slower when slower; up to twice it (REQ-CROUCHRUN: a crouched run is twice the crouch walk), 1.5 times
+	 *  with -OLOldCrouchRun as before. */
+	static float CrouchWalkLegs(float Speed, float Pace);
+
 private:
 	UPROPERTY(Transient)
 	TObjectPtr<UProceduralMeshComponent> ChestPlate;
