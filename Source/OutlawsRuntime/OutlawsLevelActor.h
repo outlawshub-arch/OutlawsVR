@@ -651,6 +651,10 @@ public:
 	UPROPERTY(EditAnywhere, Category = "Outlaws|Assets")
 	TObjectPtr<UMaterialInterface> SpriteMaterial;
 
+	/** REQ-FIREBRIGHT2: M_OL_Sprite with a Mask of the pixels the light dims (SpriteMaterialFor). */
+	UPROPERTY(EditAnywhere, Category = "Outlaws|Assets")
+	TObjectPtr<UMaterialInterface> SpriteFireMaterial;
+
 	UPROPERTY(EditAnywhere, Category = "Outlaws|Assets")
 	TObjectPtr<UStaticMesh> SpriteQuad;
 
@@ -1780,6 +1784,15 @@ public:
 	 *  at 20 %, the characters under 1 %.  -OLOldFireBright: none (every sprite by its sector's light, as before). */
 	bool IsFullBrightArt(const OutlawsTextures::FSpriteAtlas& Atlas, float* OutShare = nullptr) const;
 	static bool OldFireBright();
+	/** REQ-FIREBRIGHT2 (user 2026-10-28: the campfire's logs lit as bright as its flame, the HD flame's soft halo a flat light
+	 *  red): the material for a sprite of this atlas.  Art drawn full bright gets M_OLR_SpriteFire and the atlas's mask of the
+	 *  pixels its colours the colour map dims (S->FireMask, made on first use), so per pixel, as the original: the flame full
+	 *  bright, the logs by the sector's light, the HD look's halo (outside the 8-bit drawing) its own colour, bright.  Every
+	 *  other sprite M_OL_Sprite as before.  -OLOldFireBright2: the art full bright as a whole (REQ-FIREBRIGHT's look). */
+	UMaterialInterface* SpriteMaterialFor(class AOutlawsSpriteActor* S, const OutlawsTextures::FSpriteAtlas& Atlas);
+	static bool OldFireBright2();
+	/** REQ-FIREBRIGHT2: a palette entry of full-bright art that stays bright whatever the light (its mask's 0). */
+	bool FireKeepsBright(uint8 V) const;
 private:
 	void UpdateSoundGens(float Dt);
 

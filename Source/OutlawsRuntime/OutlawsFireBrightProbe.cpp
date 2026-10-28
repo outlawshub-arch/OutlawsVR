@@ -89,7 +89,7 @@ OL_SHOT_TEST(OLFireBrightProbe, 17)
 			if (IsFireName(Nm))
 			{
 				++Fires;
-				const bool bOk = bOld ? (!S->bFullBright && FMath::IsNearlyEqual(B, Lit, 0.001f)) : (S->bFullBright && FMath::IsNearlyEqual(B, 1.f, 0.001f));
+				const bool bOk = bOld ? (!S->bFullBright && FMath::IsNearlyEqual(B, Lit, 0.001f)) : (S->bFullBright && FMath::IsNearlyEqual(B, S->bMaskLook ? Lit : 1.f, 0.001f));   // (REQ-FIREBRIGHT2: per pixel, the mask keeps the flame bright)
 				if (!bOk) { ++BadFires; BadList += FString::Printf(TEXT(" %s(light %d, %.3f)"), *Nm, S->LightLevel, B); }
 				if (FireList.Len() < 300) FireList += FString::Printf(TEXT(" %s(light %d, brightness %.3f)"), *Nm, S->LightLevel, B);
 				if (!Fire.IsValid() && Nm.StartsWith(TEXT("CAMFIRE"))) Fire = S;

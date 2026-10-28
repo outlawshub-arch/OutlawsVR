@@ -136,6 +136,12 @@ namespace OutlawsTextures
 		/** REQ-FIREBRIGHT: the drawn pixels of each palette entry over every frame shown (256), for the level's colour map to
 		 *  say how much of the art is full bright (AOutlawsLevelActor::IsFullBrightArt). */
 		TArray<uint32> IndexUse;
+		/** REQ-FIREBRIGHT2: the atlas at 1x as palette entries (AtlasW x AtlasH, 0 where not drawn; with a texture only), for
+		 *  the never-dim mask of the art drawn full bright (AOutlawsLevelActor::FireMaterialFor), and that mask once made:
+		 *  nearest for the 8-bit look, filtered for the HD one (the same 1x mask scaled up). */
+		TArray<uint8> Indices;
+		UTexture* FireMask = nullptr;
+		UTexture* FireMaskHd = nullptr;
 		/** The atlas's opacity at 1x (AtlasW x AtlasH, 1 where drawn): where a held figure's neck is (user 2026-09-29). */
 		TArray<uint8> Alpha;
 		int32 AtlasW = 0, AtlasH = 0;

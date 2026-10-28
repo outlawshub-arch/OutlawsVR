@@ -4,6 +4,7 @@
 #include "OutlawsPerf.h"
 #include "Components/StaticMeshComponent.h"
 #include "Materials/MaterialInstanceDynamic.h"
+#include "Materials/Material.h"
 #include "Engine/Texture.h"
 #include "Engine/World.h"
 #include "GameFramework/PlayerController.h"
@@ -368,7 +369,7 @@ bool AOutlawsSpriteActor::LodQuadLook(bool bFade)
 	}
 	bLodQuadFade = bFade;
 	if (SpriteTexture) MID->SetTextureParameterValue(TEXT("Tex"), SpriteTexture);
-	MID->SetScalarParameterValue(TEXT("Brightness"), LitBrightness());
+	ApplyLitLook();
 	CurrentCell = -1;
 	if (Shown >= 0) ApplyCell(Shown);
 	return true;
@@ -379,6 +380,7 @@ void AOutlawsSpriteActor::SetLook(UTexture* Hd)
 	if (!SpriteTextureLo) SpriteTextureLo = SpriteTexture;
 	SpriteTexture = Hd ? Hd : SpriteTextureLo.Get();
 	if (MID && SpriteTexture) MID->SetTextureParameterValue(TEXT("Tex"), SpriteTexture);
+	if (MID && bMaskLook) MID->SetTextureParameterValue(TEXT("Mask"), Hd && FireMaskHd ? FireMaskHd.Get() : FireMask.Get());    // (REQ-FIREBRIGHT2)
 	if (bHeldLookShown)
 	{
 		bHeldLookShown = false;           // (REQ-GRABUPSCALE) the held look put back on by the next update
@@ -486,10 +488,25 @@ bool AOutlawsSpriteActor::EnsureMID()
 		MID->SetTextureParameterValue(TEXT("Tex"), SpriteTexture);
 	}
 	bHeldLookShown = false;
-	// sector light in display space, as the Jedi colormaps apply it (the world materials do the same); a flame full bright
-	MID->SetScalarParameterValue(TEXT("Brightness"), LitBrightness());
+	ApplyLitLook();
 	CurrentCell = -1;
 	return true;
+}
+
+void AOutlawsSpriteActor::ApplyLitLook()
+{
+	if (!MID) return;
+	// REQ-FIREBRIGHT2: the fire material's mask for the look shown (the HD look takes the 8-bit mask filtered, scaled up);
+	// any other material (a fade, on top) draws a flame full bright as a whole
+	const UMaterial* Base = MID->GetMaterial();
+	bMaskLook = FireMask && Base && Base->GetFName() == TEXT("M_OLR_SpriteFire");
+	if (bMaskLook)
+	{
+		const bool bHd = SpriteTextureLo && SpriteTexture != SpriteTextureLo;
+		MID->SetTextureParameterValue(TEXT("Mask"), bHd && FireMaskHd ? FireMaskHd.Get() : FireMask.Get());
+	}
+	// sector light in display space, as the Jedi colormaps apply it (the world materials do the same); a flame full bright
+	MID->SetScalarParameterValue(TEXT("Brightness"), LitBrightness());
 }
 
 void AOutlawsSpriteActor::SetOnTop(bool bOn)

@@ -91,6 +91,7 @@ void AOutlawsLevelActor::LoadDefaultAssets()
 	LoadIfNull(WaterMaterial, TEXT("/Game/Outlaws/Runtime/M_OLR_Water.M_OLR_Water"));
 	LoadIfNull(SkyMaterial, TEXT("/Game/Outlaws/Core/M_OL_Sky.M_OL_Sky"));
 	LoadIfNull(SpriteMaterial, TEXT("/Game/Outlaws/Core/M_OL_Sprite.M_OL_Sprite"));
+	LoadIfNull(SpriteFireMaterial, TEXT("/Game/Outlaws/Runtime/M_OLR_SpriteFire.M_OLR_SpriteFire"));      // (REQ-FIREBRIGHT2)
 	LoadIfNull(SpriteQuad, TEXT("/Game/Outlaws/Core/SM_SpriteQuad.SM_SpriteQuad"));
 }
 
@@ -1775,7 +1776,7 @@ void AOutlawsLevelActor::Build()
 				S->SetFeet(Atlas->BelowPx, Atlas->FootPx, Atlas->CellH); S->SetFeetAcross(Atlas->SidePx2, Atlas->CellW);   // (on the frames' insertion points, user 2026-10-02)
 			}
 			S->Quad->SetStaticMesh(SpriteQuad);
-			S->Quad->SetMaterial(0, SpriteMaterial);
+			S->Quad->SetMaterial(0, SpriteMaterialFor(S, *Atlas));     // (REQ-FIREBRIGHT2: a flame's mask, per pixel)
 			S->FinishSpawning(Xf);
 			if (bCellGen)
 			{

@@ -101,8 +101,17 @@ public:
 	/** REQ-FIREBRIGHT: drawn full bright whatever the light (a flame: AOutlawsLevelActor::IsFullBrightArt), set before
 	 *  FinishSpawning; the HD look the same. */
 	bool bFullBright = false;
-	/** The material's Brightness: the sector light in display space, as the Jedi colour maps apply it, or 1 full bright. */
-	float LitBrightness() const { return bFullBright ? 1.f : FMath::Pow(FMath::Clamp(LightLevel, 0, 31) / 31.f, 2.2f); }
+	/** The material's Brightness: the sector light in display space, as the Jedi colour maps apply it, or 1 full bright
+	 *  (REQ-FIREBRIGHT2: but the sector light again while the fire material's mask keeps the flame's pixels bright). */
+	float LitBrightness() const { return bFullBright && !bMaskLook ? 1.f : FMath::Pow(FMath::Clamp(LightLevel, 0, 31) / 31.f, 2.2f); }
+	/** REQ-FIREBRIGHT2: the atlas's mask of the pixels the light dims (AOutlawsLevelActor::SpriteMaterialFor), for the 8-bit
+	 *  look and the HD one; set before FinishSpawning with M_OLR_SpriteFire on the quad. */
+	UPROPERTY(Transient)
+	TObjectPtr<UTexture> FireMask;
+	UPROPERTY(Transient)
+	TObjectPtr<UTexture> FireMaskHd;
+	/** The MID shows M_OLR_SpriteFire with its mask (not while a fade or on-top material stands in: those draw it as a whole). */
+	bool bMaskLook = false;
 
 	/** The sector light where the sprite now stands (a walking bad guy crossing into a lit sector). */
 	void SetLightLevel(int32 Level);
@@ -320,6 +329,8 @@ private:
 	void UpdateSprite(float DeltaSeconds, const FVector* Viewer);
 	bool bDriven = false;                  // in the driver's loop (its own actor tick is off)
 	bool EnsureMID();
+	/** (REQ-FIREBRIGHT2) the MID's light: the fire mask for the look shown when its material takes one, and Brightness. */
+	void ApplyLitLook();
 	void ApplyCell(int32 Cell);
 	bool bHeldLookShown = false;           // (REQ-GRABUPSCALE) the MID shows a held-look texture, not the atlas
 	/** The quad's place for the cell shown and the viewer (SetFeet). */

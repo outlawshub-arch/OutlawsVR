@@ -169,7 +169,7 @@ AOutlawsSpriteActor* AOutlawsLevelActor::MakeSprite(const TSharedPtr<OutlawsText
 	}
 	S->ChorGrid = Atlas->ChorGrid;
 	S->Quad->SetStaticMesh(SpriteQuad);
-	S->Quad->SetMaterial(0, SpriteMaterial);
+	S->Quad->SetMaterial(0, SpriteMaterialFor(S, *Atlas));     // (REQ-FIREBRIGHT2)
 	S->FinishSpawning(Xf);
 	if (bHDTextures)
 	{

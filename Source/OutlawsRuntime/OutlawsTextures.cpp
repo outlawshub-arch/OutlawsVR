@@ -840,7 +840,7 @@ TSharedPtr<OutlawsTextures::FSpriteAtlas> OutlawsTextures::BuildSpriteAtlas(cons
 
 	// render each frame used
 	struct FPlacedNode { int32 Cell, X, Y, W, H; uint32 Flags; };
-	struct FRendered { TArray<FColor> Px; int32 W = 0; int32 H = 0; int32 Bottom = 0; int32 Left = 0; bool bValid = false; TArray<FPlacedNode> Nodes; };
+	struct FRendered { TArray<FColor> Px; TArray<uint8> Ix8; int32 W = 0; int32 H = 0; int32 Bottom = 0; int32 Left = 0; bool bValid = false; TArray<FPlacedNode> Nodes; };
 	TMap<int32, FRendered> Rendered;
 	TArray<uint8> Ix;
 	Out->IndexUse.SetNumZeroed(256);
@@ -876,6 +876,7 @@ TSharedPtr<OutlawsTextures::FSpriteAtlas> OutlawsTextures::BuildSpriteAtlas(cons
 			Rd.Bottom = MaxY;                // the frame's bottom edge, rows under its insertion point
 			Rd.Left = MinX;                  // its left edge, columns left of its insertion point (negative)
 			Rd.Px.SetNumZeroed(Rd.W * Rd.H);
+			Rd.Ix8.SetNumZeroed(Rd.W * Rd.H);
 			for (const FPlaced& Pl : Placed)
 			{
 				const FWaxCell& C = Wax.Cells[Pl.Cell];
@@ -893,6 +894,7 @@ TSharedPtr<OutlawsTextures::FSpriteAtlas> OutlawsTextures::BuildSpriteAtlas(cons
 						if (Col.A == 0) continue;
 						++Out->IndexUse[V];
 						Rd.Px[(Pl.Y0 - MinY + y) * Rd.W + (Pl.X0 - MinX + x)] = Col;
+						Rd.Ix8[(Pl.Y0 - MinY + y) * Rd.W + (Pl.X0 - MinX + x)] = V;
 					}
 				}
 			}
@@ -923,6 +925,7 @@ TSharedPtr<OutlawsTextures::FSpriteAtlas> OutlawsTextures::BuildSpriteAtlas(cons
 	if (bCreateTexture)
 	{
 		Atlas.SetNumZeroed(AW * AH);
+		Out->Indices.SetNumZeroed(AW * AH);
 	}
 	Out->BelowPx.SetNumZeroed(Used.Num());
 	Out->FootPx.SetNumZeroed(Used.Num());
@@ -984,6 +987,7 @@ TSharedPtr<OutlawsTextures::FSpriteAtlas> OutlawsTextures::BuildSpriteAtlas(cons
 		for (int32 y = 0; y < Rd.H; ++y)
 		{
 			FMemory::Memcpy(Atlas.GetData() + (Y0 + y) * AW + X0, Rd.Px.GetData() + y * Rd.W, Rd.W * sizeof(FColor));
+			FMemory::Memcpy(Out->Indices.GetData() + (Y0 + y) * AW + X0, Rd.Ix8.GetData() + y * Rd.W, Rd.W);
 		}
 	}
 	auto AddGrid = [&CellOf](const TArray<TArray<int32>>& ChorR, int32 Frames, TArray<int32>& Grid)

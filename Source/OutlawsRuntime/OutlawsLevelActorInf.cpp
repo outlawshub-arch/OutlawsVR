@@ -615,6 +615,78 @@ bool AOutlawsLevelActor::IsFullBrightArt(const OutlawsTextures::FSpriteAtlas& At
 	return !OldFireBright() && Share >= 0.4f;
 }
 
+bool AOutlawsLevelActor::OldFireBright2()
+{
+	static const bool bOld = OLFlags::Param(TEXT("OLOldFireBright2"));    // (REQ-FIREBRIGHT2's before: the fire's art full bright as a whole)
+	return bOld;
+}
+
+bool AOutlawsLevelActor::FireKeepsBright(uint8 V) const
+{
+	// the colour map's kept entries (the fire ramp 16..19, 250..254, white), and the flame's bright yellows and oranges: the
+	// remaster's full-bright layer of camfire1 (its SPX's second layer) lights 99 % of the pixels drawn in 133 (231 187 51)
+	// and 80 (255 131 0), which the colour map dims from row 3; the logs' browns (at most 183 bright, or paler) 0..28 %
+	if (V < 16) return false;
+	if (FullBrightIx.IsValidIndex(V) && FullBrightIx[V]) return true;
+	if (!SpritePalette.IsValidIndex(V)) return false;
+	const FColor C = SpritePalette[V];
+	const int32 Hi = FMath::Max3(C.R, C.G, C.B), Lo = FMath::Min3(C.R, C.G, C.B);
+	return C.R == Hi && Hi >= 200 && (Hi - Lo) * 100 >= Hi * 70;          // red the largest, bright, saturation 0.7 or more
+}
+
+UMaterialInterface* AOutlawsLevelActor::SpriteMaterialFor(AOutlawsSpriteActor* S, const OutlawsTextures::FSpriteAtlas& Atlas)
+{
+	if (!S || !S->bFullBright || OldFireBright2() || !SpriteFireMaterial) return SpriteMaterial;
+	OutlawsTextures::FSpriteAtlas& At = const_cast<OutlawsTextures::FSpriteAtlas&>(Atlas);
+	if (!At.FireMask && At.Indices.Num() == At.AtlasW * At.AtlasH && At.AtlasW > 0)
+	{
+		// the mask: 255 where the 8-bit frame draws a colour that dims (the logs, the stones), 0 where it draws one that does
+		// not (FireKeepsBright: the flame) and where it draws nothing (the HD look's soft halo lies there: bright, its own colour)
+		TArray<FColor> Px;
+		Px.SetNumZeroed(At.Indices.Num());
+		int32 Dim = 0, Drawn = 0;
+		for (int32 i = 0; i < At.Indices.Num(); ++i)
+		{
+			const uint8 V = At.Indices[i];
+			if (!At.Alpha.IsValidIndex(i) || !At.Alpha[i]) continue;
+			++Drawn;
+			if (FireKeepsBright(V)) continue;
+			Px[i] = FColor(255, 255, 255, 255);
+			++Dim;
+		}
+		// a dim speck inside the flame (a dark red of its edge, 76 or 154, between kept pixels) is lit with it: scaled up for
+		// the HD look such specks showed as black dots along the flame (the remaster's layer lights about a third of them)
+		const int32 W = At.AtlasW, H = At.AtlasH;
+		auto Kept = [&](int32 x, int32 y) { const int32 j = y * W + x; return x >= 0 && y >= 0 && x < W && y < H && At.Alpha[j] && Px[j].R == 0; };
+		TArray<int32> Specks;
+		for (int32 y = 0; y < H; ++y)
+		{
+			for (int32 x = 0; x < W; ++x)
+			{
+				if (Px[y * W + x].R == 0) continue;
+				int32 N = 0;
+				for (int32 dy = -1; dy <= 1; ++dy) for (int32 dx = -1; dx <= 1; ++dx) N += (dx || dy) && Kept(x + dx, y + dy);
+				if (N >= 5) Specks.Add(y * W + x);
+			}
+		}
+		for (const int32 j : Specks) Px[j] = FColor(0, 0, 0, 0);
+		Dim -= Specks.Num();
+		UTexture2D* Lo = OutlawsTextures::MakeTextureBGRA(At.AtlasW, At.AtlasH, Px, false, TF_Nearest, TA_Clamp);
+		UTexture2D* Hd = OutlawsTextures::MakeTextureBGRA(At.AtlasW, At.AtlasH, Px, false, TF_Bilinear, TA_Clamp);
+		if (!Lo || !Hd) return SpriteMaterial;
+		Textures.Add(FString::Printf(TEXT("FIREMASK:%s:%p"), *At.Nwx, &At), Lo);      // (keeps them referenced)
+		Textures.Add(FString::Printf(TEXT("FIREMASKHD:%s:%p"), *At.Nwx, &At), Hd);
+		At.FireMask = Lo;
+		At.FireMaskHd = Hd;
+		UE_LOG(LogOutlaws, Log, TEXT("OLRT full bright per pixel: %s, %d of its %d drawn px dim with the light, %d specks in the flame lit (%dx%d mask)"), *At.Nwx, Dim, Drawn,
+			Specks.Num(), At.AtlasW, At.AtlasH);
+	}
+	if (!At.FireMask) return SpriteMaterial;
+	S->FireMask = At.FireMask;
+	S->FireMaskHd = At.FireMaskHd;
+	return SpriteFireMaterial;
+}
+
 void AOutlawsLevelActor::GiveAllWeapons()
 {
 	// every weapon item and each ammunition to its limit (ITM MAX_COUNT)
@@ -4440,7 +4512,7 @@ AOutlawsSpriteActor* AOutlawsLevelActor::SpawnSceneSprite(const FString& Name, c
 	S->SpriteTexture = Atlas->Texture;
 	S->bFullBright = IsFullBrightArt(*Atlas);       // (REQ-FIREBRIGHT)
 	S->Quad->SetStaticMesh(SpriteQuad);
-	S->Quad->SetMaterial(0, SpriteMaterial);
+	S->Quad->SetMaterial(0, SpriteMaterialFor(S, *Atlas));     // (REQ-FIREBRIGHT2)
 	S->FinishSpawning(Xf);
 	SpawnedActors.Add(S);
 	UseItemModel(S, Anim, Yaw);
