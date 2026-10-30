@@ -864,7 +864,7 @@ void FOutlawsInfRuntime::ReadState(const FJsonObject& O)
 	if (bOldLayout || bBeforeLights)
 	{
 		UE_LOG(LogOutlaws, Log, TEXT("OLRT save: %d elevators saved before the %s (%d now): those put back, the rest at their start"),
-			Es->Num(), bOldLayout ? TEXT("piano's light") : TEXT("sector lights"), Elevators.Num());
+			Es->Num(), bOldLayout && Es->Num() != LightsFrom ? TEXT("piano's light") : TEXT("sector lights"), Elevators.Num());     // (BUG-LIGHTSAVE: a level with no piano's light named the sector lights)
 	}
 	if (Es && (Es->Num() == Elevators.Num() || bOldLayout || bBeforeLights))
 	{

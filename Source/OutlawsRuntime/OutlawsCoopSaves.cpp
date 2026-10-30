@@ -522,6 +522,9 @@ void UOutlawsCoop::TickSaves(double Now)
 			SnapObj.Reset();
 			UE_LOG(LogOutlawsCoop, Log, TEXT("OLCOOP save put back here (host): %d enemies (%d dead), %d pickups (%d made again, numbered from %d)"), L->GetEnemies().Num(), DeadOf(L),
 				L->Pickups.Num(), Made, RestoredIdBase);
+#if WITH_OUTLAWS_TESTS
+			if (!TestOnly.IsEmpty()) UE_LOG(LogOutlawsCoop, Log, TEXT("OLCOOP test: the load put back (host): %s"), *TestLightsPrint(L));
+#endif
 		}
 		return;
 	}
@@ -700,6 +703,9 @@ void UOutlawsCoop::FinishSnapshotApply(AOutlawsLevelActor* L, AOutlawsPlayer* P,
 	if (O->TryGetArrayField(TEXT("pickups"), A)) SavedPickups = A->Num();
 	UE_LOG(LogOutlawsCoop, Log, TEXT("OLCOOP snapshot applied: %d enemies, %d pickups (client); %d dead here, %d made again; this player: %s, at %s (%.0f cm from the host's saved place)"),
 		SavedEnemies, SavedPickups, DeadOf(L), Made, *How, *At.ToCompactString(), FVector::Dist(At, HostAt));
+#if WITH_OUTLAWS_TESTS
+	if (!TestOnly.IsEmpty()) UE_LOG(LogOutlawsCoop, Log, TEXT("OLCOOP test: the snapshot put back (client): %s"), *TestLightsPrint(L));
+#endif
 	SentPlayer2.Reset();
 	NextPlayer2At = Now + 1.0;
 }
@@ -735,7 +741,11 @@ FString UOutlawsCoop::TestWorldPrint(AOutlawsLevelActor* L) const
 	}
 	if (L->Inf)
 	{
-		for (int32 i = 0; i < L->Inf->Elevators.Num(); ++i)
+		// (BUG-LIGHTSAVE, the weekly gate 2026-10-30: the sector lights left out, TestLightsPrint has them: they run on by
+		// themselves, so the hideout's ALIEN1 (4 s a stop) saved at 31 was at its other stop by this print, seconds after the
+		// load put it back as saved)
+		const int32 Upto = L->Inf->LightsFrom >= 0 ? L->Inf->LightsFrom : L->Inf->Elevators.Num();
+		for (int32 i = 0; i < Upto; ++i)
 		{
 			const FOutlawsElevator& E = L->Inf->Elevators[i];
 			if (L->Inf->Inf.Items[E.Item].Classes[E.ClassIndex].Stops.Num() > 0 && FMath::Abs(E.Current - L->Inf->StopValue(E, 0)) > 0.5) Moved.Add(FString::Printf(TEXT("%d=%.0f"), i, E.Current));
@@ -743,6 +753,20 @@ FString UOutlawsCoop::TestWorldPrint(AOutlawsLevelActor* L) const
 	}
 	return FString::Printf(TEXT("dead [%s], elevators off their first stop [%s]%s"), *FString::Join(Dead, TEXT(",")), *FString::Join(Moved, TEXT(",")),
 		Extras > 0 ? *FString::Printf(TEXT(", extra bad guys %d, dead [%s]"), Extras, *FString::Join(ExtraDead, TEXT(","))) : TEXT(""));
+}
+
+FString UOutlawsCoop::TestLightsPrint(AOutlawsLevelActor* L) const
+{
+	// (BUG-LIGHTSAVE) every sector light by index: its value, its stop and the wait left there, said at the save and on the
+	// frame the load is put back (the save holds them as they were)
+	TArray<FString> Lights;
+	const int32 From = L->Inf && L->Inf->LightsFrom >= 0 ? L->Inf->LightsFrom : INT32_MAX;
+	for (int32 i = From; L->Inf && i < L->Inf->Elevators.Num(); ++i)
+	{
+		const FOutlawsElevator& E = L->Inf->Elevators[i];
+		Lights.Add(FString::Printf(TEXT("%d=%.0f stop %d wait %.1f"), i, E.Current, E.Stop, E.bWaiting ? E.WaitLeft : -1.0));
+	}
+	return FString::Printf(TEXT("sector lights [%s]"), *FString::Join(Lights, TEXT(", ")));
 }
 
 void UOutlawsCoop::TickHostSaveTest(double Now, AOutlawsLevelActor* L, AOutlawsPlayer* P)
@@ -815,6 +839,7 @@ void UOutlawsCoop::TickHostSaveTest(double Now, AOutlawsLevelActor* L, AOutlawsP
 	{
 		// 3: the host saves into slot 9 (the pause menu's Save Game), with the client's kit as player2
 		UE_LOG(LogOutlawsCoop, Log, TEXT("OLCOOP test: before the save (host): %s; enemy %d, elevator %d"), *TestWorldPrint(L), TestSaveEnemy, TestSaveDoor);
+		UE_LOG(LogOutlawsCoop, Log, TEXT("OLCOOP test: saved (host): %s"), *TestLightsPrint(L));
 		TestSay(TEXT("s:world"), 0);
 		const bool bOk = L->SaveGame(9);
 		UE_LOG(LogOutlawsCoop, Log, TEXT("OLCOOP test: the host saves into slot 9: %s"), bOk ? TEXT("written") : TEXT("NOT WRITTEN"));
@@ -831,6 +856,7 @@ void UOutlawsCoop::TickHostSaveTest(double Now, AOutlawsLevelActor* L, AOutlawsP
 	case 145:
 		// the second run: both machines say what the save put back
 		UE_LOG(LogOutlawsCoop, Log, TEXT("OLCOOP test: after the load (host): %s; %s"), *TestWorldPrint(L), *TestFingerprint(L));
+		UE_LOG(LogOutlawsCoop, Log, TEXT("OLCOOP test: after the load (host), seconds on: %s"), *TestLightsPrint(L));
 		TestSay(TEXT("s:world"), 1);
 		// the host's pause menu's Load Game page in a session: the autosave listed first, as in single player (photographed)
 		P->CoopOpenMenu();

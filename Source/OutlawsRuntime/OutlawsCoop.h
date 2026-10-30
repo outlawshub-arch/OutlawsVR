@@ -2348,6 +2348,7 @@ private:
 	void TickSaves(double Now);
 	FString TestFingerprint(AOutlawsLevelActor* L) const;
 	FString TestWorldPrint(AOutlawsLevelActor* L) const;
+	FString TestLightsPrint(AOutlawsLevelActor* L) const;     // (BUG-LIGHTSAVE: the sector lights, which TestWorldPrint leaves out)
 	int32 LobbyLoadSlot = -100;                  // host: the lobby's Start loads this save (-100: a new game)
 	bool bResumeChosen = false;                  // host: the lobby's Resume Game picked before both were ready
 	bool bTestResume = false;                    // -OLCoopLoad=resume: the test picks the lobby's Resume Game row
