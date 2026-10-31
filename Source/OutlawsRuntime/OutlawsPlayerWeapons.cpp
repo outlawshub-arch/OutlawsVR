@@ -1,6 +1,7 @@
 // AOutlawsPlayer, weapons half: the VR weapon wheel and the placeholder guns held in the hands.
 #include "OutlawsBeacon.h"
 #include "OutlawsFlags.h"
+#include "OutlawsItem3d.h"
 #include "OutlawsTutorialCard.h"
 #include "OutlawsPlayer.h"
 #include "OutlawsDevChecks.h"
@@ -168,6 +169,9 @@ namespace
 	// placeholders when their OBJ is there; -OLVEGuns keeps the VE ones.  Their hand frame: grip at the origin,
 	// bore along +X, +Z up; <name>.json beside each holds the gun's points (muzzle, sights, hammer, load, eject)
 	FString SpriteHeldDir() { return FPaths::Combine(FOutlawsAssets::PlaceholderDir(), TEXT("items3d/held")); }
+	// (BUG-DEVDIR2) the held item models that are not guns (the Gatling and its tripod, the tools, the 3D knife and bundle,
+	// the scope): the placeholders where they are, else Content/Item3d painted from the player's sprites (OutlawsItem3d)
+	FString ItemHeldDir() { return OutlawsItem3d::HeldDir(); }
 	const TCHAR* SpriteGunName(int32 Wi)
 	{
 		static const TCHAR* Names[] = { TEXT("GPISTOL"), TEXT("GRIFLE"), TEXT("GSGUN"), TEXT("GDBSGUN"), TEXT("GSAWGUN") };
@@ -515,7 +519,7 @@ namespace
 		{
 			if (Hit->IsValid()) return Hit->Get();
 		}
-		return OutlawsObj::LoadTextureFile(Path);
+		return OutlawsItem3d::Texture(Path);          // (BUG-DEVDIR2: the Gatling's, painted from the player's sprite on a tester's install)
 	}
 
 	/** The card a gun is held as without its HD sprite: one quad in the gun's plane where the sprite lies in its hand
@@ -1785,8 +1789,9 @@ TSharedPtr<OutlawsObj::FObjMesh> AOutlawsPlayer::HeldModelFor(int32 Wi, bool& bO
 	const bool bCardGun = !W.Model3do && HeldGunSource(Wi) == EHeldGunSource::Card;
 	const bool bSpriteGun = !W.Model3do && UseSpriteGun(Wi);
 	// the gatling: the modelled one (item3d rework.py GGATGUN, user 2026-09-29) where it has been made, else the game's
-	const FString GatPath = FPaths::Combine(SpriteHeldDir(), TEXT("GGATGUN_gun.obj"));
-	const bool bGatObj = W.bAuto && FPaths::FileExists(GatPath) && !OLFlags::Param(TEXT("OLGameGatling"));
+	const FString GatPath = FPaths::Combine(ItemHeldDir(), TEXT("GGATGUN_gun.obj"));
+	OutlawsItem3d::SetLevel(Level.Get());
+	const bool bGatObj = W.bAuto && OutlawsItem3d::Exists(GatPath) && OutlawsItem3d::CanPaint() && !OLFlags::Param(TEXT("OLGameGatling"));
 	// (the VE stand-ins are private: never looked for off this PC)
 	const FString Path = bGatObj ? GatPath : W.Model3do ? FString(TEXT("3do:")) + W.Model3do
 		: bCardGun ? FString(TEXT("card:")) + SpriteGunName(Wi)
@@ -1801,7 +1806,7 @@ TSharedPtr<OutlawsObj::FObjMesh> AOutlawsPlayer::HeldModelFor(int32 Wi, bool& bO
 		{
 			// the gun piece (rework.py splits it off its tripod): cm about its pivot, the barrels along the model's +Y
 			// (its front): turned to fire along +X and made half as big again, so the pivot comes to the waist
-			bOk = OutlawsObj::Load(Path, 1.0, true, *Obj);
+			bOk = OutlawsItem3d::Load(Path, 1.0, true, *Obj, Level.Get());
 			const double Sc = 1.5;
 			const FQuat Q = FQuat::FindBetweenNormals(FVector::RightVector, FVector::ForwardVector);
 			FBox Turned(ForceInit);
@@ -1832,14 +1837,14 @@ TSharedPtr<OutlawsObj::FObjMesh> AOutlawsPlayer::HeldModelFor(int32 Wi, bool& bO
 			bool bHave = false;
 			if (W.Throw > 0 && OLFlags::Param(TEXT("OLDetailedThrowables")))
 			{
-				const FString Alt = FPaths::Combine(SpriteHeldDir(), W.Throw == 1 ? TEXT("GDYNAM3D.obj") : TEXT("GKNIFE3D.obj"));
+				const FString Alt = FPaths::Combine(ItemHeldDir(), W.Throw == 1 ? TEXT("GDYNAM3D.obj") : TEXT("GKNIFE3D.obj"));
 				OutlawsObj::FObjMesh AltObj;
-				if (FPaths::FileExists(Alt) && OutlawsObj::Load(Alt, 1.0, true, AltObj) && AltObj.Sections.Num() > 0)
+				if (OutlawsItem3d::Exists(Alt) && OutlawsItem3d::Load(Alt, 1.0, true, AltObj, L) && AltObj.Sections.Num() > 0)
 				{
 					OutlawsObj::FaceItemModelOutward(AltObj, FString::Printf(TEXT("OLRT held %s"), *FPaths::GetBaseFilename(Alt)));
 					for (TPair<FString, FOutlawsMeshSection>& Kv : AltObj.Sections)
 					{
-						if (!Tex.Contains(Kv.Value.Texture)) if (UTexture2D* T = OutlawsObj::LoadTextureFile(Kv.Value.Texture)) { Tex.Add(Kv.Value.Texture, T); KeepAlive.Add(T); }
+						if (!Tex.Contains(Kv.Value.Texture)) if (UTexture2D* T = OutlawsItem3d::Texture(Kv.Value.Texture, L)) { Tex.Add(Kv.Value.Texture, T); KeepAlive.Add(T); }
 						Src.Add(Kv.Key, Kv.Value);
 					}
 					bHave = true;
@@ -2508,7 +2513,7 @@ void AOutlawsPlayer::UpdateGuns(float Dt)
 		// recoil: the gun snaps back along the barrel and up, then settles into the fist
 		RecoilPitch[H] *= FMath::Exp(-11.f * Dt);
 		RecoilKick[H] *= FMath::Exp(-9.f * Dt);            // the jolt back eases home a little slower than the muzzle settles
-		if (W.bAuto && FPaths::FileExists(FPaths::Combine(SpriteHeldDir(), TEXT("GGATGUN_tripod.obj"))) && !OLFlags::Param(TEXT("OLGameGatling")))
+		if (W.bAuto && OutlawsItem3d::Exists(FPaths::Combine(ItemHeldDir(), TEXT("GGATGUN_tripod.obj"))) && !OLFlags::Param(TEXT("OLGameGatling")))
 		{
 			// (user 2026-09-29) carried in the hand by the handle bar behind its breech, free to point and move anywhere;
 			// the tripod hangs under the gun's pivot, its legs always straight down to the floor (level, turned with the
@@ -3530,15 +3535,16 @@ void AOutlawsPlayer::BuildToolModel(int32 Hand, bool bShovel)
 	// sprite shovel and the boxes, -OLVEGuns the boxes for all three
 	const bool bGameTools = OLFlags::Param(TEXT("OLGameTools"));
 	FString ModelName = bPen ? TEXT("GINK3D.obj") : bShovel ? TEXT("GSHOVEL3D.obj") : TEXT("GCROWBAR3D.obj");
-	if (bGameTools || !FPaths::FileExists(FPaths::Combine(SpriteHeldDir(), ModelName))) ModelName = bShovel ? TEXT("GSHOVEL.obj") : FString();
-	if (!ModelName.IsEmpty() && !OLFlags::Param(TEXT("OLVEGuns")))
+	if (bGameTools || !OutlawsItem3d::Exists(FPaths::Combine(ItemHeldDir(), ModelName))) ModelName = bShovel ? TEXT("GSHOVEL.obj") : FString();
+	OutlawsItem3d::SetLevel(Level.Get());
+	if (!ModelName.IsEmpty() && !OLFlags::Param(TEXT("OLVEGuns")) && OutlawsItem3d::CanPaint())
 	{
-		const FString P = FPaths::Combine(SpriteHeldDir(), ModelName);
+		const FString P = FPaths::Combine(ItemHeldDir(), ModelName);
 		TSharedPtr<OutlawsObj::FObjMesh>* Cached = GObjCache.Find(P);
 		if (!Cached)
 		{
 			TSharedPtr<OutlawsObj::FObjMesh> Obj = MakeShared<OutlawsObj::FObjMesh>();
-			if (!FPaths::FileExists(P) || !OutlawsObj::Load(P, 1.0, true, *Obj)) Obj.Reset();
+			if (!OutlawsItem3d::Exists(P) || !OutlawsItem3d::Load(P, 1.0, true, *Obj, Level.Get())) Obj.Reset();
 			Cached = &GObjCache.Add(P, Obj);
 		}
 		UMaterialInterface* Base = HeldBase();
@@ -3558,7 +3564,7 @@ void AOutlawsPlayer::BuildToolModel(int32 Hand, bool bShovel)
 				if (!Mat)
 				{
 					UMaterialInstanceDynamic* Mid = UMaterialInstanceDynamic::Create(Base, this);
-					if (UTexture2D* Tex = OutlawsObj::LoadTextureFile(S.Texture))
+					if (UTexture2D* Tex = OutlawsItem3d::Texture(S.Texture, Level.Get()))
 					{
 						Mid->SetTextureParameterValue(TEXT("Tex"), Tex);
 						KeepAlive.Add(Tex);
@@ -6478,14 +6484,18 @@ void AOutlawsPlayer::BuildGunParts(int32 Hand, int32 Wi)
 	// the telescope on the rifle (user 2026-09-29: the scope item's model, fitted where a scope goes): its rings on the
 	// receiver's flat top (4.9 cm over the grip line from 8 to 30 cm ahead of it), centred 24 cm ahead so the eyepiece
 	// clears the hammer; shown while the scope is carried (UpdateGunParts).  (Placeholder art: only with the placeholder guns)
-	if (bSprite && Wi == 1 && HeldGunSource(Wi) == EHeldGunSource::Dev)
+	// (BUG-DEVDIR2) on a tester's install the shipped scope on the rifle built from their sprite (its parity with the dev
+	// one is measured, so the scope sits where it did); -OLOldDevDir2: the dev placeholders' only
+	OutlawsItem3d::SetLevel(Level.Get());
+	if (bSprite && Wi == 1 && (HeldGunSource(Wi) == EHeldGunSource::Dev || (HeldGunSource(Wi) == EHeldGunSource::Shipped && OutlawsItem3d::UseShipped()))
+		&& OutlawsItem3d::CanPaint())
 	{
-		const FString ScopePath = FPaths::Combine(FPaths::GetPath(SpriteHeldDir()), TEXT("GSCOPE.obj"));
+		const FString ScopePath = FPaths::Combine(OutlawsItem3d::Dir(), TEXT("GSCOPE.obj"));
 		TSharedPtr<OutlawsObj::FObjMesh>* Cached = GObjCache.Find(ScopePath);
 		if (!Cached)
 		{
 			TSharedPtr<OutlawsObj::FObjMesh> Obj = MakeShared<OutlawsObj::FObjMesh>();
-			if (FPaths::FileExists(ScopePath) && OutlawsObj::Load(ScopePath, 1.0, true, *Obj))
+			if (OutlawsItem3d::Exists(ScopePath) && OutlawsItem3d::Load(ScopePath, 1.0, true, *Obj, Level.Get()))
 			{
 				for (TPair<FString, FOutlawsMeshSection>& Kv : Obj->Sections) for (FVector& P : Kv.Value.Positions) P += FVector(24.0, 0.0, 4.9);
 				// (SCOPEFACES, user 27 Oct: the tube looked inside-out) the pickup's tube walls are wound inward and the held
@@ -6520,7 +6530,7 @@ void AOutlawsPlayer::BuildGunParts(int32 Hand, int32 Wi)
 				if (!Mat && Base)
 				{
 					UMaterialInstanceDynamic* Mid = UMaterialInstanceDynamic::Create(Base, this);
-					if (UTexture2D* Tex = OutlawsObj::LoadTextureFile(S.Texture))
+					if (UTexture2D* Tex = OutlawsItem3d::Texture(S.Texture, Level.Get()))
 					{
 						Mid->SetTextureParameterValue(TEXT("Tex"), Tex);
 						KeepAlive.Add(Tex);
@@ -6602,8 +6612,8 @@ void AOutlawsPlayer::EnsureGatTripod()
 	auto Build = [this](const TCHAR* File, TObjectPtr<UProceduralMeshComponent>& Out)
 	{
 	OutlawsObj::FObjMesh Obj;
-	const FString Path = FPaths::Combine(SpriteHeldDir(), File);
-	if (!FPaths::FileExists(Path) || !OutlawsObj::Load(Path, 1.0, true, Obj)) return;
+	const FString Path = FPaths::Combine(ItemHeldDir(), File);
+	if (!OutlawsItem3d::Exists(Path) || !OutlawsItem3d::Load(Path, 1.0, true, Obj, Level.Get())) return;
 	Out = NewObject<UProceduralMeshComponent>(this);
 	UProceduralMeshComponent* Part = Out;
 	Part->SetCollisionEnabled(ECollisionEnabled::NoCollision);
@@ -6626,7 +6636,7 @@ void AOutlawsPlayer::EnsureGatTripod()
 		if (!Mat && Base)
 		{
 			UMaterialInstanceDynamic* Mid = UMaterialInstanceDynamic::Create(Base, this);
-			if (UTexture2D* Tex = OutlawsObj::LoadTextureFile(S.Texture))
+			if (UTexture2D* Tex = OutlawsItem3d::Texture(S.Texture, Level.Get()))
 			{
 				Mid->SetTextureParameterValue(TEXT("Tex"), Tex);
 				KeepAlive.Add(Tex);

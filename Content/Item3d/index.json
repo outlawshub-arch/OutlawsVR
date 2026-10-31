@@ -69,7 +69,7 @@
    "blocks": 1,
    "swatches": 4,
    "pending_swatches": 0,
-   "own_swatches": 2,
+   "own_swatches": 0,
    "pending_texels": 0,
    "texels": 89088,
    "faces_as_regenerated": true,

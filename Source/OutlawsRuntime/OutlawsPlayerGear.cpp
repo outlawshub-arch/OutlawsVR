@@ -28,6 +28,7 @@
 #include "Misc/CommandLine.h"
 #include "OutlawsTextures.h"
 #include "OutlawsObjMesh.h"
+#include "OutlawsItem3d.h"
 #include "OutlawsLab.h"
 #include "GameFramework/CharacterMovementComponent.h"
 #include "Components/CapsuleComponent.h"
@@ -92,11 +93,11 @@ namespace
 	{
 		static FPlateShape S;
 		static bool bTried = false;
-		if (bTried) return S;
+		if (bTried || !OutlawsItem3d::CanPaint()) return S;      // (BUG-DEVDIR2: no level's sprites yet, looked for again)
 		bTried = true;
 		OutlawsObj::FObjMesh Obj;
-		const FString Path = FPaths::Combine(FOutlawsAssets::PlaceholderDir(), TEXT("items3d/GBPLATE.obj"));
-		if (!FPaths::FileExists(Path) || !OutlawsObj::Load(Path, 1.0, true, Obj) || !Obj.Bounds.IsValid) return S;
+		const FString Path = FPaths::Combine(OutlawsItem3d::Dir(), TEXT("GBPLATE.obj"));
+		if (!OutlawsItem3d::Exists(Path) || !OutlawsItem3d::Load(Path, 1.0, true, Obj) || !Obj.Bounds.IsValid) return S;
 		// (PLATEFACES) turned to face out as the floor's copy is (FACETURN): the file has 4 % of its area facing out, so on the
 		// one-sided held material the worn plate showed its inside and the headset's ink shell sat inside it.  The mirror below
 		// moves the corners and turns each face back with them, so what faces out here still faces out.  -OLOldScopeFaces: as the
@@ -290,12 +291,13 @@ void AOutlawsPlayer::BuildGearModel(int32 Hand)
 		{
 			static TSharedPtr<OutlawsObj::FObjMesh> LanternObj;
 			static bool bLanternTried = false;
-			if (!bLanternTried)
+			OutlawsItem3d::SetLevel(Level.Get());
+			if (!bLanternTried && OutlawsItem3d::CanPaint())
 			{
 				bLanternTried = true;
-				const FString Path = FPaths::Combine(FOutlawsAssets::PlaceholderDir(), TEXT("items3d/GLANTERN.obj"));
+				const FString Path = FPaths::Combine(OutlawsItem3d::Dir(), TEXT("GLANTERN.obj"));
 				LanternObj = MakeShared<OutlawsObj::FObjMesh>();
-				if (!FPaths::FileExists(Path) || !OutlawsObj::Load(Path, 1.0, true, *LanternObj)) LanternObj.Reset();
+				if (!OutlawsItem3d::Exists(Path) || !OutlawsItem3d::Load(Path, 1.0, true, *LanternObj, Level.Get())) LanternObj.Reset();
 				else OutlawsObj::FaceItemModelOutward(*LanternObj, TEXT("OLRT held lantern"));      // (FACETURN: as the floor's; it has none to turn)
 			}
 			UMaterialInterface* Base = HeldBase();
@@ -346,7 +348,7 @@ void AOutlawsPlayer::BuildGearModel(int32 Hand)
 						const int32 Gi = GlassPm->GetNumSections();
 						GlassPm->CreateMeshSection_LinearColor(Gi, Pos, S.Triangles, S.Normals, S.UVs, S.Colors, TArray<FProcMeshTangent>(), false);
 						UMaterialInstanceDynamic* Gm = UMaterialInstanceDynamic::Create(SpriteBase, this);
-						if (UTexture2D* Tex = OutlawsObj::LoadTextureFile(S.Texture))
+						if (UTexture2D* Tex = OutlawsItem3d::Texture(S.Texture, Level.Get()))
 						{
 							Gm->SetTextureParameterValue(TEXT("Tex"), Tex);
 							KeepAlive.Add(Tex);
@@ -359,7 +361,7 @@ void AOutlawsPlayer::BuildGearModel(int32 Hand)
 					}
 					Body->CreateMeshSection_LinearColor(Index, Pos, S.Triangles, S.Normals, S.UVs, S.Colors, TArray<FProcMeshTangent>(), false);
 					UMaterialInstanceDynamic* Mid = UMaterialInstanceDynamic::Create(Base, this);
-					if (UTexture2D* Tex = OutlawsObj::LoadTextureFile(S.Texture))
+					if (UTexture2D* Tex = OutlawsItem3d::Texture(S.Texture, Level.Get()))
 					{
 						Mid->SetTextureParameterValue(TEXT("Tex"), Tex);
 						KeepAlive.Add(Tex);
@@ -479,7 +481,7 @@ void AOutlawsPlayer::BuildPlate()
 		if (PlateShape().bOk && Base)
 		{
 			UMaterialInstanceDynamic* Mid = UMaterialInstanceDynamic::Create(Base, this);
-			if (UTexture2D* Tex = OutlawsObj::LoadTextureFile(PlateShape().Texture))
+			if (UTexture2D* Tex = OutlawsItem3d::Texture(PlateShape().Texture, Level.Get()))
 			{
 				Mid->SetTextureParameterValue(TEXT("Tex"), Tex);
 				KeepAlive.Add(Tex);
@@ -523,7 +525,7 @@ bool AOutlawsPlayer::BuildPlateLook(AActor* OnActor, int32 PlateMax, UProcedural
 	auto Mat = [&](const FString& TexPath, const FColor& Solid)
 	{
 		UMaterialInstanceDynamic* Mid = UMaterialInstanceDynamic::Create(Base, OnActor);
-		UTexture2D* Tex = TexPath.IsEmpty() ? nullptr : OutlawsObj::LoadTextureFile(TexPath);
+		UTexture2D* Tex = TexPath.IsEmpty() ? nullptr : OutlawsItem3d::Texture(TexPath);
 		if (!Tex)
 		{
 			TArray<FColor> Px;

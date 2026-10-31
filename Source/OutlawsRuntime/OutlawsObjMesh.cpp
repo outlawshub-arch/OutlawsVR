@@ -485,6 +485,18 @@ namespace
 {
 	// the file each texture LoadTextureFile made came from (its texels on the CPU, for SolidMaskOf)
 	TMap<TWeakObjectPtr<const UTexture>, FString> GTextureFile;
+	// (BUG-DEVDIR2) the solid texels of a texture made in memory (NoteSolidTexels)
+	TMap<TWeakObjectPtr<const UTexture>, OutlawsObj::FSolidMask> GTextureTexels;
+}
+
+void OutlawsObj::NoteSolidTexels(const UTexture* T, int32 W, int32 H, const TArray<FColor>& Px)
+{
+	if (!T || Px.Num() != W * H) return;
+	FSolidMask& M = GTextureTexels.Add(T);
+	M.W = W;
+	M.H = H;
+	M.Solid.SetNumUninitialized(W * H);
+	for (int32 i = 0; i < W * H; ++i) M.Solid[i] = Px[i].A >= 128 ? 1 : 0;
 }
 
 UTexture2D* OutlawsObj::LoadTextureFile(const FString& Path)
@@ -523,6 +535,10 @@ bool OutlawsObj::FSolidMask::At(double U, double V) const
 const OutlawsObj::FSolidMask* OutlawsObj::SolidMaskOf(const UTexture* T)
 {
 	static TMap<FString, FSolidMask> Masks;
+	if (const FSolidMask* Made = T ? GTextureTexels.Find(T) : nullptr)
+	{
+		return Made->W > 0 ? Made : nullptr;
+	}
 	const FString* Path = T ? GTextureFile.Find(T) : nullptr;
 	if (!Path)
 	{

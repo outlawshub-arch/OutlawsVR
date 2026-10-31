@@ -1,4 +1,5 @@
 #include "OutlawsTextures.h"
+#include "OutlawsItem3d.h"
 #include "OutlawsFlags.h"
 #include "OutlawsRuntime.h"
 #include "OutlawsLab.h"
@@ -1180,7 +1181,7 @@ UTexture* OutlawsTextures::BuildSpriteAtlasHD(UObject* Outer, const FOutlawsAsse
 	return RT;
 }
 
-bool OutlawsTextures::DecodeSpriteAtlasHdPixels(const FOutlawsAssets& A, const FSpriteAtlas& Atlas, TArray<FColor>& Out, int32& OutW, int32& OutH)
+bool OutlawsTextures::DecodeSpriteAtlasHdPixels(const FOutlawsAssets& A, const FSpriteAtlas& Atlas, TArray<FColor>& Out, int32& OutW, int32& OutH, bool bResizeOdd)
 {
 	constexpr int32 HdCellScale = 4;          // the remaster's SPX cells are 4x the NWX cell
 	OutW = OutH = 0;
@@ -1200,21 +1201,30 @@ bool OutlawsTextures::DecodeSpriteAtlasHdPixels(const FOutlawsAssets& A, const F
 		const FSprxFrame& F = Frames[N.Cell];
 		const int32 Layers = 1 + ((F.Flags & 1) ? 1 : 0) + ((F.Flags & 2) ? 1 : 0);
 		const int32 PerLayer = (F.End - F.Offset) / Layers;
-		if (F.Format != SprxBC7 || F.W != N.W * HdCellScale || F.H != N.H * HdCellScale || F.Offset < 0
+		const bool bOdd = F.W != N.W * HdCellScale || F.H != N.H * HdCellScale;
+		if (F.Format != SprxBC7 || (bOdd && !bResizeOdd) || F.W <= 0 || F.H <= 0 || F.Offset < 0
 			|| F.Offset + Bc7MipBytes(F.W, F.H) > Spx.Num() || Bc7MipBytes(F.W, F.H) > PerLayer)
 		{
 			return false;
 		}
 		Bc7::DecodeImage(Spx.GetData() + F.Offset, F.W, F.H, Cell);
-		for (int32 y = 0; y < F.H; ++y)
+		const int32 CW = N.W * HdCellScale, CH = N.H * HdCellScale;
+		if (bOdd)
 		{
-			const int32 Sy = N.bFlipY ? F.H - 1 - y : y;
+			// (BUG-DEVDIR2) olue_export.py's: the frame resized to 4x its cell (Lanczos, as Pillow)
+			TArray<FColor> Sized;
+			OutlawsItem3d::ResizeLanczos(Cell, F.W, F.H, CW, CH, Sized);
+			Cell = MoveTemp(Sized);
+		}
+		for (int32 y = 0; y < CH; ++y)
+		{
+			const int32 Sy = N.bFlipY ? CH - 1 - y : y;
 			const int32 Dy = N.Y * HdCellScale + y;
 			if (Dy < 0 || Dy >= AH) continue;
-			for (int32 x = 0; x < F.W; ++x)
+			for (int32 x = 0; x < CW; ++x)
 			{
 				const int32 Dx = N.X * HdCellScale + x;
-				const FColor& C = Cell[Sy * F.W + (N.bFlipX ? F.W - 1 - x : x)];
+				const FColor& C = Cell[Sy * CW + (N.bFlipX ? CW - 1 - x : x)];
 				if (C.A == 0 || Dx < 0 || Dx >= AW) continue;
 				Canvas[Dy * AW + Dx] = C;
 			}

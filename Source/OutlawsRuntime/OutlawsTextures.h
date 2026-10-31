@@ -172,9 +172,11 @@ namespace OutlawsTextures
 	 * The same HD look on the CPU (the held guns' textures, user 2026-10-02): every cell's SPX frame (BC7 mip 0)
 	 * at 4x where its NWX cell sits, flipped as the node says, its texels with alpha drawn over a transparent black
 	 * atlas (as olue_export.py --hd writes sprites_hd).  False when the SPX is missing or incomplete, or a frame
-	 * is not 4x its cell.
+	 * is not 4x its cell.  (BUG-DEVDIR2) bResizeOdd: such a frame resized to 4x its cell with Pillow's Lanczos instead,
+	 * as olue_export.py does (the item3d models' sprites: CACTUS01, the keys, the clip, the lantern...).
 	 */
-	OUTLAWSRUNTIME_API bool DecodeSpriteAtlasHdPixels(const FOutlawsAssets& A, const FSpriteAtlas& Atlas, TArray<FColor>& Out, int32& OutW, int32& OutH);
+	OUTLAWSRUNTIME_API bool DecodeSpriteAtlasHdPixels(const FOutlawsAssets& A, const FSpriteAtlas& Atlas, TArray<FColor>& Out, int32& OutW, int32& OutH,
+		bool bResizeOdd = false);
 
 	/** REQ-FIREBRIGHT3: the HD look's fire mask from the remaster's own full-bright layer (each SPX frame's second layer, Flags
 	 *  bit 0), laid out as DecodeSpriteAtlasHdPixels lays the colour: 0 where the layer keeps a texel bright, 255 where it

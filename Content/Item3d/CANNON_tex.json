@@ -7,7 +7,8 @@
   "stem": "CANNON",
   "cell": null,
   "at": [0,0],
-  "size": [508,292]
+  "size": [508,292],
+  "atlas_cell": 9
  },
  "blocks": [],
  "fill": {

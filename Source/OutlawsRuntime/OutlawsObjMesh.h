@@ -75,4 +75,7 @@ namespace OutlawsObj
 	};
 	/** The solid texels of a texture LoadTextureFile made (read from its file once); null for any other texture. */
 	OUTLAWSRUNTIME_API const FSolidMask* SolidMaskOf(const UTexture* T);
+	/** (BUG-DEVDIR2) A texture made from texels in memory (an item3d model's, painted from the player's sprite): its solid
+	 *  texels kept for SolidMaskOf, as a file's are, so the ink shell skips its see-through parts the same. */
+	OUTLAWSRUNTIME_API void NoteSolidTexels(const UTexture* T, int32 W, int32 H, const TArray<FColor>& Px);
 }

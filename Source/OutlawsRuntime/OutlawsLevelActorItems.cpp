@@ -9,6 +9,7 @@
 #include "OutlawsLab.h"
 #include "OutlawsRuntime.h"
 #include "OutlawsObjMesh.h"
+#include "OutlawsItem3d.h"
 #include "OutlawsSpriteActor.h"
 #include "ProceduralMeshComponent.h"
 #include "Materials/MaterialInstanceDynamic.h"
@@ -74,7 +75,8 @@ namespace OlItemModel
 		return Scale;
 	}
 
-	FString ItemModelDir() { return FPaths::Combine(FOutlawsAssets::PlaceholderDir(), TEXT("items3d")); }
+	// (BUG-DEVDIR2) the dev PC's placeholders where they are, else the shipped meshes painted from the player's sprites
+	FString ItemModelDir() { return OutlawsItem3d::Dir(); }
 }
 
 namespace
@@ -134,7 +136,8 @@ namespace
 		TSharedPtr<FItemModelData> D;
 		const FString Path = FPaths::Combine(ItemModelDir(), Stem + TEXT(".obj"));
 		OutlawsObj::FObjMesh Obj;
-		if (FPaths::FileExists(Path) && OutlawsObj::Load(Path, 1.0, true, Obj))
+		if (!OutlawsItem3d::CanPaint()) return nullptr;        // (BUG-DEVDIR2) no level's sprites yet: asked again later
+		if (OutlawsItem3d::Exists(Path) && OutlawsItem3d::Load(Path, 1.0, true, Obj))
 		{
 			// (SCOPEFACES, FACETURN) item3d's generators wound some models' tubes and shells inward (the scope, lever, crowbar and
 			// crank pickups; the cacti, TREE01, the cow skull, the flags, the gatling...): every model turned to face out before
@@ -329,6 +332,7 @@ bool AOutlawsLevelActor::UseItemModel(AOutlawsSpriteActor* S, const FString& Ani
 		return false;
 	}
 	const FString ModelName = FPaths::GetBaseFilename(Anim).ToUpper();
+	OutlawsItem3d::SetLevel(this);         // (BUG-DEVDIR2) the shipped models are painted from this level's sprites
 	const FItemModelData* D = ItemModelFor(ModelName);
 	if (!D)
 	{
@@ -504,7 +508,7 @@ bool AOutlawsLevelActor::UseItemModel(AOutlawsSpriteActor* S, const FString& Ani
 			if (UMaterialInterface* Ghost = LoadObject<UMaterialInterface>(nullptr, TEXT("/Game/Outlaws/Runtime/M_OLR_HeldGhost.M_OLR_HeldGhost")))
 			{
 				Mat = UMaterialInstanceDynamic::Create(Ghost, this);
-				if (UTexture2D* T = OutlawsObj::LoadTextureFile(Sec.Texture)) Mat->SetTextureParameterValue(TEXT("Tex"), T);
+				if (UTexture2D* T = OutlawsItem3d::Texture(Sec.Texture, this)) Mat->SetTextureParameterValue(TEXT("Tex"), T);
 				Mat->SetScalarParameterValue(TEXT("Opacity"), bGlass ? 0.35f : 1.f);
 			}
 		}
@@ -516,7 +520,7 @@ bool AOutlawsLevelActor::UseItemModel(AOutlawsSpriteActor* S, const FString& Ani
 			if (!ItemBase.IsValid()) ItemBase = LoadObject<UMaterialInterface>(nullptr, TEXT("/Game/Outlaws/Runtime/M_OLR_ItemModel.M_OLR_ItemModel"));
 			bNoLod |= !ItemBase.IsValid();
 			Mat = UMaterialInstanceDynamic::Create(ItemBase.IsValid() ? ItemBase.Get() : WorldMaskedMaterial.Get(), this);
-			if (UTexture2D* T = OutlawsObj::LoadTextureFile(Sec.Texture)) Mat->SetTextureParameterValue(TEXT("Tex"), T);
+			if (UTexture2D* T = OutlawsItem3d::Texture(Sec.Texture, this)) Mat->SetTextureParameterValue(TEXT("Tex"), T);
 		}
 		M->SetMaterial(Index, Mat);
 		if (D->bFlames && bFlame) M->SetMeshSectionVisible(Index, false);      // (the game's own fire burns instead)
