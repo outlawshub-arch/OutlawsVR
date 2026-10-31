@@ -834,6 +834,17 @@ TSharedPtr<OutlawsTextures::FSpriteAtlas> OutlawsTextures::BuildSpriteAtlas(cons
 	{
 		Out->Dirs = Wax.Chors[0].Dirs;
 		Out->FPS = Wax.Chors[0].FPS;
+		// (BUG-CWEXPLOOP) the first row's first flow opcode: a one-shot (explode1: 0 1 2 3 4 5 -8 1 0 -1 1 0) stops there
+		const FWaxChor& C0 = Wax.Chors[0];
+		for (int32 i = 0; i < C0.Frames && i < C0.Grid.Num(); )
+		{
+			const int16 V = C0.Grid[i];
+			if (V >= 0) { ++i; continue; }
+			if (V == -1) Out->EndOp = 1;
+			else if (V == -8) Out->EndOp = 2;
+			if (V == -1 || V == -2 || V == -4 || V == -6 || V == -7 || V == -8 || C0.Frames - i <= 2) break;
+			i += 3;
+		}
 	}
 	Out->Frames = 1;
 	for (const TArray<int32>& R : Rows) Out->Frames = FMath::Max(Out->Frames, R.Num());

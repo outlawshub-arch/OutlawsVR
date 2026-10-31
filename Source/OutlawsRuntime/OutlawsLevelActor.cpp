@@ -1793,6 +1793,9 @@ void AOutlawsLevelActor::Build()
 			S->Directions = Atlas->Dirs;
 			S->FrameCount = Atlas->Frames;
 			S->FPS = Atlas->FPS;
+			// (BUG-CWEXPLOOP) a one-shot's script ends it (-OLOldExpLoop: every prop loops, as before)
+			static const bool bOldExpLoop = OLFlags::Param(TEXT("OLOldExpLoop"));
+			S->EndOp = bOldExpLoop ? 0 : Atlas->EndOp;
 			S->Grid = Atlas->Grid;
 			S->SpriteTexture = Atlas->Texture;
 			float FullShare = 0.f;

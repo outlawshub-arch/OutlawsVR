@@ -94,6 +94,10 @@ namespace OutlawsTextures
 		int32 Dirs = 1;
 		int32 Frames = 1;
 		float FPS = 0.f;
+		/** BUG-CWEXPLOOP: how chor 0's first row ends, the first of its flow opcodes [wax_NextFrame 0x1400d6dc0]: 0 LOOP (-2)
+		 *  or none, 1 END (-1: stop and hold the frame), 2 TERMINATE (-8: the logic frees the object; explode1..4, tntboom,
+		 *  dust, splash3/4, dynabalx). */
+		uint8 EndOp = 0;
 		TArray<int32> Grid;   // Dirs x Frames cell indices
 		/**
 		 * Where each cell stands (user 2026-10-02: sprites floated).  A WAX frame is drawn with its insertion point

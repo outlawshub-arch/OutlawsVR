@@ -635,7 +635,16 @@ void AOutlawsSpriteActor::UpdateSprite(float DeltaSeconds, const FVector* Viewer
 		if (FPS > 0.f && Frames > 1)
 		{
 			if (!bClockHeld) AnimTime += DeltaSeconds;
-			Frame = static_cast<int32>(AnimTime * FPS) % Frames;
+			const int32 Shown = static_cast<int32>(AnimTime * FPS);
+			// (BUG-CWEXPLOOP, user 2026-10-31: the civil war's start explosions kept looping) a script that ends with END
+			// holds its last frame; one that ends with TERMINATE plays once and the object goes, as the original frees it
+			Frame = EndOp == 0 ? Shown % Frames : FMath::Min(Shown, Frames - 1);
+			if (EndOp == 2 && Shown >= Frames && !bTerminated && !IsHidden())
+			{
+				bTerminated = true;
+				SetActorHiddenInGame(true);
+				UE_LOG(LogOutlaws, Log, TEXT("OLRT %s: its one-shot (%d frames) ended, gone"), *OutlawsName, Frames);
+			}
 		}
 		CurrentDirection = bHaveViewer ? DirectionFor(Viewer) : 0;
 		const int32 Index = CurrentDirection * Frames + Frame;

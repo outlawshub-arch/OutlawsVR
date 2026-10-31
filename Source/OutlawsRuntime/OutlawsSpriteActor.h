@@ -192,6 +192,13 @@ public:
 	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Outlaws|Atlas")
 	float FPS = 0.f;
 
+	/** BUG-CWEXPLOOP: how the NWX's first script ends (FSpriteAtlas::EndOp): 0 loops, 1 END (plays once and holds its last
+	 *  frame), 2 TERMINATE (plays once, then the object is gone: hidden, bTerminated). */
+	uint8 EndOp = 0;
+	bool bTerminated = false;
+	/** From the first frame again (a one-shot shown by the INF: the civil war's NBOOM explosions). */
+	void RestartAnim() { AnimTime = 0.f; CurrentCell = -1; bTerminated = false; }
+
 	/** Directions x FrameCount atlas cell indices, row-major by direction. */
 	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Outlaws|Atlas")
 	TArray<int32> Grid;

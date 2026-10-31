@@ -2146,8 +2146,16 @@ void AOutlawsLevelActor::BuildInf(const FOutlawsLevel& L, const FString& InfText
 	{
 		const TWeakObjectPtr<AOutlawsSpriteActor>* G = CellGens.Find(Id.ToUpper());
 		if (!G || !G->IsValid() || M.Type != EOutlawsInfMsg::MasterOn) return;
-		(*G)->SetActorHiddenInGame(false);
-		UE_LOG(LogOutlaws, Log, TEXT("OLRT figure generator %s (#%s) turned on: shown at %s"), *(*G)->OutlawsName, *Id, *(*G)->GetActorLocation().ToCompactString());
+		// (BUG-CWEXPLOOP) a one-shot (the civil war's NBOOM: GENERATE explode1.NWX) plays from its first frame, once; gone
+		// after (AOutlawsSpriteActor's TERMINATE), a later MASTER_ON does not bring it back
+		AOutlawsSpriteActor* S = G->Get();
+		if (S->EndOp == 2)
+		{
+			if (S->bTerminated) return;
+			if (S->IsHidden()) S->RestartAnim();
+		}
+		S->SetActorHiddenInGame(false);
+		UE_LOG(LogOutlaws, Log, TEXT("OLRT figure generator %s (#%s) turned on: shown at %s"), *S->OutlawsName, *Id, *S->GetActorLocation().ToCompactString());
 	};
 	Inf->OnElevatorMoved = [this](const FOutlawsElevator& E)
 	{
