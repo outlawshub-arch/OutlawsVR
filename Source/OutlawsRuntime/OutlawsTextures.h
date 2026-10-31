@@ -130,8 +130,6 @@ namespace OutlawsTextures
 		/** Where each NWX cell lands in the atlas (1x pixels), for the remaster's HD cells. */
 		struct FNode { int32 Cell = 0; int32 X = 0; int32 Y = 0; int32 W = 0; int32 H = 0; bool bFlipX = false; bool bFlipY = false; };
 		TArray<FNode> Nodes;
-		/** (REQ-GRABUPSCALE) Each cell's WAX frame (the grab upscaler's file names do not hang on the atlas's packing). */
-		TArray<int32> CellFrame;
 		FString Nwx;
 		/** REQ-FIREBRIGHT: the drawn pixels of each palette entry over every frame shown (256), for the level's colour map to
 		 *  say how much of the art is full bright (AOutlawsLevelActor::IsFullBrightArt). */
@@ -184,12 +182,6 @@ namespace OutlawsTextures
 	/** (REQ-MUZZLEFLASH3D) One remaster SPX cell (BC7 mip 0) on the CPU, as it is stored (no flip), from the SPX file's
 	 *  bytes and ParseSprx's frames.  False when the cell is missing or not BC7. */
 	OUTLAWSRUNTIME_API bool DecodeSpxCellPixels(const TArray<uint8>& Spx, const TArray<OutlawsFormats::FSprxFrame>& Frames, int32 Cell, TArray<FColor>& Out, int32& OutW, int32& OutH);
-
-	/** (REQ-GRABUPSCALE) One atlas cell's HD look on the CPU at 4x (CellW*4 x CellH*4), its nodes' SPX frames drawn as
-	 *  DecodeSpriteAtlasHdPixels draws them, from an SPX already read and parsed (any thread).  False when a node's frame is
-	 *  missing or not 4x, or nothing is drawn. */
-	OUTLAWSRUNTIME_API bool DecodeSpriteCellHd(const TArray<uint8>& Spx, const TArray<OutlawsFormats::FSprxFrame>& Frames, const FSpriteAtlas& Atlas, int32 Cell,
-		TArray<FColor>& Out, int32& OutW, int32& OutH);
 
 	/** 3DO model -> mesh sections (textures loaded into Textures by stem; flat colours use PALETTE). */
 	OUTLAWSRUNTIME_API void Build3doSections(const FOutlawsAssets& A, const OutlawsFormats::F3doModel& M, int32 Light, bool bHD,

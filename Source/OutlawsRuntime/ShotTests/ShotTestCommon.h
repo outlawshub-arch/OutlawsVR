@@ -34,7 +34,6 @@
 #include "OutlawsRuntime.h"
 #include "OutlawsBoxHand.h"
 #include "OutlawsLevelActor.h"
-#include "OutlawsGrabUpscale.h"
 #include "OutlawsCoop.h"
 #include "OutlawsTextures.h"
 #include "Camera/CameraComponent.h"

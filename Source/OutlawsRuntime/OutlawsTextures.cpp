@@ -973,17 +973,15 @@ TSharedPtr<OutlawsTextures::FSpriteAtlas> OutlawsTextures::BuildSpriteAtlas(cons
 			const int32 InsX = (Out->CellW - Rd.W) / 2 - Rd.Left;
 			Out->SidePx2[k] = int16(FMath::Clamp(2 * InsX - Out->CellW, -4096, 4096));
 		}
+		if (!bCreateTexture) continue;
 		const FRendered& Rd = Rendered[f];
 		const int32 CX = (k % Out->Cols) * Out->CellW, CY = (k / Out->Cols) * Out->CellH;
 		const int32 X0 = CX + (Out->CellW - Rd.W) / 2;
 		const int32 Y0 = CY + (Out->CellH - Rd.H);       // bottom aligned
-		// (REQ-GRABUPSCALE) the nodes and each cell's WAX frame without a texture too: the grab upscaler builds atlases on a worker
-		Out->CellFrame.Add(f);
 		for (const FPlacedNode& N : Rd.Nodes)
 		{
 			Out->Nodes.Add({ N.Cell, X0 + N.X, Y0 + N.Y, N.W, N.H, (N.Flags & NodeFlipX) != 0, (N.Flags & NodeFlipY) != 0 });
 		}
-		if (!bCreateTexture) continue;
 		for (int32 y = 0; y < Rd.H; ++y)
 		{
 			FMemory::Memcpy(Atlas.GetData() + (Y0 + y) * AW + X0, Rd.Px.GetData() + y * Rd.W, Rd.W * sizeof(FColor));
@@ -1282,53 +1280,6 @@ bool OutlawsTextures::DecodeSpxCellPixels(const TArray<uint8>& Data, const TArra
 	Bc7::DecodeImage(Data.GetData() + F.Offset, F.W, F.H, Out);
 	OutW = F.W;
 	OutH = F.H;
-	return true;
-}
-
-bool OutlawsTextures::DecodeSpriteCellHd(const TArray<uint8>& Spx, const TArray<FSprxFrame>& Frames, const FSpriteAtlas& Atlas, int32 Cell, TArray<FColor>& Out, int32& OutW, int32& OutH)
-{
-	constexpr int32 S = 4;                    // the remaster's SPX cells are 4x the NWX cell
-	OutW = OutH = 0;
-	const int32 Cols = FMath::Max(1, Atlas.Cols);
-	if (Cell < 0 || Cell >= Atlas.Cells || Atlas.CellW <= 0 || Atlas.CellH <= 0) return false;
-	const int32 CX = (Cell % Cols) * Atlas.CellW, CY = (Cell / Cols) * Atlas.CellH;
-	const int32 W = Atlas.CellW * S, H = Atlas.CellH * S;
-	TArray<FColor> Canvas;
-	Canvas.SetNumZeroed(W * H);
-	TArray<FColor> Px;
-	int32 Drawn = 0;
-	for (const FSpriteAtlas::FNode& N : Atlas.Nodes)
-	{
-		if (N.X < CX || N.X >= CX + Atlas.CellW || N.Y < CY || N.Y >= CY + Atlas.CellH) continue;    // (another cell's)
-		if (!Frames.IsValidIndex(N.Cell)) return false;
-		const FSprxFrame& F = Frames[N.Cell];
-		const int32 Layers = 1 + ((F.Flags & 1) ? 1 : 0) + ((F.Flags & 2) ? 1 : 0);
-		const int32 PerLayer = (F.End - F.Offset) / Layers;
-		if (F.Format != SprxBC7 || F.W != N.W * S || F.H != N.H * S || F.Offset < 0
-			|| F.Offset + Bc7MipBytes(F.W, F.H) > Spx.Num() || Bc7MipBytes(F.W, F.H) > PerLayer)
-		{
-			return false;                     // (all or nothing, as the HD atlas)
-		}
-		Bc7::DecodeImage(Spx.GetData() + F.Offset, F.W, F.H, Px);
-		for (int32 y = 0; y < F.H; ++y)
-		{
-			const int32 Sy = N.bFlipY ? F.H - 1 - y : y;
-			const int32 Dy = (N.Y - CY) * S + y;
-			if (Dy < 0 || Dy >= H) continue;
-			for (int32 x = 0; x < F.W; ++x)
-			{
-				const int32 Dx = (N.X - CX) * S + x;
-				const FColor& C = Px[Sy * F.W + (N.bFlipX ? F.W - 1 - x : x)];
-				if (C.A == 0 || Dx < 0 || Dx >= W) continue;
-				Canvas[Dy * W + Dx] = C;
-			}
-		}
-		++Drawn;
-	}
-	if (Drawn == 0) return false;
-	Out = MoveTemp(Canvas);
-	OutW = W;
-	OutH = H;
 	return true;
 }
 

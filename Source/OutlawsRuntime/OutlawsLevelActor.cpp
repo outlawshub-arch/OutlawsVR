@@ -2,7 +2,6 @@
 #include "OutlawsFlags.h"
 #include "OutlawsShipSmoke.h"
 #include "Misc/ScopeExit.h"
-#include "OutlawsGrabUpscale.h"
 #include "OutlawsMpPolish.h"
 #include "OutlawsXRRefresh.h"
 #include "OutlawsPcmWave.h"
@@ -2050,27 +2049,6 @@ void AOutlawsLevelActor::Build()
 			BuildFlash3D(A);           // (REQ-MUZZLEFLASH3D: the flashes cut from the shooters' sprites)
 			Report.Add(Flash3DReport);
 		}
-#if PLATFORM_WINDOWS
-		// (REQ-GRABUPSCALE) the held bad guys' upscales this PC is missing, in the background: every stock bad guy's behind the
-		// front end (a first launch, before the converter step was run), this level's own after its build (a custom map's)
-		if (bHDTextures && AssetsRef)
-		{
-			if (bFrontEnd)
-			{
-				OutlawsGrabUpscale::KickAll(AssetsRef, TEXT("the front end (every stock bad guy)"));
-			}
-			else
-			{
-				TArray<TPair<FString, int32>> Sets;
-				for (const TWeakObjectPtr<AOutlawsEnemy>& W : Enemies)
-				{
-					const AOutlawsEnemy* E = W.Get();
-					if (E && !E->IsCritter() && E->GetAtlasRef().IsValid()) Sets.AddUnique(TPair<FString, int32>(E->GetAtlasRef()->Nwx.ToLower(), E->Def.HitChor));
-				}
-				OutlawsGrabUpscale::Kick(AssetsRef, Sets, FString::Printf(TEXT("level %s's bad guys"), *LevelName));
-			}
-		}
-#endif
 	}
 	if (Inf)
 	{
@@ -2147,17 +2125,6 @@ void AOutlawsLevelActor::BeginPlay()
 	{
 		// (BUG-WALLSFLIPPED) every level's walls facing out of their sector, before and after the winding fix; nothing else runs
 		UOutlawsRuntimeLibrary::RunWallFacingScan(InstallPath);
-		FGenericPlatformMisc::RequestExit(false);
-		return;
-	}
-	if (OLFlags::Param(TEXT("OLGrabUpscaleAll")))
-	{
-		// (REQ-GRABUPSCALE) the converter step (Convert cutscenes, Install on Quest): every stock bad guy's held frames upscaled
-		// on this PC from the player's own files, then the game quits; nothing else runs
-		const FString Root = FOutlawsAssets::FindInstallRoot(InstallPath);
-		const TSharedPtr<FOutlawsAssets> A = Root.IsEmpty() ? nullptr : FOutlawsAssets::GetShared(Root);
-		const bool bOk = A.IsValid() && OutlawsGrabUpscale::RunAllNow(A);
-		UE_LOG(LogOutlaws, Display, TEXT("OLRT grabup: converter step %s (install %s)"), bOk ? TEXT("done") : TEXT("NOT DONE"), Root.IsEmpty() ? TEXT("not found") : *Root);
 		FGenericPlatformMisc::RequestExit(false);
 		return;
 	}

@@ -1043,9 +1043,6 @@ private:
 	/** -OLShots -OLHeldSwayTest (REQ-HELDSWAY): a man held and moved sideways, then toward, then stopped and let go;
 	 *  the legs' lag and the bottom edge's turn logged each frame (OutlawsPlayerHeldSway.cpp). */
 	void HeldSwayTestTick(float Dt);
-	/** -OLShots -OLGrabUpscaleTest (REQ-GRABUPSCALE): a man held before the eyes shows his held frame's upscale (or, with
-	 *  -OLGrabUpscaleMissing, the HD atlas), and the atlas again after the let-go (OutlawsPlayerGrabUpscale.cpp). */
-	void GrabUpscaleTestTick(float Dt);
 	/** -OLShots -OLLanternSwimTest (REQ-LANTERNSWIM): a lit lantern in the left hand, then the right (the map in the left),
 	 *  put away once by the wheel's path, taken out again and carried into the water; out of the water it stays away. */
 	void LanternSwimTestTick();

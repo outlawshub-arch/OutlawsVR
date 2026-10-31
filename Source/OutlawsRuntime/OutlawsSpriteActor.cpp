@@ -168,47 +168,9 @@ void AOutlawsSpriteActor::CopyLookTo(UMaterialInstanceDynamic* M) const
 	const int32 C = FMath::Clamp(CurrentCell, 0, Cols * Rows - 1);
 	const float SX = 1.f / Cols;
 	const float SY = 1.f / Rows;
-	if (UTexture* Held = HeldLookShown())
-	{
-		// (REQ-GRABUPSCALE) the held look: its own picture over the whole quad
-		M->SetVectorParameterValue(TEXT("UVScale"), FLinearColor(1.f, 1.f, 0.f, 0.f));
-		M->SetVectorParameterValue(TEXT("UVOffset"), FLinearColor(0.f, 0.f, 0.f, 0.f));
-		M->SetTextureParameterValue(TEXT("Tex"), Held);
-		return;
-	}
 	M->SetVectorParameterValue(TEXT("UVScale"), FLinearColor(SX, SY, 0.f, 0.f));
 	M->SetVectorParameterValue(TEXT("UVOffset"), FLinearColor((C % Cols) * SX, (C / Cols) * SY, 0.f, 0.f));
 	if (SpriteTexture) M->SetTextureParameterValue(TEXT("Tex"), SpriteTexture);
-}
-
-void AOutlawsSpriteActor::SetHeldLook(int32 Cell, UTexture* Tex)
-{
-	if (Tex) HeldLook.Add(Cell, Tex);
-	else HeldLook.Remove(Cell);
-	CurrentCell = -1;                     // (shown from the next update)
-}
-
-void AOutlawsSpriteActor::ClearHeldLook()
-{
-	if (HeldLook.Num() == 0 && !bHeldLookShown) return;
-	HeldLook.Reset();
-	if (MID && bHeldLookShown)
-	{
-		// back to the atlas at once (the let-go's frame shows the atlas, not a picture stretched over another cell)
-		bHeldLookShown = false;
-		if (SpriteTexture) MID->SetTextureParameterValue(TEXT("Tex"), SpriteTexture);
-		const int32 Shown = CurrentCell;
-		CurrentCell = -1;
-		if (Shown >= 0) ApplyCell(Shown);
-	}
-	bHeldLookShown = false;
-}
-
-UTexture* AOutlawsSpriteActor::DebugQuadTexture() const
-{
-	UTexture* T = nullptr;
-	if (MID) MID->GetTextureParameterValue(FHashedMaterialParameterInfo(TEXT("Tex")), T);
-	return T;
 }
 
 void AOutlawsSpriteActor::EndPlay(const EEndPlayReason::Type EndPlayReason)
@@ -381,11 +343,6 @@ void AOutlawsSpriteActor::SetLook(UTexture* Hd)
 	SpriteTexture = Hd ? Hd : SpriteTextureLo.Get();
 	if (MID && SpriteTexture) MID->SetTextureParameterValue(TEXT("Tex"), SpriteTexture);
 	if (MID && bMaskLook) MID->SetTextureParameterValue(TEXT("Mask"), Hd && FireMaskHd ? FireMaskHd.Get() : FireMask.Get());    // (REQ-FIREBRIGHT2)
-	if (bHeldLookShown)
-	{
-		bHeldLookShown = false;           // (REQ-GRABUPSCALE) the held look put back on by the next update
-		CurrentCell = -1;
-	}
 }
 
 void AOutlawsSpriteActor::SetLightLevel(int32 Level)
@@ -487,7 +444,6 @@ bool AOutlawsSpriteActor::EnsureMID()
 	{
 		MID->SetTextureParameterValue(TEXT("Tex"), SpriteTexture);
 	}
-	bHeldLookShown = false;
 	ApplyLitLook();
 	CurrentCell = -1;
 	return true;
@@ -546,21 +502,6 @@ void AOutlawsSpriteActor::ApplyCell(int32 Cell)
 	const int32 C = FMath::Clamp(Cell, 0, Cols * Rows - 1);
 	const float SX = 1.f / Cols;
 	const float SY = 1.f / Rows;
-	// (REQ-GRABUPSCALE) a held bad guy's cell with a picture of its own: that picture over the whole quad
-	if (UTexture* Held = HeldLook.Num() > 0 ? HeldLook.FindRef(C).Get() : nullptr)
-	{
-		MID->SetTextureParameterValue(TEXT("Tex"), Held);
-		MID->SetVectorParameterValue(TEXT("UVScale"), FLinearColor(1.f, 1.f, 0.f, 0.f));
-		MID->SetVectorParameterValue(TEXT("UVOffset"), FLinearColor(0.f, 0.f, 0.f, 0.f));
-		bHeldLookShown = true;
-		CurrentCell = C;
-		return;
-	}
-	if (bHeldLookShown)
-	{
-		if (SpriteTexture) MID->SetTextureParameterValue(TEXT("Tex"), SpriteTexture);
-		bHeldLookShown = false;
-	}
 	MID->SetVectorParameterValue(TEXT("UVScale"), FLinearColor(SX, SY, 0.f, 0.f));
 	MID->SetVectorParameterValue(TEXT("UVOffset"), FLinearColor((C % Cols) * SX, (C / Cols) * SY, 0.f, 0.f));
 	CurrentCell = C;

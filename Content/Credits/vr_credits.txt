@@ -45,12 +45,6 @@ libsndfile by Erik de Castro Lopo
 
 
 
-~Grabbed bad guy upscaling
-Real-ESRGAN by Xintao Wang
-ncnn by Tencent
-
-
-
 ~Cutscene conversion
 FFmpeg
 

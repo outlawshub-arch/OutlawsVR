@@ -175,17 +175,15 @@ because it is Epic's engine source.
 The Python tools need Python 3.10 or later and these packages (not included):
 `pip install numpy scipy pillow shapely scikit-image mapbox_earcut`.
 
-Two optional Windows runtime files are not in this repository: the Real-ESRGAN upscaler (put the official
-v0.2.5.0 release in `ThirdParty/RealESRGAN`; without it the game skips the sharper grabbed-enemy frames) and
-FFmpeg, which the installer downloads on first run. See `THIRD_PARTY_NOTICES.md`.
+FFmpeg is not in this repository; the installer downloads it on first run. See `THIRD_PARTY_NOTICES.md`.
 
 ## Credits and licence
 
 - Outlaws VR: made by T4H_Dingle. Tested by Dotard and T4H_Dingle. Code under the MIT licence (see `LICENSE`).
 - earcut by Mapbox (ISC), ported to C++ for floor and ceiling triangulation.
 - Built with Unreal Engine by Epic Games (Unreal Engine EULA; the engine is not included).
-- libsndfile (LGPL-2.1) for music decoding, Real-ESRGAN ncnn Vulkan (MIT/BSD-3) for the grabbed-enemy upscale,
-  and FFmpeg (downloaded on first run) for cutscene conversion. None of them are in this repository.
+- libsndfile (LGPL-2.1) for music decoding, and FFmpeg (downloaded on first run) for cutscene conversion. Neither
+  is in this repository.
 - Built with the help of Claude AI, by Anthropic.
 - Built on the shoulders of The Force Engine, by Lucius, and LawMaker, the Outlaws level editor by Alexei Novikov and David Lovejoy, whose work
   showed how Outlaws behaves.

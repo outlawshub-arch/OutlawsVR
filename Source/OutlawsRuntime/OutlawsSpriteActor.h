@@ -173,19 +173,6 @@ public:
 	/** Show this atlas instead (the remaster's HD one), or the original again with null. */
 	void SetLook(UTexture* Hd);
 
-	/** REQ-GRABUPSCALE: while a bad guy is held, these cells show a picture of their own (the 2x upscale of the HD frame,
-	 *  the whole texture over the cell's quad) instead of their part of the atlas; any other cell shows the atlas as before.
-	 *  Cleared on the let-go. */
-	void SetHeldLook(int32 Cell, UTexture* Tex);
-	void ClearHeldLook();
-	bool HasHeldLook() const { return HeldLook.Num() > 0; }
-	/** The held look's texture on show now (the cell shown has one), or null. */
-	UTexture* HeldLookShown() const { return bHeldLookShown ? HeldLook.FindRef(CurrentCell).Get() : nullptr; }
-	/** The texture on the quad's material now (tests). */
-	UTexture* DebugQuadTexture() const;
-	UPROPERTY(Transient)
-	TMap<int32, TObjectPtr<UTexture>> HeldLook;
-
 	// ---- atlas / choreography -------------------------------------------------------
 	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Outlaws|Atlas")
 	int32 AtlasCols = 1;
@@ -332,7 +319,6 @@ private:
 	/** (REQ-FIREBRIGHT2) the MID's light: the fire mask for the look shown when its material takes one, and Brightness. */
 	void ApplyLitLook();
 	void ApplyCell(int32 Cell);
-	bool bHeldLookShown = false;           // (REQ-GRABUPSCALE) the MID shows a held-look texture, not the atlas
 	/** The quad's place for the cell shown and the viewer (SetFeet). */
 	void PlaceQuad(const FVector* Viewer);
 	TArray<int16> CellBelowPx;

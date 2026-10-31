@@ -362,14 +362,6 @@ public:
 	void CoopFollowHostFlight(const FVector& Pos, const FVector& Vel);
 	/** The client's copy is in this player's hand, flying from it or just landed: it shows its own place, not the host's. */
 	bool CoopLocalCarry() const { return bHeldByPlayer || bThrown || PuppetSettleUntil > 0.0; }
-	/** REQ-GRABUPSCALE (OutlawsGrabUpscale.cpp): held in this machine's hand, his held frames (the hit stun's first frame,
-	 *  front and back) show their 2x upscales where the player's PC made them; loaded on the grab, dropped on the let-go.
-	 *  Missing, or Remastered off: the HD atlas as before. */
-	void TickGrabUpscale();
-	const TSharedPtr<OutlawsTextures::FSpriteAtlas>& GetAtlasRef() const { return AtlasRef; }
-	bool bGrabUpOn = false;
-	uint32 GrabUpGen = 0;
-	double GrabUpAskedAt = 0.0;
 
 protected:
 	/** QSPEED-1: in a game world the enemy driver (OutlawsEnemyDriver.cpp) ticks him, not the engine's tick queue. */

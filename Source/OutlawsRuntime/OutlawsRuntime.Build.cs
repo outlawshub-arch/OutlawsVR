@@ -17,7 +17,7 @@ public class OutlawsRuntime : ModuleRules
 		PrivateDependencyModuleNames.Add("HTTP");             // co-op (R8): the host's internet address for its lobby
 		PrivateDependencyModuleNames.Add("OutlawsXR");        // the headset's refresh rate (the Graphics page, the Quest 2 profile)
 		PrivateDependencyModuleNames.Add("ImageCore");        // the shipped held guns' texture templates (FImage)
-		PrivateDependencyModuleNames.Add("ImageWrapper");     // REQ-GRABUPSCALE: the held frames' upscales as PNG
+		PrivateDependencyModuleNames.Add("ImageWrapper");     // PNG files: the bug snaps (OutlawsBugSnap) and the tests' pictures
 		PrivateDependencyModuleNames.Add("GeometryCore");     // the runtime held guns: Delaunay (OutlawsGunBuilder)
 		// co-op voice chat (user 2026-10-02): the engine's microphone capture and Opus codec (its header needs SignalProcessing)
 		PrivateDependencyModuleNames.AddRange(new string[] { "Voice", "SignalProcessing" });
@@ -31,13 +31,6 @@ public class OutlawsRuntime : ModuleRules
 			// packaged game does not stage on its own (LGPL: its notice goes in the PC zip, tools/olue/package_pc.cmd)
 			RuntimeDependencies.Add("$(EngineDir)/Binaries/ThirdParty/libsndfile/Win64/libsndfile-1.dll");
 			PublicSystemLibraries.Add("dxgi.lib");           // (BUG-RESPAWNCRASH, -OLMemSoak) the process's video memory in the OLMEM lines
-			// REQ-GRABUPSCALE: Real-ESRGAN's portable upscaler (realesrgan-ncnn-vulkan v0.2.5.0, the official Windows zip): only the
-			// exe, the realesr-animevideov3 x2 model and the licence, staged beside the game; it makes the held bad guys' upscales
-			// from the player's own files on the player's PC (OutlawsGrabUpscale.cpp)
-			RuntimeDependencies.Add("$(ProjectDir)/ThirdParty/RealESRGAN/realesrgan-ncnn-vulkan.exe");
-			RuntimeDependencies.Add("$(ProjectDir)/ThirdParty/RealESRGAN/models/realesr-animevideov3-x2.bin");
-			RuntimeDependencies.Add("$(ProjectDir)/ThirdParty/RealESRGAN/models/realesr-animevideov3-x2.param");
-			RuntimeDependencies.Add("$(ProjectDir)/ThirdParty/RealESRGAN/LICENSE.txt");
 		}
 		if (Target.bBuildEditor)
 		{

@@ -3,8 +3,3 @@
 *.umap binary
 *.png binary
 *.ico binary
-# the grab upscaler's files exactly as released (REQ-GRABUPSCALE)
-ThirdParty/RealESRGAN/models/** binary
-ThirdParty/RealESRGAN/*.exe binary
-# (a patch with CRLF hunks for the .cmd and notices files: kept byte for byte)
-tools/olue/grabupscale/*.patch -text

@@ -49,18 +49,6 @@ Outlaws install.
 If you redistribute a Windows build, include the LGPL-2.1 text and keep the DLL replaceable (the game loads it as a
 separate file, so a user can swap in their own build).
 
-## Real-ESRGAN ncnn Vulkan (MIT; model and ncnn BSD-3-Clause)
-
-Not in this repository. Windows builds can use `realesrgan-ncnn-vulkan.exe` and the `realesr-animevideov3` x2
-model from the official v0.2.5.0 release, unmodified, run as a separate program on the player's PC to make sharper
-copies of the frames grabbed enemies are shown in. To build with it, put the official release files in
-`ThirdParty/RealESRGAN` (the build rules list them as runtime files; without them the game skips the upscale).
-
-- Real-ESRGAN, Real-ESRGAN-ncnn-vulkan: Copyright (c) 2021 Xintao Wang. MIT License.
-- realsr-ncnn-vulkan: Copyright (c) 2019 nihui. BSD 3-Clause License.
-- ncnn: Copyright (C) 2017 THL A29 Limited, a Tencent company. BSD 3-Clause License.
-- Source: https://github.com/xinntao/Real-ESRGAN-ncnn-vulkan
-
 ## FFmpeg (GPL build, not included)
 
 Not in this repository or the release. On first run, the installer script (`olvr_install.py`) downloads a Windows

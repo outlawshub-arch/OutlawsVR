@@ -147,9 +147,8 @@ OL_SHOT_TEST(OLFrontShot, 860)
 		++ShotStep;
 	}
 	else if (ShotStep == 9 && ShotTime > 10.f) { Shot(TEXT("ol_front_load")); ++ShotStep; }
-	else if (ShotStep == 10 && ShotTime > 11.f && !(OLFlags::Param(TEXT("OLGrabUpscaleFrontWait")) && OutlawsGrabUpscale::IsBusy() && ShotTime < 180.f))
+	else if (ShotStep == 10 && ShotTime > 11.f)
 	{
-		// ((REQ-GRABUPSCALE) -OLGrabUpscaleFrontWait: the front end's upscale job finished first)
 		// the resume point (user 2026-10-02; REQ-TITLEMENU: the load page's first row, from the title's Load Game) loaded,
 		// then a look at play going on (ol_front_resumed)
 		const bool bOnLoad = MenuPage && MenuPage->File == TEXT("load_game.rml");

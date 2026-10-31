@@ -1796,14 +1796,6 @@ void AOutlawsEnemy::EndHeld(const FVector& Vel)
 {
 	UOutlawsStats::NoteRelease(this, Vel);    // (the level's end panels: a throw)
 	if (Sprite) Sprite->SetSwingDriven(false); // (REQ-HELDSWAY: let go, his legs straight at once)
-	if (bGrabUpOn)
-	{
-		// (REQ-GRABUPSCALE) the atlas back at the let-go itself; a load still on its way is dropped (GrabUpGen)
-		bGrabUpOn = false;
-		++GrabUpGen;
-		if (Sprite) Sprite->ClearHeldLook();
-		UE_LOG(LogOutlawsAI, Log, TEXT("OLRT grabup: %s let go: the atlas frame again"), *OutlawsName);
-	}
 	if (CoopRole == 2)
 	{
 		CoopPuppetRelease(Vel);                   // (co-op: the client's copy flies here at once; the host throws its own)
@@ -2288,7 +2280,6 @@ void AOutlawsEnemy::Tick(float Dt)
 		const UOutlawsCoop* Cp = CoopRole == 2 && bPuppetHostCarried && !bThrown && !bHeldByPlayer ? Coop.Get() : nullptr;
 		Sprite->SetSwingDriven(!IsCritter() && !bThrown && (bHeldByPlayer || (Cp && Cp->OtherPlayerHolds(CoopIndex))));
 	}
-	TickGrabUpscale();                    // (REQ-GRABUPSCALE: the held frames' upscales on, or off at the let-go)
 	UpdateFarFreeze(Dt);
 	UpdateTickRate();
 	// the menu's movement speed slows the living bad guys' whole pace (their sprites animate with them);
