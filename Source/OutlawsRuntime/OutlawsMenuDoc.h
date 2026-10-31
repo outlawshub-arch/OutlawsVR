@@ -17,6 +17,8 @@ namespace OutlawsMenu
 	public:
 		bool Open(const FString& InPath);
 		bool IsOpen() const { return Entries.Num() > 0; }
+		int32 Num() const { return Entries.Num(); }
+		bool Has(const FString& Name) const { return Entries.Contains(Name.ToLower()); }
 		bool Read(const FString& Name, TArray<uint8>& Out) const;
 		bool ReadText(const FString& Name, FString& Out) const;
 		void List(const FString& Prefix, TArray<FString>& Out) const;
@@ -86,16 +88,24 @@ namespace OutlawsMenu
 		bool IsLoaded() const { return Kpf.IsOpen(); }
 		/** A menu page by file name (main_game.rml, options.rml, dialog_quit.rml...). */
 		bool GetPage(const FString& File, FPage& Out) const;
-		/** Any file in Common.kpf (the wheel and menu art, the fonts). */
-		bool ReadFile(const FString& Name, TArray<uint8>& Out) const { return Kpf.Read(Name, Out) || (UiKpf.IsOpen() && UiKpf.Read(Name, Out)); }
-		/** Menu art: UI.kpf first (Common.kpf holds magenta placeholders for some of it, e.g. Main_Background). */
-		bool ReadArt(const FString& Name, TArray<uint8>& Out) const { return (UiKpf.IsOpen() && UiKpf.Read(Name, Out)) || Kpf.Read(Name, Out); }
+		/** Any file in Common.kpf (the wheel and menu art, the fonts); the menu overlay first. */
+		bool ReadFile(const FString& Name, TArray<uint8>& Out) const { return (Overlay.IsOpen() && Overlay.Read(Name, Out)) || Kpf.Read(Name, Out) || (UiKpf.IsOpen() && UiKpf.Read(Name, Out)); }
+		/** Menu art: the overlay, then UI.kpf (Common.kpf holds magenta placeholders for some of it, e.g. Main_Background). */
+		bool ReadArt(const FString& Name, TArray<uint8>& Out) const { return (Overlay.IsOpen() && Overlay.Read(Name, Out)) || (UiKpf.IsOpen() && UiKpf.Read(Name, Out)) || Kpf.Read(Name, Out); }
+		/** A text file (a menu page): the overlay first, then Common.kpf. */
+		bool ReadText(const FString& Name, FString& Out) const { return (Overlay.IsOpen() && Overlay.ReadText(Name, Out)) || Kpf.ReadText(Name, Out); }
+		/** True when the overlay serves this file (the font cache keeps the overlay's copies apart). */
+		bool FromOverlay(const FString& Name) const { return Overlay.IsOpen() && Overlay.Has(Name); }
+		bool HasOverlay() const { return Overlay.IsOpen(); }
 		/** "$m_local_6050" -> "Resume"; plain text passes through. */
 		FString Loc(const FString& Text) const;
 
 	private:
 		FKpf Kpf;
 		FKpf UiKpf;                   // UI.kpf: the menu art (the save screen's Load_* pieces)
+		// (REQ-LEGACYKPF, user 2026-10-31) MenuOverlay.kpf: the user's edited menu theme (pages, fonts, the parchment) shipped
+		// with the game, so the VR menus look the same on a stock install; same entry names as Common.kpf, read first
+		FKpf Overlay;
 		TMap<FString, FString> Strings;
 	};
 }

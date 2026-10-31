@@ -1,6 +1,8 @@
 // Common.kpf menus: see OutlawsMenuDoc.h.
 #include "OutlawsMenuDoc.h"
 #include "OutlawsRuntime.h"
+#include "OutlawsFlags.h"
+#include "OutlawsLevelActor.h"
 #include "HAL/PlatformFileManager.h"
 #include "GenericPlatform/GenericPlatformFile.h"
 #include "Misc/Paths.h"
@@ -254,6 +256,27 @@ namespace OutlawsMenu
 			return false;
 		}
 		UiKpf.Open(FPaths::Combine(InstallRoot, TEXT("UI.kpf")));
+		// (REQ-LEGACYKPF) the menu overlay: -OLMenuOverlay=<file> or MenuOverlayPath in OutlawsSettings.ini (editor runs),
+		// else Tools\MenuOverlay.kpf in the PC package, else MenuOverlay.kpf beside Common.kpf (the headset's files/Outlaws).
+		// -OLNoMenuOverlay reads Common.kpf alone (the stock look); loc_english stays on Common.kpf either way
+		if (!OLFlags::Param(TEXT("OLNoMenuOverlay")))
+		{
+			TArray<FString> Tries;
+			FString Arg;
+			if (OLFlags::Value(TEXT("OLMenuOverlay"), Arg, /*bShouldStopOnSeparator*/ false)) Tries.Add(FPaths::ConvertRelativePathToFull(Arg.TrimQuotes()));
+			const TMap<FString, FString> Settings = AOutlawsLevelActor::ReadSettings();       // (held: Find points into it)
+			if (const FString* Set = Settings.Find(TEXT("MenuOverlayPath"))) Tries.Add(FPaths::ConvertRelativePathToFull(Set->TrimQuotes()));
+			Tries.Add(FPaths::ConvertRelativePathToFull(FPaths::Combine(FPaths::RootDir(), TEXT("Tools"), TEXT("MenuOverlay.kpf"))));
+			Tries.Add(FPaths::Combine(InstallRoot, TEXT("MenuOverlay.kpf")));
+			for (const FString& T : Tries)
+			{
+				if (!T.IsEmpty() && FPaths::FileExists(T) && Overlay.Open(T))
+				{
+					UE_LOG(LogOutlaws, Log, TEXT("OLRT menu: the menu overlay is open, %d entries over Common.kpf (%s)"), Overlay.Num(), *T);
+					break;
+				}
+			}
+		}
 		// key = "value" lines; /// and // lines are comments
 		FString Loc;
 		if (Kpf.ReadText(TEXT("localization/loc_english.txt"), Loc))
@@ -300,7 +323,7 @@ namespace OutlawsMenu
 	bool FSource::GetPage(const FString& File, FPage& Out) const
 	{
 		FString Text;
-		if (!Kpf.ReadText(TEXT("menu/") + File, Text))
+		if (!ReadText(TEXT("menu/") + File, Text))
 		{
 			return false;
 		}

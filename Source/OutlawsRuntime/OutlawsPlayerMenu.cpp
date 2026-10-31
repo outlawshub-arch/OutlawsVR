@@ -1433,7 +1433,10 @@ UFont* AOutlawsPlayer::KpfFont(const FString& KpfPath, int32 Size)
 		return nullptr;
 	}
 	// the player's own font file, copied out of their Common.kpf so the font system can open it
-	const FString Disk = FPaths::ProjectSavedDir() / TEXT("KpfCache") / FPaths::GetCleanFilename(KpfPath);
+	// (REQ-LEGACYKPF) the menu overlay's fonts in a folder of their own: the cache is checked by size alone, and a stock
+	// font of the same size must not stand in for the edited one (or the other way round with -OLNoMenuOverlay)
+	const FString CacheDir = MenuSource->FromOverlay(KpfPath) ? FPaths::ProjectSavedDir() / TEXT("KpfCache") / TEXT("overlay") : FPaths::ProjectSavedDir() / TEXT("KpfCache");
+	const FString Disk = CacheDir / FPaths::GetCleanFilename(KpfPath);
 	if (IFileManager::Get().FileSize(*Disk) != Bytes.Num())
 	{
 		FFileHelper::SaveArrayToFile(Bytes, *Disk);
@@ -1464,11 +1467,24 @@ UFont* AOutlawsPlayer::KpfFont(const FString& KpfPath, int32 Size)
 	return F;
 }
 
+static UTexture2D* KpfDdsFromBytes(const TArray<uint8>& D);
+
 UTexture2D* AOutlawsPlayer::KpfDds(const FString& KpfPath)
 {
-	// uncompressed 32-bit DDS (the menu art): 128-byte header, BGRA rows
 	TArray<uint8> D;
-	if (!LoadMenuSource() || !MenuSource->ReadFile(KpfPath, D) || D.Num() < 128 || FMemory::Memcmp(D.GetData(), "DDS ", 4) != 0)
+	if (!LoadMenuSource() || !MenuSource->ReadFile(KpfPath, D))
+	{
+		return nullptr;
+	}
+	return KpfDdsFromBytes(D);
+}
+
+// (REQ-LEGACYKPF) the bytes a caller already read: KpfArt reads overlay > UI > Common, KpfDds's ReadFile overlay > Common
+// > UI, so a second read by path could hand back a different archive's copy
+static UTexture2D* KpfDdsFromBytes(const TArray<uint8>& D)
+{
+	// uncompressed 32-bit DDS (the menu art): 128-byte header, BGRA rows
+	if (D.Num() < 128 || FMemory::Memcmp(D.GetData(), "DDS ", 4) != 0)
 	{
 		return nullptr;
 	}
@@ -3032,7 +3048,7 @@ UTexture2D* AOutlawsPlayer::KpfArt(const FString& Name)
 		}
 		else
 		{
-			T = KpfDds(Path);
+			T = KpfDdsFromBytes(D);
 		}
 	}
 	// (BUG-MENUBLACK) clamped as it is made, one upload: a second UpdateResource here drew the art black or garbage
