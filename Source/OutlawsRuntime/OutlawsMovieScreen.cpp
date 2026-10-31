@@ -37,8 +37,8 @@
 
 namespace
 {
-	constexpr float ScreenW = 320.f;     // 16:9, as the movies are (2560x1440)
-	constexpr float ScreenH = 180.f;
+	constexpr float ScreenW = 320.f;     // 16:9, as the remaster's movies are (2560x1440); REQ-MOVIE43: a movie of another shape
+	constexpr float ScreenH = 180.f;     // keeps the height, its width from the media (FitPicture)
 	constexpr float BarW = 120.f, BarH = 3.2f, BarZ = ScreenH * 0.5f + 5.f;     // the skip bar, over the picture
 	// the counts' panels (user 2026-10-02): 2:3, most of the picture's height, their canvases 512 x 768
 	constexpr float StatsW = 76.f, StatsH = 114.f;
@@ -219,6 +219,45 @@ void AOutlawsMovieScreen::SetVolume(float Volume)
 	if (Sound) Sound->SetVolumeMultiplier(Volume);
 }
 
+void AOutlawsMovieScreen::SetScreenAspect(float Aspect)
+{
+	Screen->SetRelativeScale3D(FVector(ScreenH * Aspect / 100.f, ScreenH / 100.f, 1.f));
+}
+
+FVector2D AOutlawsMovieScreen::GetScreenSize() const
+{
+	const FVector S = Screen->GetRelativeScale3D();
+	return FVector2D(S.X * 100.0, S.Y * 100.0);
+}
+
+void AOutlawsMovieScreen::FitPicture()
+{
+	// (REQ-MOVIE43, the planner 31 Oct: testers with the original 4:3 cutscenes saw them stretched to 16:9) the screen takes
+	// the movie's own shape once the media is open: the video track's size, else the decoded picture's.  The same height,
+	// a 4:3 one narrower (on the black round the screen it reads as pillarboxed, with no bars to draw over the world); a
+	// 16:9 one as it was.  -OLOldMovie43: always 16:9.
+	if (!Player) return;
+	FIntPoint Dim = Player->GetVideoTrackDimensions(INDEX_NONE, INDEX_NONE);
+	const TCHAR* From = TEXT("its video track");
+	if (Dim.X <= 0 || Dim.Y <= 0)
+	{
+		// (the media texture is a 2 x 2 stand-in until the first frame is decoded: no shape from that)
+		Dim = Texture ? FIntPoint(Texture->GetWidth(), Texture->GetHeight()) : FIntPoint::ZeroValue;
+		From = TEXT("its picture");
+		if (Dim.X < 64 || Dim.Y < 64) return;      // (not open yet: asked again next frame)
+	}
+	constexpr float Wide = ScreenW / ScreenH;
+	float A = float(Dim.X) / float(Dim.Y);
+	if (FMath::Abs(A - Wide) < 0.02f * Wide) A = Wide;       // (a 16:9 one exactly as it was)
+	A = FMath::Clamp(A, 1.f, 2.4f);
+	static const bool bOld = OLFlags::Param(TEXT("OLOldMovie43"));
+	if (bOld) A = Wide;
+	PictureAspect = A;
+	if (!bCreditsRolling) SetScreenAspect(A);      // (the roll's canvas is 16:9, the picture pillarboxed in it: DrawCredits)
+	UE_LOG(LogOutlaws, Log, TEXT("OLRT movie picture %d x %d (from %s): the screen %.0f x %.0f cm%s"), Dim.X, Dim.Y, From, ScreenH * A, ScreenH,
+		bOld ? TEXT(" (-OLOldMovie43: 16:9)") : TEXT(""));
+}
+
 float AOutlawsMovieScreen::GetTime() const
 {
 	return Player ? static_cast<float>(Player->GetTime().GetTotalSeconds()) : 0.f;
@@ -272,6 +311,7 @@ void AOutlawsMovieScreen::Tick(float DeltaSeconds)
 	}
 	if (bHandCard) PlaceHandCard();
 	if (Player && Player->IsPlaying()) bStarted = true;
+	if (Player && PictureAspect <= 0.f) FitPicture();      // (REQ-MOVIE43)
 	// the screen follows the viewer round, as the pause menu and the wheel do: once the head has turned
 	// well away (25 degrees), easing after it; at eye height, facing them (user 2026-09-27)
 	if (const APlayerCameraManager* Cam = UGameplayStatics::GetPlayerCameraManager(this, 0))

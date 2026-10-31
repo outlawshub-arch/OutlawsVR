@@ -27,8 +27,9 @@ struct FOutlawsCreditLine
 };
 
 /**
- * A story movie (the remaster's movies\<NAME>.webm converted to .mp4, 16:9) on a screen standing in
- * front of the player, world-locked at eye height, with its sound and its .srt subtitles under it.
+ * A story movie (the remaster's movies\<NAME>.webm converted to .mp4: 16:9, or 4:3 for the original cutscenes) on a
+ * screen standing in front of the player, world-locked at eye height, with its sound and its .srt subtitles under it.
+ * (REQ-MOVIE43) The screen takes the movie's own shape, read from the media once it is open, at the same height.
  * Plays through Media Foundation; OnFinished fires at the end, on a skip, or at once when the file
  * is missing or will not open.
  */
@@ -62,6 +63,9 @@ public:
 	bool IsPlaying() const { return !bFinished; }
 	float GetTime() const;
 	void SetVolume(float Volume);
+	/** (REQ-MOVIE43) the picture's width over its height as the media gave it (0 until it is open), and the screen's size (cm). */
+	float GetPictureAspect() const { return PictureAspect; }
+	FVector2D GetScreenSize() const;
 
 	/** The level's end (user 2026-10-02): the players' counts (UOutlawsStats) on a panel beside the picture, turned to the
 	 *  eyes and carried round with the screen: in co-op the host's on the left and the client's on the right, in single
@@ -154,6 +158,9 @@ private:
 	float Age = 0.f;
 	float StallFor = 0.f;              // (seconds the picture has stood at LastTime while playing)
 	double LastTime = -1.0;
+	float PictureAspect = 0.f;         // (REQ-MOVIE43) the movie's shape, once read (FitPicture)
+	void FitPicture();
+	void SetScreenAspect(float Aspect);
 
 	// the counts' panels (ShowStats): a canvas each, drawn in the menus' own fonts, on a plane in the picture's material
 	bool bStats = false;

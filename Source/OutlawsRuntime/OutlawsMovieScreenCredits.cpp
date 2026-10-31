@@ -113,6 +113,7 @@ void AOutlawsMovieScreen::StartCreditsRoll()
 	CrawlCanvas->InitAutoFormat(CanvasW, CanvasH);
 	CrawlCanvas->OnCanvasRenderTargetUpdate.AddDynamic(this, &AOutlawsMovieScreen::DrawCredits);
 	if (Mid) Mid->SetTextureParameterValue(TEXT("Tex"), CrawlCanvas);
+	SetScreenAspect(16.f / 9.f);      // (REQ-MOVIE43: the roll's canvas shape; a 4:3 movie pillarboxed in it, DrawCredits)
 	// the level's counts made way for the roll (they stood beside the picture, or in the hand, since the movie began)
 	bStats = false;
 	for (UStaticMeshComponent* Pc : StatsPlanes) if (Pc) Pc->SetVisibility(false);
@@ -202,7 +203,9 @@ void AOutlawsMovieScreen::DrawCredits(UCanvas* C, int32 Width, int32 Height)
 	// the movie's picture as it is under the words (playing, then held); the black without one
 	if (Player && Texture && Texture->GetResource())
 	{
-		FCanvasTileItem Bg(FVector2D::ZeroVector, Texture->GetResource(), FVector2D(Width, Height), FVector2D::ZeroVector, FVector2D(1.0, 1.0), FLinearColor::White);
+		// (REQ-MOVIE43) a narrower movie (the original 4:3 cutscenes) at the canvas's height in its middle, the black either side
+		const double PicW = PictureAspect > 0.f ? FMath::Min(double(Width), double(Height) * PictureAspect) : double(Width);
+		FCanvasTileItem Bg(FVector2D((Width - PicW) * 0.5, 0.0), Texture->GetResource(), FVector2D(PicW, Height), FVector2D::ZeroVector, FVector2D(1.0, 1.0), FLinearColor::White);
 		Bg.BlendMode = SE_BLEND_Opaque;
 		C->DrawItem(Bg);
 	}
