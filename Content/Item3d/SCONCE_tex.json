@@ -1,0 +1,51 @@
+{
+ "version": 1,
+ "name": "SCONCE",
+ "writer": "item",
+ "base": {
+  "op": "sprite",
+  "stem": "SCONCE",
+  "cell": null,
+  "at": [
+   0,
+   0
+  ],
+  "size": [
+   144,
+   220
+  ]
+ },
+ "blocks": [],
+ "fill": {
+  "rows": [
+   0,
+   220
+  ],
+  "opaque_alpha_over": 127,
+  "rule": "RGB of every texel at or under the alpha from its nearest texel over it (Euclidean), alpha kept"
+ },
+ "swatches": [
+  {
+   "rect": [
+    0,
+    220,
+    4
+   ],
+   "sample": {
+    "at": [
+     72,
+     217,
+     2
+    ],
+    "mode": "all",
+    "k": []
+   }
+  }
+ ],
+ "size": [
+  144,
+  224
+ ],
+ "exact": true,
+ "pending_texels": 0
+}

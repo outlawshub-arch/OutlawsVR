@@ -1,0 +1,14 @@
+{
+ "name": "BOTTLE02",
+ "real_size_cm": [
+  9.98,
+  9.98,
+  30.0
+ ],
+ "lay": "up",
+ "sprite_world_cm": 52.5,
+ "world_scale": 1.75,
+ "hold": {
+  "mode": "neck"
+ }
+}

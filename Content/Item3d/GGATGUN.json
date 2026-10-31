@@ -1,0 +1,11 @@
+{
+ "name": "GGATGUN",
+ "real_size_cm": [
+  60.79,
+  60.15,
+  75.44
+ ],
+ "lay": "up",
+ "sprite_world_cm": 409.7,
+ "world_scale": 1.672
+}

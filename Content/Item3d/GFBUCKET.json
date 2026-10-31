@@ -1,0 +1,11 @@
+{
+ "name": "GFBUCKET",
+ "real_size_cm": [
+  31.88,
+  31.88,
+  53.52
+ ],
+ "lay": "up",
+ "sprite_world_cm": 119.5,
+ "world_scale": 2.233
+}

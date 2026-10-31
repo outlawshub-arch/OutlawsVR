@@ -31,6 +31,17 @@ Content/HeldGuns/*
 !Content/GrabPoints/
 Content/GrabPoints/*
 !Content/GrabPoints/*.json
+# (BUG-DEVDIR2) the sprite-made item models: geometry, UVs and texture recipes only (tools/olue/item3d/make_item_ship.py;
+# check_item_ship.py fails on any image or colour)
+!Content/Item3d/
+Content/Item3d/*
+!Content/Item3d/*.obj
+!Content/Item3d/*.json
+!Content/Item3d/held/
+Content/Item3d/held/*
+!Content/Item3d/held/*.obj
+!Content/Item3d/held/*.json
+!Content/Item3d/held/*.txt
 # Epic's first-person template (the project's default game mode still names it)
 !Content/FirstPerson/
 !Content/FirstPersonArms/

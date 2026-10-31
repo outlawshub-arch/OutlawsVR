@@ -1,0 +1,44 @@
+{
+ "version": 1,
+ "name": "GCROWBAR3D",
+ "writer": "tool",
+ "base": {
+  "op": "none"
+ },
+ "blocks": [],
+ "swatches": [
+  {
+   "rect": [
+    0,
+    0,
+    4
+   ],
+   "sample": null,
+   "status": "pending"
+  },
+  {
+   "rect": [
+    4,
+    0,
+    4
+   ],
+   "sample": null,
+   "status": "pending"
+  },
+  {
+   "rect": [
+    8,
+    0,
+    4
+   ],
+   "sample": null,
+   "status": "pending"
+  }
+ ],
+ "size": [
+  64,
+  4
+ ],
+ "exact": true,
+ "pending_texels": 48
+}

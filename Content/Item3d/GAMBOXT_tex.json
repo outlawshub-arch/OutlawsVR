@@ -1,0 +1,44 @@
+{
+ "version": 1,
+ "name": "GAMBOXT",
+ "writer": "item",
+ "base": {
+  "op": "sprite",
+  "stem": "GAMBOXT",
+  "cell": null,
+  "at": [
+   0,
+   0
+  ],
+  "size": [
+   264,
+   176
+  ]
+ },
+ "blocks": [],
+ "fill": {
+  "rows": [
+   0,
+   176
+  ],
+  "opaque_alpha_over": 127,
+  "rule": "RGB of every texel at or under the alpha from its nearest texel over it (Euclidean), alpha kept"
+ },
+ "swatches": [
+  {
+   "rect": [
+    0,
+    176,
+    4
+   ],
+   "sample": null,
+   "status": "pending"
+  }
+ ],
+ "size": [
+  264,
+  180
+ ],
+ "exact": true,
+ "pending_texels": 16
+}

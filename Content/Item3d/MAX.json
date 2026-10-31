@@ -1,0 +1,11 @@
+{
+ "name": "MAX",
+ "real_size_cm": [
+  196.9,
+  52.72,
+  189.4
+ ],
+ "lay": "up",
+ "sprite_world_cm": 196.9,
+ "world_scale": 1.0
+}

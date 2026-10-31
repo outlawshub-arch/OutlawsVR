@@ -1,0 +1,11 @@
+{
+ "name": "TRCPLT",
+ "real_size_cm": [
+  16.25,
+  16.25,
+  34.0
+ ],
+ "lay": "up",
+ "sprite_world_cm": 33.8,
+ "world_scale": 0.993
+}

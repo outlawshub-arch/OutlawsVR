@@ -1,0 +1,31 @@
+{
+ "version": 1,
+ "name": "TRI",
+ "writer": "item",
+ "base": {
+  "op": "grounded",
+  "stem": "TRI",
+  "rows": [
+   0,
+   644
+  ],
+  "mirror": 0.25,
+  "ink": 0
+ },
+ "blocks": [],
+ "fill": {
+  "rows": [
+   0,
+   644
+  ],
+  "opaque_alpha_over": 127,
+  "rule": "RGB of every texel at or under the alpha from its nearest texel over it (Euclidean), alpha kept"
+ },
+ "swatches": [],
+ "size": [
+  1024,
+  644
+ ],
+ "exact": true,
+ "pending_texels": 0
+}

@@ -1,0 +1,13 @@
+{
+ "name": "CACTUS01",
+ "real_size_cm": [
+  60.42,
+  55.25,
+  230.75
+ ],
+ "lay": "up",
+ "any_yaw": true,
+ "keep_origin": true,
+ "sprite_world_cm": 230.6,
+ "world_scale": 1.0
+}

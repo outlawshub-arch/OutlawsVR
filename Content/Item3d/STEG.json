@@ -1,0 +1,11 @@
+{
+ "name": "STEG",
+ "real_size_cm": [
+  433.22,
+  107.73,
+  228.8
+ ],
+ "lay": "up",
+ "sprite_world_cm": 433.1,
+ "world_scale": 1.0
+}

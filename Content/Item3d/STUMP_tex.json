@@ -1,0 +1,51 @@
+{
+ "version": 1,
+ "name": "STUMP",
+ "writer": "item",
+ "base": {
+  "op": "sprite",
+  "stem": "STUMP",
+  "cell": null,
+  "at": [
+   0,
+   0
+  ],
+  "size": [
+   280,
+   164
+  ]
+ },
+ "blocks": [],
+ "fill": {
+  "rows": [
+   0,
+   164
+  ],
+  "opaque_alpha_over": 127,
+  "rule": "RGB of every texel at or under the alpha from its nearest texel over it (Euclidean), alpha kept"
+ },
+ "swatches": [
+  {
+   "rect": [
+    0,
+    164,
+    4
+   ],
+   "sample": {
+    "at": [
+     138,
+     162,
+     2
+    ],
+    "mode": "all",
+    "k": []
+   }
+  }
+ ],
+ "size": [
+  280,
+  168
+ ],
+ "exact": true,
+ "pending_texels": 0
+}

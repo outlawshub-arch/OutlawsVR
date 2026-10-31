@@ -1,0 +1,11 @@
+{
+ "name": "GDYNABLE",
+ "real_size_cm": [
+  14.28,
+  10.08,
+  32.01
+ ],
+ "lay": "up",
+ "sprite_world_cm": 181.4,
+ "world_scale": 5.667
+}

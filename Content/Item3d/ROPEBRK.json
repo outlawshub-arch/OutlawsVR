@@ -1,0 +1,11 @@
+{
+ "name": "ROPEBRK",
+ "real_size_cm": [
+  9.44,
+  9.44,
+  153.8
+ ],
+ "lay": "up",
+ "sprite_world_cm": 153.8,
+ "world_scale": 1.0
+}

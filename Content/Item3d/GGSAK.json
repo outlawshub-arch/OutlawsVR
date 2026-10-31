@@ -1,0 +1,11 @@
+{
+ "name": "GGSAK",
+ "real_size_cm": [
+  21.8,
+  21.8,
+  30.0
+ ],
+ "lay": "up",
+ "sprite_world_cm": 56.2,
+ "world_scale": 1.875
+}

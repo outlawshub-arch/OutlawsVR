@@ -1,0 +1,51 @@
+{
+ "version": 1,
+ "name": "GRKEY",
+ "writer": "item",
+ "base": {
+  "op": "sprite",
+  "stem": "GRKEY",
+  "cell": null,
+  "at": [
+   0,
+   0
+  ],
+  "size": [
+   240,
+   52
+  ]
+ },
+ "blocks": [],
+ "fill": {
+  "rows": [
+   0,
+   52
+  ],
+  "opaque_alpha_over": 127,
+  "rule": "RGB of every texel at or under the alpha from its nearest texel over it (Euclidean), alpha kept"
+ },
+ "swatches": [
+  {
+   "rect": [
+    0,
+    52,
+    4
+   ],
+   "sample": {
+    "at": [
+     120,
+     48,
+     1
+    ],
+    "mode": "all",
+    "k": []
+   }
+  }
+ ],
+ "size": [
+  240,
+  56
+ ],
+ "exact": true,
+ "pending_texels": 0
+}

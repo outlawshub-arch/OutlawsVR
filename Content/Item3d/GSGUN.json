@@ -1,0 +1,10 @@
+{
+ "name": "GSGUN",
+ "real_size_cm": [
+  104.66,
+  4.6,
+  18.86
+ ],
+ "sprite_world_cm": 131.7,
+ "world_scale": 1.259
+}

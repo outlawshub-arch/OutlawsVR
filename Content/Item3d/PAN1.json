@@ -1,0 +1,38 @@
+{
+ "name": "PAN1",
+ "real_size_cm": [
+  140.86,
+  87.19,
+  21.56
+ ],
+ "lay": "up",
+ "sprite_world_cm": 141.1,
+ "world_scale": 1.002,
+ "anims": {
+  "1": {
+   "fps": 10,
+   "pivot": "foot",
+   "deg": [
+    6.0,
+    -2.0,
+    1.0,
+    0.0,
+    0.0
+   ],
+   "lift": [
+    1.9,
+    0.0,
+    0.0,
+    0.0,
+    0.0
+   ]
+  }
+ },
+ "hold": {
+  "mode": "handle",
+  "in_hand": 0.32
+ },
+ "breaks": {
+  "on": false
+ }
+}

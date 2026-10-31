@@ -1,0 +1,11 @@
+{
+ "name": "GSCOPE",
+ "real_size_cm": [
+  40.12,
+  3.1,
+  4.0
+ ],
+ "lay": "up",
+ "sprite_world_cm": 131.2,
+ "world_scale": 3.271
+}

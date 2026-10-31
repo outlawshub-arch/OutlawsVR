@@ -1,0 +1,13 @@
+{
+ "name": "SHRUB03",
+ "real_size_cm": [
+  98.65,
+  117.86,
+  55.64
+ ],
+ "lay": "up",
+ "any_yaw": true,
+ "keep_origin": true,
+ "sprite_world_cm": 101.2,
+ "world_scale": 1.0
+}

@@ -1,0 +1,44 @@
+{
+ "version": 1,
+ "name": "GSQRKEYA",
+ "writer": "item",
+ "base": {
+  "op": "sprite",
+  "stem": "GSQRKEYA",
+  "cell": null,
+  "at": [
+   0,
+   0
+  ],
+  "size": [
+   304,
+   96
+  ]
+ },
+ "blocks": [],
+ "fill": {
+  "rows": [
+   0,
+   96
+  ],
+  "opaque_alpha_over": 127,
+  "rule": "RGB of every texel at or under the alpha from its nearest texel over it (Euclidean), alpha kept"
+ },
+ "swatches": [
+  {
+   "rect": [
+    0,
+    96,
+    4
+   ],
+   "sample": null,
+   "status": "pending"
+  }
+ ],
+ "size": [
+  304,
+  100
+ ],
+ "exact": true,
+ "pending_texels": 16
+}

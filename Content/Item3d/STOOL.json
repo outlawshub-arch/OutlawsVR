@@ -1,0 +1,11 @@
+{
+ "name": "STOOL",
+ "real_size_cm": [
+  45.0,
+  45.0,
+  75.0
+ ],
+ "lay": "up",
+ "sprite_world_cm": 45.0,
+ "world_scale": 1.0
+}

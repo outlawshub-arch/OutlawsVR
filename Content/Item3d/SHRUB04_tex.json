@@ -1,0 +1,48 @@
+{
+ "version": 1,
+ "name": "SHRUB04",
+ "writer": "item",
+ "base": {
+  "op": "sprite",
+  "stem": "SHRUB04",
+  "cell": null,
+  "at": [
+   0,
+   0
+  ],
+  "size": [
+   288,
+   188
+  ]
+ },
+ "blocks": [
+  {
+   "rect": [
+    0,
+    188,
+    650,
+    128
+   ],
+   "gen": [
+    "treegen.commit",
+    "treegen.bush"
+   ],
+   "status": "pending"
+  }
+ ],
+ "fill": {
+  "rows": [
+   0,
+   316
+  ],
+  "opaque_alpha_over": 127,
+  "rule": "RGB of every texel at or under the alpha from its nearest texel over it (Euclidean), alpha kept"
+ },
+ "swatches": [],
+ "size": [
+  650,
+  316
+ ],
+ "exact": true,
+ "pending_texels": 83200
+}

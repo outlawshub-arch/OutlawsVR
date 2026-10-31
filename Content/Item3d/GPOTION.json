@@ -1,0 +1,10 @@
+{
+ "name": "GPOTION",
+ "real_size_cm": [
+  6.19,
+  6.35,
+  24.0
+ ],
+ "sprite_world_cm": 127.5,
+ "world_scale": 5.312
+}

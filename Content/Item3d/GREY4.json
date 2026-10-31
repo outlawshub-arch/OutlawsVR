@@ -1,0 +1,11 @@
+{
+ "name": "GREY4",
+ "real_size_cm": [
+  236.25,
+  67.22,
+  236.25
+ ],
+ "lay": "up",
+ "sprite_world_cm": 236.2,
+ "world_scale": 1.0
+}

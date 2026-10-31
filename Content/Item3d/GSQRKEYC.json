@@ -1,0 +1,11 @@
+{
+ "name": "GSQRKEYC",
+ "real_size_cm": [
+  20.0,
+  20.0,
+  4.0
+ ],
+ "lay": "up",
+ "sprite_world_cm": 150.0,
+ "world_scale": 7.5
+}

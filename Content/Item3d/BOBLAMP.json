@@ -1,0 +1,12 @@
+{
+ "name": "BOBLAMP",
+ "real_size_cm": [
+  66.97,
+  66.97,
+  131.2
+ ],
+ "lay": "up",
+ "sprite_world_cm": 131.2,
+ "world_scale": 1.0,
+ "flames": true
+}

@@ -1,0 +1,11 @@
+{
+ "name": "STATUE2",
+ "real_size_cm": [
+  36.03,
+  16.95,
+  133.42
+ ],
+ "lay": "up",
+ "sprite_world_cm": 133.6,
+ "world_scale": 1.0
+}

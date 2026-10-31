@@ -1,0 +1,11 @@
+{
+ "name": "GCLIP",
+ "real_size_cm": [
+  25.0,
+  25.0,
+  8.4
+ ],
+ "lay": "up",
+ "sprite_world_cm": 103.1,
+ "world_scale": 4.125
+}

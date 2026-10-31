@@ -1,0 +1,14 @@
+{
+ "name": "BOBCHAND",
+ "real_size_cm": [
+  212.35,
+  188.51,
+  152.51
+ ],
+ "lay": "up",
+ "sprite_world_cm": 217.5,
+ "world_scale": 1.0,
+ "flames": true,
+ "hang": true,
+ "bulbs": true
+}

@@ -1,0 +1,11 @@
+{
+ "name": "PBYSTOVE",
+ "real_size_cm": [
+  87.85,
+  89.21,
+  378.27
+ ],
+ "lay": "up",
+ "sprite_world_cm": 375.0,
+ "world_scale": 0.991
+}

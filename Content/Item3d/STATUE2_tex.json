@@ -1,0 +1,31 @@
+{
+ "version": 1,
+ "name": "STATUE2",
+ "writer": "item",
+ "base": {
+  "op": "grounded",
+  "stem": "STATUE2",
+  "rows": [
+   0,
+   360
+  ],
+  "mirror": 0.25,
+  "ink": 0
+ },
+ "blocks": [],
+ "fill": {
+  "rows": [
+   0,
+   360
+  ],
+  "opaque_alpha_over": 127,
+  "rule": "RGB of every texel at or under the alpha from its nearest texel over it (Euclidean), alpha kept"
+ },
+ "swatches": [],
+ "size": [
+  80,
+  360
+ ],
+ "exact": true,
+ "pending_texels": 0
+}

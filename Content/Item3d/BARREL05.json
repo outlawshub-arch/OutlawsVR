@@ -1,0 +1,11 @@
+{
+ "name": "BARREL05",
+ "real_size_cm": [
+  65.02,
+  65.02,
+  100.0
+ ],
+ "lay": "up",
+ "sprite_world_cm": 113.0,
+ "world_scale": 1.13
+}

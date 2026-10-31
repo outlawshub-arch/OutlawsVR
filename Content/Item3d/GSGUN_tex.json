@@ -1,0 +1,172 @@
+{
+ "version": 1,
+ "name": "GSGUN",
+ "writer": "item",
+ "base": {
+  "op": "sprite",
+  "stem": "GSGUN",
+  "cell": null,
+  "at": [
+   0,
+   0
+  ],
+  "size": [
+   284,
+   60
+  ]
+ },
+ "blocks": [],
+ "fill": {
+  "rows": [
+   0,
+   60
+  ],
+  "opaque_alpha_over": 127,
+  "rule": "RGB of every texel at or under the alpha from its nearest texel over it (Euclidean), alpha kept"
+ },
+ "swatches": [
+  {
+   "rect": [
+    0,
+    60,
+    4
+   ],
+   "sample": {
+    "at": [
+     6,
+     10,
+     1
+    ],
+    "mode": "opaque",
+    "k": [
+     1.15
+    ]
+   }
+  },
+  {
+   "rect": [
+    4,
+    60,
+    4
+   ],
+   "sample": {
+    "at": [
+     6,
+     10,
+     1
+    ],
+    "mode": "opaque",
+    "k": [
+     1.15,
+     [
+      0.185,
+      0.165,
+      0.145
+     ]
+    ]
+   }
+  },
+  {
+   "rect": [
+    8,
+    60,
+    4
+   ],
+   "sample": {
+    "at": [
+     150,
+     20,
+     1
+    ],
+    "mode": "opaque",
+    "k": [
+     1.25,
+     [
+      1.9008620689655173,
+      1.8146551724137931,
+      1.4698275862068966
+     ]
+    ]
+   }
+  },
+  {
+   "rect": [
+    12,
+    60,
+    4
+   ],
+   "sample": {
+    "at": [
+     150,
+     20,
+     1
+    ],
+    "mode": "opaque",
+    "k": [
+     1.25
+    ]
+   }
+  },
+  {
+   "rect": [
+    16,
+    60,
+    4
+   ],
+   "sample": {
+    "at": [
+     150,
+     20,
+     1
+    ],
+    "mode": "opaque",
+    "k": [
+     0.45
+    ]
+   }
+  },
+  {
+   "rect": [
+    20,
+    60,
+    4
+   ],
+   "sample": {
+    "at": [
+     150,
+     20,
+     1
+    ],
+    "mode": "opaque",
+    "k": [
+     1.0
+    ]
+   }
+  },
+  {
+   "rect": [
+    24,
+    60,
+    4
+   ],
+   "sample": {
+    "at": [
+     150,
+     20,
+     1
+    ],
+    "mode": "opaque",
+    "k": [
+     1.25,
+     0.45
+    ]
+   }
+  }
+ ],
+ "size": [
+  284,
+  64
+ ],
+ "exact": true,
+ "pending_texels": 0
+}

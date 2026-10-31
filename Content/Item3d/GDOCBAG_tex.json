@@ -1,0 +1,58 @@
+{
+ "version": 1,
+ "name": "GDOCBAG",
+ "writer": "item",
+ "base": {
+  "op": "sprite",
+  "stem": "GDOCBAG",
+  "cell": null,
+  "at": [
+   0,
+   0
+  ],
+  "size": [
+   288,
+   180
+  ]
+ },
+ "blocks": [
+  {
+   "rect": [
+    0,
+    180,
+    448,
+    256
+   ],
+   "gen": [
+    "docbag._paint",
+    "docbag.build_docbag"
+   ],
+   "status": "pending"
+  }
+ ],
+ "fill": {
+  "rows": [
+   0,
+   436
+  ],
+  "opaque_alpha_over": 127,
+  "rule": "RGB of every texel at or under the alpha from its nearest texel over it (Euclidean), alpha kept"
+ },
+ "swatches": [
+  {
+   "rect": [
+    0,
+    436,
+    4
+   ],
+   "sample": null,
+   "status": "pending"
+  }
+ ],
+ "size": [
+  448,
+  440
+ ],
+ "exact": true,
+ "pending_texels": 114704
+}

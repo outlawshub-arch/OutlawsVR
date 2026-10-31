@@ -1,0 +1,76 @@
+{
+ "version": 1,
+ "name": "GSCOPE",
+ "writer": "item",
+ "base": {
+  "op": "sprite",
+  "stem": "GSCOPE",
+  "cell": null,
+  "at": [
+   0,
+   0
+  ],
+  "size": [
+   280,
+   28
+  ]
+ },
+ "blocks": [
+  {
+   "rect": [
+    0,
+    28,
+    100,
+    128
+   ],
+   "gen": [
+    "rework.commit",
+    "rework.build_scope"
+   ],
+   "status": "pending"
+  }
+ ],
+ "fill": {
+  "rows": [
+   0,
+   156
+  ],
+  "opaque_alpha_over": 127,
+  "rule": "RGB of every texel at or under the alpha from its nearest texel over it (Euclidean), alpha kept"
+ },
+ "swatches": [
+  {
+   "rect": [
+    0,
+    156,
+    4
+   ],
+   "sample": null,
+   "status": "pending"
+  },
+  {
+   "rect": [
+    4,
+    156,
+    4
+   ],
+   "sample": null,
+   "status": "pending"
+  },
+  {
+   "rect": [
+    8,
+    156,
+    4
+   ],
+   "sample": null,
+   "status": "pending"
+  }
+ ],
+ "size": [
+  280,
+  160
+ ],
+ "exact": true,
+ "pending_texels": 12848
+}

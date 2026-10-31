@@ -1,0 +1,11 @@
+{
+ "name": "GOIL",
+ "real_size_cm": [
+  33.03,
+  16.55,
+  27.51
+ ],
+ "lay": "up",
+ "sprite_world_cm": 56.2,
+ "world_scale": 1.703
+}

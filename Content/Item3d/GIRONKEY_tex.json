@@ -1,0 +1,34 @@
+{
+ "version": 1,
+ "name": "GIRONKEY",
+ "writer": "item",
+ "base": {
+  "op": "sprite",
+  "stem": "GIRONKEY",
+  "cell": null,
+  "at": [
+   0,
+   0
+  ],
+  "size": [
+   244,
+   72
+  ]
+ },
+ "blocks": [],
+ "fill": {
+  "rows": [
+   0,
+   72
+  ],
+  "opaque_alpha_over": 127,
+  "rule": "RGB of every texel at or under the alpha from its nearest texel over it (Euclidean), alpha kept"
+ },
+ "swatches": [],
+ "size": [
+  244,
+  72
+ ],
+ "exact": true,
+ "pending_texels": 0
+}

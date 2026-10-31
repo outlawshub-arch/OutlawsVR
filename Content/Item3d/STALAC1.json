@@ -1,0 +1,12 @@
+{
+ "name": "STALAC1",
+ "real_size_cm": [
+  38.76,
+  36.37,
+  123.8
+ ],
+ "lay": "up",
+ "any_yaw": true,
+ "sprite_world_cm": 123.8,
+ "world_scale": 1.0
+}

@@ -1,0 +1,11 @@
+{
+ "name": "GAMBELT",
+ "real_size_cm": [
+  37.89,
+  36.89,
+  9.64
+ ],
+ "lay": "up",
+ "sprite_world_cm": 145.3,
+ "world_scale": 3.835
+}

@@ -1,0 +1,32 @@
+{
+ "name": "RPLANT04",
+ "real_size_cm": [
+  146.31,
+  134.82,
+  169.91
+ ],
+ "lay": "up",
+ "any_yaw": true,
+ "keep_origin": true,
+ "sprite_world_cm": 735.0,
+ "world_scale": 1.0,
+ "bend": {
+  "fps": 10,
+  "top": [
+   0.0,
+   0.47,
+   0.47,
+   0.47,
+   0.47,
+   0.47,
+   0.47,
+   0.47,
+   0.47,
+   0.47,
+   0.47,
+   0.0,
+   0.0
+  ],
+  "flutter": 0.5
+ }
+}

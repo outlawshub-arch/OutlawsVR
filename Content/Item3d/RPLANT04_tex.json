@@ -1,0 +1,48 @@
+{
+ "version": 1,
+ "name": "RPLANT04",
+ "writer": "item",
+ "base": {
+  "op": "sprite",
+  "stem": "RPLANT04",
+  "cell": null,
+  "at": [
+   0,
+   0
+  ],
+  "size": [
+   232,
+   396
+  ]
+ },
+ "blocks": [
+  {
+   "rect": [
+    0,
+    396,
+    34,
+    256
+   ],
+   "gen": [
+    "treegen.commit",
+    "treegen.blades"
+   ],
+   "status": "pending"
+  }
+ ],
+ "fill": {
+  "rows": [
+   0,
+   652
+  ],
+  "opaque_alpha_over": 127,
+  "rule": "RGB of every texel at or under the alpha from its nearest texel over it (Euclidean), alpha kept"
+ },
+ "swatches": [],
+ "size": [
+  232,
+  652
+ ],
+ "exact": true,
+ "pending_texels": 8704
+}

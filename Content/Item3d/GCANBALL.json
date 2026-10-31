@@ -1,0 +1,11 @@
+{
+ "name": "GCANBALL",
+ "real_size_cm": [
+  36.0,
+  36.0,
+  28.97
+ ],
+ "lay": "up",
+ "sprite_world_cm": 230.2,
+ "world_scale": 6.393
+}

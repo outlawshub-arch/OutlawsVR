@@ -1,0 +1,11 @@
+{
+ "name": "GSATCHEL",
+ "real_size_cm": [
+  36.61,
+  24.87,
+  20.35
+ ],
+ "lay": "up",
+ "sprite_world_cm": 118.1,
+ "world_scale": 3.226
+}

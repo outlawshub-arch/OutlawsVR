@@ -1,0 +1,34 @@
+{
+ "version": 1,
+ "name": "SACK1",
+ "writer": "item",
+ "base": {
+  "op": "strip_ink",
+  "stem": "SACK1",
+  "ink": 4,
+  "at": [
+   0,
+   0
+  ],
+  "size": [
+   148,
+   236
+  ]
+ },
+ "blocks": [],
+ "fill": {
+  "rows": [
+   0,
+   236
+  ],
+  "opaque_alpha_over": 127,
+  "rule": "RGB of every texel at or under the alpha from its nearest texel over it (Euclidean), alpha kept"
+ },
+ "swatches": [],
+ "size": [
+  148,
+  236
+ ],
+ "exact": true,
+ "pending_texels": 0
+}

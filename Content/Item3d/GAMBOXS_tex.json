@@ -1,0 +1,85 @@
+{
+ "version": 1,
+ "name": "GAMBOXS",
+ "writer": "item",
+ "base": {
+  "op": "sprite",
+  "stem": "GAMBOXS",
+  "cell": null,
+  "at": [
+   0,
+   0
+  ],
+  "size": [
+   132,
+   168
+  ]
+ },
+ "blocks": [
+  {
+   "rect": [
+    0,
+    168,
+    256,
+    176
+   ],
+   "gen": [
+    "ammo._face_block",
+    "ammo.build_amboxs"
+   ],
+   "status": "pending"
+  }
+ ],
+ "fill": {
+  "rows": [
+   0,
+   344
+  ],
+  "opaque_alpha_over": 127,
+  "rule": "RGB of every texel at or under the alpha from its nearest texel over it (Euclidean), alpha kept"
+ },
+ "swatches": [
+  {
+   "rect": [
+    0,
+    344,
+    4
+   ],
+   "sample": null,
+   "status": "pending"
+  },
+  {
+   "rect": [
+    4,
+    344,
+    4
+   ],
+   "sample": null,
+   "status": "pending"
+  },
+  {
+   "rect": [
+    8,
+    344,
+    4
+   ],
+   "sample": null,
+   "status": "pending"
+  },
+  {
+   "rect": [
+    12,
+    344,
+    4
+   ],
+   "sample": null,
+   "status": "pending"
+  }
+ ],
+ "size": [
+  256,
+  348
+ ],
+ "exact": true,
+ "pending_texels": 45120
+}

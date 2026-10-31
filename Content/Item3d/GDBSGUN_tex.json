@@ -1,0 +1,188 @@
+{
+ "version": 1,
+ "name": "GDBSGUN",
+ "writer": "item",
+ "base": {
+  "op": "sprite",
+  "stem": "GDBSGUN",
+  "cell": null,
+  "at": [
+   0,
+   0
+  ],
+  "size": [
+   332,
+   64
+  ]
+ },
+ "blocks": [],
+ "fill": {
+  "rows": [
+   0,
+   64
+  ],
+  "opaque_alpha_over": 127,
+  "rule": "RGB of every texel at or under the alpha from its nearest texel over it (Euclidean), alpha kept"
+ },
+ "swatches": [
+  {
+   "rect": [
+    0,
+    64,
+    4
+   ],
+   "sample": {
+    "at": [
+     8,
+     9,
+     1
+    ],
+    "mode": "opaque",
+    "k": [
+     1.15
+    ]
+   }
+  },
+  {
+   "rect": [
+    4,
+    64,
+    4
+   ],
+   "sample": {
+    "at": [
+     8,
+     9,
+     1
+    ],
+    "mode": "opaque",
+    "k": [
+     1.15,
+     [
+      0.13214285714285715,
+      0.11785714285714285,
+      0.10357142857142858
+     ]
+    ]
+   }
+  },
+  {
+   "rect": [
+    8,
+    64,
+    4
+   ],
+   "sample": {
+    "at": [
+     174,
+     11,
+     1
+    ],
+    "mode": "all",
+    "k": []
+   }
+  },
+  {
+   "rect": [
+    12,
+    64,
+    4
+   ],
+   "sample": {
+    "at": [
+     165,
+     21,
+     1
+    ],
+    "mode": "opaque",
+    "k": [
+     1.2
+    ]
+   }
+  },
+  {
+   "rect": [
+    16,
+    64,
+    4
+   ],
+   "sample": {
+    "at": [
+     165,
+     21,
+     1
+    ],
+    "mode": "opaque",
+    "k": [
+     1.2,
+     [
+      1.4602649006622517,
+      1.3940397350993377,
+      1.1291390728476822
+     ]
+    ]
+   }
+  },
+  {
+   "rect": [
+    20,
+    64,
+    4
+   ],
+   "sample": {
+    "at": [
+     165,
+     21,
+     1
+    ],
+    "mode": "opaque",
+    "k": [
+     1.0
+    ]
+   }
+  },
+  {
+   "rect": [
+    24,
+    64,
+    4
+   ],
+   "sample": {
+    "at": [
+     165,
+     21,
+     1
+    ],
+    "mode": "opaque",
+    "k": [
+     0.45
+    ]
+   }
+  },
+  {
+   "rect": [
+    28,
+    64,
+    4
+   ],
+   "sample": {
+    "at": [
+     165,
+     21,
+     1
+    ],
+    "mode": "opaque",
+    "k": [
+     1.2,
+     0.45
+    ]
+   }
+  }
+ ],
+ "size": [
+  332,
+  68
+ ],
+ "exact": true,
+ "pending_texels": 0
+}

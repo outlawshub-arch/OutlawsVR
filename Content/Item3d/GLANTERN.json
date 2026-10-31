@@ -1,0 +1,11 @@
+{
+ "name": "GLANTERN",
+ "real_size_cm": [
+  47.29,
+  44.63,
+  73.62
+ ],
+ "lay": "up",
+ "sprite_world_cm": 38.0,
+ "world_scale": 1.0
+}

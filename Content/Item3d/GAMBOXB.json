@@ -1,0 +1,11 @@
+{
+ "name": "GAMBOXB",
+ "real_size_cm": [
+  11.0,
+  9.93,
+  14.63
+ ],
+ "lay": "up",
+ "sprite_world_cm": 67.5,
+ "world_scale": 4.613
+}

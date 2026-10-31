@@ -1,0 +1,13 @@
+{
+ "name": "SEQUOIA",
+ "real_size_cm": [
+  177.87,
+  171.73,
+  456.93
+ ],
+ "lay": "up",
+ "any_yaw": true,
+ "keep_origin": true,
+ "sprite_world_cm": 468.3,
+ "world_scale": 1.0
+}

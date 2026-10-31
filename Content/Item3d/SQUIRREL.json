@@ -1,0 +1,11 @@
+{
+ "name": "SQUIRREL",
+ "real_size_cm": [
+  110.66,
+  47.01,
+  91.9
+ ],
+ "lay": "up",
+ "sprite_world_cm": 110.6,
+ "world_scale": 1.0
+}

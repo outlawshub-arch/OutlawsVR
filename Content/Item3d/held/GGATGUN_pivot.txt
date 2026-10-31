@@ -1,0 +1,1 @@
+pivot_y 66.000; handle_z -24.0; handle_y -1.000; muzzle_z 32.0

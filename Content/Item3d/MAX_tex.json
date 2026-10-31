@@ -1,0 +1,31 @@
+{
+ "version": 1,
+ "name": "MAX",
+ "writer": "item",
+ "base": {
+  "op": "grounded",
+  "stem": "MAX",
+  "rows": [
+   0,
+   509
+  ],
+  "mirror": 0.25,
+  "ink": 0
+ },
+ "blocks": [],
+ "fill": {
+  "rows": [
+   0,
+   509
+  ],
+  "opaque_alpha_over": 127,
+  "rule": "RGB of every texel at or under the alpha from its nearest texel over it (Euclidean), alpha kept"
+ },
+ "swatches": [],
+ "size": [
+  420,
+  509
+ ],
+ "exact": true,
+ "pending_texels": 0
+}

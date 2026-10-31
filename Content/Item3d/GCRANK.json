@@ -1,0 +1,11 @@
+{
+ "name": "GCRANK",
+ "real_size_cm": [
+  24.29,
+  8.6,
+  24.3
+ ],
+ "lay": "up",
+ "sprite_world_cm": 78.8,
+ "world_scale": 3.241
+}

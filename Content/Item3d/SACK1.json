@@ -1,0 +1,11 @@
+{
+ "name": "SACK1",
+ "real_size_cm": [
+  63.39,
+  30.55,
+  110.62
+ ],
+ "lay": "up",
+ "sprite_world_cm": 110.6,
+ "world_scale": 1.0
+}

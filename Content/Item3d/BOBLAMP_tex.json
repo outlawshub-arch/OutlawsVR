@@ -1,0 +1,51 @@
+{
+ "version": 1,
+ "name": "BOBLAMP",
+ "writer": "item",
+ "base": {
+  "op": "sprite",
+  "stem": "BOBLAMP",
+  "cell": null,
+  "at": [
+   0,
+   0
+  ],
+  "size": [
+   140,
+   280
+  ]
+ },
+ "blocks": [],
+ "fill": {
+  "rows": [
+   0,
+   280
+  ],
+  "opaque_alpha_over": 127,
+  "rule": "RGB of every texel at or under the alpha from its nearest texel over it (Euclidean), alpha kept"
+ },
+ "swatches": [
+  {
+   "rect": [
+    0,
+    280,
+    4
+   ],
+   "sample": {
+    "at": [
+     70,
+     275,
+     2
+    ],
+    "mode": "all",
+    "k": []
+   }
+  }
+ ],
+ "size": [
+  140,
+  284
+ ],
+ "exact": true,
+ "pending_texels": 0
+}

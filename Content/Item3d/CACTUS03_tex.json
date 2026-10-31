@@ -1,0 +1,48 @@
+{
+ "version": 1,
+ "name": "CACTUS03",
+ "writer": "item",
+ "base": {
+  "op": "sprite",
+  "stem": "CACTUS03",
+  "cell": null,
+  "at": [
+   0,
+   0
+  ],
+  "size": [
+   124,
+   532
+  ]
+ },
+ "blocks": [
+  {
+   "rect": [
+    0,
+    532,
+    50,
+    256
+   ],
+   "gen": [
+    "treegen.commit",
+    "treegen.saguaro"
+   ],
+   "status": "pending"
+  }
+ ],
+ "fill": {
+  "rows": [
+   0,
+   788
+  ],
+  "opaque_alpha_over": 127,
+  "rule": "RGB of every texel at or under the alpha from its nearest texel over it (Euclidean), alpha kept"
+ },
+ "swatches": [],
+ "size": [
+  124,
+  788
+ ],
+ "exact": true,
+ "pending_texels": 12800
+}

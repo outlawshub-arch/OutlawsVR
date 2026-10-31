@@ -1,0 +1,11 @@
+{
+ "name": "GGBAR",
+ "real_size_cm": [
+  18.0,
+  9.0,
+  4.5
+ ],
+ "lay": "up",
+ "sprite_world_cm": 58.1,
+ "world_scale": 3.229
+}

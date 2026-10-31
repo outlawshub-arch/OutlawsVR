@@ -1,0 +1,11 @@
+{
+ "name": "GBPLATE",
+ "real_size_cm": [
+  29.99,
+  5.05,
+  79.91
+ ],
+ "lay": "up",
+ "sprite_world_cm": 114.8,
+ "world_scale": 1.437
+}

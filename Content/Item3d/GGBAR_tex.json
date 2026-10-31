@@ -1,0 +1,53 @@
+{
+ "version": 1,
+ "name": "GGBAR",
+ "writer": "item",
+ "base": {
+  "op": "sprite",
+  "stem": "GGBAR",
+  "cell": null,
+  "at": [
+   0,
+   0
+  ],
+  "size": [
+   124,
+   64
+  ]
+ },
+ "blocks": [],
+ "fill": {
+  "rows": [
+   0,
+   64
+  ],
+  "opaque_alpha_over": 127,
+  "rule": "RGB of every texel at or under the alpha from its nearest texel over it (Euclidean), alpha kept"
+ },
+ "swatches": [
+  {
+   "rect": [
+    0,
+    64,
+    4
+   ],
+   "sample": null,
+   "status": "pending"
+  },
+  {
+   "rect": [
+    4,
+    64,
+    4
+   ],
+   "sample": null,
+   "status": "pending"
+  }
+ ],
+ "size": [
+  124,
+  68
+ ],
+ "exact": true,
+ "pending_texels": 32
+}

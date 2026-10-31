@@ -1,0 +1,10 @@
+{
+ "name": "GSAWGUN",
+ "real_size_cm": [
+  57.46,
+  6.35,
+  16.55
+ ],
+ "sprite_world_cm": 97.5,
+ "world_scale": 1.697
+}

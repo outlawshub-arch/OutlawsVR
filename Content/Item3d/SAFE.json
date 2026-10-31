@@ -1,0 +1,11 @@
+{
+ "name": "SAFE",
+ "real_size_cm": [
+  66.0,
+  79.97,
+  80.0
+ ],
+ "lay": "up",
+ "sprite_world_cm": 114.4,
+ "world_scale": 1.0
+}

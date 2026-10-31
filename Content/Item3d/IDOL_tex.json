@@ -1,0 +1,34 @@
+{
+ "version": 1,
+ "name": "IDOL",
+ "writer": "item",
+ "base": {
+  "op": "sprite",
+  "stem": "IDOL",
+  "cell": null,
+  "at": [
+   0,
+   0
+  ],
+  "size": [
+   116,
+   180
+  ]
+ },
+ "blocks": [],
+ "fill": {
+  "rows": [
+   0,
+   180
+  ],
+  "opaque_alpha_over": 127,
+  "rule": "RGB of every texel at or under the alpha from its nearest texel over it (Euclidean), alpha kept"
+ },
+ "swatches": [],
+ "size": [
+  116,
+  180
+ ],
+ "exact": true,
+ "pending_texels": 0
+}

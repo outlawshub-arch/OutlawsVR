@@ -1,0 +1,11 @@
+{
+ "name": "GCROWBAR",
+ "real_size_cm": [
+  46.2,
+  2.6,
+  11.97
+ ],
+ "lay": "up",
+ "sprite_world_cm": 87.7,
+ "world_scale": 1.897
+}

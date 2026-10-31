@@ -1,0 +1,51 @@
+{
+ "version": 1,
+ "name": "PBYSTOVE",
+ "writer": "item",
+ "base": {
+  "op": "sprite",
+  "stem": "PBYSTOVE",
+  "cell": null,
+  "at": [
+   0,
+   0
+  ],
+  "size": [
+   192,
+   800
+  ]
+ },
+ "blocks": [],
+ "fill": {
+  "rows": [
+   0,
+   800
+  ],
+  "opaque_alpha_over": 127,
+  "rule": "RGB of every texel at or under the alpha from its nearest texel over it (Euclidean), alpha kept"
+ },
+ "swatches": [
+  {
+   "rect": [
+    0,
+    800,
+    4
+   ],
+   "sample": {
+    "at": [
+     96,
+     793,
+     2
+    ],
+    "mode": "all",
+    "k": []
+   }
+  }
+ ],
+ "size": [
+  192,
+  804
+ ],
+ "exact": true,
+ "pending_texels": 0
+}

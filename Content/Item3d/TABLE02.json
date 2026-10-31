@@ -1,0 +1,11 @@
+{
+ "name": "TABLE02",
+ "real_size_cm": [
+  65.65,
+  65.65,
+  76.9
+ ],
+ "lay": "up",
+ "sprite_world_cm": 65.6,
+ "world_scale": 1.0
+}

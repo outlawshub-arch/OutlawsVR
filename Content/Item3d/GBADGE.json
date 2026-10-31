@@ -1,0 +1,13 @@
+{
+ "name": "GBADGE",
+ "real_size_cm": [
+  7.0,
+  0.35,
+  8.79
+ ],
+ "lay": "up",
+ "spin": 180,
+ "hover_cm": 20,
+ "sprite_world_cm": 117.7,
+ "world_scale": 13.381
+}

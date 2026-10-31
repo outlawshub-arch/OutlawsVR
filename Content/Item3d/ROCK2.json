@@ -1,0 +1,18 @@
+{
+ "name": "ROCK2",
+ "real_size_cm": [
+  100.88,
+  41.18,
+  43.01
+ ],
+ "lay": "up",
+ "sprite_world_cm": 101.2,
+ "world_scale": 1.004,
+ "hold": {
+  "mode": "handle",
+  "in_hand": 0.28
+ },
+ "breaks": {
+  "on": false
+ }
+}

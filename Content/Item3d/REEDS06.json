@@ -1,0 +1,13 @@
+{
+ "name": "REEDS06",
+ "real_size_cm": [
+  537.83,
+  527.75,
+  279.72
+ ],
+ "lay": "up",
+ "any_yaw": true,
+ "keep_origin": true,
+ "sprite_world_cm": 368.0,
+ "world_scale": 1.0
+}

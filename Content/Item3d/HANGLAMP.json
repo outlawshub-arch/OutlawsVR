@@ -1,0 +1,29 @@
+{
+ "name": "HANGLAMP",
+ "real_size_cm": [
+  77.56,
+  76.79,
+  63.98
+ ],
+ "lay": "up",
+ "sprite_world_cm": 75.0,
+ "world_scale": 1.0,
+ "flames": true,
+ "hang": true,
+ "anims": {
+  "1": {
+   "fps": 10,
+   "pivot": "top",
+   "deg": [
+    0.0,
+    0.0,
+    0.0,
+    0.0,
+    0.0
+   ],
+   "hide": [
+    "glass"
+   ]
+  }
+ }
+}

@@ -1,0 +1,51 @@
+{
+ "version": 1,
+ "name": "BARREL05",
+ "writer": "item",
+ "base": {
+  "op": "sprite",
+  "stem": "BARREL05",
+  "cell": null,
+  "at": [
+   0,
+   0
+  ],
+  "size": [
+   148,
+   244
+  ]
+ },
+ "blocks": [],
+ "fill": {
+  "rows": [
+   0,
+   244
+  ],
+  "opaque_alpha_over": 127,
+  "rule": "RGB of every texel at or under the alpha from its nearest texel over it (Euclidean), alpha kept"
+ },
+ "swatches": [
+  {
+   "rect": [
+    0,
+    244,
+    4
+   ],
+   "sample": {
+    "at": [
+     74,
+     232,
+     2
+    ],
+    "mode": "all",
+    "k": []
+   }
+  }
+ ],
+ "size": [
+  148,
+  248
+ ],
+ "exact": true,
+ "pending_texels": 0
+}

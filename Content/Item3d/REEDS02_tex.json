@@ -1,0 +1,58 @@
+{
+ "version": 1,
+ "name": "REEDS02",
+ "writer": "item",
+ "base": {
+  "op": "sprite",
+  "stem": "REEDS02",
+  "cell": null,
+  "at": [
+   0,
+   0
+  ],
+  "size": [
+   1116,
+   760
+  ]
+ },
+ "blocks": [
+  {
+   "rect": [
+    0,
+    760,
+    34,
+    256
+   ],
+   "gen": [
+    "treegen.commit",
+    "treegen.blades"
+   ],
+   "status": "pending"
+  }
+ ],
+ "fill": {
+  "rows": [
+   0,
+   1016
+  ],
+  "opaque_alpha_over": 127,
+  "rule": "RGB of every texel at or under the alpha from its nearest texel over it (Euclidean), alpha kept"
+ },
+ "swatches": [
+  {
+   "rect": [
+    0,
+    1016,
+    4
+   ],
+   "sample": null,
+   "status": "pending"
+  }
+ ],
+ "size": [
+  1116,
+  1020
+ ],
+ "exact": true,
+ "pending_texels": 8720
+}

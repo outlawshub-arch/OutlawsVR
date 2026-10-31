@@ -1,0 +1,48 @@
+{
+ "version": 1,
+ "name": "GCROWBAR",
+ "writer": "item",
+ "base": {
+  "op": "sprite",
+  "stem": "GCROWBAR",
+  "cell": null,
+  "at": [
+   0,
+   0
+  ],
+  "size": [
+   188,
+   128
+  ]
+ },
+ "blocks": [
+  {
+   "rect": [
+    0,
+    128,
+    50,
+    256
+   ],
+   "gen": [
+    "rework.commit",
+    "rework.build_crowbar"
+   ],
+   "status": "pending"
+  }
+ ],
+ "fill": {
+  "rows": [
+   0,
+   384
+  ],
+  "opaque_alpha_over": 127,
+  "rule": "RGB of every texel at or under the alpha from its nearest texel over it (Euclidean), alpha kept"
+ },
+ "swatches": [],
+ "size": [
+  188,
+  384
+ ],
+ "exact": true,
+ "pending_texels": 12800
+}

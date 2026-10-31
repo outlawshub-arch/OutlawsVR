@@ -1,0 +1,51 @@
+{
+ "version": 1,
+ "name": "BOTTLE05",
+ "writer": "item",
+ "base": {
+  "op": "sprite",
+  "stem": "BOTTLE05",
+  "cell": null,
+  "at": [
+   0,
+   0
+  ],
+  "size": [
+   36,
+   116
+  ]
+ },
+ "blocks": [],
+ "fill": {
+  "rows": [
+   0,
+   116
+  ],
+  "opaque_alpha_over": 127,
+  "rule": "RGB of every texel at or under the alpha from its nearest texel over it (Euclidean), alpha kept"
+ },
+ "swatches": [
+  {
+   "rect": [
+    0,
+    116,
+    4
+   ],
+   "sample": {
+    "at": [
+     17,
+     113,
+     2
+    ],
+    "mode": "all",
+    "k": []
+   }
+  }
+ ],
+ "size": [
+  36,
+  120
+ ],
+ "exact": true,
+ "pending_texels": 0
+}

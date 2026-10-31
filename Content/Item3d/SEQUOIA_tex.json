@@ -1,0 +1,48 @@
+{
+ "version": 1,
+ "name": "SEQUOIA",
+ "writer": "item",
+ "base": {
+  "op": "sprite",
+  "stem": "SEQUOIA",
+  "cell": null,
+  "at": [
+   0,
+   0
+  ],
+  "size": [
+   312,
+   1008
+  ]
+ },
+ "blocks": [
+  {
+   "rect": [
+    0,
+    1008,
+    830,
+    256
+   ],
+   "gen": [
+    "treegen.commit",
+    "treegen.conifer"
+   ],
+   "status": "pending"
+  }
+ ],
+ "fill": {
+  "rows": [
+   0,
+   1264
+  ],
+  "opaque_alpha_over": 127,
+  "rule": "RGB of every texel at or under the alpha from its nearest texel over it (Euclidean), alpha kept"
+ },
+ "swatches": [],
+ "size": [
+  830,
+  1264
+ ],
+ "exact": true,
+ "pending_texels": 212480
+}

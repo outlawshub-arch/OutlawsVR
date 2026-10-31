@@ -1,0 +1,32 @@
+{
+ "name": "LANTERN",
+ "real_size_cm": [
+  48.55,
+  40.51,
+  80.6
+ ],
+ "lay": "up",
+ "sprite_world_cm": 120.9,
+ "world_scale": 1.0,
+ "flames": true,
+ "hang": true,
+ "anims": {
+  "1": {
+   "fps": 10,
+   "pivot": "top",
+   "deg": [
+    0.0,
+    0.0,
+    0.0,
+    0.0
+   ],
+   "hide": [
+    "flame",
+    "glass"
+   ]
+  }
+ },
+ "noink": [
+  "flame"
+ ]
+}

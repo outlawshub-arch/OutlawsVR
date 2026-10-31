@@ -1,0 +1,48 @@
+{
+ "version": 1,
+ "name": "GCRANK",
+ "writer": "item",
+ "base": {
+  "op": "sprite",
+  "stem": "GCRANK",
+  "cell": null,
+  "at": [
+   0,
+   0
+  ],
+  "size": [
+   172,
+   164
+  ]
+ },
+ "blocks": [
+  {
+   "rect": [
+    0,
+    164,
+    134,
+    256
+   ],
+   "gen": [
+    "rework.commit",
+    "rework.build_crank"
+   ],
+   "status": "pending"
+  }
+ ],
+ "fill": {
+  "rows": [
+   0,
+   420
+  ],
+  "opaque_alpha_over": 127,
+  "rule": "RGB of every texel at or under the alpha from its nearest texel over it (Euclidean), alpha kept"
+ },
+ "swatches": [],
+ "size": [
+  172,
+  420
+ ],
+ "exact": true,
+ "pending_texels": 34304
+}

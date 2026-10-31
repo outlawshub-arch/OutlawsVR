@@ -1,0 +1,11 @@
+{
+ "name": "POODLE",
+ "real_size_cm": [
+  84.39,
+  43.08,
+  129.4
+ ],
+ "lay": "up",
+ "sprite_world_cm": 129.4,
+ "world_scale": 1.0
+}

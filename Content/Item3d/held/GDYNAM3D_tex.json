@@ -1,0 +1,90 @@
+{
+ "version": 1,
+ "name": "GDYNAM3D",
+ "writer": "item",
+ "base": {
+  "op": "sprite",
+  "stem": "GDYNABLE",
+  "cell": null,
+  "at": [
+   0,
+   0
+  ],
+  "size": [
+   228,
+   396
+  ],
+  "note": "another item's sprite"
+ },
+ "blocks": [],
+ "fill": {
+  "rows": [
+   0,
+   396
+  ],
+  "opaque_alpha_over": 127,
+  "rule": "RGB of every texel at or under the alpha from its nearest texel over it (Euclidean), alpha kept"
+ },
+ "swatches": [
+  {
+   "rect": [
+    0,
+    396,
+    4
+   ],
+   "sample": null,
+   "status": "pending"
+  },
+  {
+   "rect": [
+    4,
+    396,
+    4
+   ],
+   "sample": null,
+   "status": "pending"
+  },
+  {
+   "rect": [
+    8,
+    396,
+    4
+   ],
+   "sample": null,
+   "status": "pending"
+  },
+  {
+   "rect": [
+    12,
+    396,
+    4
+   ],
+   "sample": null,
+   "status": "pending"
+  },
+  {
+   "rect": [
+    16,
+    396,
+    4
+   ],
+   "sample": null,
+   "status": "pending"
+  },
+  {
+   "rect": [
+    20,
+    396,
+    4
+   ],
+   "sample": null,
+   "status": "pending"
+  }
+ ],
+ "size": [
+  228,
+  400
+ ],
+ "exact": true,
+ "pending_texels": 96
+}

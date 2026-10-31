@@ -1,0 +1,67 @@
+{
+ "version": 1,
+ "name": "GSATCHEL",
+ "writer": "item",
+ "base": {
+  "op": "sprite",
+  "stem": "GSATCHEL",
+  "cell": null,
+  "at": [
+   0,
+   0
+  ],
+  "size": [
+   252,
+   84
+  ]
+ },
+ "blocks": [
+  {
+   "rect": [
+    0,
+    84,
+    294,
+    128
+   ],
+   "gen": [
+    "rework.commit",
+    "rework.build_satchel"
+   ],
+   "status": "pending"
+  }
+ ],
+ "fill": {
+  "rows": [
+   0,
+   212
+  ],
+  "opaque_alpha_over": 127,
+  "rule": "RGB of every texel at or under the alpha from its nearest texel over it (Euclidean), alpha kept"
+ },
+ "swatches": [
+  {
+   "rect": [
+    0,
+    212,
+    4
+   ],
+   "sample": null,
+   "status": "pending"
+  },
+  {
+   "rect": [
+    4,
+    212,
+    4
+   ],
+   "sample": null,
+   "status": "pending"
+  }
+ ],
+ "size": [
+  294,
+  216
+ ],
+ "exact": true,
+ "pending_texels": 37664
+}

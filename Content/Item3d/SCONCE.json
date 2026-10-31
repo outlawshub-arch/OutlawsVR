@@ -1,0 +1,30 @@
+{
+ "name": "SCONCE",
+ "real_size_cm": [
+  69.09,
+  68.41,
+  105.55
+ ],
+ "lay": "up",
+ "sprite_world_cm": 103.1,
+ "world_scale": 1.0,
+ "flames": true,
+ "anims": {
+  "1": {
+   "fps": 10,
+   "pivot": "top",
+   "deg": [
+    0.0,
+    0.0,
+    0.0,
+    0.0,
+    0.0,
+    0.0,
+    0.0
+   ],
+   "hide": [
+    "glass"
+   ]
+  }
+ }
+}

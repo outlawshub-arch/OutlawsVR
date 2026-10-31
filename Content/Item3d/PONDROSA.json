@@ -1,0 +1,13 @@
+{
+ "name": "PONDROSA",
+ "real_size_cm": [
+  215.48,
+  228.85,
+  465.31
+ ],
+ "lay": "up",
+ "any_yaw": true,
+ "keep_origin": true,
+ "sprite_world_cm": 478.1,
+ "world_scale": 1.0
+}

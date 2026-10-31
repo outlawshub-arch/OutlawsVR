@@ -1,0 +1,11 @@
+{
+ "name": "CANNON",
+ "real_size_cm": [
+  238.1,
+  83.36,
+  103.89
+ ],
+ "lay": "up",
+ "sprite_world_cm": 907.5,
+ "world_scale": 1.0
+}

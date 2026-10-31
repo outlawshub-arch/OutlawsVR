@@ -1,0 +1,17 @@
+{
+ "name": "VASE02",
+ "real_size_cm": [
+  48.17,
+  48.91,
+  103.0
+ ],
+ "lay": "up",
+ "sprite_world_cm": 103.1,
+ "world_scale": 1.001,
+ "hold": {
+  "in_hand": 0.4
+ },
+ "breaks": {
+  "on": true
+ }
+}

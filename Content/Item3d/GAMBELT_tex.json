@@ -1,0 +1,47 @@
+{
+ "version": 1,
+ "name": "GAMBELT",
+ "writer": "item",
+ "base": {
+  "op": "sprite",
+  "stem": "GAMBELT",
+  "cell": null,
+  "at": [
+   0,
+   0
+  ],
+  "size": [
+   312,
+   100
+  ]
+ },
+ "blocks": [
+  {
+   "rect": [
+    0,
+    100,
+    396,
+    64
+   ],
+   "gen": [
+    "belt.build_belt"
+   ],
+   "status": "pending"
+  }
+ ],
+ "fill": {
+  "rows": [
+   0,
+   164
+  ],
+  "opaque_alpha_over": 127,
+  "rule": "RGB of every texel at or under the alpha from its nearest texel over it (Euclidean), alpha kept"
+ },
+ "swatches": [],
+ "size": [
+  396,
+  164
+ ],
+ "exact": true,
+ "pending_texels": 25344
+}

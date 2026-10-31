@@ -1,0 +1,47 @@
+{
+ "version": 1,
+ "name": "GLANTERN",
+ "writer": "item",
+ "base": {
+  "op": "pending",
+  "kind": "props.lantern",
+  "source": "GLANTERN",
+  "rows": [
+   0,
+   164
+  ]
+ },
+ "blocks": [],
+ "fill": {
+  "rows": [
+   0,
+   164
+  ],
+  "opaque_alpha_over": 127,
+  "rule": "RGB of every texel at or under the alpha from its nearest texel over it (Euclidean), alpha kept"
+ },
+ "swatches": [
+  {
+   "rect": [
+    0,
+    164,
+    4
+   ],
+   "sample": {
+    "at": [
+     50,
+     158,
+     2
+    ],
+    "mode": "all",
+    "k": []
+   }
+  }
+ ],
+ "size": [
+  200,
+  168
+ ],
+ "exact": true,
+ "pending_texels": 32800
+}

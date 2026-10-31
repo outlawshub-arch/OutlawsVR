@@ -1,0 +1,11 @@
+{
+ "name": "GREBOT",
+ "real_size_cm": [
+  43.12,
+  20.01,
+  133.1
+ ],
+ "lay": "up",
+ "sprite_world_cm": 133.1,
+ "world_scale": 1.0
+}

@@ -1,0 +1,11 @@
+{
+ "name": "GRKEY",
+ "real_size_cm": [
+  12.0,
+  12.0,
+  0.7
+ ],
+ "lay": "up",
+ "sprite_world_cm": 108.8,
+ "world_scale": 9.062
+}

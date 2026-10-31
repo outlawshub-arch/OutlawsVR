@@ -1,0 +1,80 @@
+{
+ "version": 1,
+ "name": "CANNON",
+ "writer": "item",
+ "base": {
+  "op": "sprite",
+  "stem": "CANNON",
+  "cell": null,
+  "at": [
+   0,
+   0
+  ],
+  "size": [
+   508,
+   292
+  ]
+ },
+ "blocks": [],
+ "fill": {
+  "rows": [
+   0,
+   292
+  ],
+  "opaque_alpha_over": 127,
+  "rule": "RGB of every texel at or under the alpha from its nearest texel over it (Euclidean), alpha kept"
+ },
+ "swatches": [
+  {
+   "rect": [
+    0,
+    292,
+    4
+   ],
+   "sample": null,
+   "status": "pending"
+  },
+  {
+   "rect": [
+    4,
+    292,
+    4
+   ],
+   "sample": null,
+   "status": "pending"
+  },
+  {
+   "rect": [
+    8,
+    292,
+    4
+   ],
+   "sample": null,
+   "status": "pending"
+  },
+  {
+   "rect": [
+    12,
+    292,
+    4
+   ],
+   "sample": null,
+   "status": "pending"
+  },
+  {
+   "rect": [
+    16,
+    292,
+    4
+   ],
+   "sample": null,
+   "status": "pending"
+  }
+ ],
+ "size": [
+  508,
+  296
+ ],
+ "exact": true,
+ "pending_texels": 80
+}

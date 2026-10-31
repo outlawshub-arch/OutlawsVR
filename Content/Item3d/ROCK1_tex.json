@@ -1,0 +1,31 @@
+{
+ "version": 1,
+ "name": "ROCK1",
+ "writer": "item",
+ "base": {
+  "op": "grounded",
+  "stem": "ROCK1",
+  "rows": [
+   0,
+   224
+  ],
+  "mirror": 1.0,
+  "ink": 4
+ },
+ "blocks": [],
+ "fill": {
+  "rows": [
+   0,
+   224
+  ],
+  "opaque_alpha_over": 127,
+  "rule": "RGB of every texel at or under the alpha from its nearest texel over it (Euclidean), alpha kept"
+ },
+ "swatches": [],
+ "size": [
+  192,
+  224
+ ],
+ "exact": true,
+ "pending_texels": 0
+}

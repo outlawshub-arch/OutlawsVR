@@ -1,0 +1,80 @@
+{
+ "version": 1,
+ "name": "GCANTEEN",
+ "writer": "item",
+ "base": {
+  "op": "sprite",
+  "stem": "GCANTEEN",
+  "cell": null,
+  "at": [
+   0,
+   0
+  ],
+  "size": [
+   216,
+   64
+  ]
+ },
+ "blocks": [
+  {
+   "rect": [
+    0,
+    64,
+    128,
+    128
+   ],
+   "gen": [
+    "proto.build_canteen"
+   ],
+   "status": "pending"
+  }
+ ],
+ "fill": {
+  "rows": [
+   0,
+   192
+  ],
+  "opaque_alpha_over": 127,
+  "rule": "RGB of every texel at or under the alpha from its nearest texel over it (Euclidean), alpha kept"
+ },
+ "swatches": [
+  {
+   "rect": [
+    0,
+    192,
+    4
+   ],
+   "sample": {
+    "at": [
+     107,
+     58,
+     1
+    ],
+    "mode": "all",
+    "k": []
+   }
+  },
+  {
+   "rect": [
+    4,
+    192,
+    4
+   ],
+   "sample": {
+    "at": [
+     8,
+     32,
+     2
+    ],
+    "mode": "all",
+    "k": []
+   }
+  }
+ ],
+ "size": [
+  216,
+  196
+ ],
+ "exact": true,
+ "pending_texels": 16384
+}

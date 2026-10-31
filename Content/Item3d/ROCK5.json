@@ -1,0 +1,18 @@
+{
+ "name": "ROCK5",
+ "real_size_cm": [
+  104.86,
+  41.88,
+  43.9
+ ],
+ "lay": "up",
+ "sprite_world_cm": 103.1,
+ "world_scale": 0.983,
+ "hold": {
+  "mode": "handle",
+  "in_hand": 0.26
+ },
+ "breaks": {
+  "on": false
+ }
+}

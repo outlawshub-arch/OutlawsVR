@@ -1,0 +1,47 @@
+{
+ "version": 1,
+ "name": "STATUE3",
+ "writer": "item",
+ "base": {
+  "op": "pending",
+  "kind": "props.man_in_bottle",
+  "source": "STATUE3",
+  "rows": [
+   0,
+   276
+  ]
+ },
+ "blocks": [],
+ "fill": {
+  "rows": [
+   0,
+   276
+  ],
+  "opaque_alpha_over": 127,
+  "rule": "RGB of every texel at or under the alpha from its nearest texel over it (Euclidean), alpha kept"
+ },
+ "swatches": [
+  {
+   "rect": [
+    0,
+    276,
+    4
+   ],
+   "sample": {
+    "at": [
+     43,
+     269,
+     2
+    ],
+    "mode": "all",
+    "k": []
+   }
+  }
+ ],
+ "size": [
+  176,
+  280
+ ],
+ "exact": true,
+ "pending_texels": 48576
+}

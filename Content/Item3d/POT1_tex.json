@@ -1,0 +1,60 @@
+{
+ "version": 1,
+ "name": "POT1",
+ "writer": "item",
+ "base": {
+  "op": "sprite",
+  "stem": "POT1",
+  "cell": null,
+  "at": [
+   0,
+   0
+  ],
+  "size": [
+   120,
+   136
+  ]
+ },
+ "blocks": [],
+ "fill": {
+  "rows": [
+   0,
+   136
+  ],
+  "opaque_alpha_over": 127,
+  "rule": "RGB of every texel at or under the alpha from its nearest texel over it (Euclidean), alpha kept"
+ },
+ "swatches": [
+  {
+   "rect": [
+    0,
+    136,
+    4
+   ],
+   "sample": {
+    "at": [
+     60,
+     132,
+     2
+    ],
+    "mode": "all",
+    "k": []
+   }
+  },
+  {
+   "rect": [
+    4,
+    136,
+    4
+   ],
+   "sample": null,
+   "status": "pending"
+  }
+ ],
+ "size": [
+  120,
+  140
+ ],
+ "exact": true,
+ "pending_texels": 16
+}

@@ -1,0 +1,84 @@
+{
+ "version": 1,
+ "name": "COWSKULL",
+ "writer": "item",
+ "base": {
+  "op": "sprite",
+  "stem": "COWSKULL",
+  "cell": null,
+  "at": [
+   0,
+   0
+  ],
+  "size": [
+   124,
+   104
+  ]
+ },
+ "blocks": [
+  {
+   "rect": [
+    0,
+    104,
+    324,
+    256
+   ],
+   "gen": [
+    "cowskull.build_cowskull"
+   ],
+   "status": "pending"
+  }
+ ],
+ "fill": {
+  "rows": [
+   0,
+   360
+  ],
+  "opaque_alpha_over": 127,
+  "rule": "RGB of every texel at or under the alpha from its nearest texel over it (Euclidean), alpha kept"
+ },
+ "swatches": [
+  {
+   "rect": [
+    0,
+    360,
+    4
+   ],
+   "sample": null,
+   "status": "pending"
+  },
+  {
+   "rect": [
+    4,
+    360,
+    4
+   ],
+   "sample": null,
+   "status": "pending"
+  },
+  {
+   "rect": [
+    8,
+    360,
+    4
+   ],
+   "sample": null,
+   "status": "pending"
+  },
+  {
+   "rect": [
+    12,
+    360,
+    4
+   ],
+   "sample": null,
+   "status": "pending"
+  }
+ ],
+ "size": [
+  324,
+  364
+ ],
+ "exact": true,
+ "pending_texels": 83008
+}

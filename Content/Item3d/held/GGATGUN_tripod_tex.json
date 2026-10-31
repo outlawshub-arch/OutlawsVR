@@ -1,0 +1,49 @@
+{
+ "version": 1,
+ "name": "GGATGUN_tripod",
+ "writer": "item",
+ "base": {
+  "op": "sprite",
+  "stem": "GGATGUN",
+  "cell": null,
+  "at": [
+   0,
+   0
+  ],
+  "size": [
+   624,
+   876
+  ],
+  "note": "another item's sprite"
+ },
+ "blocks": [
+  {
+   "rect": [
+    0,
+    876,
+    102,
+    128
+   ],
+   "gen": [
+    "rework.commit",
+    "rework.build_gatling"
+   ],
+   "status": "pending"
+  }
+ ],
+ "fill": {
+  "rows": [
+   0,
+   1004
+  ],
+  "opaque_alpha_over": 127,
+  "rule": "RGB of every texel at or under the alpha from its nearest texel over it (Euclidean), alpha kept"
+ },
+ "swatches": [],
+ "size": [
+  624,
+  1004
+ ],
+ "exact": true,
+ "pending_texels": 13056
+}

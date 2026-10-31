@@ -1,0 +1,47 @@
+{
+ "version": 1,
+ "name": "LANTERN",
+ "writer": "item",
+ "base": {
+  "op": "pending",
+  "kind": "props.lantern",
+  "source": "LANTERN",
+  "rows": [
+   0,
+   172
+  ]
+ },
+ "blocks": [],
+ "fill": {
+  "rows": [
+   0,
+   172
+  ],
+  "opaque_alpha_over": 127,
+  "rule": "RGB of every texel at or under the alpha from its nearest texel over it (Euclidean), alpha kept"
+ },
+ "swatches": [
+  {
+   "rect": [
+    0,
+    172,
+    4
+   ],
+   "sample": {
+    "at": [
+     49,
+     169,
+     2
+    ],
+    "mode": "all",
+    "k": []
+   }
+  }
+ ],
+ "size": [
+  200,
+  176
+ ],
+ "exact": true,
+ "pending_texels": 34400
+}
