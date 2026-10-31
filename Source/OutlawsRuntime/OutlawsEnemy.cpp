@@ -16,7 +16,9 @@ namespace
 {
 	// the grab points marked by hand on the sprites (user 2026-09-29, tools/olue/placeholders/grab_points.json): per
 	// sprite, per frame (known by its biggest piece, its NWX cell, and whether that is mirrored), the hold from the
-	// drawing's bottom middle in 1x px (x right, y up)
+	// drawing's bottom middle in 1x px (x right, y up).  (BUG-DEVDIR) Our own numbers, no game pixels: they ship in
+	// Content/GrabPoints (staged as a plain file) so testers hold a man where this PC does; they read the placeholders
+	// folder before, which only this PC has, and testers fell back to NeckOf's guess.  -OLOldDevDir: the placeholders copy
 	struct FGrabPt { int32 Cell = -1; bool bFlip = false; float Ox = 0.f, Oy = 0.f; };
 	TMap<FString, TArray<FGrabPt>> GGrabPts;
 	bool bGrabPtsLoaded = false;
@@ -27,7 +29,8 @@ namespace
 		bGrabPtsLoaded = true;
 		FString Text;
 		TSharedPtr<FJsonObject> J;
-		if (!FFileHelper::LoadFileToString(Text, *FPaths::Combine(FOutlawsAssets::PlaceholderDir(), TEXT("grab_points.json")))
+		const FString Dir = OLFlags::Param(TEXT("OLOldDevDir")) ? FOutlawsAssets::PlaceholderDir() : FPaths::Combine(FPaths::ProjectContentDir(), TEXT("GrabPoints"));
+		if (!FFileHelper::LoadFileToString(Text, *FPaths::Combine(Dir, TEXT("grab_points.json")))
 			|| !FJsonSerializer::Deserialize(TJsonReaderFactory<>::Create(Text), J) || !J.IsValid()) return;
 		for (const TPair<FString, TSharedPtr<FJsonValue>>& Kv : J->Values)
 		{

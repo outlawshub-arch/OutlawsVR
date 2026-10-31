@@ -27,6 +27,10 @@ Content/Outlaws/Maps/*
 Content/HeldGuns/*
 !Content/HeldGuns/*.json
 !Content/Credits/
+# (BUG-DEVDIR) the grab points marked by hand on the bad guys' sprites: our own numbers, JSON only
+!Content/GrabPoints/
+Content/GrabPoints/*
+!Content/GrabPoints/*.json
 # Epic's first-person template (the project's default game mode still names it)
 !Content/FirstPerson/
 !Content/FirstPersonArms/

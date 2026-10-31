@@ -170,10 +170,16 @@ AOutlawsPlayer::AOutlawsPlayer(const FObjectInitializer& ObjectInitializer)
 void AOutlawsPlayer::BeginPlay()
 {
 	Super::BeginPlay();
-	// unset or missing: under the local item folder (a dev PC's, or the headset's copy under the game's files folder)
-	if (PlaceholderWeaponDir.IsEmpty() || !FPaths::DirectoryExists(PlaceholderWeaponDir))
+	// the private VE stand-ins: on the dev PC only (BUG-DEVDIR: never shipped, and never looked for anywhere else, not even
+	// in a headset's Placeholders copy); empty everywhere else, so nothing reads them
+	const FString& DevDir = FOutlawsAssets::DevPlaceholderDir();
+	if (DevDir.IsEmpty() || FOutlawsAssets::PlaceholderDir() != DevDir)
 	{
-		PlaceholderWeaponDir = FPaths::Combine(FOutlawsAssets::PlaceholderDir(), TEXT("ve_weapons/hd_xint"));
+		PlaceholderWeaponDir.Reset();
+	}
+	else if (PlaceholderWeaponDir.IsEmpty() || !FPaths::DirectoryExists(PlaceholderWeaponDir))
+	{
+		PlaceholderWeaponDir = FPaths::Combine(DevDir, TEXT("ve_weapons/hd_xint"));
 	}
 	FallGraceUntil = 5.0;                // the level start drops the player onto the floor
 	OnCharacterMovementUpdated.AddUniqueDynamic(this, &AOutlawsPlayer::GuardBodyWidth);     // (REQ-CROUCHFIT)

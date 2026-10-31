@@ -2382,12 +2382,14 @@ void AOutlawsPlayer::Equip(int32 Hand, int32 Weapon)
 	{
 		const FCylinderDef& CylDef = Cylinder();
 		const bool bSpriteCyl = UseSpriteGun(0);
-		const FString CylPath = FPaths::Combine(bSpriteCyl ? HeldGunDir(0) : PlaceholderWeaponDir, CylDef.Obj);
+		// (BUG-DEVDIR: the VE stand-in's only where its folder is, on the dev PC)
+		const FString CylPath = bSpriteCyl ? FPaths::Combine(HeldGunDir(0), CylDef.Obj) : PlaceholderWeaponDir.IsEmpty() ? FString()
+			: FPaths::Combine(PlaceholderWeaponDir, CylDef.Obj);
 		TSharedPtr<OutlawsObj::FObjMesh>* Cyl = GObjCache.Find(CylPath);
 		if (!Cyl)
 		{
 			TSharedPtr<OutlawsObj::FObjMesh> Obj = MakeShared<OutlawsObj::FObjMesh>();
-			if (LoadHeldObj(CylPath, bSpriteCyl ? 1.0 : 100.0, true, *Obj))
+			if (!CylPath.IsEmpty() && LoadHeldObj(CylPath, bSpriteCyl ? 1.0 : 100.0, true, *Obj))
 			{
 				for (TPair<FString, FOutlawsMeshSection>& Kv : Obj->Sections)
 				{

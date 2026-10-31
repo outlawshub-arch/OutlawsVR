@@ -81,6 +81,15 @@ public:
 	static const FString& PlaceholderDir();
 	/** True when the folder above came from -OLItemDir, OUTLAWSVR_ITEMDIR or [Outlaws] ItemDir (a dev PC). */
 	static bool HasDevItemDir();
+	/** The dev PC's local item folder (the one HasDevItemDir reports; empty when none is set).  (BUG-DEVDIR)
+	 *  -OLNoDevDir: empty, so this PC runs as a tester's install does (no dev placeholders). */
+	static const FString& DevPlaceholderDir();
+	/** (BUG-DEVDIR) A file about to be read: when it lies in PlaceholderDir (this PC's dev folder, or the copy pushed from it
+	 *  to the user's headset: testers have neither), "OLRT dev placeholder used: <file>" once a file, in every build (the
+	 *  package step's check reads it from the Shipping log).  OutlawsObj's OBJ and texture loads call it. */
+	static void NoteDevPlaceholder(const FString& Path);
+	/** (tests) how many placeholder files this run has read. */
+	static int32 DevPlaceholderUses();
 
 	/** Shared instance per root, so repeated builds do not reopen the archives. */
 	static TSharedPtr<FOutlawsAssets> GetShared(const FString& InRoot);

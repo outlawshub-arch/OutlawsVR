@@ -1,6 +1,7 @@
 #include "OutlawsObjMesh.h"
 #include "OutlawsRuntime.h"
 #include "OutlawsFlags.h"
+#include "OutlawsLab.h"
 #include "Algo/Sort.h"
 #include "Misc/FileHelper.h"
 #include "Misc/Paths.h"
@@ -47,6 +48,7 @@ bool OutlawsObj::Load(const FString& Path, double Scale, bool bRightHanded, FObj
 		UE_LOG(LogOutlaws, Warning, TEXT("OLRT OBJ: cannot read %s"), *Path);
 		return false;
 	}
+	FOutlawsAssets::NoteDevPlaceholder(Path);      // (BUG-DEVDIR: named in the log when testers never get it)
 	const FString Dir = FPaths::GetPath(Path);
 	TMap<FString, FString> MaterialTexture;
 	TArray<FVector> V;
@@ -498,6 +500,7 @@ UTexture2D* OutlawsObj::LoadTextureFile(const FString& Path)
 	{
 		return nullptr;
 	}
+	FOutlawsAssets::NoteDevPlaceholder(Path);
 	UTexture2D* T = FImageUtils::ImportFileAsTexture2D(Path);
 	if (T)
 	{

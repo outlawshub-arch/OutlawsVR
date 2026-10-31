@@ -1291,6 +1291,11 @@ void OutlawsTextures::Build3doSections(const FOutlawsAssets& A, const F3doModel&
 	{
 		TArray<FColor> Px = Palette;
 		for (FColor& C : Px) C.A = 255;
+		// (BUG-DEVDIR) the palette's reserved entries (1 to 15 are pure magenta in the remaster's) painted a flat face that
+		// names one in magenta: the game's own Gatling (ggatgun.3do, every face colour 10, "GREY"), which testers hold, drew
+		// all purple.  A mid grey in their place.  -OLOldDevDir: the magenta
+		static const bool bOldMagenta = OLFlags::Param(TEXT("OLOldDevDir"));
+		if (!bOldMagenta) for (FColor& C : Px) if (C == FColor(255, 0, 255, 255)) C = FColor(112, 112, 112, 255);
 		if (UTexture2D* T = MakeTextureBGRA(256, 1, Px, false, TF_Nearest, TA_Clamp))
 		{
 			Textures.Add(TEXT("PALETTE"), T);

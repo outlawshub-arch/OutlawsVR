@@ -395,7 +395,8 @@ static const FString& ResolveItemDirs()
 		{
 			Dev.LeftChopInline(1);
 		}
-		if (!Dev.IsEmpty() && FPaths::DirectoryExists(Dev))
+		// (BUG-DEVDIR) -OLNoDevDir: this PC runs as a tester's install does, without the dev folder
+		if (!OLFlags::Param(TEXT("OLNoDevDir")) && !Dev.IsEmpty() && FPaths::DirectoryExists(Dev))
 		{
 			GDevItemDir = Dev;
 			return Dev;
@@ -419,6 +420,42 @@ bool FOutlawsAssets::HasDevItemDir()
 {
 	ResolveItemDirs();
 	return !GDevItemDir.IsEmpty();
+}
+
+const FString& FOutlawsAssets::DevPlaceholderDir()
+{
+	ResolveItemDirs();
+	return GDevItemDir;
+}
+
+namespace
+{
+	FCriticalSection GDevPlaceholderLock;
+	TSet<FString> GDevPlaceholderSeen;
+}
+
+void FOutlawsAssets::NoteDevPlaceholder(const FString& Path)
+{
+	FString Dir = PlaceholderDir();
+	Dir.ReplaceInline(TEXT("\\"), TEXT("/"));
+	if (Dir.IsEmpty() || !FPaths::DirectoryExists(Dir)) return;
+	FString P = FPaths::ConvertRelativePathToFull(Path);
+	P.ReplaceInline(TEXT("\\"), TEXT("/"));
+	if (!P.StartsWith(Dir + TEXT("/"), ESearchCase::IgnoreCase)) return;
+	const FString Rel = P.RightChop(Dir.Len() + 1);
+	{
+		FScopeLock Lock(&GDevPlaceholderLock);
+		if (GDevPlaceholderSeen.Contains(Rel)) return;
+		GDevPlaceholderSeen.Add(Rel);
+	}
+	// (the folder's own part only: no user's name in the log)
+	UE_LOG(LogOutlaws, Display, TEXT("OLRT dev placeholder used: %s"), *Rel);
+}
+
+int32 FOutlawsAssets::DevPlaceholderUses()
+{
+	FScopeLock Lock(&GDevPlaceholderLock);
+	return GDevPlaceholderSeen.Num();
 }
 
 namespace
