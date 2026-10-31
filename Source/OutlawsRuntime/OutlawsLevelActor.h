@@ -431,6 +431,8 @@ public:
 	void TickHomTest(float T);
 	int32 HomTestStep = 0;
 	TMap<FString, FVector> DebugModelAt;      // (tests) where each 3D item model first stands
+	/** (BUG-INKLEAK test) the item models that animate, each as its kind (wave, bend, flicker, hang, spin) and mesh. */
+	void DebugAnimatedModels(TArray<TPair<FString, UProceduralMeshComponent*>>& Out) const;
 	/** (BUG-SLOPES test) the Nth sloped-floor sector standing 1.2 to 2.4 m over the walkable sector beside it: the ground
 	 *  point in front of that wall, the lip's middle, its height and the way in (UE units).  False when none. */
 	bool DebugRoofLip(int32 Nth, FVector& OutGround, FVector& OutLip, FVector& OutIn, int32& OutSector) const;

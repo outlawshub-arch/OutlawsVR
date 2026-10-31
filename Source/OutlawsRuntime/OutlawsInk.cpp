@@ -1,6 +1,7 @@
 // The ink line on the headset: see OutlawsInk.h.
 #include "OutlawsInk.h"
 #include "OutlawsObjMesh.h"
+#include "OutlawsFlags.h"
 #include "Materials/MaterialInterface.h"
 #include "ProceduralMeshComponent.h"
 #include "RHIDefinitions.h"
@@ -173,6 +174,12 @@ void OutlawsInk::AddShell(UProceduralMeshComponent* M, float Thickness, UMateria
 	{
 		if (!It.Key().IsValid()) It.RemoveCurrent();
 	}
+	// BUG-INKLEAK (the user's Quest, 1 Nov, civlwar1: 72 fps down to 7 over four minutes by the flags): ClearMeshSection
+	// empties a section but keeps its slot, and the new shell went after them all, so a mesh re-shelled 20 times a second
+	// grew by its shell every time and emptied every old slot again.  The new shell now goes into the slots after the
+	// mesh's own (Own, Own + 1 ...; CreateMeshSection replaces a slot in place), and only the old shell's slots past it
+	// that still hold something are emptied: the count stays Own + its shell.  -OLOldInkSlots: cleared and appended as before
+	static const bool bOldSlots = OLFlags::Param(TEXT("OLOldInkSlots"));
 	int32 Own = M->GetNumSections();
 	// (BUG-TNT, the Quest: the revolver's 1 own section was remembered for the hand's mesh, the dynamite rebuilt it with 2,
 	// and its second, the wick and cord, was cleared here as an old shell)
@@ -180,7 +187,7 @@ void OutlawsInk::AddShell(UProceduralMeshComponent* M, float Thickness, UMateria
 	if (const int32* Known = Shelled && *Shelled == M->GetNumSections() ? GOwnSections.Find(M) : nullptr)
 	{
 		Own = FMath::Min(*Known, Own);
-		for (int32 s = M->GetNumSections() - 1; s >= Own; --s)
+		for (int32 s = M->GetNumSections() - 1; bOldSlots && s >= Own; --s)
 		{
 			M->ClearMeshSection(s);
 		}
@@ -188,6 +195,7 @@ void OutlawsInk::AddShell(UProceduralMeshComponent* M, float Thickness, UMateria
 	GOwnSections.Add(M, Own);
 	// the thickness in the component's own units
 	const double Local = Thickness / FMath::Max(1e-3, M->GetComponentScale().GetAbs().GetMax());
+	int32 Next = Own;
 	for (int32 s = 0; s < Own; ++s)
 	{
 		const FProcMeshSection* Sec = M->GetProcMeshSection(s);
@@ -198,9 +206,15 @@ void OutlawsInk::AddShell(UProceduralMeshComponent* M, float Thickness, UMateria
 		{
 			continue;
 		}
-		const int32 Index = M->GetNumSections();
+		const int32 Index = bOldSlots ? M->GetNumSections() : Next++;
 		M->CreateMeshSection_LinearColor(Index, Pos, Tris, Nrm, UV, TArray<FLinearColor>(), TArray<FProcMeshTangent>(), false);
 		M->SetMaterial(Index, InkMaterial);
+	}
+	// a shell smaller than the last (a part hidden since): the rest of the last emptied (a slot cannot come off the end)
+	for (int32 s = Next; !bOldSlots && s < M->GetNumSections(); ++s)
+	{
+		const FProcMeshSection* Sec = M->GetProcMeshSection(s);
+		if (Sec && (Sec->ProcVertexBuffer.Num() > 0 || Sec->ProcIndexBuffer.Num() > 0)) M->ClearMeshSection(s);
 	}
 	GShelledSections.Add(M, M->GetNumSections());
 }

@@ -682,12 +682,23 @@ namespace
 		}
 		return -1;
 	}
+
+	/** BUG-INKLEAK (user ruling 1 Nov): a model that animates gets no ink shell, whether its mesh is rewritten (a waving
+	 *  cloth, a bending plant, a flickering flame) or it moves whole (a hanging lamp's swing, a twirling pickup).  Still
+	 *  models keep theirs; a hit's keyframed reaction (a pan's hop, the church bell's swing) leaves a model still between.
+	 *  -OLOldAnimInk: shelled as before (the cloths and plants shelled again at each move). */
+	bool AnimatesWithoutInk(const FItemModelData* D)
+	{
+		static const bool bOldAnimInk = OLFlags::Param(TEXT("OLOldAnimInk"));
+		return !bOldAnimInk && D && (D->bWave || D->bBend || D->bFlicker || D->bHang || D->Spin != 0.f);
+	}
 }
 
 void AOutlawsLevelActor::ShellItemModel(UProceduralMeshComponent* M, const FString& Stem)
 {
 	if (!M || !ItemInk || !OutlawsInk::Wanted()) return;
 	const FItemModelData* D = ItemModelFor(Stem);
+	if (AnimatesWithoutInk(D)) return;
 	// the parts kept out of the ink (a flame) hidden while the shell is made from the rest (a hidden part makes none)
 	TArray<int32> Out;
 	if (D)
@@ -704,6 +715,17 @@ void AOutlawsLevelActor::ShellItemModel(UProceduralMeshComponent* M, const FStri
 	}
 	OutlawsInk::AddShell(M, 0.6f, ItemInk);
 	for (int32 i : Out) M->SetMeshSectionVisible(i, true);
+}
+
+void AOutlawsLevelActor::DebugAnimatedModels(TArray<TPair<FString, UProceduralMeshComponent*>>& Out) const
+{
+	Out.Reset();
+	auto Add = [&Out](const TCHAR* Kind, UProceduralMeshComponent* M) { if (M) Out.Add(TPair<FString, UProceduralMeshComponent*>(Kind, M)); };
+	for (const FWavingModel& W : WavingModels) Add(TEXT("wave"), W.Mesh.Get());
+	for (const FBendModel& Bm : BendModels) Add(TEXT("bend"), Bm.Mesh.Get());
+	for (const FFlickerModel& Fm : FlickerModels) Add(TEXT("flicker"), Fm.Mesh.Get());
+	for (const FHangModel& Hm : HangModels) Add(TEXT("hang"), Hm.Mesh.Get());
+	for (const TPair<TWeakObjectPtr<UProceduralMeshComponent>, float>& Sp : SpinningModels) Add(TEXT("spin"), Sp.Key.Get());
 }
 
 void AOutlawsLevelActor::HideItemSections(UProceduralMeshComponent* M, const FString& Stem, const TArray<FString>& Names)
@@ -903,6 +925,8 @@ void AOutlawsLevelActor::UpdateWavingModels(float Dt)
 	// UpdateMeshSection_LinearColor converts by default where CreateMeshSection_LinearColor does not, so a waving cloth, a
 	// bending plant or a flickering flame drew brighter than its sector after its first move.  -OLOldSRGBRest: converted as before
 	static const bool bOldSrgb = OLFlags::Param(TEXT("OLOldSRGBRest"));
+	// (BUG-INKLEAK, user ruling 1 Nov) a cloth or plant that moves has no ink shell to follow it (AnimatesWithoutInk)
+	static const bool bReshell = OLFlags::Param(TEXT("OLOldAnimInk"));
 	UWorld* World = GetWorld();
 	APlayerController* PC = World ? World->GetFirstPlayerController() : nullptr;
 	const FVector Eye = PC && PC->PlayerCameraManager ? PC->PlayerCameraManager->GetCameraLocation() : FVector::ZeroVector;
@@ -950,11 +974,11 @@ void AOutlawsLevelActor::UpdateWavingModels(float Dt)
 			}
 			M->UpdateMeshSection_LinearColor(s, Pos, W.Nrm[s], W.UV[s], W.Col[s], TArray<FProcMeshTangent>(), bOldSrgb);
 		}
-		if (WavingStems.IsValidIndex(i)) ShellItemModel(M, WavingStems[i]);      // (the ink line follows the cloth)
+		if (bReshell && WavingStems.IsValidIndex(i)) ShellItemModel(M, WavingStems[i]);      // (the ink line follows the cloth)
 	}
 	// plants bending as their sprites swayed: the step's top shift eased to the next's, times (height / top)^2 so the
 	// base stays put; the level's one wind way (the sprite's screen x); a small flutter leaf by leaf.  15 times a
-	// second within 30 m; the ink shell follows within 12 m
+	// second within 30 m; (-OLOldAnimInk) the ink shell follows within 12 m
 	static const FVector Wind = FVector(0.8, 0.6, 0.0).GetSafeNormal();
 	const FVector Across(-Wind.Y, Wind.X, 0.0);
 	for (int32 i = BendModels.Num() - 1; i >= 0; --i)
@@ -988,7 +1012,7 @@ void AOutlawsLevelActor::UpdateWavingModels(float Dt)
 			}
 			M->UpdateMeshSection_LinearColor(s, Pos, Bm.Nrm[s], Bm.UV[s], Bm.Col[s], TArray<FProcMeshTangent>(), bOldSrgb);
 		}
-		if (D2 < FMath::Square(1200.0)) ShellItemModel(M, Bm.Stem);
+		if (bReshell && D2 < FMath::Square(1200.0)) ShellItemModel(M, Bm.Stem);
 	}
 	// flames flickering through their sprite's drawings: each frame's size (about the flame's foot) and brightness, held
 	// for a frame as the sprite held it
