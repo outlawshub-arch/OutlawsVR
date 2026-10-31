@@ -6,29 +6,17 @@
   "op": "sprite",
   "stem": "GSHOVEL",
   "cell": null,
-  "at": [
-   0,
-   0
-  ],
-  "size": [
-   512,
-   48
-  ]
+  "at": [0,0],
+  "size": [512,48]
  },
  "blocks": [],
  "fill": {
-  "rows": [
-   0,
-   48
-  ],
+  "rows": [0,48],
   "opaque_alpha_over": 127,
   "rule": "RGB of every texel at or under the alpha from its nearest texel over it (Euclidean), alpha kept"
  },
  "swatches": [],
- "size": [
-  512,
-  48
- ],
+ "size": [512,48],
  "exact": true,
  "pending_texels": 0
 }

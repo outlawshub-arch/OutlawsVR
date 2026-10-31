@@ -5,29 +5,17 @@
  "base": {
   "op": "game_texture",
   "stem": "TABLE",
-  "at": [
-   0,
-   0
-  ],
-  "size": [
-   128,
-   128
-  ]
+  "at": [0,0],
+  "size": [128,128]
  },
  "blocks": [],
  "fill": {
-  "rows": [
-   0,
-   128
-  ],
+  "rows": [0,128],
   "opaque_alpha_over": 127,
   "rule": "RGB of every texel at or under the alpha from its nearest texel over it (Euclidean), alpha kept"
  },
  "swatches": [],
- "size": [
-  128,
-  128
- ],
+ "size": [128,128],
  "exact": true,
  "pending_texels": 0,
  "from_3do": {

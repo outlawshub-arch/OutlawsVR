@@ -6,73 +6,239 @@
   "op": "sprite",
   "stem": "BOBCHAND",
   "cell": null,
-  "at": [
-   0,
-   0
-  ],
-  "size": [
-   464,
-   324
-  ]
+  "at": [0,0],
+  "size": [464,324]
  },
  "blocks": [],
  "fill": {
-  "rows": [
-   0,
-   324
-  ],
+  "rows": [0,324],
   "opaque_alpha_over": 127,
   "rule": "RGB of every texel at or under the alpha from its nearest texel over it (Euclidean), alpha kept"
  },
  "swatches": [
   {
-   "rect": [
-    0,
-    324,
-    4
-   ],
-   "sample": null,
-   "status": "pending"
-  },
-  {
-   "rect": [
-    4,
-    324,
-    4
-   ],
-   "sample": null,
-   "status": "pending"
-  },
-  {
-   "rect": [
-    8,
-    324,
-    4
-   ],
-   "sample": null,
-   "status": "pending"
-  },
-  {
-   "rect": [
-    12,
-    324,
-    4
-   ],
+   "rect": [0,324,4],
    "sample": {
-    "at": [
-     266,
-     83,
-     2
+    "px": {
+     "rect": null,
+     "dtype": "f32",
+     "where": [
+      "opaque",
+      {
+       "not": [
+        "opaque",
+        [
+         "r",
+         ">",
+         170
+        ],
+        [
+         "g",
+         ">",
+         90
+        ],
+        [
+         "b",
+         ">",
+         90
+        ],
+        [
+         "r",
+         ">",
+         [
+          "g",
+          "+",
+          25
+         ]
+        ]
+       ]
+      },
+      [
+       "r",
+       ">",
+       "g"
+      ],
+      [
+       "g",
+       ">",
+       "b"
+      ],
+      [
+       "r",
+       "<",
+       200
+      ]
+     ]
+    },
+    "reduce": {
+     "median": true
+    },
+    "then": [
+     [
+      "int"
+     ]
     ],
+    "else": [127,87,51]
+   }
+  },
+  {
+   "rect": [4,324,4],
+   "sample": {
+    "px": {
+     "rect": null,
+     "dtype": "f32",
+     "where": [
+      "opaque",
+      {
+       "not": [
+        "opaque",
+        [
+         "r",
+         ">",
+         170
+        ],
+        [
+         "g",
+         ">",
+         90
+        ],
+        [
+         "b",
+         ">",
+         90
+        ],
+        [
+         "r",
+         ">",
+         [
+          "g",
+          "+",
+          25
+         ]
+        ]
+       ]
+      },
+      [
+       "r",
+       ">",
+       "g"
+      ],
+      [
+       "g",
+       ">",
+       "b"
+      ],
+      [
+       "r",
+       "<",
+       200
+      ]
+     ]
+    },
+    "reduce": {
+     "median": true
+    },
+    "then": [
+     [
+      "int"
+     ],
+     [
+      "mul",
+      0.7
+     ],
+     [
+      "int"
+     ]
+    ],
+    "else": [127,87,51]
+   }
+  },
+  {
+   "rect": [8,324,4],
+   "sample": {
+    "px": {
+     "rect": null,
+     "dtype": "f32",
+     "where": [
+      "opaque",
+      {
+       "not": [
+        "opaque",
+        [
+         "r",
+         ">",
+         170
+        ],
+        [
+         "g",
+         ">",
+         90
+        ],
+        [
+         "b",
+         ">",
+         90
+        ],
+        [
+         "r",
+         ">",
+         [
+          "g",
+          "+",
+          25
+         ]
+        ]
+       ]
+      },
+      [
+       "r",
+       ">",
+       "g"
+      ],
+      [
+       "g",
+       ">",
+       "b"
+      ],
+      [
+       "r",
+       "<",
+       200
+      ]
+     ]
+    },
+    "reduce": {
+     "median": true
+    },
+    "then": [
+     [
+      "int"
+     ],
+     [
+      "mul",
+      1.3
+     ],
+     [
+      "int"
+     ],
+     [
+      "min",
+      255
+     ]
+    ],
+    "else": [127,87,51]
+   }
+  },
+  {
+   "rect": [12,324,4],
+   "sample": {
+    "at": [266,83,2],
     "mode": "all",
     "k": []
    }
   }
  ],
- "size": [
-  464,
-  328
- ],
+ "size": [464,328],
  "exact": true,
- "pending_texels": 48
+ "pending_texels": 0
 }

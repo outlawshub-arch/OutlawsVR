@@ -6,43 +6,80 @@
   "op": "sprite",
   "stem": "CACTUS03",
   "cell": null,
-  "at": [
-   0,
-   0
-  ],
-  "size": [
-   124,
-   532
-  ]
+  "at": [0,0],
+  "size": [124,532]
  },
  "blocks": [
   {
-   "rect": [
-    0,
-    532,
-    50,
-    256
-   ],
+   "rect": [0,532,50,256],
    "gen": [
     "treegen.commit",
     "treegen.saguaro"
    ],
-   "status": "pending"
+   "status": "ready",
+   "prog": [
+    {
+     "op": "src",
+     "out": "r1",
+     "rect": [32,211,77,451]
+    },
+    {
+     "op": "opaque",
+     "r": "r1"
+    },
+    {
+     "op": "resize",
+     "out": "r2",
+     "r": "r1",
+     "size": [24,256],
+     "filter": "bilinear"
+    },
+    {
+     "op": "new",
+     "out": "r3",
+     "size": [48,256],
+     "fill": [0,0,0,0]
+    },
+    {
+     "op": "paste",
+     "dst": "r3",
+     "r": "r2",
+     "at": [0,0]
+    },
+    {
+     "op": "flip",
+     "out": "r4",
+     "r": "r2",
+     "axis": "x"
+    },
+    {
+     "op": "paste",
+     "dst": "r3",
+     "r": "r4",
+     "at": [24,0]
+    },
+    {
+     "op": "new",
+     "out": "out",
+     "size": [50,256],
+     "fill": [0,0,0,0]
+    },
+    {
+     "op": "paste",
+     "dst": "out",
+     "r": "r3",
+     "at": [0,0]
+    }
+   ]
   }
  ],
  "fill": {
-  "rows": [
-   0,
-   788
-  ],
+  "rows": [0,788],
   "opaque_alpha_over": 127,
   "rule": "RGB of every texel at or under the alpha from its nearest texel over it (Euclidean), alpha kept"
  },
  "swatches": [],
- "size": [
-  124,
-  788
- ],
+ "size": [124,788],
  "exact": true,
- "pending_texels": 12800
+ "pending_texels": 0
 }

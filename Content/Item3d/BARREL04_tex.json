@@ -6,46 +6,26 @@
   "op": "sprite",
   "stem": "BARREL04",
   "cell": null,
-  "at": [
-   0,
-   0
-  ],
-  "size": [
-   128,
-   184
-  ]
+  "at": [0,0],
+  "size": [128,184]
  },
  "blocks": [],
  "fill": {
-  "rows": [
-   0,
-   184
-  ],
+  "rows": [0,184],
   "opaque_alpha_over": 127,
   "rule": "RGB of every texel at or under the alpha from its nearest texel over it (Euclidean), alpha kept"
  },
  "swatches": [
   {
-   "rect": [
-    0,
-    184,
-    4
-   ],
+   "rect": [0,184,4],
    "sample": {
-    "at": [
-     62,
-     176,
-     2
-    ],
+    "at": [62,176,2],
     "mode": "all",
     "k": []
    }
   }
  ],
- "size": [
-  128,
-  188
- ],
+ "size": [128,188],
  "exact": true,
  "pending_texels": 0
 }

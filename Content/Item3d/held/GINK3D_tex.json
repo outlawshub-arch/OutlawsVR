@@ -8,55 +8,32 @@
  "blocks": [],
  "swatches": [
   {
-   "rect": [
-    0,
-    0,
-    4
-   ],
+   "rect": [0,0,4],
    "sample": null,
-   "status": "pending"
+   "own": [120,46,22]
   },
   {
-   "rect": [
-    4,
-    0,
-    4
-   ],
+   "rect": [4,0,4],
    "sample": null,
-   "status": "pending"
+   "own": [178,76,34]
   },
   {
-   "rect": [
-    8,
-    0,
-    4
-   ],
+   "rect": [8,0,4],
    "sample": null,
-   "status": "pending"
+   "own": [158,158,164]
   },
   {
-   "rect": [
-    12,
-    0,
-    4
-   ],
+   "rect": [12,0,4],
    "sample": null,
-   "status": "pending"
+   "own": [64,64,70]
   },
   {
-   "rect": [
-    16,
-    0,
-    4
-   ],
+   "rect": [16,0,4],
    "sample": null,
-   "status": "pending"
+   "own": [20,20,22]
   }
  ],
- "size": [
-  64,
-  4
- ],
+ "size": [64,4],
  "exact": true,
- "pending_texels": 80
+ "pending_texels": 0
 }

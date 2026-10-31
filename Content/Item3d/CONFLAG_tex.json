@@ -6,55 +6,31 @@
   "op": "sprite",
   "stem": "CONFLAG",
   "cell": null,
-  "at": [
-   0,
-   0
-  ],
-  "size": [
-   348,
-   784
-  ]
+  "at": [0,0],
+  "size": [348,784]
  },
  "blocks": [],
  "fill": {
-  "rows": [
-   0,
-   784
-  ],
+  "rows": [0,784],
   "opaque_alpha_over": 127,
   "rule": "RGB of every texel at or under the alpha from its nearest texel over it (Euclidean), alpha kept"
  },
  "swatches": [
   {
-   "rect": [
-    0,
-    784,
-    4
-   ],
+   "rect": [0,784,4],
    "sample": {
-    "at": [
-     24,
-     390,
-     1
-    ],
+    "at": [24,390,1],
     "mode": "all",
     "k": []
    }
   },
   {
-   "rect": [
-    4,
-    784,
-    4
-   ],
+   "rect": [4,784,4],
    "sample": null,
-   "status": "pending"
+   "own": [190,160,70]
   }
  ],
- "size": [
-  348,
-  788
- ],
+ "size": [348,788],
  "exact": true,
- "pending_texels": 16
+ "pending_texels": 0
 }

@@ -6,75 +6,181 @@
   "op": "sprite",
   "stem": "CANNON",
   "cell": null,
-  "at": [
-   0,
-   0
-  ],
-  "size": [
-   508,
-   292
-  ]
+  "at": [0,0],
+  "size": [508,292]
  },
  "blocks": [],
  "fill": {
-  "rows": [
-   0,
-   292
-  ],
+  "rows": [0,292],
   "opaque_alpha_over": 127,
   "rule": "RGB of every texel at or under the alpha from its nearest texel over it (Euclidean), alpha kept"
  },
  "swatches": [
   {
-   "rect": [
-    0,
-    292,
-    4
-   ],
-   "sample": null,
-   "status": "pending"
+   "rect": [0,292,4],
+   "sample": {
+    "px": {
+     "rect": null,
+     "dtype": "f32",
+     "where": [
+      "opaque",
+      [
+       "sum",
+       "<",
+       180
+      ]
+     ]
+    },
+    "reduce": {
+     "percentile": 25
+    },
+    "then": [
+     [
+      "int"
+     ],
+     [
+      "mix",
+      0.5,
+      [50,50,54],
+      0.5
+     ],
+     [
+      "int"
+     ]
+    ],
+    "else": [45,45,48]
+   }
   },
   {
-   "rect": [
-    4,
-    292,
-    4
-   ],
+   "rect": [4,292,4],
    "sample": null,
-   "status": "pending"
+   "own": [14,12,12]
   },
   {
-   "rect": [
-    8,
-    292,
-    4
-   ],
-   "sample": null,
-   "status": "pending"
+   "rect": [8,292,4],
+   "sample": {
+    "px": {
+     "rect": null,
+     "dtype": "f32",
+     "where": [
+      "opaque",
+      [
+       "sum",
+       "<",
+       180
+      ]
+     ]
+    },
+    "reduce": {
+     "percentile": 25
+    },
+    "then": [
+     [
+      "int"
+     ],
+     [
+      "mix",
+      0.5,
+      [50,50,54],
+      0.5
+     ],
+     [
+      "int"
+     ],
+     [
+      "mul",
+      1.5
+     ],
+     [
+      "int"
+     ],
+     [
+      "min",
+      255
+     ]
+    ],
+    "else": [45,45,48]
+   }
   },
   {
-   "rect": [
-    12,
-    292,
-    4
-   ],
-   "sample": null,
-   "status": "pending"
+   "rect": [12,292,4],
+   "sample": {
+    "px": {
+     "rect": null,
+     "dtype": "f32",
+     "where": [
+      "opaque",
+      [
+       "sum",
+       ">=",
+       180
+      ],
+      [
+       "r",
+       ">",
+       [
+        "b",
+        "*",
+        1.3
+       ]
+      ]
+     ]
+    },
+    "reduce": {
+     "median": true
+    },
+    "then": [
+     [
+      "int"
+     ]
+    ],
+    "else": [120,80,45]
+   }
   },
   {
-   "rect": [
-    16,
-    292,
-    4
-   ],
-   "sample": null,
-   "status": "pending"
+   "rect": [16,292,4],
+   "sample": {
+    "px": {
+     "rect": null,
+     "dtype": "f32",
+     "where": [
+      "opaque",
+      [
+       "sum",
+       ">=",
+       180
+      ],
+      [
+       "r",
+       ">",
+       [
+        "b",
+        "*",
+        1.3
+       ]
+      ]
+     ]
+    },
+    "reduce": {
+     "median": true
+    },
+    "then": [
+     [
+      "int"
+     ],
+     [
+      "mul",
+      0.7
+     ],
+     [
+      "int"
+     ]
+    ],
+    "else": [120,80,45]
+   }
   }
  ],
- "size": [
-  508,
-  296
- ],
+ "size": [508,296],
  "exact": true,
- "pending_texels": 80
+ "pending_texels": 0
 }

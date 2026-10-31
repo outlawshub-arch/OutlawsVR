@@ -6,73 +6,47 @@
   "op": "sprite",
   "stem": "SAFE",
   "cell": null,
-  "at": [
-   0,
-   0
-  ],
-  "size": [
-   244,
-   208
-  ]
+  "at": [0,0],
+  "size": [244,208]
  },
  "blocks": [],
  "fill": {
-  "rows": [
-   0,
-   208
-  ],
+  "rows": [0,208],
   "opaque_alpha_over": 127,
   "rule": "RGB of every texel at or under the alpha from its nearest texel over it (Euclidean), alpha kept"
  },
  "swatches": [
   {
-   "rect": [
-    0,
-    208,
-    4
-   ],
-   "sample": null,
-   "status": "pending"
-  },
-  {
-   "rect": [
-    4,
-    208,
-    4
-   ],
-   "sample": null,
-   "status": "pending"
-  },
-  {
-   "rect": [
-    8,
-    208,
-    4
-   ],
-   "sample": null,
-   "status": "pending"
-  },
-  {
-   "rect": [
-    12,
-    208,
-    4
-   ],
+   "rect": [0,208,4],
    "sample": {
-    "at": [
-     233,
-     114,
-     2
-    ],
+    "at": [100,207,2],
+    "mode": "all",
+    "k": [0.6]
+   }
+  },
+  {
+   "rect": [4,208,4],
+   "sample": null,
+   "own": [14,12,10]
+  },
+  {
+   "rect": [8,208,4],
+   "sample": {
+    "at": [233,114,2],
+    "mode": "all",
+    "k": [0.5]
+   }
+  },
+  {
+   "rect": [12,208,4],
+   "sample": {
+    "at": [233,114,2],
     "mode": "all",
     "k": []
    }
   }
  ],
- "size": [
-  244,
-  212
- ],
+ "size": [244,212],
  "exact": true,
- "pending_texels": 48
+ "pending_texels": 0
 }

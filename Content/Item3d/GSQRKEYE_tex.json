@@ -6,39 +6,26 @@
   "op": "sprite",
   "stem": "GSQRKEYE",
   "cell": null,
-  "at": [
-   0,
-   0
-  ],
-  "size": [
-   320,
-   96
-  ]
+  "at": [0,0],
+  "size": [320,96]
  },
  "blocks": [],
  "fill": {
-  "rows": [
-   0,
-   96
-  ],
+  "rows": [0,96],
   "opaque_alpha_over": 127,
   "rule": "RGB of every texel at or under the alpha from its nearest texel over it (Euclidean), alpha kept"
  },
  "swatches": [
   {
-   "rect": [
-    0,
-    96,
-    4
-   ],
-   "sample": null,
-   "status": "pending"
+   "rect": [0,96,4],
+   "sample": {
+    "at": [0,70,2],
+    "mode": "all",
+    "k": [0.6]
+   }
   }
  ],
- "size": [
-  320,
-  100
- ],
+ "size": [320,100],
  "exact": true,
- "pending_texels": 16
+ "pending_texels": 0
 }

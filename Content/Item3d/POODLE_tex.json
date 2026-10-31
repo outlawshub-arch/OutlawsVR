@@ -5,27 +5,18 @@
  "base": {
   "op": "grounded",
   "stem": "POODLE",
-  "rows": [
-   0,
-   349
-  ],
+  "rows": [0,349],
   "mirror": 0.25,
   "ink": 0
  },
  "blocks": [],
  "fill": {
-  "rows": [
-   0,
-   349
-  ],
+  "rows": [0,349],
   "opaque_alpha_over": 127,
   "rule": "RGB of every texel at or under the alpha from its nearest texel over it (Euclidean), alpha kept"
  },
  "swatches": [],
- "size": [
-  180,
-  349
- ],
+ "size": [180,349],
  "exact": true,
  "pending_texels": 0
 }

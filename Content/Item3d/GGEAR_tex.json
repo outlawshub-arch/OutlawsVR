@@ -6,78 +6,42 @@
   "op": "sprite",
   "stem": "GGEAR",
   "cell": null,
-  "at": [
-   0,
-   0
-  ],
-  "size": [
-   344,
-   96
-  ]
+  "at": [0,0],
+  "size": [344,96]
  },
  "blocks": [],
  "fill": {
-  "rows": [
-   0,
-   96
-  ],
+  "rows": [0,96],
   "opaque_alpha_over": 127,
   "rule": "RGB of every texel at or under the alpha from its nearest texel over it (Euclidean), alpha kept"
  },
  "swatches": [
   {
-   "rect": [
-    0,
-    96,
-    4
-   ],
+   "rect": [0,96,4],
    "sample": {
-    "at": [
-     170,
-     88,
-     1
-    ],
+    "at": [170,88,1],
     "mode": "all",
     "k": []
    }
   },
   {
-   "rect": [
-    4,
-    96,
-    4
-   ],
+   "rect": [4,96,4],
    "sample": {
-    "at": [
-     38,
-     72,
-     2
-    ],
+    "at": [38,72,2],
     "mode": "all",
     "k": []
    }
   },
   {
-   "rect": [
-    8,
-    96,
-    4
-   ],
+   "rect": [8,96,4],
    "sample": {
-    "at": [
-     118,
-     50,
-     2
-    ],
+    "at": [118,50,2],
     "mode": "all",
     "k": []
    }
   }
  ],
- "size": [
-  344,
-  100
- ],
+ "size": [344,100],
  "exact": true,
  "pending_texels": 0
 }

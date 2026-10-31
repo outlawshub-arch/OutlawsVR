@@ -5,27 +5,18 @@
  "base": {
   "op": "grounded",
   "stem": "GREBOT",
-  "rows": [
-   0,
-   359
-  ],
+  "rows": [0,359],
   "mirror": 0.25,
   "ink": 0
  },
  "blocks": [],
  "fill": {
-  "rows": [
-   0,
-   359
-  ],
+  "rows": [0,359],
   "opaque_alpha_over": 127,
   "rule": "RGB of every texel at or under the alpha from its nearest texel over it (Euclidean), alpha kept"
  },
  "swatches": [],
- "size": [
-  92,
-  359
- ],
+ "size": [92,359],
  "exact": true,
  "pending_texels": 0
 }

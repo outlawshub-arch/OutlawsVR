@@ -3,45 +3,190 @@
  "name": "STATUE3",
  "writer": "item",
  "base": {
-  "op": "pending",
+  "op": "program",
   "kind": "props.man_in_bottle",
-  "source": "STATUE3",
-  "rows": [
-   0,
-   276
+  "stem": "STATUE3",
+  "rows": [0,276],
+  "prog": [
+   {
+    "op": "src",
+    "out": "r1",
+    "stem": "STATUE3"
+   },
+   {
+    "op": "astype",
+    "out": "r2",
+    "r": "r1",
+    "dtype": "f32"
+   },
+   {
+    "op": "box",
+    "out": "r3",
+    "r": "r2",
+    "rect": [15,91,72,256]
+   },
+   {
+    "op": "pred",
+    "out": "r4",
+    "r": "r2",
+    "where": [
+     "opaque"
+    ]
+   },
+   {
+    "op": "pred",
+    "out": "r5",
+    "r": "r2",
+    "where": [
+     "opaque",
+     [
+      "sum",
+      ">",
+      260
+     ]
+    ]
+   },
+   {
+    "op": "and",
+    "out": "r6",
+    "a": "r5",
+    "b": "r3"
+   },
+   {
+    "op": "close",
+    "out": "r7",
+    "r": "r6",
+    "iterations": 3
+   },
+   {
+    "op": "largest",
+    "out": "r8",
+    "r": "r7"
+   },
+   {
+    "op": "dilate",
+    "out": "r9",
+    "r": "r8",
+    "iterations": 2
+   },
+   {
+    "op": "fill_holes",
+    "out": "r10",
+    "r": "r9"
+   },
+   {
+    "op": "andnot",
+    "out": "r11",
+    "a": "r4",
+    "b": "r10"
+   },
+   {
+    "op": "and",
+    "out": "r12",
+    "a": "r11",
+    "b": "r3"
+   },
+   {
+    "op": "median_at",
+    "out": "r13",
+    "r": "r2",
+    "mask": "r12",
+    "else": [60,30,5]
+   },
+   {
+    "op": "get",
+    "out": "r14",
+    "r": "r2",
+    "ch": [0,3]
+   },
+   {
+    "op": "inpaint",
+    "r": "r14",
+    "mask": "r10",
+    "v": "r13",
+    "iters": 6,
+    "size": [5,5,1]
+   },
+   {
+    "op": "zeros",
+    "out": "out",
+    "shape": [276,176,4],
+    "dtype": "u8"
+   },
+   {
+    "op": "clip",
+    "out": "r15",
+    "r": "r14",
+    "lo": 0,
+    "hi": 255
+   },
+   {
+    "op": "put",
+    "r": "out",
+    "cols": [0,88],
+    "ch": [0,3],
+    "v": "r15"
+   },
+   {
+    "op": "get",
+    "out": "r16",
+    "r": "r2",
+    "ch": [3,4]
+   },
+   {
+    "op": "put",
+    "r": "out",
+    "cols": [0,88],
+    "ch": [3,4],
+    "v": "r16"
+   },
+   {
+    "op": "get",
+    "out": "r17",
+    "r": "r2",
+    "ch": [0,3]
+   },
+   {
+    "op": "put",
+    "r": "out",
+    "cols": [88,176],
+    "ch": [0,3],
+    "v": "r17"
+   },
+   {
+    "op": "sel",
+    "out": "r18",
+    "mask": "r10",
+    "hi": 255,
+    "lo": 0,
+    "axis": true
+   },
+   {
+    "op": "put",
+    "r": "out",
+    "cols": [88,176],
+    "ch": [3,4],
+    "v": "r18"
+   }
   ]
  },
  "blocks": [],
  "fill": {
-  "rows": [
-   0,
-   276
-  ],
+  "rows": [0,276],
   "opaque_alpha_over": 127,
   "rule": "RGB of every texel at or under the alpha from its nearest texel over it (Euclidean), alpha kept"
  },
  "swatches": [
   {
-   "rect": [
-    0,
-    276,
-    4
-   ],
+   "rect": [0,276,4],
    "sample": {
-    "at": [
-     43,
-     269,
-     2
-    ],
+    "at": [43,269,2],
     "mode": "all",
     "k": []
    }
   }
  ],
- "size": [
-  176,
-  280
- ],
+ "size": [176,280],
  "exact": true,
- "pending_texels": 48576
+ "pending_texels": 0
 }

@@ -6,103 +6,75 @@
   "op": "sprite",
   "stem": "GDYNABLE",
   "cell": null,
-  "at": [
-   0,
-   0
-  ],
-  "size": [
-   228,
-   396
-  ],
+  "at": [0,0],
+  "size": [228,396],
   "note": "another item's sprite"
  },
  "blocks": [],
  "fill": {
-  "rows": [
-   0,
-   396
-  ],
+  "rows": [0,396],
   "opaque_alpha_over": 127,
   "rule": "RGB of every texel at or under the alpha from its nearest texel over it (Euclidean), alpha kept"
  },
  "swatches": [
   {
-   "rect": [
-    0,
-    396,
-    4
-   ],
+   "rect": [0,396,4],
    "sample": null,
-   "status": "pending"
+   "own": [168,172,182]
   },
   {
-   "rect": [
-    4,
-    396,
-    4
-   ],
+   "rect": [4,396,4],
    "sample": null,
-   "status": "pending"
+   "own": [112,116,126]
   },
   {
-   "rect": [
-    8,
-    396,
-    4
-   ],
+   "rect": [8,396,4],
    "sample": null,
-   "status": "pending"
+   "own": [214,218,226]
   },
   {
-   "rect": [
-    12,
-    396,
-    4
-   ],
+   "rect": [12,396,4],
    "sample": null,
-   "status": "pending"
+   "own": [190,150,70]
   },
   {
-   "rect": [
-    16,
-    396,
-    4
-   ],
+   "rect": [16,396,4],
    "sample": null,
-   "status": "pending"
+   "own": [140,104,44]
   },
   {
-   "rect": [
-    20,
-    396,
-    4
-   ],
+   "rect": [20,396,4],
    "sample": null,
-   "status": "pending"
+   "own": [122,52,30]
   },
   {
-   "rect": [
-    24,
-    396,
-    4
-   ],
+   "rect": [24,396,4],
    "sample": null,
-   "status": "pending"
+   "own": [237,187,87],
+   "derived": {
+    "literal": [190,150,70],
+    "then": [
+     [
+      "mul",
+      1.25
+     ],
+     [
+      "int"
+     ],
+     [
+      "min",
+      255
+     ]
+    ]
+   }
   },
   {
-   "rect": [
-    28,
-    396,
-    4
-   ],
+   "rect": [28,396,4],
    "sample": null,
-   "status": "pending"
+   "own": [84,34,20]
   }
  ],
- "size": [
-  228,
-  400
- ],
+ "size": [228,400],
  "exact": true,
- "pending_texels": 128
+ "pending_texels": 0
 }

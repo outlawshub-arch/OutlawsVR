@@ -6,39 +6,23 @@
   "op": "sprite",
   "stem": "GBPLATE",
   "cell": null,
-  "at": [
-   0,
-   0
-  ],
-  "size": [
-   92,
-   248
-  ]
+  "at": [0,0],
+  "size": [92,248]
  },
  "blocks": [],
  "fill": {
-  "rows": [
-   0,
-   248
-  ],
+  "rows": [0,248],
   "opaque_alpha_over": 127,
   "rule": "RGB of every texel at or under the alpha from its nearest texel over it (Euclidean), alpha kept"
  },
  "swatches": [
   {
-   "rect": [
-    0,
-    248,
-    4
-   ],
+   "rect": [0,248,4],
    "sample": null,
-   "status": "pending"
+   "own": [200,196,190]
   }
  ],
- "size": [
-  92,
-  252
- ],
+ "size": [92,252],
  "exact": true,
- "pending_texels": 16
+ "pending_texels": 0
 }

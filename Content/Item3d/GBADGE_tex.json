@@ -5,35 +5,18 @@
  "base": {
   "op": "sprite",
   "stem": "GBADGE",
-  "cell": [
-   0,
-   0,
-   216,
-   256
-  ],
-  "at": [
-   0,
-   0
-  ],
-  "size": [
-   216,
-   256
-  ]
+  "cell": [0,0,216,256],
+  "at": [0,0],
+  "size": [216,256]
  },
  "blocks": [],
  "fill": {
-  "rows": [
-   0,
-   256
-  ],
+  "rows": [0,256],
   "opaque_alpha_over": 127,
   "rule": "RGB of every texel at or under the alpha from its nearest texel over it (Euclidean), alpha kept"
  },
  "swatches": [],
- "size": [
-  216,
-  256
- ],
+ "size": [216,256],
  "exact": true,
  "pending_texels": 0
 }

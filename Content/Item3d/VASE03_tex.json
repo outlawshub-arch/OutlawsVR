@@ -6,46 +6,26 @@
   "op": "sprite",
   "stem": "VASE03",
   "cell": null,
-  "at": [
-   0,
-   0
-  ],
-  "size": [
-   68,
-   100
-  ]
+  "at": [0,0],
+  "size": [68,100]
  },
  "blocks": [],
  "fill": {
-  "rows": [
-   0,
-   100
-  ],
+  "rows": [0,100],
   "opaque_alpha_over": 127,
   "rule": "RGB of every texel at or under the alpha from its nearest texel over it (Euclidean), alpha kept"
  },
  "swatches": [
   {
-   "rect": [
-    0,
-    100,
-    4
-   ],
+   "rect": [0,100,4],
    "sample": {
-    "at": [
-     34,
-     97,
-     2
-    ],
+    "at": [34,97,2],
     "mode": "all",
     "k": []
    }
   }
  ],
- "size": [
-  68,
-  104
- ],
+ "size": [68,104],
  "exact": true,
  "pending_texels": 0
 }

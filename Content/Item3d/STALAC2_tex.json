@@ -6,29 +6,17 @@
   "op": "sprite",
   "stem": "STALAC2",
   "cell": null,
-  "at": [
-   0,
-   0
-  ],
-  "size": [
-   200,
-   388
-  ]
+  "at": [0,0],
+  "size": [200,388]
  },
  "blocks": [],
  "fill": {
-  "rows": [
-   0,
-   388
-  ],
+  "rows": [0,388],
   "opaque_alpha_over": 127,
   "rule": "RGB of every texel at or under the alpha from its nearest texel over it (Euclidean), alpha kept"
  },
  "swatches": [],
- "size": [
-  200,
-  388
- ],
+ "size": [200,388],
  "exact": true,
  "pending_texels": 0
 }

@@ -6,46 +6,26 @@
   "op": "sprite",
   "stem": "GGSAK",
   "cell": null,
-  "at": [
-   0,
-   0
-  ],
-  "size": [
-   88,
-   120
-  ]
+  "at": [0,0],
+  "size": [88,120]
  },
  "blocks": [],
  "fill": {
-  "rows": [
-   0,
-   120
-  ],
+  "rows": [0,120],
   "opaque_alpha_over": 127,
   "rule": "RGB of every texel at or under the alpha from its nearest texel over it (Euclidean), alpha kept"
  },
  "swatches": [
   {
-   "rect": [
-    0,
-    120,
-    4
-   ],
+   "rect": [0,120,4],
    "sample": {
-    "at": [
-     41,
-     116,
-     2
-    ],
+    "at": [41,116,2],
     "mode": "all",
     "k": []
    }
   }
  ],
- "size": [
-  88,
-  124
- ],
+ "size": [88,124],
  "exact": true,
  "pending_texels": 0
 }

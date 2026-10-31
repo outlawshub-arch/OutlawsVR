@@ -6,55 +6,48 @@
   "op": "sprite",
   "stem": "PAN1",
   "cell": null,
-  "at": [
-   0,
-   0
-  ],
-  "size": [
-   312,
-   56
-  ]
+  "at": [0,0],
+  "size": [312,56]
  },
  "blocks": [],
  "fill": {
-  "rows": [
-   0,
-   56
-  ],
+  "rows": [0,56],
   "opaque_alpha_over": 127,
   "rule": "RGB of every texel at or under the alpha from its nearest texel over it (Euclidean), alpha kept"
  },
  "swatches": [
   {
-   "rect": [
-    0,
-    56,
-    4
-   ],
+   "rect": [0,56,4],
    "sample": {
-    "at": [
-     99,
-     53,
-     2
-    ],
+    "at": [99,53,2],
     "mode": "all",
     "k": []
    }
   },
   {
-   "rect": [
-    4,
-    56,
-    4
-   ],
-   "sample": null,
-   "status": "pending"
+   "rect": [4,56,4],
+   "sample": {
+    "px": {
+     "rect": [89,3,109,11],
+     "dtype": "f32",
+     "where": []
+    },
+    "reduce": {
+     "mean": true
+    },
+    "then": [
+     [
+      "mul",
+      0.7
+     ],
+     [
+      "int"
+     ]
+    ]
+   }
   }
  ],
- "size": [
-  312,
-  60
- ],
+ "size": [312,60],
  "exact": true,
- "pending_texels": 16
+ "pending_texels": 0
 }

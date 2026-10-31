@@ -5,27 +5,18 @@
  "base": {
   "op": "grounded",
   "stem": "STATUE4",
-  "rows": [
-   0,
-   317
-  ],
+  "rows": [0,317],
   "mirror": 0.25,
   "ink": 0
  },
  "blocks": [],
  "fill": {
-  "rows": [
-   0,
-   317
-  ],
+  "rows": [0,317],
   "opaque_alpha_over": 127,
   "rule": "RGB of every texel at or under the alpha from its nearest texel over it (Euclidean), alpha kept"
  },
  "swatches": [],
- "size": [
-  112,
-  317
- ],
+ "size": [112,317],
  "exact": true,
  "pending_texels": 0
 }

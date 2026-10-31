@@ -6,43 +6,80 @@
   "op": "sprite",
   "stem": "SHRUB03",
   "cell": null,
-  "at": [
-   0,
-   0
-  ],
-  "size": [
-   216,
-   136
-  ]
+  "at": [0,0],
+  "size": [216,136]
  },
  "blocks": [
   {
-   "rect": [
-    0,
-    136,
-    34,
-    256
-   ],
+   "rect": [0,136,34,256],
    "gen": [
     "treegen.commit",
     "treegen.blades"
    ],
-   "status": "pending"
+   "status": "ready",
+   "prog": [
+    {
+     "op": "src",
+     "out": "r1",
+     "rect": [63,20,149,128]
+    },
+    {
+     "op": "opaque",
+     "r": "r1"
+    },
+    {
+     "op": "resize",
+     "out": "r2",
+     "r": "r1",
+     "size": [16,256],
+     "filter": "bilinear"
+    },
+    {
+     "op": "new",
+     "out": "r3",
+     "size": [32,256],
+     "fill": [0,0,0,0]
+    },
+    {
+     "op": "paste",
+     "dst": "r3",
+     "r": "r2",
+     "at": [0,0]
+    },
+    {
+     "op": "flip",
+     "out": "r4",
+     "r": "r2",
+     "axis": "x"
+    },
+    {
+     "op": "paste",
+     "dst": "r3",
+     "r": "r4",
+     "at": [16,0]
+    },
+    {
+     "op": "new",
+     "out": "out",
+     "size": [34,256],
+     "fill": [0,0,0,0]
+    },
+    {
+     "op": "paste",
+     "dst": "out",
+     "r": "r3",
+     "at": [0,0]
+    }
+   ]
   }
  ],
  "fill": {
-  "rows": [
-   0,
-   392
-  ],
+  "rows": [0,392],
   "opaque_alpha_over": 127,
   "rule": "RGB of every texel at or under the alpha from its nearest texel over it (Euclidean), alpha kept"
  },
  "swatches": [],
- "size": [
-  216,
-  392
- ],
+ "size": [216,392],
  "exact": true,
- "pending_texels": 8704
+ "pending_texels": 0
 }

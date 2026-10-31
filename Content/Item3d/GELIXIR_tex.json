@@ -6,29 +6,17 @@
   "op": "sprite",
   "stem": "GELIXIR",
   "cell": null,
-  "at": [
-   0,
-   0
-  ],
-  "size": [
-   64,
-   180
-  ]
+  "at": [0,0],
+  "size": [64,180]
  },
  "blocks": [],
  "fill": {
-  "rows": [
-   0,
-   180
-  ],
+  "rows": [0,180],
   "opaque_alpha_over": 127,
   "rule": "RGB of every texel at or under the alpha from its nearest texel over it (Euclidean), alpha kept"
  },
  "swatches": [],
- "size": [
-  64,
-  180
- ],
+ "size": [64,180],
  "exact": true,
  "pending_texels": 0
 }

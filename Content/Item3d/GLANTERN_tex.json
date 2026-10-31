@@ -3,45 +3,189 @@
  "name": "GLANTERN",
  "writer": "item",
  "base": {
-  "op": "pending",
+  "op": "program",
   "kind": "props.lantern",
-  "source": "GLANTERN",
-  "rows": [
-   0,
-   164
+  "stem": "GLANTERN",
+  "rows": [0,164],
+  "prog": [
+   {
+    "op": "src",
+    "out": "r1",
+    "stem": "GLANTERN"
+   },
+   {
+    "op": "astype",
+    "out": "r2",
+    "r": "r1",
+    "dtype": "f32"
+   },
+   {
+    "op": "pred",
+    "out": "r3",
+    "r": "r2",
+    "where": [
+     "opaque",
+     [
+      "r",
+      ">",
+      200
+     ],
+     [
+      "g",
+      ">",
+      120
+     ],
+     [
+      "b",
+      "<",
+      160
+     ]
+    ]
+   },
+   {
+    "op": "box",
+    "out": "r4",
+    "r": "r2",
+    "rect": [30,68,70,130]
+   },
+   {
+    "op": "and",
+    "out": "r5",
+    "a": "r3",
+    "b": "r4"
+   },
+   {
+    "op": "close",
+    "out": "r6",
+    "r": "r5",
+    "iterations": 2
+   },
+   {
+    "op": "fill_holes",
+    "out": "r7",
+    "r": "r6"
+   },
+   {
+    "op": "pred",
+    "out": "r8",
+    "r": "r2",
+    "where": [
+     "opaque"
+    ]
+   },
+   {
+    "op": "and",
+    "out": "r9",
+    "a": "r8",
+    "b": "r4"
+   },
+   {
+    "op": "andnot",
+    "out": "r10",
+    "a": "r9",
+    "b": "r7"
+   },
+   {
+    "op": "median_at",
+    "out": "r11",
+    "r": "r2",
+    "mask": "r10",
+    "else": [120,30,10]
+   },
+   {
+    "op": "get",
+    "out": "r12",
+    "r": "r2",
+    "ch": [0,3]
+   },
+   {
+    "op": "inpaint",
+    "r": "r12",
+    "mask": "r7",
+    "v": "r11",
+    "iters": 6,
+    "size": [5,5,1]
+   },
+   {
+    "op": "zeros",
+    "out": "out",
+    "shape": [164,200,4],
+    "dtype": "u8"
+   },
+   {
+    "op": "clip",
+    "out": "r13",
+    "r": "r12",
+    "lo": 0,
+    "hi": 255
+   },
+   {
+    "op": "put",
+    "r": "out",
+    "cols": [0,100],
+    "ch": [0,3],
+    "v": "r13"
+   },
+   {
+    "op": "get",
+    "out": "r14",
+    "r": "r2",
+    "ch": [3,4]
+   },
+   {
+    "op": "put",
+    "r": "out",
+    "cols": [0,100],
+    "ch": [3,4],
+    "v": "r14"
+   },
+   {
+    "op": "get",
+    "out": "r15",
+    "r": "r2",
+    "ch": [0,3]
+   },
+   {
+    "op": "put",
+    "r": "out",
+    "cols": [100,200],
+    "ch": [0,3],
+    "v": "r15"
+   },
+   {
+    "op": "sel",
+    "out": "r16",
+    "mask": "r7",
+    "hi": 255,
+    "lo": 0,
+    "axis": true
+   },
+   {
+    "op": "put",
+    "r": "out",
+    "cols": [100,200],
+    "ch": [3,4],
+    "v": "r16"
+   }
   ]
  },
  "blocks": [],
  "fill": {
-  "rows": [
-   0,
-   164
-  ],
+  "rows": [0,164],
   "opaque_alpha_over": 127,
   "rule": "RGB of every texel at or under the alpha from its nearest texel over it (Euclidean), alpha kept"
  },
  "swatches": [
   {
-   "rect": [
-    0,
-    164,
-    4
-   ],
+   "rect": [0,164,4],
    "sample": {
-    "at": [
-     50,
-     158,
-     2
-    ],
+    "at": [50,158,2],
     "mode": "all",
     "k": []
    }
   }
  ],
- "size": [
-  200,
-  168
- ],
+ "size": [200,168],
  "exact": true,
- "pending_texels": 32800
+ "pending_texels": 0
 }
