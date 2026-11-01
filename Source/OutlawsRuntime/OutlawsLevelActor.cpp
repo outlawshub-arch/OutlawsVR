@@ -2133,6 +2133,8 @@ void AOutlawsLevelActor::BeginPlay()
 	}
 	// (-OLOldSkygap: BUG-SKYGAP's before-picture) door notches left out of the room's floor and ceiling
 	FOutlawsGeometry::bOldSkygap = OLFlags::Param(TEXT("OLOldSkygap"));
+	// (-OLOldSkyWall: BUG-SKYWALL's before-picture) a wall's top part drawn as sky by its own sector's flag
+	FOutlawsGeometry::bOldSkyWall = OLFlags::Param(TEXT("OLOldSkyWall"));
 	if (OLFlags::Param(TEXT("OLSmokeTest")))
 	{
 		bEnemiesActive = false;    // the smoke test wakes one when it gets to enemies

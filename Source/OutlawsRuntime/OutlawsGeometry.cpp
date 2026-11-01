@@ -184,6 +184,7 @@ TMap<int32, int32> FOutlawsGeometry::SectorWaterGroup;
 TMap<int32, FIntVector> FOutlawsGeometry::SectorLight;
 bool FOutlawsGeometry::bOldSignRule = false;
 bool FOutlawsGeometry::bOldSkygap = false;
+bool FOutlawsGeometry::bOldSkyWall = false;
 
 namespace
 {
@@ -546,25 +547,58 @@ void FOutlawsGeometry::Build(const FOutlawsLevel& L, const TMap<FString, FOutlaw
 			// (BUG-OUTHOUSEWALL) the opening this wall's fill is kept to, its sector's: the rest stay open
 			const int32* FillTo = F.FillToward.Find(FOutlawsBuildFilter::Key(S.Index, WallIndex));
 			auto IsFilled = [&](int32 o) { return !FillTo || (*FillTo == W.DAdjoin ? o >= NumAdjoinOpenings : o < NumAdjoinOpenings); };
+			// (BUG-SKYWALL, user 1 Nov, snapshots 9 to 11: log fence and blank grey-green strips standing up into the sky over
+			// civlwar1's and civlwar2's yards, above the hedge backdrops) the Jedi engine leaves a wall's top part undrawn, the
+			// sky showing, when the sector BEYOND the wall has the exterior top adjoin flag, whatever this sector's flags (TFE
+			// rsectorFloat: a WDF_TOP wall whose nextSector has EXT_ADJ is drawn as its opening only, wall_drawMask; the bottom
+			// part likewise by EXT_FLOOR_ADJ).  This sector's flag was read instead: the yards (sky, unflagged) drew their tops
+			// over the flagged hedge strips (24 walls in civlwar1, 50 in civlwar2), and a flagged street drew sky over a
+			// doorway in a warehouse front (wharf sector 777 wall 4).  The part's pick by the rule, counted where the old one
+			// (bOld) differs; Beyond is the sector whose opening the part stands over (under)
+			auto SkyRule = [&](bool bTop, const FOutlawsSector* Beyond, bool bOld)
+			{
+				const bool bNew = Beyond && (Beyond->Flags & (bTop ? ExtTopAdjoin : ExtBtmAdjoin)) != 0;
+				if (bNew != bOld) Stat(bTop ? (bNew ? TEXT("skywall_top_to_sky") : TEXT("skywall_top_to_drawn")) : (bNew ? TEXT("skywall_bot_to_sky") : TEXT("skywall_bot_to_drawn")));
+				return bOldSkyWall ? bOld : bNew;
+			};
+			auto BeyondPart = [&](bool bTop) -> const FOutlawsSector*
+			{
+				int32 Best = -1;
+				double BestH = 0.0;
+				for (int32 o = 0; o < Openings.Num(); ++o)
+				{
+					const double H = bTop ? Openings[o].T1 + Openings[o].T2 : -(Openings[o].B1 + Openings[o].B2);
+					if (Best < 0 || H > BestH) { Best = o; BestH = H; }
+				}
+				return Best < 0 ? nullptr : L.Sector(Best < NumAdjoinOpenings ? W.Adjoin : W.DAdjoin);
+			};
 
 			Bands.Reset();
 			static const bool bOldMillvis = OLFlags::Param(TEXT("OLOldMillvis"));     // (before-and-after shots)
-			const FOutlawsSector* Shut = (Openings.Num() == 0 && W.DAdjoin < 0 && !bOldMillvis) ? L.Sector(W.Adjoin) : nullptr;
-			const bool bDefaultMid = L.TexStem(W.Mid).Equals(TEXT("DEFAULT"), ESearchCase::IgnoreCase);
-			if (Shut && bDefaultMid && !Shut->NoWalls() && L.SurfaceY(*Shut, A, false) <= FA + MinSegment && L.SurfaceY(*Shut, B, false) <= FB + MinSegment)
+			// an opening shut by the sector beyond: its ceiling at or under this floor (the wall all top part), or its floor at
+			// or over this ceiling (all bottom part)
+			const FOutlawsSector* Shut = (Openings.Num() == 0 && W.DAdjoin < 0) ? L.Sector(W.Adjoin) : nullptr;
+			const bool bShutUnder = Shut && !Shut->NoWalls() && L.SurfaceY(*Shut, A, false) <= FA + MinSegment && L.SurfaceY(*Shut, B, false) <= FB + MinSegment;
+			const bool bShutOver = !bShutUnder && Shut && !Shut->NoWalls() && L.SurfaceY(*Shut, A, true) >= CA - MinSegment && L.SurfaceY(*Shut, B, true) >= CB - MinSegment;
+			const bool bDefaultMid = !bOldMillvis && L.TexStem(W.Mid).Equals(TEXT("DEFAULT"), ESearchCase::IgnoreCase);
+			// (BUG-SKYWALL) a shut part is sky by the flag beyond whatever the mid: civlwar1's canyon rims (522 and 523, floor 40)
+			// stand on the 0.01-unit sky sector 524, there to leave the 30 units of rock wall over the rim undrawn along 6200
+			// units of it, and civlwar2's 912 on 905 and 865 the same.  Before, only a DEFAULT mid's part was, by this flag
+			const bool bShutSky = (bShutUnder || bShutOver) && SkyRule(bShutUnder, Shut, bDefaultMid && (S.Flags & (bShutUnder ? ExtTopAdjoin : ExtBtmAdjoin)) != 0);
+			if (bShutUnder && (bDefaultMid || bShutSky))
 			{
 				// (BUG-MILLVIS) an opening shut by the sector beyond, its ceiling at or under this floor (the mill's flume gates
 				// let down): the original draws the wall's top part down to this floor (TFE wall_process: the top from the
 				// ceiling to the higher of the next ceiling and this floor), not its mid.  The mid is the level's DEFAULT
 				// placeholder there, which is not drawn (BUG-DEFAULTBAND), so the doorway stood open onto the sky
-				if (S.Flags & ExtTopAdjoin) Bands.Add({ EBand::Top, FA, FB, CA, CB, -1, 0.0, 0.0, 0.0, false, true });   // sky
+				if (bShutSky) Bands.Add({ EBand::Top, FA, FB, CA, CB, -1, 0.0, 0.0, 0.0, false, true });   // sky
 				else Bands.Add({ EBand::Top, FA, FB, CA, CB, W.Top, W.TopX, W.TopY, (FA + FB) * 0.5, false });
 				Stat(TEXT("wall_top_shut"));
 			}
-			else if (Shut && bDefaultMid && !Shut->NoWalls() && L.SurfaceY(*Shut, A, true) >= CA - MinSegment && L.SurfaceY(*Shut, B, true) >= CB - MinSegment)
+			else if (bShutOver && (bDefaultMid || bShutSky))
 			{
 				// (BUG-MILLVIS) ... and shut from below, its floor at or over this ceiling: the bottom part up to this ceiling
-				if (S.Flags & ExtBtmAdjoin) Bands.Add({ EBand::Bot, FA, FB, CA, CB, -1, 0.0, 0.0, 0.0, false, true });   // sky
+				if (bShutSky) Bands.Add({ EBand::Bot, FA, FB, CA, CB, -1, 0.0, 0.0, 0.0, false, true });   // sky
 				else Bands.Add({ EBand::Bot, FA, FB, CA, CB, W.Bot, W.BotX, W.BotY, BotAnchorY, false });
 				Stat(TEXT("wall_bot_shut"));
 			}
@@ -605,7 +639,7 @@ void FOutlawsGeometry::Build(const FOutlawsLevel& L, const TMap<FString, FOutlaw
 					}
 					if (Band == EBand::Bot)
 					{
-						if (S.Flags & ExtBtmAdjoin)
+						if (SkyRule(false, BeyondPart(false), (S.Flags & ExtBtmAdjoin) != 0))
 						{
 							Bands.Add({ Band, Lo.Key, Lo.Value, Hi.Key, Hi.Value, -1, 0.0, 0.0, 0.0, false, true });   // sky
 							continue;
@@ -614,7 +648,7 @@ void FOutlawsGeometry::Build(const FOutlawsLevel& L, const TMap<FString, FOutlaw
 					}
 					else if (Band == EBand::Top)
 					{
-						if (S.Flags & ExtTopAdjoin)
+						if (SkyRule(true, BeyondPart(true), (S.Flags & ExtTopAdjoin) != 0))
 						{
 							Bands.Add({ Band, Lo.Key, Lo.Value, Hi.Key, Hi.Value, -1, 0.0, 0.0, 0.0, false, true });   // sky
 							continue;
@@ -683,6 +717,15 @@ void FOutlawsGeometry::Build(const FOutlawsLevel& L, const TMap<FString, FOutlaw
 					OrientQuad(Q, NoUV, Inward);
 					SkyFaces.AddFace(Q, NoUV, 4, 1.f, bRev);
 					Stat(TEXT("sky_band"));
+					// (BUG-SKYWALL) the part still stops walkers and shots, as the original's does (its collision never reads
+					// the drawing flags): a body on civlwar1's canyon rims would else walk out over the sky sector at their foot
+					if (!bOldSkyWall)
+					{
+						FOutlawsMeshSection& Blk = Blockers.FindOrAdd(TEXT("ALL"));
+						Blk.AddFace(Q, NoUV, 4, 1.f, false);
+						Blk.AddFace(Q, NoUV, 4, 1.f, true);
+						Stat(TEXT("sky_band_solid"));
+					}
 					continue;
 				}
 				const FString TexStem = L.TexStem(Bd.TexIdx);

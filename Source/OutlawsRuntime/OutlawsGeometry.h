@@ -137,6 +137,9 @@ struct OUTLAWSRUNTIME_API FOutlawsGeometry
 	/** -OLOldSkygap (before-and-after shots and sweeps): a door's notch in a ring stays out of the room's floor and
 	 *  ceiling, as before BUG-SKYGAP. */
 	static bool bOldSkygap;
+	/** -OLOldSkyWall (before-and-after shots; the -OLSkyWallProbe survey builds both ways): a wall's top (bottom) part is
+	 *  drawn as sky by its own sector's exterior adjoin flag, as before BUG-SKYWALL, and stops nothing. */
+	static bool bOldSkyWall;
 	/** -OLAdjoinScan only: when set, one line per surface on an adjoined wall that the original would not draw. */
 	TArray<FString>* Audit = nullptr;
 
