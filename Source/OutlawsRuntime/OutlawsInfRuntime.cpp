@@ -14,11 +14,23 @@ namespace
 		const FString U = RawClass.ToUpper();
 		return U.Contains(TEXT("SWITCH1")) || U.Contains(TEXT("TOGGLE")) || U.Contains(TEXT("SINGLE"));
 	}
+
+	/** (BUG-CWBLASTFLOOR) degrees to a slope's angle units, cut to a whole 16-bit unit as the exe's loader does them */
+	double SlopeUnits(double Degrees)
+	{
+		return double(int16(FMath::TruncToInt(Degrees * (16384.0 / 360.0))));
+	}
 }
 
 bool FOutlawsInfRuntime::SectorLightsOn()
 {
 	static const bool bOld = OLFlags::Param(TEXT("OLOldSectorLight"));
+	return !bOld;
+}
+
+bool FOutlawsInfRuntime::SlopesOn()
+{
+	static const bool bOld = OLFlags::Param(TEXT("OLOldCwBlast"));     // (-OLOldCwBlast: no slope elevator made, as before)
 	return !bOld;
 }
 
@@ -34,6 +46,9 @@ double FOutlawsInfRuntime::DefaultSpeed(EOutlawsInfClass Class)
 		return 15.0;
 	case EOutlawsInfClass::MorphSpin:
 		return 1024.0 * 360.0 / 16384.0;   // 1024 angle units per second = 22.5 degrees
+	case EOutlawsInfClass::SlopeFloor:
+	case EOutlawsInfClass::SlopeCeiling:
+		return 1024.0;                     // (the same 22.5 degrees a second, kept in the slope's own units)
 	default:
 		return 4.0;
 	}
@@ -64,6 +79,7 @@ void FOutlawsInfRuntime::Init(const FOutlawsLevel& Level, const FString& InfText
 	Elevators.Reset();
 	SavedElevatorsBefore = 0;
 	LightsFrom = -1;
+	SlopesFrom = -1;
 	Triggers.Reset();
 	ElevatorsBySector.Reset();
 	LightsBySector.Reset();
@@ -75,6 +91,7 @@ void FOutlawsInfRuntime::Init(const FOutlawsLevel& Level, const FString& InfText
 	TArray<int32> Found;
 	TArray<FIntVector4> GatedLights;     // (REQ-PIANO) scroll, item, class, sector: lights made elevators after the rest
 	TArray<FIntVector> SectorLights;     // (REQ-SECTORLIGHT) item, class, sector: the other lights, made after those
+	TArray<FIntVector> Slopes;           // (BUG-CWBLASTFLOOR) item, class, sector: the slope elevators, made last of all
 	for (int32 i = 0; i < Inf.Items.Num(); ++i)
 	{
 		const FOutlawsInfItem& It = Inf.Items[i];
@@ -219,6 +236,10 @@ void FOutlawsInfRuntime::Init(const FOutlawsLevel& Level, const FString& InfText
 					if (Scrolls[k].Item == i && Scrolls[k].Elevator < 0) { GatedLights.Add(FIntVector4(k, i, c, Sec)); bGates = true; }
 				}
 				if (!bGates && SectorLightsOn()) SectorLights.Add(FIntVector(i, c, Sec));
+			}
+			else if (!It.bLine && (C.Class == EOutlawsInfClass::SlopeFloor || C.Class == EOutlawsInfClass::SlopeCeiling) && C.Stops.Num() > 0)
+			{
+				if (SlopesOn()) Slopes.Add(FIntVector(i, c, Sec));     // (BUG-CWBLASTFLOOR: made after the lights, below)
 			}
 			else if (C.IsElevator() && !It.bLine)
 			{
@@ -426,6 +447,53 @@ void FOutlawsInfRuntime::Init(const FOutlawsLevel& Level, const FString& InfText
 		}
 		LightsBySector.FindOrAdd(Sl.Z).Add(Elevators.Add(E));
 	}
+	// (BUG-CWBLASTFLOOR, user 2026-11-01, Quest snapshots 1-4: at the start of civlwar1 the blasts went off and nothing fell)
+	// SLOPE_FLOOR / SLOPE_CEILING, last of all so no earlier elevator's index moves (a save from before them holds the rest).
+	// As OutlawsAHOM.exe runs them (the INF loader 0x140073420, the allocator 0x1400648f0 types 11 and 12, the update
+	// 0x140066b10): the value is the master's slope angle in the LVT's units (16384 to the turn), starting at its authored
+	// one; STOP and SPEED are read in degrees and cut to whole units (x 16384/360, as MORPH_SPIN's), SPEED 1024 units a
+	// second when none is given; each step's change is added to the master's and every slave's angle, so a slave keeps its
+	// own tilt; "@n" reads 0 as a spin's.  The stops are absolute angles, and stop 0 is applied at the load as every
+	// elevator's (0x140065180; civlwar1's BCEIL3, authored at -883, lies flat until its blast).  civlwar1's fence (WALLA1-2),
+	// roof (BCEIL1-3), craters (DCRAT1-3) and FCRASH, civlwar2's dam sides (DAMLEFT, DAMRIGHT) and shgulch's BOOMCEILING1
+	// (with its slave) and BOOMFLOOR: every one in the stock levels
+	SlopesFrom = Slopes.Num() > 0 ? Elevators.Num() : -1;
+	for (const FIntVector& Sp : Slopes)
+	{
+		const FOutlawsInfItem& It = Inf.Items[Sp.X];
+		const FOutlawsInfClass& C = It.Classes[Sp.Y];
+		const bool bFloor = C.Class == EOutlawsInfClass::SlopeFloor;
+		const FOutlawsSlope& Own = bFloor ? Live.Sectors[Sp.Z].SlopeFloor : Live.Sectors[Sp.Z].SlopeCeil;
+		if (!Own.bSet || Own.Wall < 0)
+		{
+			Warnings.Add(FString::Printf(TEXT("item %s: %s on a sector with no slope of that kind"), *It.Name, *C.RawClass));
+			continue;
+		}
+		FOutlawsElevator E;
+		E.Item = Sp.X;
+		E.ClassIndex = Sp.Y;
+		E.Class = C.Class;
+		E.Name = It.Name;
+		E.bMasterOn = C.bMasterOn;
+		E.Speed = C.bHasSpeed ? SlopeUnits(C.Speed) : DefaultSpeed(C.Class);
+		E.Sectors.Add(Sp.Z);
+		for (const FString& SlaveName : C.Slaves)
+		{
+			FString N, Id;
+			FOutlawsInfFile::SplitNameId(SlaveName, N, Id);
+			TArray<int32> SlaveSecs;
+			FindSectors(N, Id, SlaveSecs);
+			for (int32 s : SlaveSecs) E.Sectors.AddUnique(s);
+		}
+		for (int32 s : E.Sectors)
+		{
+			const FOutlawsSector& S = Live.Sectors[s];
+			E.BaseFloor.Add(S.Floor.Y);
+			E.BaseCeil.Add(S.Ceil.Y);
+			E.BaseSlope.Add((bFloor ? S.SlopeFloor : S.SlopeCeil).Angle);
+		}
+		ElevatorsBySector.FindOrAdd(Sp.Z).Add(Elevators.Add(E));
+	}
 	// every elevator jumps to its START stop, then that stop's delay applies
 	for (FOutlawsElevator& E : Elevators)
 	{
@@ -461,7 +529,8 @@ double FOutlawsInfRuntime::StopValue(const FOutlawsElevator& E, int32 StopIndex)
 		return Ref.Num() > 0 ? Live.Sectors[Ref[0]].Floor.Y : Base;
 	}
 	// "@n" is relative for floors and ceilings; slides take n as is, and spins read 0 (a Jedi parser bug)
-	if (S.bRelative && E.Class == EOutlawsInfClass::MorphSpin) return 0.0;
+	if (S.bRelative && (E.Class == EOutlawsInfClass::MorphSpin || E.IsSlope())) return 0.0;
+	if (E.IsSlope()) return SlopeUnits(S.Value);     // (BUG-CWBLASTFLOOR: degrees, cut to whole units)
 	return (S.bRelative && E.IsVertical()) ? Base + S.Value : S.Value;
 }
 
@@ -488,6 +557,22 @@ void FOutlawsInfRuntime::Apply(FOutlawsElevator& E)
 		// by as much
 		const int32 Delta = FMath::FloorToInt(E.Current) - E.BaseLight[0];
 		for (int32 i = 0; i < E.Sectors.Num(); ++i) Live.Sectors[E.Sectors[i]].Ambient = E.BaseLight[i] + Delta;
+	}
+	else if (E.IsSlope() && E.BaseSlope.Num() == E.Sectors.Num() && E.BaseSlope.Num() > 0)
+	{
+		// (BUG-CWBLASTFLOOR) the master's angle is the value, each slave's turned by as much; a sector with no slope of
+		// the kind is passed over (the exe's update skips it too)
+		const bool bFloor = E.Class == EOutlawsInfClass::SlopeFloor;
+		const double Delta = E.Current - E.BaseSlope[0];
+		if (SectorHeightGen.Num() != Live.Sectors.Num()) SectorHeightGen.Init(0, Live.Sectors.Num());
+		for (int32 i = 0; i < E.Sectors.Num(); ++i)
+		{
+			FOutlawsSlope& Sl = bFloor ? Live.Sectors[E.Sectors[i]].SlopeFloor : Live.Sectors[E.Sectors[i]].SlopeCeil;
+			if (!Sl.bSet) continue;
+			const double A0 = Sl.Angle;
+			Sl.Angle = E.BaseSlope[i] + Delta;
+			if (Sl.Angle != A0) SectorHeightGen[E.Sectors[i]] = ++HeightGen;     // (its heights moved: the flood's cache reads it)
+		}
 	}
 	if (OnElevatorMoved)
 	{

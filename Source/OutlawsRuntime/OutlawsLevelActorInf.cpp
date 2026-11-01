@@ -2047,9 +2047,9 @@ void AOutlawsLevelActor::BuildInf(const FOutlawsLevel& L, const FString& InfText
 			else
 			{
 				// only the surface it moves (the other stays with the world, or goes to the item's second elevator:
-				// ranch's HAY1 floor and ceiling; user 2026-09-29)
-				const bool bF = E.Class == EOutlawsInfClass::MoveFloor || E.Class == EOutlawsInfClass::MoveFC;
-				const bool bC = E.Class == EOutlawsInfClass::MoveCeiling || E.Class == EOutlawsInfClass::MoveFC;
+				// ranch's HAY1 floor and ceiling; user 2026-09-29); a slope's is the surface it tilts (BUG-CWBLASTFLOOR)
+				const bool bF = E.Class == EOutlawsInfClass::MoveFloor || E.Class == EOutlawsInfClass::MoveFC || E.Class == EOutlawsInfClass::SlopeFloor;
+				const bool bC = E.Class == EOutlawsInfClass::MoveCeiling || E.Class == EOutlawsInfClass::MoveFC || E.Class == EOutlawsInfClass::SlopeCeiling;
 				if (bF && !ClaimedFloor.Contains(s)) { G.FloorFilter.OnlyFloor.Add(s); SF.SkipFloor.Add(s); ClaimedFloor.Add(s); }
 				if (bC && !ClaimedCeil.Contains(s)) { G.CeilFilter.OnlyCeil.Add(s); SF.SkipCeil.Add(s); ClaimedCeil.Add(s); }
 			}
@@ -2169,6 +2169,16 @@ void AOutlawsLevelActor::BuildInf(const FOutlawsLevel& L, const FString& InfText
 			const FOutlawsElevator& O = Inf->Elevators[Groups[g].Elevator];
 			if (O.IsMorph()) continue;
 			for (int32 s : O.Sectors) if (E.Sectors.Contains(s)) { Groups[g].bDirty = true; break; }
+			// (BUG-CWBLASTFLOOR) a slope turns the walls round its sectors too: the group that holds any of them (civlwar1's
+			// WALLA1 holds the walls it shares with WALLA2) is rebuilt with it
+			if (!E.IsSlope() || Groups[g].bDirty) continue;
+			for (const uint64 K : Groups[g].GroupFilter.OnlyWalls)
+			{
+				const int32 s = int32(K >> 32), w = int32(K & 0xffffffffu);
+				if (!Inf->Live.Sectors.IsValidIndex(s) || !Inf->Live.Sectors[s].Walls.IsValidIndex(w)) continue;
+				const FOutlawsWall& W = Inf->Live.Sectors[s].Walls[w];
+				if (E.Sectors.Contains(s) || E.Sectors.Contains(W.Adjoin) || E.Sectors.Contains(W.DAdjoin)) { Groups[g].bDirty = true; break; }
+			}
 		}
 	};
 	Inf->OnSound = [this](const FString& Wav, const FOutlawsElevator& E) { PlayWav(Wav, ElevatorLocation(E)); };
@@ -2402,6 +2412,30 @@ void AOutlawsLevelActor::UpdateGroup(FMoverGroup& G)
 		OL_PERF_SCOPE("Movers: lift floors");
 		if (G.Floor && bFloor) G.Floor->SetWorldLocation(FVector(0.0, 0.0, Dz));
 		if (G.Ceil && bCeil) G.Ceil->SetWorldLocation(FVector(0.0, 0.0, Dz));
+	}
+	if (E.IsSlope() && E.Current != G.BuiltValue)
+	{
+		// (BUG-CWBLASTFLOOR) a slope turns its surface about the hinge wall: built again from Live's new angle (and its
+		// collision cooked), not shifted as a lift's; the stock ones jump (SPEED 0), once a blast
+		OL_PERF_SCOPE("Movers: slope surfaces");
+		const bool bSlopeFloor = E.Class == EOutlawsInfClass::SlopeFloor;
+		UProceduralMeshComponent*& M = bSlopeFloor ? G.Floor : G.Ceil;
+		FOutlawsGeometry GS;
+		GS.Build(Inf->Live, TexInfoCache, bReverseWinding, bSlopeFloor ? &G.FloorFilter : &G.CeilFilter);
+		if (!M && (GS.World.Num() > 0 || GS.Water.Num() > 0))
+		{
+			M = NewMeshComponent(bSlopeFloor ? TEXT("OutlawsLiftFloor") : TEXT("OutlawsLiftCeiling"), true);
+			MoverMeshes.Add(M);
+			ComponentGroup.Add(M, int32(&G - Groups.GetData()));
+		}
+		if (M)
+		{
+			M->ClearAllMeshSections();
+			int32 Tris = 0;
+			const int32 Next = AddSections(M, GS.World, true, WorldMaterial, WorldMaskedMaterial, Tris);
+			AddSections(M, GS.Water, false, WaterMaterial, WaterMaterial, Tris, Next);
+		}
+		G.BuiltValue = E.Current;
 	}
 	if (G.Main)
 	{

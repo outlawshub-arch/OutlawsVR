@@ -861,12 +861,15 @@ void FOutlawsInfRuntime::ReadState(const FJsonObject& O)
 	const FJsonArray* Es = Array(O, TEXT("elevators"));
 	const bool bOldLayout = Es && Es->Num() != Elevators.Num() && SavedElevatorsBefore > 0 && Es->Num() == SavedElevatorsBefore;
 	const bool bBeforeLights = Es && !bOldLayout && LightsFrom > 0 && Es->Num() < Elevators.Num() && Es->Num() == LightsFrom;
-	if (bOldLayout || bBeforeLights)
+	// (BUG-CWBLASTFLOOR) and a save from before the slope elevators (civlwar1, civlwar2, shgulch) holds every elevator before
+	// them: those come back, the slopes stand at their start
+	const bool bBeforeSlopes = Es && !bOldLayout && !bBeforeLights && SlopesFrom > 0 && Es->Num() < Elevators.Num() && Es->Num() == SlopesFrom;
+	if (bOldLayout || bBeforeLights || bBeforeSlopes)
 	{
 		UE_LOG(LogOutlaws, Log, TEXT("OLRT save: %d elevators saved before the %s (%d now): those put back, the rest at their start"),
-			Es->Num(), bOldLayout && Es->Num() != LightsFrom ? TEXT("piano's light") : TEXT("sector lights"), Elevators.Num());     // (BUG-LIGHTSAVE: a level with no piano's light named the sector lights)
+			Es->Num(), bBeforeSlopes ? TEXT("slope elevators") : (bOldLayout && Es->Num() != LightsFrom ? TEXT("piano's light") : TEXT("sector lights")), Elevators.Num());     // (BUG-LIGHTSAVE: a level with no piano's light named the sector lights)
 	}
-	if (Es && (Es->Num() == Elevators.Num() || bOldLayout || bBeforeLights))
+	if (Es && (Es->Num() == Elevators.Num() || bOldLayout || bBeforeLights || bBeforeSlopes))
 	{
 		for (int32 i = 0; i < Es->Num(); ++i)
 		{

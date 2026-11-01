@@ -12,7 +12,8 @@
  *
  * Elevator values: MOVE_FLOOR / MOVE_FC = floor height, MOVE_CEILING = ceiling height (level
  * units); MORPH_MOVE = distance along ANGLE (units); MORPH_SPIN = degrees about CENTER, positive
- * counter-clockwise seen from above.
+ * counter-clockwise seen from above; SLOPE_FLOOR / SLOPE_CEILING = the master's slope angle in the
+ * LVT's own units (16384 to the turn, as FOutlawsSlope), its stops and SPEED written in degrees.
  * Elevators start at their START stop (0), then keep a queued next stop: HOLD sleeps until a
  * trigger or message, a number waits that many seconds and moves on, TERMINATE / COMPLETE end it
  * (their stop messages are not sent).  After the last stop comes stop 0.  A stop without a delay
@@ -42,8 +43,10 @@ struct FOutlawsElevator
 	bool bMasterOn = true;
 	int32 Group = -1;                      // geometry group index (actor side)
 	TArray<int32> BaseLight;               // (REQ-SECTORLIGHT) CHANGE_LIGHT: each sector's own AMBIENT, master first
+	TArray<double> BaseSlope;              // (BUG-CWBLASTFLOOR) SLOPE_*: each sector's authored slope angle (LVT units), master first
 
 	bool IsLight() const { return Class == EOutlawsInfClass::ChangeLight; }
+	bool IsSlope() const { return Class == EOutlawsInfClass::SlopeFloor || Class == EOutlawsInfClass::SlopeCeiling; }
 	bool IsMorph() const { return Class == EOutlawsInfClass::MorphMove || Class == EOutlawsInfClass::MorphSpin; }
 	bool IsVertical() const { return Class == EOutlawsInfClass::MoveFloor || Class == EOutlawsInfClass::MoveCeiling || Class == EOutlawsInfClass::MoveFC; }
 	// (a CHANGE_LIGHT counts with the scrolls: no geometry of its own, it only gates a scroll; REQ-PIANO)
@@ -108,6 +111,10 @@ public:
 	int32 LightsFrom = -1;
 	/** (REQ-SECTORLIGHT) CHANGE_LIGHT elevators move their sectors' AMBIENT in Live (off: -OLOldSectorLight). */
 	static bool SectorLightsOn();
+	/** (BUG-CWBLASTFLOOR) The first of the slope elevators (SLOPE_FLOOR / SLOPE_CEILING), appended after the sector lights:
+	 *  a save from before them holds this many elevators.  -1: none made (-OLOldCwBlast). */
+	int32 SlopesFrom = -1;
+	static bool SlopesOn();
 	TArray<FOutlawsTrigger> Triggers;
 	TArray<FOutlawsScroll> Scrolls;
 	TSet<int32> AutoDoors;                          // door-flagged sectors made doors here (their neighbours' faces move with them)
