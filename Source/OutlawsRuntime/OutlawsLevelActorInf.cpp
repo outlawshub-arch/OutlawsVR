@@ -1914,7 +1914,12 @@ bool AOutlawsLevelActor::HandUseSpot(FVector Eye, FVector Hand, FVector& OutAt, 
 	{
 		if (const TArray<int32>* Ts = Inf->TriggersByWall.Find(FOutlawsInfRuntime::WallKey(SW.Key, SW.Value)))
 		{
-			for (const int32 t : *Ts) if (Inf->Triggers.IsValidIndex(t) && (Inf->Triggers[t].Mask & Nudge)) return true;
+			// (BUG-DAMAFTER, user 1 Nov: after civlwar2's dam blew, the hand still offered a use on the track's face where
+			// the TNT went) only a trigger that would fire: its master on, as FireTriggers asks.  The dam's line DAMBOOM
+			// (#1E44F) fired its SINGLE class and DAMDUMMY's stop 5 sent the line MASTER_OFF, so the original does nothing
+			// there any more (-OLOldDamAfter: any trigger listening for a nudge, as before)
+			static const bool bOldDamAfter = OLFlags::Param(TEXT("OLOldDamAfter"));
+			for (const int32 t : *Ts) if (Inf->Triggers.IsValidIndex(t) && (Inf->Triggers[t].Mask & Nudge) && (Inf->Triggers[t].bMaster || bOldDamAfter)) return true;
 		}
 		const FOutlawsWall& Wl = Inf->Live.Sectors[SW.Key].Walls[SW.Value];
 		for (const int32 Adj : { Wl.Adjoin, Wl.DAdjoin })

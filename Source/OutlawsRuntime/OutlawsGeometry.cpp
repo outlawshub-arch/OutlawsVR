@@ -467,14 +467,9 @@ void FOutlawsGeometry::Build(const FOutlawsLevel& L, const TMap<FString, FOutlaw
 			// surface ripples in its material anyway (user 2026-09-27). No other ceiling swirls
 			const bool bSwirl = bFloor && (S.Flags & OutlawsFlags::SwirlFloor) != 0;
 			if (bSwirl) Stat(TEXT("swirl_floor"));
-			// the texture as the original lays it (the LawMaker viewer's BuildFlatSurfaceUv, matched to the game): the
-			// world x/z (or on a slope its own frame) less the plane's offsets, turned by its angle, mirrored on x, and a
-			// ceiling mirrored on v as well (user 2026-09-29: floor angles were off, the ceilings too)
-			FVector2D FrameO, FrameA, FrameN;
-			double Stretch = 1.0;
-			L.SurfaceTexFrame(S, bFloor, FrameO, FrameA, FrameN, Stretch);
-			const double Rad = FMath::DegreesToRadians(-Plane.Angle);
-			const double CosA = FMath::Cos(Rad), SinA = FMath::Sin(Rad);
+			// the texture as the original lays it (FOutlawsLevel::SurfaceUV: flat, the world x/z; sloped, the hinge's frame,
+			// BUG-DAMAFTER; -OLOldDamAfter: a slope turned by its plane's angle, as before)
+			static const bool bOldDamAfter = OLFlags::Param(TEXT("OLOldDamAfter"));
 			for (int32 t = 0; t + 2 < Tris.Num(); t += 3)
 			{
 				FVector P[3];
@@ -484,11 +479,7 @@ void FOutlawsGeometry::Build(const FOutlawsLevel& L, const TMap<FString, FOutlaw
 					const FVector2D V = S.Verts[Tris[t + k]];
 					const double Y = L.SurfaceY(S, V, bFloor);
 					P[k] = ToUE(V.X, Y, V.Y);
-					const FVector2D D = V - FrameO;
-					const double Lx = (FVector2D::DotProduct(D, FrameA) - Plane.OffX) * TexelsPerUnit;
-					const double Lz = (FVector2D::DotProduct(D, FrameN) * Stretch - Plane.OffY) * TexelsPerUnit;
-					const double Rx = Lx * CosA - Lz * SinA, Rz = Lx * SinA + Lz * CosA;
-					UV[k] = FVector2D(-Rx / TI.W, (bFloor ? Rz : -Rz) / TI.H);
+					UV[k] = L.SurfaceUV(S, bFloor, V, TI.W, TI.H, bOldDamAfter);
 				}
 				const FVector N = FVector::CrossProduct(P[1] - P[0], P[2] - P[0]);
 				if ((N.Z > 0.0) != bFloor)

@@ -483,6 +483,60 @@ void FOutlawsLevel::SurfaceTexFrame(const FOutlawsSector& S, bool bFloor, FVecto
 	}
 }
 
+FVector2D FOutlawsLevel::SurfaceUV(const FOutlawsSector& S, bool bFloor, const FVector2D& P, double TexW, double TexH, bool bOld) const
+{
+	// the texture as the original lays it (the LawMaker viewer's BuildFlatSurfaceUv, matched to the game): 8 texels a unit,
+	// turned by the angle, mirrored on x, and a ceiling mirrored on v as well (user 2026-09-29: floor angles were off, the
+	// ceilings too)
+	constexpr double TexelsPerUnit = 8.0;
+	const FOutlawsPlane& Plane = bFloor ? S.Floor : S.Ceil;
+	const FOutlawsSlope& Slope = bFloor ? S.SlopeFloor : S.SlopeCeil;
+	FVector2D Along, Normal, Hinge;
+	double Degrees = 0.0;
+	const bool bSloped = SlopeFrame(S, bFloor, Along, Normal, &Hinge, &Degrees);
+	double Rx = 0.0, Rz = 0.0;
+	if (bSloped && !bOld)
+	{
+		// (BUG-DAMAFTER, user 1 Nov, Quest snapshot 3: the tipped dam top's grass laid wrong) OutlawsAHOM.exe's flat texture
+		// frame (0x14030ee30) on a sloped surface: the turn is 0x6000 less the hinge wall's angle (atan2 of its x and z run,
+		// 16384 to the turn, the loader's 0x140084019), not the plane's own; the origin is the hinge wall's second vertex
+		// with the plane's offsets turned into that frame; the coordinate across the hinge is divided by the incline's
+		// cosine (its unit vector's level part, the plane's 0x140304d90), so the texture keeps its size up the slope
+		const FOutlawsSector* Ref = Sector(Slope.Sector);
+		if (!Ref) Ref = &S;
+		const FOutlawsWall& W = Ref->Walls[Slope.Wall];
+		const FVector2D V1 = Ref->Verts[W.V1], V2 = Ref->Verts[W.V2];
+		const int32 WallAngle = int32(FMath::Atan2(V2.X - V1.X, V2.Y - V1.Y) / (2.0 * PI) * 16384.0) & 0x3fff;
+		const double Turn = double((0x6000 - WallAngle) & 0x3fff) * (2.0 * PI / 16384.0);
+		const double Cs = FMath::Cos(Turn), Sn = FMath::Sin(Turn);
+		const FVector2D O(V2.X - Plane.OffX * Sn + Plane.OffY * Cs, V2.Y - Plane.OffX * Cs - Plane.OffY * Sn);
+		const FVector2D D = P - O;
+		const double Across = FMath::Max(0.05, FMath::Cos(FMath::DegreesToRadians(Degrees)));
+		Rx = (D.X * Cs + D.Y * Sn) * TexelsPerUnit / Across;
+		Rz = (-D.X * Sn + D.Y * Cs) * TexelsPerUnit;
+	}
+	else
+	{
+		// flat: the world x/z less the plane's offsets; (bOld) sloped: along the hinge from its first vertex and up the
+		// incline, measured along the surface; then turned by the plane's angle
+		FVector2D FrameO = FVector2D::ZeroVector, FrameA(1.0, 0.0), FrameN(0.0, 1.0);
+		double Stretch = 1.0;
+		if (bSloped)
+		{
+			FrameO = Hinge; FrameA = Along; FrameN = Normal;
+			Stretch = 1.0 / FMath::Max(0.05, FMath::Cos(FMath::DegreesToRadians(Degrees)));
+		}
+		const FVector2D D = P - FrameO;
+		const double Lx = (FVector2D::DotProduct(D, FrameA) - Plane.OffX) * TexelsPerUnit;
+		const double Lz = (FVector2D::DotProduct(D, FrameN) * Stretch - Plane.OffY) * TexelsPerUnit;
+		const double Rad = FMath::DegreesToRadians(-Plane.Angle);
+		const double CosA = FMath::Cos(Rad), SinA = FMath::Sin(Rad);
+		Rx = Lx * CosA - Lz * SinA;
+		Rz = Lx * SinA + Lz * CosA;
+	}
+	return FVector2D(-Rx / FMath::Max(1.0, TexW), (bFloor ? Rz : -Rz) / FMath::Max(1.0, TexH));
+}
+
 bool FOutlawsLevel::SlopeFrame(const FOutlawsSector& S, bool bFloor, FVector2D& OutAlong, FVector2D& OutNormal, FVector2D* OutOrigin, double* OutDegrees) const
 {
 	const FOutlawsSlope& Slope = bFloor ? S.SlopeFloor : S.SlopeCeil;

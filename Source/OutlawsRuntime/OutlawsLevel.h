@@ -178,6 +178,11 @@ public:
 	 *  and up the incline from the hinge's first vertex, the incline measured along the surface (OutStretch per unit
 	 *  across).  The original ties a sloped surface's texture to its slope (user 2026-09-29). */
 	void SurfaceTexFrame(const FOutlawsSector& S, bool bFloor, FVector2D& OutOrigin, FVector2D& OutAlong, FVector2D& OutNormal, double& OutStretch) const;
+	/** (BUG-DAMAFTER) A floor's (ceiling's) texture coordinate at plan point P for a TexW x TexH texture: flat, the world
+	 *  x/z less the plane's offsets turned by its angle; sloped, as OutlawsAHOM.exe lays it (0x14030ee30): turned by its
+	 *  hinge wall's direction (the plane's own angle unused), from the hinge's second vertex moved by the offsets, the
+	 *  incline measured along the surface.  bOld: the frame before (SurfaceTexFrame, turned by the plane's angle). */
+	FVector2D SurfaceUV(const FOutlawsSector& S, bool bFloor, const FVector2D& P, double TexW, double TexH, bool bOld = false) const;
 
 	/** Rings in wall order; a ring may revisit a vertex (keyhole). */
 	static void LoopsFromWalls(const FOutlawsSector& S, TArray<TArray<int32>>& OutRings);
