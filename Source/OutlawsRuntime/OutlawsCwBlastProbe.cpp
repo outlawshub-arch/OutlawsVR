@@ -8,7 +8,7 @@
 // <trench|fence|roof>.png in Saved\OLShots (trench: snapshot 1's pose; fence: snapshot 3's place, turned to WALLA1-2;
 // roof: 15 m from BCEIL1 towards snapshot 4's place).  Then (the fix only) a save to slot 7 is loaded (the slopes as they
 // were saved) and the same save cut at the first slope elevator as slot 9 (a save from before them: every other elevator
-// put back, the slopes at their start).  On any other level (civlwar2's dam sides, shgulch's BOOMCEILING1 and BOOMFLOOR)
+// put back, the sector lights, which never rest, not compared, the slopes at their start).  On any other level (civlwar2's dam sides, shgulch's BOOMCEILING1 and BOOMFLOOR)
 // every slope elevator is sent to its last stop (GOTO_STOP, as its trigger does), logged and traced the same way, and one
 // shot (cwblast_<tag>_<level>.png) looks at the first.  Lines "OLSHOT cwblast check PASS|FAIL: ..." and
 // "OLSHOT cwblast RESULT".
@@ -392,7 +392,11 @@ OL_SHOT_TEST(OLCwBlastProbe, 1390)
 	{
 		if (ShotTime < Wait || !bUp) return;
 		SavedBefore.Reset();
-		for (int32 e = 0; e < Inf->SlopesFrom; ++e) SavedBefore.Add(Inf->Elevators[e].Current);
+		// (BUG-CWBLASTFLOOR, the lane's reruns 1 Nov: about 1 run in 2 failed the slot 9 check on elevator 50, LIGHT_ME1)  The
+		// sector lights between the elevators and the slopes are saved and put back too, but a torch's flicker runs on by
+		// itself and never rests, so the check leaves them out, as TestWorldPrint does since BUG-LIGHTSAVE
+		const int32 Upto = Inf->LightsFrom >= 0 ? Inf->LightsFrom : Inf->SlopesFrom;
+		for (int32 e = 0; e < Upto; ++e) SavedBefore.Add(Inf->Elevators[e].Current);
 		SavedAngle.Reset();
 		for (const FCwWatch& W : Watch) if (W.bSlope) SavedAngle.Add(W.Name, AngleOf(W));
 		const bool bSaved = L->SaveGame(7);
@@ -447,7 +451,7 @@ OL_SHOT_TEST(OLCwBlastProbe, 1390)
 		for (int32 e = 0; e < SavedBefore.Num() && e < Inf->Elevators.Num(); ++e) Back += FMath::Abs(Inf->Elevators[e].Current - SavedBefore[e]) < 1e-3 ? 1 : 0;
 		FString S;
 		const int32 Ok = SlopesSettled(false, S);
-		Check(Back == SavedBefore.Num() && Ok == SlopeN, FString::Printf(TEXT("slot 9 loaded: %d of the %d elevators before the slopes put back, %d of %d slopes at their start:%s"), Back, SavedBefore.Num(), Ok, SlopeN, *S));
+		Check(Back == SavedBefore.Num() && Ok == SlopeN, FString::Printf(TEXT("slot 9 loaded: %d of the %d elevators before the sector lights put back, %d of %d slopes at their start:%s"), Back, SavedBefore.Num(), Ok, SlopeN, *S));
 		Report(TEXT("slot9"));
 		ShotStep = 20;
 		return;
