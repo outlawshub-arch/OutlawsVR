@@ -1820,6 +1820,63 @@ bool AOutlawsLevelActor::PushDoorSector(int32 Sector)
 	return bTaken;
 }
 
+bool AOutlawsLevelActor::MorphHitsPlayer(const FOutlawsElevator& E, double Delta) const
+{
+	// (BUG-PUSHBOX) Jedi's sector_canMoveWalls asks sector_movingWallCollidesWithPlayer of each wall the slide moves (the
+	// elevator's sectors' walls flagged to move with it, and their flagged mirrors): the player's body (here its capsule)
+	// within three quarters of its radius of the wall after the step (sector_objOverlapsWall), or on the other side of it
+	// than before, holds the slide.  An opening the whole body stands within (feet over its sector's floor, head under its
+	// ceiling) never does: the crate's hole in the room round it lets the player by, the crate's own sides do not
+	UWorld* World = GetWorld();
+	const APlayerController* PC = World ? World->GetFirstPlayerController() : nullptr;
+	const ACharacter* P = PC ? Cast<ACharacter>(PC->GetPawn()) : nullptr;
+	if (!Inf || !P || bDead || bFrontEnd) return false;
+	const double U = FOutlawsGeometry::UnitsToCm;
+	const FVector Loc = P->GetActorLocation();
+	const double Half = P->GetCapsuleComponent()->GetScaledCapsuleHalfHeight();
+	const double R = 0.75 * P->GetCapsuleComponent()->GetScaledCapsuleRadius() / U;
+	const double FeetY = (Loc.Z - Half) / U, TopY = (Loc.Z + Half) / U;
+	const FVector2D At = FOutlawsGeometry::ToOutlawsPlan(Loc);
+	const FVector2D Move = E.MorphDir * Delta;
+	// the side of the wall A..B the body is on (0: past its ends) and whether it is within R of it
+	auto Side = [&At, R](const FVector2D& A, const FVector2D& B, bool& bNear) -> int32
+	{
+		bNear = false;
+		const double Len = FVector2D::Distance(A, B);
+		if (Len < 1e-9) return 0;
+		const FVector2D Dir = (B - A) / Len, D = At - A;
+		const double Along = FVector2D::DotProduct(D, Dir);
+		if (Along < -R || Along > Len + R) return 0;
+		const double Perp = FVector2D::CrossProduct(Dir, D);
+		bNear = FMath::Abs(Perp) <= R;
+		return Perp >= 0.0 ? 1 : -1;
+	};
+	auto Hits = [&](int32 Si, int32 Wi) -> bool
+	{
+		const FOutlawsSector& S = Inf->Live.Sectors[Si];
+		const FOutlawsWall& W = S.Walls[Wi];
+		if (!S.Verts.IsValidIndex(W.V1) || !S.Verts.IsValidIndex(W.V2)) return false;
+		if (W.Adjoin >= 0 && FeetY >= S.Floor.Y - 0.1 && TopY <= S.Ceil.Y) return false;
+		const FVector2D A = S.Verts[W.V1], B = S.Verts[W.V2];
+		bool bNear0 = false, bNear1 = false;
+		const int32 S0 = Side(A, B, bNear0), S1 = Side(A + Move, B + Move, bNear1);
+		return bNear1 || (S0 != 0 && S1 != 0 && S0 != S1);
+	};
+	for (const int32 s : E.Sectors)
+	{
+		const FOutlawsSector& S = Inf->Live.Sectors[s];
+		for (int32 w = 0; w < S.Walls.Num(); ++w)
+		{
+			const FOutlawsWall& W = S.Walls[w];
+			if (!(W.Flags1 & 0x40)) continue;
+			if (Hits(s, w)) return true;
+			if (Inf->Live.Sectors.IsValidIndex(W.Adjoin) && Inf->Live.Sectors[W.Adjoin].Walls.IsValidIndex(W.Mirror)
+				&& (Inf->Live.Sectors[W.Adjoin].Walls[W.Mirror].Flags1 & 0x40) && Hits(W.Adjoin, W.Mirror)) return true;
+		}
+	}
+	return false;
+}
+
 bool AOutlawsLevelActor::HandEvent(int32 Sector, int32 Wall, uint32 Event)
 {
 	// one hand gesture is one press: the hand driven into a switch and the grip closing on it, or both hands, within
@@ -1908,8 +1965,9 @@ bool AOutlawsLevelActor::UseByHand(FVector Eye, FVector Hand, bool bIncludePlatf
 			// face, "locked from the other side" from the other; user 2026-09-29): the pushed face, at its authored
 			// place, whatever height on the leaf the hand met
 			FVector P = Hit.ImpactPoint;
+			// (BUG-PUSHBOX: a slide's outline in Live moves with it now, so the face is found where the hand met it)
 			if (E.Class == EOutlawsInfClass::MorphSpin) P = G.Pivot + FRotator(0.0, -E.Current, 0.0).UnrotateVector(P - G.Pivot);
-			else if (E.Class == EOutlawsInfClass::MorphMove) P -= G.Dir * E.Current;
+			else if (E.Class == EOutlawsInfClass::MorphMove && !Inf->MorphOutlinesOn()) P -= G.Dir * E.Current;
 			TArray<TPair<int32, int32>> Faces;
 			WallsAt(P, Master, Faces, true, true);
 			for (const TPair<int32, int32>& SW : Faces)
@@ -2280,6 +2338,7 @@ void AOutlawsLevelActor::BuildInf(const FOutlawsLevel& L, const FString& InfText
 			}
 		}
 	};
+	Inf->OnMorphBlocked = [this](const FOutlawsElevator& E, double Delta) { return MorphHitsPlayer(E, Delta); };     // (BUG-PUSHBOX)
 	Inf->OnSound = [this](const FString& Wav, const FOutlawsElevator& E) { PlayWav(Wav, ElevatorLocation(E)); };
 	Inf->OnLoopSound = [this](const FString& Wav, const FOutlawsElevator& E, bool bStart)
 	{
@@ -2479,6 +2538,9 @@ void AOutlawsLevelActor::CreateMoverMeshes()
 	// overlap events (blocking is unchanged)
 	if (!OLFlags::Param(TEXT("OLOldMovers"))) for (UProceduralMeshComponent* M : MoverMeshes) if (M) M->SetGenerateOverlapEvents(false);
 	BuildMoverBatches();
+	// (BUG-PUSHBOX) the world and the movers are built from the authored outlines: from here on a MORPH_MOVE slides its
+	// outline in Live with it (the crate's old place becomes the room's again), the meshes still moved as built
+	Inf->SlideMorphOutlines();
 }
 
 void AOutlawsLevelActor::UpdateGroup(FMoverGroup& G)

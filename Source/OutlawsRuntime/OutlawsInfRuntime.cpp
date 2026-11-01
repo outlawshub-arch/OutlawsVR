@@ -494,6 +494,28 @@ void FOutlawsInfRuntime::Init(const FOutlawsLevel& Level, const FString& InfText
 		}
 		ElevatorsBySector.FindOrAdd(Sp.Z).Add(Elevators.Add(E));
 	}
+	// (BUG-PUSHBOX) each MORPH_MOVE's outline, as Jedi's sector_canMoveWalls moves it: the first vertex of each wall of its
+	// sectors flagged to move with it (0x40), and of each flagged mirror in the sector beside (the crate's hole in the room
+	// round it), each once; ANGLE as Jedi's sinCosFixed gives it (0 = +z, 90 = +x).  Slid from SlideMorphOutlines on
+	for (FOutlawsElevator& E : Elevators)
+	{
+		if (E.Class != EOutlawsInfClass::MorphMove) continue;
+		const double A = FMath::DegreesToRadians(ClassOf(E).Angle);
+		E.MorphDir = FVector2D(FMath::Sin(A), FMath::Cos(A));
+		for (const int32 s : E.Sectors)
+		{
+			const FOutlawsSector& S = Live.Sectors[s];
+			for (const FOutlawsWall& W : S.Walls)
+			{
+				if (!(W.Flags1 & 0x40)) continue;
+				if (S.Verts.IsValidIndex(W.V1)) E.MorphVerts.AddUnique(FIntPoint(s, W.V1));
+				if (!Live.Sectors.IsValidIndex(W.Adjoin) || !Live.Sectors[W.Adjoin].Walls.IsValidIndex(W.Mirror)) continue;
+				const FOutlawsSector& N = Live.Sectors[W.Adjoin];
+				const FOutlawsWall& M = N.Walls[W.Mirror];
+				if ((M.Flags1 & 0x40) && N.Verts.IsValidIndex(M.V1)) E.MorphVerts.AddUnique(FIntPoint(W.Adjoin, M.V1));
+			}
+		}
+	}
 	// every elevator jumps to its START stop, then that stop's delay applies
 	for (FOutlawsElevator& E : Elevators)
 	{
@@ -574,9 +596,45 @@ void FOutlawsInfRuntime::Apply(FOutlawsElevator& E)
 			if (Sl.Angle != A0) SectorHeightGen[E.Sectors[i]] = ++HeightGen;     // (its heights moved: the flood's cache reads it)
 		}
 	}
+	else if (E.Class == EOutlawsInfClass::MorphMove && bMorphOutlines)
+	{
+		SlideOutline(E);
+	}
 	if (OnElevatorMoved)
 	{
 		OnElevatorMoved(E);
+	}
+}
+
+bool FOutlawsInfRuntime::OldPushBox()
+{
+	static const bool bOld = OLFlags::Param(TEXT("OLOldPushBox"));
+	return bOld;
+}
+
+void FOutlawsInfRuntime::SlideMorphOutlines()
+{
+	if (bMorphOutlines || OldPushBox()) return;
+	bMorphOutlines = true;
+	// (a slide that starts off its authored place, miner's SDOORBOT and the train's SDOOR01, goes there now)
+	for (FOutlawsElevator& E : Elevators)
+	{
+		if (E.Class == EOutlawsInfClass::MorphMove) SlideOutline(E);
+	}
+}
+
+void FOutlawsInfRuntime::SlideOutline(FOutlawsElevator& E)
+{
+	// (BUG-PUSHBOX) by the step since the outline last moved, so two slides sharing a vertex add up as Jedi's do
+	const FVector2D D = E.MorphDir * (E.Current - E.MorphAt);
+	E.MorphAt = E.Current;
+	if (E.MorphVerts.Num() == 0 || D.IsNearlyZero(1e-12)) return;
+	if (SectorHeightGen.Num() != Live.Sectors.Num()) SectorHeightGen.Init(0, Live.Sectors.Num());
+	++HeightGen;
+	for (const FIntPoint& V : E.MorphVerts)
+	{
+		Live.Sectors[V.X].Verts[V.Y] += D;
+		SectorHeightGen[V.X] = HeightGen;      // (QSPEED-3: a portal flood that read the sector goes again)
 	}
 }
 
@@ -670,6 +728,13 @@ void FOutlawsInfRuntime::Tick(double Dt)
 			const double Goal = StopValue(E, E.Target);
 			const double Step = E.Speed > 0.0 ? E.Speed * Dt : TNumericLimits<double>::Max();
 			const double Diff = Goal - E.Current;
+			// (BUG-PUSHBOX) a slide whose walls would come into the player waits this tick where it is (Jedi's
+			// sector_canMoveWalls: a crate nudged from the side it moves to holds against the player who pushed it)
+			if (bMorphOutlines && E.Class == EOutlawsInfClass::MorphMove && OnMorphBlocked && FMath::Abs(Diff) > 1e-9
+				&& OnMorphBlocked(E, FMath::Abs(Diff) <= Step ? Diff : FMath::Sign(Diff) * Step))
+			{
+				continue;
+			}
 			if (FMath::Abs(Diff) <= Step)
 			{
 				E.Current = Goal;

@@ -875,6 +875,13 @@ public:
 
 	/** A hand push: nudge that door sector alone (no wall triggers beside the frame). */
 	bool PushDoorSector(int32 Sector);
+	/** (BUG-PUSHBOX) The INF's OnMorphBlocked: a MORPH_MOVE's step of Delta units would bring a wall it slides into the player
+	 *  (Jedi's sector_movingWallCollidesWithPlayer, the player's body against each such wall before the step and after). */
+	bool MorphHitsPlayer(const FOutlawsElevator& E, double Delta) const;
+	/** (BUG-PUSHBOX, OutlawsPushBoxProbe.cpp) a MORPH_MOVE's mesh: its bounds now, and the point where a trace from Side (a
+	 *  plan direction off its middle) meets its face; false when it has none or the trace misses. */
+	bool DebugMoverFace(int32 Elevator, const FVector& Side, FVector& OutFace, FBox& OutBox) const;
+	void DebugResetMover(int32 Elevator);             // back at its first stop, at rest, not ended (its outline with it)
 
 	// ---- shootables (OutlawsLevelActorShoot.cpp): props, glass panes, ground dynamite ----
 	/** A shot from From to End (where the world trace stopped): breaks the glass panes it crosses

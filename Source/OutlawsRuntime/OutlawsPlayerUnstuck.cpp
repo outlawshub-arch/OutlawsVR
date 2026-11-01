@@ -271,9 +271,10 @@ void AOutlawsPlayer::UpdateUnstuck(float Dt)
 	}
 	if (Now < NextUnstuckLook || L->IsPlayerDead()) return;
 	NextUnstuckLook = Now + LookEvery;
-	// (other automated tests place the body where they like: the checks only look on with their own test or the climb's)
+	// (other automated tests place the body where they like: the checks only look on with their own test or the climb's; and
+	// BUG-PUSHBOX's probe, whose walk up behind a pushed crate the rescue sent back)
 	static const bool bOwnTest = OLFlags::Param(TEXT("OLUnstuckTest")) || OLFlags::Param(TEXT("OLUnstuckLoopTest")) || OLFlags::HasValue(TEXT("OLClimbTest"))
-		|| OLFlags::HasValue(TEXT("OLNarrowWalkTest"));
+		|| OLFlags::HasValue(TEXT("OLNarrowWalkTest")) || OLFlags::Param(TEXT("OLPushBoxProbe"));
 	const bool bOtherTest = (ShotTime >= 0.f || SmokeTime >= 0.f) && !bOwnTest;
 	const FVector Body = GetActorLocation();
 	const float Half = GetCapsuleComponent()->GetScaledCapsuleHalfHeight(), R = GetCapsuleComponent()->GetScaledCapsuleRadius();

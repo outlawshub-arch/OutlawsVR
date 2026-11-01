@@ -44,6 +44,12 @@ struct FOutlawsElevator
 	int32 Group = -1;                      // geometry group index (actor side)
 	TArray<int32> BaseLight;               // (REQ-SECTORLIGHT) CHANGE_LIGHT: each sector's own AMBIENT, master first
 	TArray<double> BaseSlope;              // (BUG-CWBLASTFLOOR) SLOPE_*: each sector's authored slope angle (LVT units), master first
+	// (BUG-PUSHBOX) MORPH_MOVE: the outline vertices it slides in Live (the first vertex of each wall of its sectors flagged
+	// to move with it, 0x40, and of each flagged mirror in the sector beside, as Jedi's sector_canMoveWalls), ANGLE as a plan
+	// direction (x, z), and the value the outline sits at
+	TArray<FIntPoint> MorphVerts;          // (sector, vertex)
+	FVector2D MorphDir = FVector2D::ZeroVector;
+	double MorphAt = 0.0;
 
 	bool IsLight() const { return Class == EOutlawsInfClass::ChangeLight; }
 	bool IsSlope() const { return Class == EOutlawsInfClass::SlopeFloor || Class == EOutlawsInfClass::SlopeCeiling; }
@@ -97,8 +103,9 @@ public:
 
 	/** Live copy of the level: elevator heights are written here. */
 	FOutlawsLevel Live;
-	/** (QSPEED-3) bumped at every change of a sector's floor or ceiling height in Live; each sector keeps the count of its
-	 *  last change (0 never), so a portal flood kept from before can tell whether a sector it read has moved since. */
+	/** (QSPEED-3) bumped at every change of a sector's floor or ceiling height in Live (and, BUG-PUSHBOX, of its outline: a
+	 *  MORPH_MOVE's slide); each sector keeps the count of its last change (0 never), so a portal flood kept from before can
+	 *  tell whether a sector it read has moved since. */
 	uint64 HeightGen = 0;
 	TArray<uint64> SectorHeightGen;
 	FOutlawsInfFile Inf;
@@ -162,6 +169,18 @@ public:
 	/** Default speed of an elevator class when the script gives none (Jedi defaults). */
 	static double DefaultSpeed(EOutlawsInfClass Class);
 
+	/** (BUG-PUSHBOX, user 2026-11-01, Quest snapshots 7 and 8: civlwar1's crate moved on the first push and never again) From
+	 *  here on each MORPH_MOVE slides its outline in Live as it moves (MorphVerts), as the Jedi engine moves the sector's
+	 *  vertices; the level actor turns it on once its meshes are built from the authored outlines.  Before, the outline stayed
+	 *  where the level put it: the crate's old place stayed its sector (the air over the crate's top), so a player walking in
+	 *  behind it was outside every sector and the unstuck sent them back.  -OLOldPushBox: never (as before). */
+	void SlideMorphOutlines();
+	bool MorphOutlinesOn() const { return bMorphOutlines; }
+	static bool OldPushBox();
+	/** (BUG-PUSHBOX) Whether a MORPH_MOVE's step of Delta units would carry its walls into the player: the slide waits that
+	 *  tick where it is, as Jedi's sector_canMoveWalls holds it, and goes on once the way is clear.  Only with the outlines on. */
+	TFunction<bool(const FOutlawsElevator&, double Delta)> OnMorphBlocked;
+
 	// ---- co-op (OutlawsCoopInf.cpp sets these in a session only; single player never does, and runs as before) ----
 	/** The client's INF only shows the host's: a player event goes to the host here instead of running (when the level's
 	 *  masks say anything listens for it), and Tick only eases moving elevators to their stops (no waits, no stop actions,
@@ -185,6 +204,8 @@ private:
 	void StartMove(FOutlawsElevator& E, int32 TargetStop);
 	void Arrive(FOutlawsElevator& E);
 	void Apply(FOutlawsElevator& E);
+	void SlideOutline(FOutlawsElevator& E);                // (BUG-PUSHBOX) MorphVerts by the step since MorphAt
+	bool bMorphOutlines = false;
 	bool TriggerAllowed(const FOutlawsTrigger& T) const;   // its OBJECT / OBJECT_EXCLUDE against the pockets
 	void FireTrigger(FOutlawsTrigger& T, bool bAllowed = false);
 	void FireTriggers(const TArray<int32>& Ts, uint32 Event, bool& bTaken);
