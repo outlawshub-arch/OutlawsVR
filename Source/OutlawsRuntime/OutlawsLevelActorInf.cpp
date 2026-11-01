@@ -434,10 +434,109 @@ bool AOutlawsLevelActor::UseItem(const FString& Item)
 	{
 		const FString Line = InventoryLabels.IsValidIndex(i) ? InventoryLabels[i] : Key;
 		UE_LOG(LogOutlaws, Log, TEXT("OLRT wheel item: %s"), *Line);
+		if (UseItemOnLock(Key)) return true;          // (BUG-TNTDAM) a lock in reach asks for it: used there
 		Notify(Line, 2.f);
 		return true;
 	}
 	return false;
+}
+
+bool AOutlawsLevelActor::UseItemOnLock(const FString& Item)
+{
+	// (BUG-TNTDAM, user 2026-11-01, snapshot 12: civlwar2's big TNT picked on the wheel by the dam's crack only showed its
+	// name, and the level was soft locked) the original's use-item key nudges the sector the player stands in and the walls
+	// 5 units ahead with the chosen item as the used object, and a lock whose OBJECT has no AUTO opens to that alone (the
+	// dam's TNT, the cannon's ball, the cliff's stone keys, the mill's gears, the wharf's lever and crank) [EXE 0x1400bca53..
+	// 0x1400bcadb, the nudge 0x1400bdb50; the trigger's check 0x1400d5a0c, the elevator's 0x140067961].  Here the wheel's
+	// pick is that key: the lock nearest the eyes whose INF asks for the item (its OBJECT is the item's USE_ID), within
+	// 3 m and in sight, whichever way the head is turned (the eyes are on the wheel), is nudged as a hand on it would be.
+	// The tools (the crowbar, the shovel, the pen) are used in the hand instead.  -OLOldTntDam: the name shown, nothing used
+	static const bool bOld = OLFlags::Param(TEXT("OLOldTntDam"));
+	static constexpr double Reach = 300.0;          // cm, eyes to the lock
+	UWorld* World = GetWorld();
+	APlayerController* PC = World ? World->GetFirstPlayerController() : nullptr;
+	const int32 Id = UseIdOf(Item);
+	if (bOld || !Inf || !PC || Id < 0 || IsToolUseId(Id)) return false;
+	FVector Eye;
+	FRotator View;
+	PC->GetPlayerViewPoint(Eye, View);
+	const double U = FOutlawsGeometry::UnitsToCm;
+	const FOutlawsLevel& Lv = Inf->Live;
+	const FVector2D EyeP = FOutlawsGeometry::ToOutlawsPlan(Eye);
+	const uint32 Nudge = OutlawsInf::EvNudgeFront | OutlawsInf::EvNudgeBack;
+	FCollisionQueryParams Q(SCENE_QUERY_STAT(OutlawsItemUse), true);
+	if (APawn* Pawn = PC->GetPawn()) Q.AddIgnoredActor(Pawn);
+	IgnorePassedOverlaps(Q);
+	// the lock's face nearest the eyes: on its wall, or for a sector's lock the sector itself (stood in) or its nearest
+	// wall; that distance in cm, or -1 when none is in reach and in sight
+	auto Near = [&](int32 s, int32 w, FVector& OutAt) -> double
+	{
+		if (!Lv.Sectors.IsValidIndex(s)) return -1.0;
+		const FOutlawsSector& S = Lv.Sectors[s];
+		if (w < 0 && s == PlayerSector) { OutAt = Eye; return 0.0; }
+		double Best = -1.0;
+		for (int32 k = (w < 0 ? 0 : w); k < (w < 0 ? S.Walls.Num() : w + 1); ++k)
+		{
+			if (!S.Walls.IsValidIndex(k) || !S.Verts.IsValidIndex(S.Walls[k].V1) || !S.Verts.IsValidIndex(S.Walls[k].V2)) continue;
+			const FVector2D A = S.Verts[S.Walls[k].V1], B = S.Verts[S.Walls[k].V2];
+			const FVector2D AB = B - A;
+			const double T = AB.SizeSquared() > 1e-9 ? FMath::Clamp(FVector2D::DotProduct(EyeP - A, AB) / AB.SizeSquared(), 0.0, 1.0) : 0.0;
+			const double Y = FMath::Clamp(Eye.Z / U, S.Floor.Y + 0.5, FMath::Max(S.Floor.Y + 0.5, S.Ceil.Y - 0.5));
+			const FVector At = FOutlawsGeometry::ToUE(A + AB * T, Y);
+			const double D = FVector::Dist(Eye, At);
+			if (D > Reach || (Best >= 0.0 && D >= Best)) continue;
+			// in sight: nothing between the eyes and a hand's width short of the face
+			FHitResult Hit;
+			const FVector Dir = (At - Eye).GetSafeNormal();
+			if (D > 20.0 && World->LineTraceSingleByChannel(Hit, Eye, At - Dir * 15.0, ECC_Visibility, Q, NoPawns())) continue;
+			Best = D;
+			OutAt = At;
+		}
+		return Best;
+	};
+	int32 BestS = -1, BestW = -1;
+	double BestD = -1.0;
+	FVector BestAt = FVector::ZeroVector;
+	auto Consider = [&](int32 s, int32 w)
+	{
+		FVector At;
+		const double D = Near(s, w, At);
+		if (D < 0.0 || (BestD >= 0.0 && D >= BestD)) return;
+		BestS = s;
+		BestW = w;
+		BestD = D;
+		BestAt = At;
+	};
+	for (const FOutlawsTrigger& T : Inf->Triggers)
+	{
+		const FOutlawsInfClass& C = Inf->Inf.Items[T.Item].Classes[T.ClassIndex];
+		if (C.KeyObject == Id && T.bMaster && (T.Mask & Nudge)) Consider(T.Sector, T.bLine ? T.Wall : -1);
+	}
+	for (const FOutlawsElevator& E : Inf->Elevators)
+	{
+		const FOutlawsInfClass& C = Inf->Inf.Items[E.Item].Classes[E.ClassIndex];
+		if (C.KeyObject == Id && E.Sectors.Num() > 0 && !E.bTerminated && (!C.bHasEventMask || (C.EventMask & Nudge))) Consider(E.Sectors[0], -1);
+	}
+	if (BestS < 0)
+	{
+		LastItemUse = FString::Printf(TEXT("%s (use id %d): no lock asking for it within %.0f cm"), *Item, Id, Reach);
+		UE_LOG(LogOutlaws, Log, TEXT("OLRT item %s"), *LastItemUse);
+		return false;
+	}
+	// a wall nudged from its own sector's side is its front (as the original's ray meets it); a sector from inside
+	bool bFront = BestS == PlayerSector;
+	if (BestW >= 0)
+	{
+		const FVector2D C = FOutlawsGeometry::ToOutlawsPlan(BestAt);
+		const FVector2D Off = (EyeP - C).GetSafeNormal() * 0.05;
+		if (!Off.IsZero()) bFront = Lv.ContainsXZ(Lv.Sectors[BestS], C.X + Off.X, C.Y + Off.Y);
+	}
+	const bool bTaken = HandEvent(BestS, BestW, bFront ? OutlawsInf::EvNudgeFront : OutlawsInf::EvNudgeBack);
+	LastItemUse = FString::Printf(TEXT("%s (use id %d) on sector %d %s%s, %.0f cm from the eyes: %s"), *Item, Id, BestS, *Lv.Sectors[BestS].Name,
+		BestW >= 0 ? *FString::Printf(TEXT(" wall %d (#%s, its %s)"), BestW, *Lv.Sectors[BestS].Walls[BestW].Id, bFront ? TEXT("front") : TEXT("back")) : TEXT(""),
+		BestD, bTaken ? TEXT("taken") : TEXT("not taken"));
+	UE_LOG(LogOutlaws, Log, TEXT("OLRT item used: %s"), *LastItemUse);
+	return bTaken;
 }
 
 FString AOutlawsLevelActor::FloorSoundAt(const FVector& Feet) const

@@ -1237,10 +1237,14 @@ public:
 	 *  (keys, documents...) with the game's names for them. */
 	void GetWheelItems(TArray<FString>& OutItems, TArray<FString>& OutLabels) const;
 
-	/** An item picked on the wheel: a heal is used; a key or other item shows its name (locks take
-	 *  keys by themselves).  True when something happened. */
+	/** An item picked on the wheel: a heal is used; a key or other item is used on a lock in reach that asks for it
+	 *  (UseItemOnLock), else shows its name (locks take keys by themselves).  True when something happened. */
 	UFUNCTION(BlueprintCallable, Category = "Outlaws|Player")
 	bool UseItem(const FString& Item);
+	/** (BUG-TNTDAM) The original's use-item key: the lock nearest the eyes whose INF asks for Item (its OBJECT), within 3 m
+	 *  and in sight, nudged as a hand on it would be (civlwar2's big TNT at the dam's crack).  True when it took it. */
+	bool UseItemOnLock(const FString& Item);
+	FString LastItemUse;           // (BUG-TNTDAM, the log and tests) the last such use: the item, the lock, the distance, taken
 
 	/** Hurt the player: armour absorbs the raw damage first, then what is left is scaled by where it
 	 *  hit (LocationMult: 1.5 chest, 1 body, 0.5 edge) and comes off health; at 0 the player dies. */
