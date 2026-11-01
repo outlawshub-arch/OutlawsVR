@@ -264,6 +264,13 @@ FString FOutlawsAssets::FindInstallRoot(const FString& ConfiguredPath)
 	{
 		Add(FPaths::ConvertRelativePathToFull(Arg.TrimQuotes()), TEXT("-OLInstall"));
 	}
+	// (1 Nov, user: tests read a stock install, not the player's modded one) the environment's OUTLAWSVR_INSTALL, which
+	// the test scripts set for every run they start; a player's own launch never has it
+	const FString EnvInstall = FPlatformMisc::GetEnvironmentVariable(TEXT("OUTLAWSVR_INSTALL"));
+	if (!EnvInstall.IsEmpty())
+	{
+		Add(FPaths::ConvertRelativePathToFull(EnvInstall.TrimQuotes()), TEXT("OUTLAWSVR_INSTALL"));
+	}
 	const TMap<FString, FString> Settings = AOutlawsLevelActor::ReadSettings();
 	if (const FString* Saved = Settings.Find(TEXT("InstallPath")))
 	{
