@@ -11,6 +11,10 @@
 // SKIP.  Shots pushbox_<new|old>_<crate>_<push1|walk2|push2|end>.png in Saved\OLShots.
 // Lines "OLSHOT pushbox <crate> ..." a case, "OLSHOT pushbox check PASS|FAIL: ..." and "OLSHOT pushbox RESULT".
 // -OLOldPushBox: the checks expect the old behaviour (the crate moves once; the walk in behind it is outside every sector).
+// (LAND3, the planner 2026-11-01: on civlwar1 the crowbar is said to be blocked by a crate) on civlwar1, once SHOVE_ME is at
+// its last stop, the player walks from behind it to the crowbar and takes it: the straight way to the cupboard it lies in
+// (a body swept there: what it meets), then the walk round by the gap and the low crate 215, the cupboard door pushed open,
+// lines "OLSHOT pushbox crowbar ..." a leg and "OLSHOT pushbox crowbar answer: ...".  Shots pushbox_new_crowbar_*.png.
 
 #include "OutlawsPlayer.h"
 #include "OutlawsLevelActor.h"
@@ -21,6 +25,7 @@
 #include "Camera/CameraComponent.h"
 #include "Components/CapsuleComponent.h"
 #include "GameFramework/Controller.h"
+#include "GameFramework/CharacterMovementComponent.h"
 #include "ProceduralMeshComponent.h"
 #include "Engine/World.h"
 #include "HAL/PlatformMisc.h"
@@ -74,8 +79,36 @@ namespace
 		bool bSentBack = false;
 		bool bSkipped = false;        // no room to stand on this side
 		int32 Passes = 0, Fails = 0;
+		// (the crowbar's walk, civlwar1) SHOVE_ME's elevator, the leg walked, the cupboard door's sector and elevator
+		int32 Crate = -1, Leg = 0, Door = -1, DoorElev = -1, LegFail = -1;
+		double LegFrom = 0.0, JumpAt = 0.0;
+		FVector Crowbar = FVector::ZeroVector;
+		FString Way, Straight, LegWhy;
+		bool bStraightShut = false, bDoorOpen = false;
 	};
 	FPushBoxRun GPushBox;
+
+	// (LAND3, the planner 2026-11-01: on civlwar1 the crowbar is said to be blocked by a crate) the walk from behind SHOVE_ME,
+	// pushed to its last stop (x -507.75..-499.75, z -728.6..-720.6: the east end of the corridor it runs in), to the crowbar
+	// (GCROWBAR in the OBT: sector 364 at -493.84, -716.50).  The crowbar lies in the cupboard 364 behind CUPBOARD1 (sector 77,
+	// MORPH_MOVE2 at ANGLE 180: a nudge from outside slides it 8 units).  The cupboard's front (x -507.6..-499.6, z -720.5..
+	// -712.5) opens onto that end of the corridor, where the crate now stands, and onto the low crate 215 (its top at 2, four
+	// units over the room's floor, five under its ceiling); 215 is reached by the gap between crates 301 and 222 (x -515.9..
+	// -511.6), which the crate opens only at its last stop.  So: into the gap, a jump up onto 215 crouching (the room over it
+	// is 150 cm), off its far side, the cupboard door pushed open, in and over the crowbar.  Outlaws units (x, z)
+	struct FCrowLeg { double X, Z; bool bJump, bCrouch; const TCHAR* What; };
+	const FCrowLeg CrowLegs[] = {
+		{ -513.75, -724.6, false, false, TEXT("along the corridor to under the gap between crates 301 and 222") },
+		{ -513.75, -718.0, false, false, TEXT("into the gap") },
+		{ -513.75, -714.6, false, false, TEXT("to the gap's end, beside the low crate 215") },
+		{ -509.6, -714.6, true, true, TEXT("up onto the low crate 215 (a jump, crouching)") },
+		{ -503.5, -716.5, false, true, TEXT("off its far side, in front of the cupboard") },
+		{ -501.3, -716.5, false, false, TEXT("up to the cupboard door CUPBOARD1") },
+		{ -493.84, -716.5, false, false, TEXT("in through the cupboard door, over the crowbar") },
+	};
+	constexpr int32 CrowLegCount = UE_ARRAY_COUNT(CrowLegs);
+	constexpr int32 CrowDoorLeg = 6;      // the door is pushed open before this leg
+	constexpr int32 CrowOnLowCrate = 3;
 
 	FVector2D PushBoxMiddle(const FOutlawsSector& S)
 	{
@@ -171,6 +204,27 @@ OL_SHOT_TEST(OLPushBoxProbe, 1360)
 	auto Look = [&](const FVector& At)
 	{
 		if (Controller) Controller->SetControlRotation(FRotator(-8.0, (At - GetActorLocation()).Rotation().Yaw, 0.0));
+	};
+	// (LAND3) what stands between the player and a spot: the body swept there at its height; bCrate when it meets SHOVE_ME's
+	// mesh (within 5 cm of its bounds), else the thing it meets and the sector walls there
+	auto Blocker = [&](const FVector& To, bool& bCrate) -> FString
+	{
+		bCrate = false;
+		FHitResult H;
+		FCollisionQueryParams Q(SCENE_QUERY_STAT(OutlawsPushBoxProbe), false, this);
+		const FVector From = GetActorLocation();
+		const float Hh = GetCapsuleComponent()->GetScaledCapsuleHalfHeight();
+		if (!World->SweepSingleByChannel(H, From, FVector(To.X, To.Y, From.Z), FQuat::Identity, ECC_Pawn, FCollisionShape::MakeCapsule(R - 2.f, Hh - 4.f), Q))
+		{
+			return TEXT("a body swept there meets nothing");
+		}
+		FVector F;
+		FBox B(ForceInit);
+		L->DebugMoverFace(GPushBox.Crate, FVector(1.0, 0.0, 0.0), F, B);
+		bCrate = B.IsValid && B.ExpandBy(5.0).IsInside(H.ImpactPoint);
+		const FVector2D Hp = FOutlawsGeometry::ToOutlawsPlan(H.ImpactPoint);
+		return FString::Printf(TEXT("a body swept there meets %s at (%.2f, %.2f), %.0f cm on, %.0f cm short (%s %s; %s)"), bCrate ? TEXT("the crate SHOVE_ME") : TEXT("something else"),
+			Hp.X, Hp.Y, H.Distance, FVector::Dist2D(H.Location, To), *GetNameSafe(H.GetActor()), *GetNameSafe(H.GetComponent()), *L->DebugSectorWalls(H.ImpactPoint, 1.0).Left(400));
 	};
 
 	switch (ShotStep)
@@ -405,9 +459,184 @@ OL_SHOT_TEST(OLPushBoxProbe, 1360)
 			ShotStep = 1;
 			return;
 		}
-		if (++GPushBox.Box >= GPushBox.Boxes.Num()) { Finish(); return; }
+		if (++GPushBox.Box >= GPushBox.Boxes.Num())
+		{
+			// (LAND3) civlwar1: SHOVE_ME now at its last stop, the walk from behind it to the crowbar
+			const FOutlawsElevator& First = Inf->Elevators[GPushBox.Boxes[0]];
+			GPushBox.Crowbar = L->PickupLocation(TEXT("gcrowbar"));
+			if (!bOld && L->LevelName.Equals(TEXT("civlwar1"), ESearchCase::IgnoreCase) && First.Name.Equals(TEXT("SHOVE_ME"), ESearchCase::IgnoreCase) && First.bTerminated
+				&& !GPushBox.Crowbar.IsZero())
+			{
+				GPushBox.Crate = GPushBox.Boxes[0];
+				ShotStep = 20;
+				return;
+			}
+			Finish();
+			return;
+		}
 		GPushBox.Side = PushBehind;
 		ShotStep = 1;
+		return;
+	}
+	case 20:
+	{
+		// (LAND3) the crowbar: where it lies, the cupboard door in front of it (a MORPH_MOVE whose sector opens onto the
+		// crowbar's), and the straight way there from behind the crate
+		const FOutlawsSector* Cs = Inf->Live.SectorAt(FOutlawsGeometry::ToOutlaws(GPushBox.Crowbar, 0.2));
+		const int32 CrowSector = Cs ? Cs->Index : -1;
+		for (int32 i = 0; i < Inf->Elevators.Num() && GPushBox.DoorElev < 0 && CrowSector >= 0; ++i)
+		{
+			const FOutlawsElevator& X = Inf->Elevators[i];
+			if (X.Class != EOutlawsInfClass::MorphMove || X.Sectors.Num() == 0) continue;
+			for (const FOutlawsWall& W : Inf->Live.Sectors[X.Sectors[0]].Walls)
+			{
+				if (W.Adjoin == CrowSector) { GPushBox.DoorElev = i; GPushBox.Door = X.Sectors[0]; break; }
+			}
+		}
+		const FOutlawsElevator& Cr = Inf->Elevators[GPushBox.Crate];
+		const FVector2D Cp = FOutlawsGeometry::ToOutlawsPlan(GPushBox.Crowbar), Me2 = FOutlawsGeometry::ToOutlawsPlan(GetActorLocation());
+		UE_LOG(LogOutlaws, Display, TEXT("OLSHOT pushbox crowbar: GCROWBAR at (%.2f, %.2f) in sector %d; its cupboard door %s (elevator %d, sector %d, stop %d); the crate %s at stop %d, value %.2f%s (%s); the player at (%.2f, %.2f) in sector %d"),
+			Cp.X, Cp.Y, CrowSector, GPushBox.DoorElev >= 0 ? *Inf->Elevators[GPushBox.DoorElev].Name : TEXT("none"), GPushBox.DoorElev, GPushBox.Door,
+			GPushBox.DoorElev >= 0 ? Inf->Elevators[GPushBox.DoorElev].Stop : -1, *Cr.Name, Cr.Stop, Cr.Current, Cr.bTerminated ? TEXT(" (ended)") : TEXT(""),
+			*L->DebugSectorBrief(Cr.Sectors[0]), Me2.X, Me2.Y, L->PlayerSectorIndex());
+		const FOutlawsSector* Low = Inf->Live.SectorAt(CrowLegs[CrowOnLowCrate].X, 2.5, CrowLegs[CrowOnLowCrate].Z);
+		UE_LOG(LogOutlaws, Display, TEXT("OLSHOT pushbox crowbar: the low crate under leg %d: %s"), CrowOnLowCrate, *L->DebugSectorBrief(Low ? Low->Index : -1));
+		Check(GPushBox.DoorElev >= 0, FString::Printf(TEXT("the crowbar's cupboard has a door that slides (elevator %d, sector %d)"), GPushBox.DoorElev, GPushBox.Door));
+		// the straight way: a body swept from behind the crate to the cupboard's front, at its height
+		const FVector Front = FOutlawsGeometry::ToUE(FVector2D(CrowLegs[4].X, CrowLegs[4].Z), 0.0);
+		GPushBox.Straight = Blocker(Front, GPushBox.bStraightShut);
+		UE_LOG(LogOutlaws, Display, TEXT("OLSHOT pushbox crowbar: the straight way from behind the crate to the cupboard's front (%.2f, %.2f): %s"), CrowLegs[4].X, CrowLegs[4].Z, *GPushBox.Straight);
+		Look(FVector(Front.X, Front.Y, GetActorLocation().Z));
+		Shot(TEXT("crowbar_start"));
+		GPushBox.Leg = 0;
+		GPushBox.LegFrom = Now + 0.5;
+		GPushBox.Way = FString::FromInt(L->PlayerSectorIndex());
+		GPushBox.bSentBack = false;
+		GPushBox.UnstuckWas = LastUnstuck;
+		ShotStep = 21;
+		return;
+	}
+	case 21:
+	{
+		// one leg of the walk: toward its spot (the last, the crowbar itself), a jump where it says (crouching once off the
+		// ground), 6 s at most (8 with a jump); the crowbar taken by walking over it as a player does
+		if (Now < GPushBox.LegFrom) return;
+		Sample(Dt);
+		const FCrowLeg& Lg = CrowLegs[GPushBox.Leg];
+		const bool bLastLeg = GPushBox.Leg == CrowLegCount - 1;
+		const FVector2D To2 = bLastLeg ? FOutlawsGeometry::ToOutlawsPlan(GPushBox.Crowbar) : FVector2D(Lg.X, Lg.Z);
+		const FVector Me = GetActorLocation();
+		const FVector2D Me2 = FOutlawsGeometry::ToOutlawsPlan(Me);
+		const double Left = FVector2D::Distance(Me2, To2) * FOutlawsGeometry::UnitsToCm;
+		const double FeetU = (Me.Z - GetCapsuleComponent()->GetScaledCapsuleHalfHeight()) / FOutlawsGeometry::UnitsToCm;
+		const int32 Sec = L->PlayerSectorIndex();
+		if (Sec >= 0 && !GPushBox.Way.EndsWith(FString::Printf(TEXT(" %d"), Sec)) && !GPushBox.Way.Equals(FString::FromInt(Sec))) GPushBox.Way += FString::Printf(TEXT(" %d"), Sec);
+		const bool bTaken = L->GetInventory().Contains(TEXT("icrowbar"));
+		const bool bOnGround = GetCharacterMovement()->IsMovingOnGround();
+		if (!bTaken && Left > 8.0 && Now - GPushBox.LegFrom < (Lg.bJump ? 8.0 : 6.0) && !GPushBox.bSentBack)
+		{
+			const FVector At = FOutlawsGeometry::ToUE(To2, 0.0);
+			Look(FVector(At.X, At.Y, Me.Z));
+			AddMovementInput(FVector(At.X - Me.X, At.Y - Me.Y, 0.0).GetSafeNormal(), Lg.bJump ? 1.f : float(FMath::Clamp(Left / 80.0, 0.25, 1.0)));
+			// (a jump that came down on the room's floor again stands up before the next: a crouched body does not jump)
+			if (Lg.bJump && bOnGround && FeetU < 0.0) SetCrouchHeld(false);
+			if (Lg.bJump && bOnGround && Now - GPushBox.JumpAt > 1.2) { GPushBox.JumpAt = Now; DoJump(); }
+			if (Lg.bCrouch && !bOnGround) SetCrouchHeld(true);
+			return;
+		}
+		// on the low crate: its top under the feet, not only its plan
+		const bool bReached = bTaken || (Left <= 30.0 && (GPushBox.Leg != CrowOnLowCrate || FeetU > 1.7));
+		UE_LOG(LogOutlaws, Display, TEXT("OLSHOT pushbox crowbar leg %d (%s): %s in %.1f s, at (%.2f, %.2f) in sector %d, the feet at %.2f, %.0f cm from its spot%s%s"),
+			GPushBox.Leg, Lg.What, bReached ? TEXT("reached") : TEXT("NOT reached"), Now - GPushBox.LegFrom, Me2.X, Me2.Y, Sec, FeetU, Left, bTaken ? TEXT("; the crowbar taken") : TEXT(""),
+			GPushBox.bSentBack ? *FString::Printf(TEXT("; SENT BACK by the unstuck (%s)"), *LastUnstuck.Left(160)) : TEXT(""));
+		if (!bReached)
+		{
+			bool bShut = false;
+			GPushBox.LegFail = GPushBox.Leg;
+			GPushBox.LegWhy = Blocker(FOutlawsGeometry::ToUE(To2, 0.0), bShut);
+			UE_LOG(LogOutlaws, Display, TEXT("OLSHOT pushbox crowbar leg %d: what is in the way: %s"), GPushBox.Leg, *GPushBox.LegWhy);
+			SetCrouchHeld(false);
+			Shot(TEXT("crowbar_stuck"));
+			GPushBox.At = Now + 0.5;
+			ShotStep = 23;
+			return;
+		}
+		if (Lg.bCrouch && !CrowLegs[FMath::Min(GPushBox.Leg + 1, CrowLegCount - 1)].bCrouch) SetCrouchHeld(false);
+		if (GPushBox.Leg == CrowOnLowCrate) Shot(TEXT("crowbar_lowcrate"));
+		if (bTaken || bLastLeg)
+		{
+			Shot(TEXT("crowbar_end"));
+			GPushBox.At = Now + 0.5;
+			ShotStep = 23;
+			return;
+		}
+		GPushBox.LegFrom = Now + 0.2;
+		ShotStep = ++GPushBox.Leg == CrowDoorLeg ? 22 : 21;
+		return;
+	}
+	case 22:
+	{
+		// the cupboard door pushed as a hand does it (DoorAtHand, PushDoorSector: as the crate's pushes), then a wait while
+		// it slides open
+		if (Now < GPushBox.LegFrom) return;
+		if (GPushBox.DoorElev < 0)
+		{
+			GPushBox.LegFail = GPushBox.Leg;
+			GPushBox.LegWhy = TEXT("no cupboard door found");
+			GPushBox.At = Now;
+			ShotStep = 23;
+			return;
+		}
+		FVector F;
+		FBox B(ForceInit);
+		const FVector2D Dm = PushBoxMiddle(Inf->Live.Sectors[GPushBox.Door]);
+		const FVector DoorAt = FOutlawsGeometry::ToUE(Dm, 0.0);
+		const bool bFace = L->DebugMoverFace(GPushBox.DoorElev, FVector(GetActorLocation().X - DoorAt.X, GetActorLocation().Y - DoorAt.Y, 0.0), F, B);
+		const FVector Eye = Camera->GetComponentLocation();
+		const FVector Target(F.X, F.Y, FMath::Clamp(Eye.Z, B.Min.Z + 25.0, B.Max.Z - 25.0));
+		const FVector Hand = Target - (Target - Eye).GetSafeNormal() * 5.0;
+		const double Reach = FVector::Dist(Eye, Hand);
+		bool bClosed = false;
+		const int32 Door = bFace && Reach < 100.0 ? L->DoorAtHand(Eye, Hand, bClosed) : -1;
+		const bool bPushed = Door == GPushBox.Door && bClosed && L->PushDoorSector(GPushBox.Door);
+		UE_LOG(LogOutlaws, Display, TEXT("OLSHOT pushbox crowbar: the cupboard door's face %s, the hand %.0f cm from the eyes, DoorAtHand %d closed %d, taken %d"),
+			bFace ? *F.ToCompactString() : TEXT("not found"), Reach, Door, bClosed ? 1 : 0, bPushed ? 1 : 0);
+		Check(bPushed, FString::Printf(TEXT("the cupboard door %s takes a push from in front of it (DoorAtHand %d, closed %d)"), *Inf->Elevators[GPushBox.DoorElev].Name, Door, bClosed ? 1 : 0));
+		if (!bPushed)
+		{
+			GPushBox.LegFail = GPushBox.Leg;
+			GPushBox.LegWhy = TEXT("the cupboard door took no push");
+			GPushBox.At = Now + 0.5;
+			ShotStep = 23;
+			return;
+		}
+		GPushBox.HeldFrom = Now;
+		ShotStep = 24;
+		return;
+	}
+	case 24:
+	{
+		const FOutlawsElevator& D = Inf->Elevators[GPushBox.DoorElev];
+		if (Now - GPushBox.HeldFrom < 0.25 || (D.Target >= 0 && Now - GPushBox.HeldFrom < 6.0)) return;
+		GPushBox.bDoorOpen = D.Target < 0 && D.Stop == 1;
+		Check(GPushBox.bDoorOpen, FString::Printf(TEXT("the cupboard door %s slid open: stop %d, value %.2f (%s)"), *D.Name, D.Stop, D.Current, *L->DebugSectorBrief(GPushBox.Door)));
+		Shot(TEXT("crowbar_door"));
+		GPushBox.LegFrom = Now + 0.3;
+		ShotStep = 21;
+		return;
+	}
+	case 23:
+	{
+		// the answer: whether the crate at its last stop is what stands between the player and the crowbar
+		if (Now < GPushBox.At) return;
+		const bool bTaken = L->GetInventory().Contains(TEXT("icrowbar"));
+		const FOutlawsElevator& Cr = Inf->Elevators[GPushBox.Crate];
+		Check(bTaken, FString::Printf(TEXT("the crowbar is taken with %s at its last stop (stop %d, value %.2f), walking from behind it (sectors on the way: %s)%s"), *Cr.Name, Cr.Stop, Cr.Current,
+			*GPushBox.Way.Left(200), GPushBox.LegFail >= 0 ? *FString::Printf(TEXT("; stopped on leg %d, %s: %s"), GPushBox.LegFail, CrowLegs[GPushBox.LegFail].What, *GPushBox.LegWhy) : TEXT("")));
+		UE_LOG(LogOutlaws, Display, TEXT("OLSHOT pushbox crowbar answer: %s at its last stop %s the straight way from behind it to the cupboard's front; the crowbar %s (the gap, the low crate 215, the cupboard door %s)%s"),
+			*Cr.Name, GPushBox.bStraightShut ? TEXT("shuts") : TEXT("does not shut"), bTaken ? TEXT("is still got the other way round") : TEXT("is NOT got the other way round"),
+			GPushBox.bDoorOpen ? TEXT("opened") : TEXT("not opened"), GPushBox.LegFail >= 0 ? *FString::Printf(TEXT("; stopped on leg %d (%s): %s"), GPushBox.LegFail, CrowLegs[GPushBox.LegFail].What, *GPushBox.LegWhy) : TEXT(""));
+		Finish();
 		return;
 	}
 	default:
