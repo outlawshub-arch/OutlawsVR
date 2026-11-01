@@ -63,6 +63,9 @@ struct OUTLAWSRUNTIME_API FOutlawsBuildFilter
 	/** (BUG-OUTHOUSEWALL) a double-adjoined wall beside an explodable wall, filled (WallMidTex) only in its opening to this
 	 *  sector, its sign drawn as the original draws it while that opening is shut: on the wall's solid part, anchored there. */
 	TMap<uint64, int32> FillToward;
+	/** (BUG-CWWALL2) a mover group's walls: a sign on a single adjoin is painted on the wall's solid parts only, each anchored
+	 *  on that part's own texture offset (the stock levels' four dynamite cracks). */
+	bool bJediSigns = false;
 	static uint64 Key(int32 S, int32 W) { return (uint64(uint32(S)) << 32) | uint32(W); }
 
 	bool WantFloor(int32 S) const { return bOnly ? OnlyFloor.Contains(S) : !SkipFloor.Contains(S); }

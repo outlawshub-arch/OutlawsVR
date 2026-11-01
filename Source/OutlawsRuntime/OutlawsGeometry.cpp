@@ -881,58 +881,83 @@ void FOutlawsGeometry::Build(const FOutlawsLevel& L, const TMap<FString, FOutlaw
 				}
 				// a sign is never flipped, nor moved by its wall's flip: the engine reads its columns straight from u
 				// less the sign's offset, the flip only for the wall's own texture (TFE setupSignTexture, the exe likewise)
-				const double Along = -W.MidX + W.OvX;
-				const double Up = MidAnchor - W.OvY;
-				const double A0 = Along, A1 = Along + TWU;
-				const double U0 = Up, U1 = Up + THU;
-				const double CA0 = FMath::Max(A0, 0.0), CA1 = FMath::Min(A1, Len);
-				const double CU0 = FMath::Max(U0, SignLo), CU1 = FMath::Min(U1, SignHi);
-				if (CA1 - CA0 < 1e-4 || CU1 - CU0 < 1e-4) continue;
-				const double TX = EX / Len, TZ = EZ / Len;
-				const double NL = FMath::Max(1e-9, FMath::Sqrt(NX * NX + NZ * NZ));
-				const double Lift = 0.02;
-				const double LX = NX / NL * Lift, LZ = NZ / NL * Lift;
-				const bool bDefaultSign = OTex.Equals(TEXT("DEFAULT"), ESearchCase::IgnoreCase);
-				// BUG-ADJOINDEFAULT (user 2026-10-08: frame-shaped DEFAULT panels in the mine over the rail track, sector 424
-				// wall 3, and in the hideout's doorway by the bed, sector 73 walls 1 and 3): a sign that is the level's DEFAULT
-				// placeholder is not drawn, as a DEFAULT band is not (BUG-DEFAULTBAND).  Those three walls are open their whole
-				// height (the rooms beyond are as tall, their floors lower), so no part of them is drawn but the sign
-				if (!bOldSignRule && bDefaultSign)
+				// (each part it is painted on: along the wall from, up from, and the part's foot and top)
+				TArray<FVector4, TInlineAllocator<2>> Parts;
+				if (F.bJediSigns && AdjA && !AdjD && !FillTo)
 				{
-					Stat(TEXT("default_sign_skipped"));
-					continue;
+					// (BUG-CWWALL2, user 2026-11-01, round 9 Quest snapshots 5-6: on civlwar2 only the right end of the cracked
+					// wall's crack showed, cut off, and after the blast it hung in the hole)  A wall a mover group builds, its
+					// opening beside a lift, a door or a slope, takes its sign as the Jedi engine paints one: on the solid parts
+					// only, the bottom part (the next floor above this one) with u carrying BOT's x offset and the sign's foot on
+					// this floor, the top part (the next ceiling below this one) with TOP's and its foot on the next ceiling (TFE
+					// rwallFloat wall_drawBottom / wall_drawTop, setupSignTexture; the exe's sign rectangle for a shot or a nudge
+					// takes the part's own x offset likewise [EXE 0x1402e0236..0x1402e02b2]).  The stock walls so built that carry a sign
+					// are the four dynamite cracks: civlwar1's by BLAMMO, civlwar2's dam (DAMBOOM) and both faces of TUNNELPOW;
+					// 871's crack is OVERLAY 13.00 on MID 8.00 / BOT 12.00, so it sat 4 units right of its place on the wall
+					const double NF = (L.SurfaceY(*AdjA, A, true) + L.SurfaceY(*AdjA, B, true)) * 0.5, NC = (L.SurfaceY(*AdjA, A, false) + L.SurfaceY(*AdjA, B, false)) * 0.5;
+					const double Fl = (FA + FB) * 0.5, Cl = (CA + CB) * 0.5;
+					if (NF > Fl) Parts.Add(FVector4(W.OvX - W.BotX, Fl - W.OvY, Fl, FMath::Min(NF, Cl)));
+					if (NC < Cl) Parts.Add(FVector4(W.OvX - W.TopX, FMath::Max(NC, Fl) - W.OvY, FMath::Max(NC, Fl), Cl));
 				}
-				const double UL = (CA0 - A0) / TWU, UR = (CA1 - A0) / TWU;
-				const double VB = (CU0 - U0) / THU, VT = (CU1 - U0) / THU;
-				const double PLX = A.X + TX * CA0 + LX, PLZ = A.Y + TZ * CA0 + LZ;
-				const double PRX = A.X + TX * CA1 + LX, PRZ = A.Y + TZ * CA1 + LZ;
-				FVector Q[4] = { ToUE(PLX, CU0, PLZ), ToUE(PRX, CU0, PRZ), ToUE(PRX, CU1, PRZ), ToUE(PLX, CU1, PLZ) };
-				FVector2D UV[4] = { FVector2D(UL, VB), FVector2D(UR, VB), FVector2D(UR, VT), FVector2D(UL, VT) };
-				OrientQuad(Q, UV, Inward);
-				AddTo(World, OTex, true, Q, UV, 4, Bright(Lvl), bRev, false, false, WaterGroupOf(S.Index), -1, LightOf(S.Index, W.Light));
-				Stat(TEXT("wall_overlay"));
-				if (Audit && (W.Adjoin >= 0 || W.DAdjoin >= 0))
+				else
 				{
-					// (-OLAdjoinScan) a sign drawn on an adjoined wall: the DEFAULT placeholder, or any of it over the opening
-					// (the Dark Forces renderer paints a sign only on the parts of its wall it draws solid: TFE rwallFloat
-					// setupSignTexture in wall_drawSolid / _drawTop / _drawBottom; these are listed to look at, not changed)
-					const TArray<FVector2D> Rect = { FVector2D(CA0, CU0), FVector2D(CA1, CU0), FVector2D(CA1, CU1), FVector2D(CA0, CU1) };
-					double SolidArea = 0.0;
-					for (const FBandDef& Bd : Bands)
+					Parts.Add(FVector4(-W.MidX + W.OvX, MidAnchor - W.OvY, SignLo, SignHi));
+				}
+				for (const FVector4& Part : Parts)
+				{
+					const double Along = Part.X;
+					const double Up = Part.Y;
+					const double A0 = Along, A1 = Along + TWU;
+					const double U0 = Up, U1 = Up + THU;
+					const double CA0 = FMath::Max(A0, 0.0), CA1 = FMath::Min(A1, Len);
+					const double CU0 = FMath::Max(U0, double(Part.Z)), CU1 = FMath::Min(U1, double(Part.W));
+					if (CA1 - CA0 < 1e-4 || CU1 - CU0 < 1e-4) continue;
+					const double TX = EX / Len, TZ = EZ / Len;
+					const double NL = FMath::Max(1e-9, FMath::Sqrt(NX * NX + NZ * NZ));
+					const double Lift = 0.02;
+					const double LX = NX / NL * Lift, LZ = NZ / NL * Lift;
+					const bool bDefaultSign = OTex.Equals(TEXT("DEFAULT"), ESearchCase::IgnoreCase);
+					// BUG-ADJOINDEFAULT (user 2026-10-08: frame-shaped DEFAULT panels in the mine over the rail track, sector 424
+					// wall 3, and in the hideout's doorway by the bed, sector 73 walls 1 and 3): a sign that is the level's DEFAULT
+					// placeholder is not drawn, as a DEFAULT band is not (BUG-DEFAULTBAND).  Those three walls are open their whole
+					// height (the rooms beyond are as tall, their floors lower), so no part of them is drawn but the sign
+					if (!bOldSignRule && bDefaultSign)
 					{
-						if (Bd.bSky || Bd.Band == EBand::MidTex) continue;
-						TArray<FVector2D> P = Rect;
-						ClipToLine(P, Bd.BA, Bd.BB, Len, true);
-						if (P.Num() >= 3) ClipToLine(P, Bd.TA, Bd.TB, Len, false);
-						if (P.Num() >= 3) SolidArea += PolyArea(P);
+						Stat(TEXT("default_sign_skipped"));
+						continue;
 					}
-					const double RectArea = (CA1 - CA0) * (CU1 - CU0);
-					if (bDefaultSign || RectArea - SolidArea > 0.01)
+					const double UL = (CA0 - A0) / TWU, UR = (CA1 - A0) / TWU;
+					const double VB = (CU0 - U0) / THU, VT = (CU1 - U0) / THU;
+					const double PLX = A.X + TX * CA0 + LX, PLZ = A.Y + TZ * CA0 + LZ;
+					const double PRX = A.X + TX * CA1 + LX, PRZ = A.Y + TZ * CA1 + LZ;
+					FVector Q[4] = { ToUE(PLX, CU0, PLZ), ToUE(PRX, CU0, PRZ), ToUE(PRX, CU1, PRZ), ToUE(PLX, CU1, PLZ) };
+					FVector2D UV[4] = { FVector2D(UL, VB), FVector2D(UR, VB), FVector2D(UR, VT), FVector2D(UL, VT) };
+					OrientQuad(Q, UV, Inward);
+					AddTo(World, OTex, true, Q, UV, 4, Bright(Lvl), bRev, false, false, WaterGroupOf(S.Index), -1, LightOf(S.Index, W.Light));
+					Stat(TEXT("wall_overlay"));
+					if (Audit && (W.Adjoin >= 0 || W.DAdjoin >= 0))
 					{
-						const FOutlawsSector* Far = L.Sector(W.Adjoin);
-						Audit->Add(FString::Printf(TEXT("%s sector %d wall %d (id %s, adjoin %d mirror %d, flags 0x%x, floor/ceiling %.2f/%.2f, beyond %.2f/%.2f): sign %s %.1f x %.1f u, %.2f of its %.2f sq u over the opening"),
-							bDefaultSign ? TEXT("DEFAULT") : TEXT("SIGN"), S.Index, WallIndex, *W.Id, W.Adjoin, W.Mirror, W.Flags1, S.Floor.Y, S.Ceil.Y,
-							Far ? Far->Floor.Y : 0.0, Far ? Far->Ceil.Y : 0.0, *OTex, CA1 - CA0, CU1 - CU0, RectArea - SolidArea, RectArea));
+						// (-OLAdjoinScan) a sign drawn on an adjoined wall: the DEFAULT placeholder, or any of it over the opening
+						// (the Dark Forces renderer paints a sign only on the parts of its wall it draws solid: TFE rwallFloat
+						// setupSignTexture in wall_drawSolid / _drawTop / _drawBottom; these are listed to look at, not changed)
+						const TArray<FVector2D> Rect = { FVector2D(CA0, CU0), FVector2D(CA1, CU0), FVector2D(CA1, CU1), FVector2D(CA0, CU1) };
+						double SolidArea = 0.0;
+						for (const FBandDef& Bd : Bands)
+						{
+							if (Bd.bSky || Bd.Band == EBand::MidTex) continue;
+							TArray<FVector2D> P = Rect;
+							ClipToLine(P, Bd.BA, Bd.BB, Len, true);
+							if (P.Num() >= 3) ClipToLine(P, Bd.TA, Bd.TB, Len, false);
+							if (P.Num() >= 3) SolidArea += PolyArea(P);
+						}
+						const double RectArea = (CA1 - CA0) * (CU1 - CU0);
+						if (bDefaultSign || RectArea - SolidArea > 0.01)
+						{
+							const FOutlawsSector* Far = L.Sector(W.Adjoin);
+							Audit->Add(FString::Printf(TEXT("%s sector %d wall %d (id %s, adjoin %d mirror %d, flags 0x%x, floor/ceiling %.2f/%.2f, beyond %.2f/%.2f): sign %s %.1f x %.1f u, %.2f of its %.2f sq u over the opening"),
+								bDefaultSign ? TEXT("DEFAULT") : TEXT("SIGN"), S.Index, WallIndex, *W.Id, W.Adjoin, W.Mirror, W.Flags1, S.Floor.Y, S.Ceil.Y,
+								Far ? Far->Floor.Y : 0.0, Far ? Far->Ceil.Y : 0.0, *OTex, CA1 - CA0, CU1 - CU0, RectArea - SolidArea, RectArea));
+						}
 					}
 				}
 			}

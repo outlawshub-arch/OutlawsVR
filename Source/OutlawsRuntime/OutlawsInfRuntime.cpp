@@ -20,6 +20,13 @@ namespace
 	{
 		return double(int16(FMath::TruncToInt(Degrees * (16384.0 / 360.0))));
 	}
+
+	/** (BUG-CWWALL2) -OLOldCwWall2: a NEXT_STOP steps on a move begun the same tick, as before */
+	bool OldCwWall2()
+	{
+		static const bool bOld = OLFlags::Param(TEXT("OLOldCwWall2"));
+		return bOld;
+	}
 }
 
 bool FOutlawsInfRuntime::SectorLightsOn()
@@ -648,6 +655,7 @@ void FOutlawsInfRuntime::StartMove(FOutlawsElevator& E, int32 TargetStop)
 	const bool bWasMoving = E.Target >= 0;
 	E.Target = TargetStop;
 	E.bWaiting = false;
+	if (!bWasMoving) E.MoveTick = TickCount;     // (BUG-CWWALL2: the exe's start stamps nextTick so, 0x140067d58)
 	if (!bWasMoving && FMath::Abs(StopValue(E, TargetStop) - E.Current) > 1e-9)
 	{
 		if (OnSound) if (const FString* S1 = C.Sounds.Find(1)) OnSound(*S1, E);
@@ -704,6 +712,7 @@ void FOutlawsInfRuntime::Tick(double Dt)
 		TickPuppet(Dt);                // (co-op client: the host's INF decides)
 		return;
 	}
+	++TickCount;
 	for (FOutlawsScroll& Sc : Scrolls)
 	{
 		if (Elevators.IsValidIndex(Sc.Elevator))
@@ -806,6 +815,12 @@ void FOutlawsInfRuntime::ElevatorMessage(FOutlawsElevator& E, const FOutlawsInfM
 		}
 		break;
 	case EOutlawsInfMsg::NextStop:
+		// (BUG-CWWALL2, user 2026-11-01, round 9 Quest snapshots 5-6, a soft lock: on civlwar2 a stick lit by the cracked wall
+		// in the tunnel off the lake went off and the wall stayed)  A move begun this same tick is not stepped on: the exe
+		// steps the queued stop only when nextTick < now [EXE 0x1400678d9], and its start sets nextTick to now.  One blast
+		// reaches both rubble plugs (TUNNELPOW, TUNNELPOW2: EVENT_MASK 64, each one's trigger sends the other NEXT_STOP), so
+		// the second plug's NEXT_STOP sent the first, already on its way to -27, back to its closed -21.
+		if (E.Target >= 0 && E.MoveTick == TickCount && !OldCwWall2()) break;     // (-OLOldCwWall2: stepped on, as before)
 		StartMove(E, E.Target >= 0 ? (E.Target + 1) % N : (E.Stop + 1) % N);
 		break;
 	case EOutlawsInfMsg::PrevStop:

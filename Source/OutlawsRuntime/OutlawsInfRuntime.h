@@ -37,6 +37,7 @@ struct FOutlawsElevator
 	bool bTrigLast = false;                // a trigger sends it to its last stop (MOVE_CEILING)
 	int32 Stop = 0;                        // last stop reached
 	int32 Target = -1;                     // stop being moved to, -1 when not moving
+	uint64 MoveTick = 0;                   // (BUG-CWWALL2) the runtime's tick its move began (the exe's nextTick)
 	double WaitLeft = 0.0;
 	bool bWaiting = false;
 	bool bTerminated = false;
@@ -218,4 +219,5 @@ private:
 	int32 SectorEventDepth = 0;
 	bool bHoldThisEvent = false;
 	TArray<int32> HeldStarts;
+	uint64 TickCount = 1;                  // (BUG-CWWALL2) ticks run so far: a move's MoveTick against it
 };

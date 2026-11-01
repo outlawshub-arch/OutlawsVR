@@ -2183,6 +2183,7 @@ void AOutlawsLevelActor::BuildInf(const FOutlawsLevel& L, const FString& InfText
 		}
 		G.GroupFilter.bOnly = true;
 		G.GroupFilter.OnlyWalls = Walls;
+		G.GroupFilter.bJediSigns = !OLFlags::Param(TEXT("OLOldCwWall2"));     // (BUG-CWWALL2: -OLOldCwWall2, every sign on MidX over its whole wall)
 		G.FloorFilter.bOnly = true;
 		G.CeilFilter.bOnly = true;
 		for (int32 s : E.Sectors)
