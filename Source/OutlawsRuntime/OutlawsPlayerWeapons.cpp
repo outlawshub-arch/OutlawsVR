@@ -1122,6 +1122,9 @@ void AOutlawsPlayer::OpenWheel(int32 Hand)
 	UE_LOG(LogOutlaws, Log, TEXT("OLRT wheel items: %s"), *FString::Join(AllWheelItemLabels, TEXT(" | ")));
 	WheelItemStart = FMath::Clamp(WheelItemStart, 0, FMath::Max(0, AllWheelItems.Num() - WheelItemsShown));
 	RebuildWheelSlots();
+	// (BUG-WHEELLIVE) what it shows, as numbers, to see change while it is open (UpdateWheelLive)
+	WheelLiveSignature(WheelLiveCounts, WheelLiveSet);
+	WheelLiveNext = FPlatformTime::Seconds() + 0.1;
 	WheelRoot->SetVisibility(true, false);
 	ShowWheelMap();                      // (REQ-WHEELMAP: the map in the horseshoe's middle)
 	KeepWheelOverWorld();
@@ -1436,8 +1439,42 @@ void AOutlawsPlayer::RebuildWheelSlots()
 		}
 		S->SetRelativeLocationAndRotation(Local, GPlaneFacing);
 		S->SetRelativeScale3D(FVector(Size / 100.0, Size / 100.0, 1.0));
-		// the weapon's rounds (loaded and carried) under its icon, in the remaster's font (user 2026-09-27)
+		// the weapon's rounds (loaded and carried) under its icon, in the remaster's font (user 2026-09-27); "x2" at its
+		// top-right corner; the darkening over it (their text and showing: RefreshWheelCounts)
 		WheelSlotParts(i);
+		PlateHolders[WheelCountPlates[i]]->SetRelativeLocationAndRotation(Local + FVector(0.4, 0.0, -Size * 0.5 - 1.3), FRotator::ZeroRotator);
+		PlateHolders[WheelPairPlates[i]]->SetRelativeLocationAndRotation(Local + FVector(0.5, -Size * 0.42, Size * 0.36), FRotator::ZeroRotator);
+		// a weapon's slot is round: a disc over it; an item's card is square: the square
+		SetPlaneTexture(WheelShades[i], bItem ? WheelShadeTex : WheelShadeDiscTex);
+		WheelShades[i]->SetRelativeLocationAndRotation(Local + FVector(0.15, 0.0, 0.0), GPlaneFacing);
+		WheelShades[i]->SetRelativeScale3D(FVector(Size / 100.0, Size / 100.0, 1.0));
+		UTexture2D* Icon = bItem ? ItemCard(WheelItem[i], false) : KpfTexture(WheelIconOff[i]);
+		if (!Icon) Icon = bItem ? ItemCard(WheelItem[i], true) : KpfTexture(WheelIconOn[i]);
+		if (!Icon) Icon = KpfTexture(bItem ? TEXT("gfx/wheel/dialitem.png") : TEXT("gfx/wheel/weapons/off/wemptyoff.png"));
+		SetPlaneTexture(S, Icon);
+		S->SetVisibility(true);
+		// the label only for an item without art (the banner names whatever is pointed at)
+		T->SetText(FText::FromString(Labels[i]));
+		T->SetRelativeLocationAndRotation(Local + FVector(0.5, 0.0, -3.5), FRotator::ZeroRotator);
+		T->SetTextRenderColor(FColor(235, 220, 180));
+		T->SetVisibility(bItem && !ItemCard(WheelItem[i], true));
+	}
+	RefreshWheelCounts();
+	UpdateWheelArrows();
+}
+
+void AOutlawsPlayer::RefreshWheelCounts()
+{
+	// (BUG-WHEELLIVE) the numbers on the laid-out wheel: each slot's count and pair plates, whether it can be picked (its
+	// darkening), the items' labels (counts in them) and the banner's; a plate is drawn again only when its text changed
+	const AOutlawsLevelActor* LW = Level.Get();
+	const int32 Bags = LW ? LW->GetCount(TEXT("idocbag")) : 0;
+	const int32 Oil = LW ? LW->GetCount(TEXT("ioil")) : 0;
+	const int32 PlateLeft = LW ? LW->GetArmour() : 0;
+	for (int32 i = 0; i < WheelWeapon.Num(); ++i)
+	{
+		if (!WheelCountPlates.IsValidIndex(i) || !WheelPairPlates.IsValidIndex(i) || !WheelShades.IsValidIndex(i) || !WheelLabels.IsValidIndex(i)) break;
+		const bool bItem = WheelWeapon[i] == -2;
 		{
 			const int32 Wi = WheelWeapon[i];
 			FString Count;
@@ -1458,15 +1495,13 @@ void AOutlawsPlayer::RebuildWheelSlots()
 			if (bItem && WheelItem[i] == TEXT("idocbag")) Count = FString::FromInt(Bags);
 			if (bItem && WheelItem[i] == TEXT("ilantern")) Count = FString::Printf(TEXT("oil %d"), Oil);
 			if (bItem && WheelItem[i] == TEXT("ibplate") && PlateLeft > 0) Count = FString::Printf(TEXT("%d%%"), PlateLeft);
-			PlateHolders[WheelCountPlates[i]]->SetRelativeLocationAndRotation(Local + FVector(0.4, 0.0, -Size * 0.5 - 1.3), FRotator::ZeroRotator);
 			SetTextPlate(WheelCountPlates[i], Count);
 			PlatePlanes[WheelCountPlates[i]]->SetVisibility(!Count.IsEmpty());
 		}
-		// two of a pair-up weapon carried (revolvers, sawed-offs): "x2" at the icon's top-right corner (user 2026-09-28)
+		// two of a pair-up weapon carried (revolvers, sawed-offs): "x2" (user 2026-09-28)
 		{
 			const int32 Wp = WheelWeapon[i];
 			const bool bPair = !bItem && Wp >= 0 && Wp < NumWeapons && GWeapons[Wp].Throw <= 0 && WeaponsOwned(Wp) >= 2;
-			PlateHolders[WheelPairPlates[i]]->SetRelativeLocationAndRotation(Local + FVector(0.5, -Size * 0.42, Size * 0.36), FRotator::ZeroRotator);
 			// (user 2026-10-02: revolvers past the pair are kept as spares: "x3", "x4")
 			SetTextPlate(WheelPairPlates[i], bPair ? FString::Printf(TEXT("x%d"), WeaponsOwned(Wp)) : FString());
 			PlatePlanes[WheelPairPlates[i]]->SetVisibility(bPair);
@@ -1474,23 +1509,100 @@ void AOutlawsPlayer::RebuildWheelSlots()
 		// a weapon not carried, or with nothing left to fire, is blacked out and cannot be picked (user 2026-09-27)
 		while (WheelUsable.Num() <= i) WheelUsable.Add(true);
 		WheelUsable[i] = bItem ? !((WheelItem[i] == TEXT("idocbag") && Bags <= 0) || (WheelItem[i] == TEXT("ibplate") && PlateLeft <= 0)) : WeaponUsable(WheelWeapon[i]);
-		// a weapon's slot is round: a disc over it; an item's card is square: the square
-		SetPlaneTexture(WheelShades[i], bItem ? WheelShadeTex : WheelShadeDiscTex);
-		WheelShades[i]->SetRelativeLocationAndRotation(Local + FVector(0.15, 0.0, 0.0), GPlaneFacing);
-		WheelShades[i]->SetRelativeScale3D(FVector(Size / 100.0, Size / 100.0, 1.0));
 		WheelShades[i]->SetVisibility(!WheelUsable[i]);
-		UTexture2D* Icon = bItem ? ItemCard(WheelItem[i], false) : KpfTexture(WheelIconOff[i]);
-		if (!Icon) Icon = bItem ? ItemCard(WheelItem[i], true) : KpfTexture(WheelIconOn[i]);
-		if (!Icon) Icon = KpfTexture(bItem ? TEXT("gfx/wheel/dialitem.png") : TEXT("gfx/wheel/weapons/off/wemptyoff.png"));
-		SetPlaneTexture(S, Icon);
-		S->SetVisibility(true);
-		// the label only for an item without art (the banner names whatever is pointed at)
-		T->SetText(FText::FromString(Labels[i]));
-		T->SetRelativeLocationAndRotation(Local + FVector(0.5, 0.0, -3.5), FRotator::ZeroRotator);
-		T->SetTextRenderColor(FColor(235, 220, 180));
-		T->SetVisibility(bItem && !ItemCard(WheelItem[i], true));
+		// the items' labels carry their counts (the fixed ones' as RebuildWheelSlots words them)
+		if (bItem)
+		{
+			FString Label;
+			const int32 k = AllWheelItems.IndexOfByKey(WheelItem[i]);
+			if (WheelItem[i] == TEXT("idocbag")) Label = Bags > 0 ? FString::Printf(TEXT("Medical Bag %d"), Bags) : FString(TEXT("Medical Bag (none)"));
+			else if (WheelItem[i] == TEXT("ibplate")) Label = PlateLeft > 0 ? FString::Printf(TEXT("Boiler Plate %d%%"), PlateLeft) : FString(TEXT("Boiler Plate (none)"));
+			else if (WheelItem[i] == TEXT("idev_grip")) Label = bGripEditor ? FString(TEXT("Grip Editor: on")) : FString(TEXT("Grip Editor: off"));
+			else if (k != INDEX_NONE && AllWheelItemLabels.IsValidIndex(k)) Label = AllWheelItemLabels[k];
+			if (!Label.IsEmpty() && !WheelLabels[i]->Text.ToString().Equals(Label, ESearchCase::CaseSensitive)) WheelLabels[i]->SetText(FText::FromString(Label));
+		}
 	}
-	UpdateWheelArrows();
+	if (WheelBanner && bWheelOpen)
+	{
+		int32 Shown = -1;
+		for (int32 H = 0; H < 2; ++H) if (bWheelHeld[H] && WheelLabels.IsValidIndex(WheelPick[H])) Shown = WheelPick[H];
+		if (Shown >= 0) WheelBanner->SetText(WheelLabels[Shown]->Text);
+	}
+}
+
+bool AOutlawsPlayer::OldWheelLive()
+{
+	static const bool bOld = OLFlags::Param(TEXT("OLOldWheelLive"));
+	return bOld;
+}
+
+void AOutlawsPlayer::WheelLiveSignature(TArray<int32>& OutCounts, uint32& OutSet) const
+{
+	// a few lookups: per weapon how many carried, loaded and in reserve; the bags, oil, plate, the lamp, the inventory's size;
+	// the set: which weapons are carried and the items the wheel lists
+	OutCounts.Reset();
+	OutSet = 0;
+	const AOutlawsLevelActor* LW = Level.Get();
+	if (!LW) return;
+	for (int32 Wi = 0; Wi < NumWeapons; ++Wi)
+	{
+		const FWeaponDef& WD = GWeapons[Wi];
+		const int32 Owned = WeaponsOwned(Wi);
+		int32 Loaded = 0;
+		for (int32 Hd = 0; Hd < 2; ++Hd)
+		{
+			const int32* Saved = SavedMag.Find(Hd * 16 + Wi);
+			Loaded = FMath::Max(Loaded, Equipped[Hd] == Wi ? Mag[Hd] : Saved ? *Saved : WD.Capacity);
+		}
+		OutCounts.Add(Owned);
+		OutCounts.Add(Loaded);
+		OutCounts.Add(WD.AmmoItem ? LW->GetCount(WD.AmmoItem) : 0);
+		OutSet = HashCombine(OutSet, ::GetTypeHash(Owned > 0));
+	}
+	OutCounts.Add(LW->GetCount(TEXT("idocbag")));
+	OutCounts.Add(LW->GetCount(TEXT("ioil")));
+	OutCounts.Add(LW->GetArmour());
+	OutCounts.Add(LW->GetCount(TEXT("ielixer")));
+	OutCounts.Add(LW->bLampOn ? 1 : 0);
+	OutCounts.Add(LW->GetInventory().Num());
+	OutCounts.Add(bGripEditor ? 1 : 0);
+}
+
+void AOutlawsPlayer::UpdateWheelLive()
+{
+	// (BUG-WHEELLIVE, user 2 Nov: the wheel kept the counts it opened with) a tenth of a second (real time) apart: the numbers
+	// read again; counts changed, the plates and labels redrawn; a weapon or an item gained or lost, the slots laid out again
+	// from the pool.  Nothing made for a count
+	if (!bWheelOpen || OldWheelLive()) return;
+	const double Now = FPlatformTime::Seconds();
+	if (Now < WheelLiveNext) return;
+	WheelLiveNext = Now + 0.1;
+	TArray<int32> Counts;
+	uint32 Set = 0;
+	WheelLiveSignature(Counts, Set);
+	if (Counts == WheelLiveCounts && Set == WheelLiveSet) return;
+	TArray<FString> Items, Labels;
+	if (AOutlawsLevelActor* L = Level.Get()) L->GetWheelItems(Items, Labels);
+	const bool bSetChanged = Items != AllWheelItems || Set != WheelLiveSet;
+	WheelLiveCounts = Counts;
+	WheelLiveSet = Set;
+	AllWheelItemLabels = Labels;
+	if (bSetChanged)
+	{
+		AllWheelItems = Items;
+		WheelItemStart = FMath::Clamp(WheelItemStart, 0, FMath::Max(0, AllWheelItems.Num() - WheelItemsShown));
+		RebuildWheelSlots();
+		KeepWheelOverWorld();
+		WheelPick[0] = WheelPick[1] = -1;                  // (the lasers pick again: the slots may have moved)
+		++WheelLiveRebuilds;
+		UE_LOG(LogOutlaws, Log, TEXT("OLRT wheel live: laid out again (%d slots): %s"), WheelWeapon.Num(), *FString::Join(AllWheelItemLabels, TEXT(" | ")));
+	}
+	else
+	{
+		RefreshWheelCounts();
+		++WheelLiveRefreshes;
+		UE_LOG(LogOutlaws, Log, TEXT("OLRT wheel live: counts redrawn: %s"), *FString::Join(AllWheelItemLabels, TEXT(" | ")));
+	}
 }
 
 void AOutlawsPlayer::UpdateWheelArrows()
@@ -1577,6 +1689,7 @@ void AOutlawsPlayer::UpdateWheel()
 	{
 		return;
 	}
+	UpdateWheelLive();                   // (BUG-WHEELLIVE: a pickup, a shot, a bag used while it is open)
 	// it follows the head as the menu does: lazily, once the head has turned well away (real time: the
 	// world runs at half speed behind the wheel)
 	{
@@ -1819,6 +1932,7 @@ void AOutlawsPlayer::ReleaseWheel(int32 Hand)
 	}
 	else
 	{
+		WheelLiveNext = 0.0;             // (BUG-WHEELLIVE: what this hand took or used shows at once on the wheel still held)
 		UpdateWheel();
 	}
 }

@@ -750,6 +750,16 @@ private:
 	float WheelOpenMs = 0.f;
 	/** (BUG-WHEELHITCH) the base picture, 1608 px in the kpf: at 1024 with mips (the old switch: the kpf's as it is) */
 	class UTexture2D* WheelBaseTexture();
+	/** (BUG-WHEELLIVE) what the open wheel shows, as numbers: counts changed, the plates and labels are redrawn; a weapon or
+	 *  an item gained or lost, the slots laid out again (pooled).  -OLOldWheelLive: the snapshot taken at the open, as before */
+	static bool OldWheelLive();
+	void WheelLiveSignature(TArray<int32>& OutCounts, uint32& OutSet) const;
+	void RefreshWheelCounts();
+	void UpdateWheelLive();
+	TArray<int32> WheelLiveCounts;
+	uint32 WheelLiveSet = 0;
+	double WheelLiveNext = 0.0;
+	int32 WheelLiveRefreshes = 0, WheelLiveRebuilds = 0;     // (the probe reads them)
 	/** A picture from Common.kpf as a texture (cached; null when missing). */
 	class UTexture2D* KpfTexture(const FString& Path);
 	/** A flat picture facing the wheel's viewer, in the wheel art's unlit see-through material. */
