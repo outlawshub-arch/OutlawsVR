@@ -1118,7 +1118,21 @@ bool AOutlawsPlayer::ShowMenuPage(const FString& File, bool bPush)
 				Page->Items.Add(R);
 			};
 			Row(TEXT("Resolution"), TEXT("r_resolution"), false);
-			if (OutlawsDeviceProfile::RefreshRates().Num() > 0) Row(TEXT("Refresh Rate"), TEXT("r_refresh"), false);
+			if (OutlawsDeviceProfile::RefreshRates().Num() > 0)
+			{
+				Row(TEXT("Refresh Rate"), TEXT("r_refresh"), false);
+				// (REQ-REFRESHHINT, user 2 Nov) the headset said yes to 90 or 120 and stayed at 72 (the Quest's power saving): a
+				// note under the row, as the VR page's speed warning; the page is built again as it comes or goes (UpdateMenu)
+				const FString Hint = OutlawsDeviceProfile::RefreshHint();
+				if (!Hint.IsEmpty())
+				{
+					OutlawsMenu::FItem N;
+					N.Kind = OutlawsMenu::EItemKind::Heading;
+					N.Label = Hint;
+					N.Name = TEXT("r_refreshhint");
+					Page->Items.Add(N);
+				}
+			}
 			Row(TEXT("Lamp Lights"), TEXT("r_lamps"), false);
 			Row(TEXT("Object Detail"), TEXT("r_objdetail"), false);
 			// (QSPEED-5) the Quest 2 profile on a Quest 3, to see the Quest 2's look and speed (off by default)
@@ -1295,7 +1309,7 @@ FString AOutlawsPlayer::MenuRowText(int32 Index) const
 	case EItemKind::Dialog:
 		return I.Label + TEXT("  >");
 	case EItemKind::Heading:
-		if (I.Name == TEXT("vr_speedwarn")) return I.Label;          // (BUG-SPEEDWARN: a note, not a section)
+		if (I.Name == TEXT("vr_speedwarn") || I.Name == TEXT("r_refreshhint")) return I.Label;          // (BUG-SPEEDWARN: a note, not a section; REQ-REFRESHHINT)
 		return TEXT("- ") + I.Label + TEXT(" -");
 	case EItemKind::Select:
 	{
@@ -1597,7 +1611,9 @@ void AOutlawsPlayer::DrawMenuCanvas(UCanvas* C, int32 Width, int32 Height)
 		const FString RowText = MenuRows[r]->Text.ToString();
 		const int32 Item = MenuScroll + r - (MenuPage->Items.Num() > 0 ? 0 : 0);
 		// (BUG-SPEEDWARN) the speed warning: its two lines in the small font, in the warning's colour, in its row's place
-		if (!RowText.IsEmpty() && MenuPage->Items.IsValidIndex(Item - (MenuPage->Message.IsEmpty() ? 0 : 4)) && MenuPage->Items[Item - (MenuPage->Message.IsEmpty() ? 0 : 4)].Name == TEXT("vr_speedwarn"))
+		// (REQ-REFRESHHINT: the Graphics page's refresh note the same)
+		const int32 NoteI = Item - (MenuPage->Message.IsEmpty() ? 0 : 4);
+		if (!RowText.IsEmpty() && MenuPage->Items.IsValidIndex(NoteI) && (MenuPage->Items[NoteI].Name == TEXT("vr_speedwarn") || MenuPage->Items[NoteI].Name == TEXT("r_refreshhint")))
 		{
 			TArray<FString> Lines;
 			RowText.ParseIntoArrayLines(Lines);
@@ -2606,6 +2622,16 @@ void AOutlawsPlayer::UpdateMenu(float Dt)
 	{
 		return;
 	}
+	// (REQ-REFRESHHINT) the Graphics page again as the refresh note comes or goes (the headset's answer comes seconds after a press)
+	{
+		bool bRefreshRow = false, bNoteShown = false;
+		for (const OutlawsMenu::FItem& It : MenuPage->Items)
+		{
+			bRefreshRow |= It.Name == TEXT("r_refresh");
+			bNoteShown |= It.Name == TEXT("r_refreshhint");
+		}
+		if (bRefreshRow && bNoteShown == OutlawsDeviceProfile::RefreshHint().IsEmpty()) bMenuRebuild = true;
+	}
 	if (bMenuRebuild)
 	{
 		bMenuRebuild = false;
@@ -3347,7 +3373,7 @@ float AOutlawsPlayer::RowZ(int32 r) const
 			// (BUG-SPEEDWARN: the speed warning is a note under its row, no section; REQ-RANDOCRITTERS: the Randomizer's foot note too,
 			// so its seven rows sit on the sheet without a scroll)
 			if (k >= First && MenuPage->Items.IsValidIndex(i) && ((MenuPage->Items[i].Kind == OutlawsMenu::EItemKind::Heading && MenuPage->Items[i].Name != TEXT("vr_speedwarn")
-				&& MenuPage->Items[i].Name != TEXT("rando_note"))
+				&& MenuPage->Items[i].Name != TEXT("rando_note") && MenuPage->Items[i].Name != TEXT("r_refreshhint"))
 				|| MenuPage->Items[i].Name.StartsWith(TEXT("defaults:")))) Z -= 1.8f;
 		}
 	}

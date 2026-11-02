@@ -29,6 +29,18 @@ namespace OutlawsXRRefresh
 	OUTLAWSXR_API FString StatusText();
 	/** The display's refresh-changed events seen so far (the game logs StatusText when it moves). */
 	OUTLAWSXR_API int32 ChangeCount();
+	/** REQ-REFRESHHINT (user 2 Nov: the Quest's power saving kept the display at 72 while every ask of 90 and 120 came back
+	 *  XR_SUCCESS, with no change event): true once an ask above 72 succeeded and the display was still at 72 at Maintain's
+	 *  3rd retry (about 9 s) with no change event since the ask. Cleared by a change event, the display reaching the rate
+	 *  asked, or an ask of 72 or under. OutWhy: what set or cleared it last. */
+	OUTLAWSXR_API bool Declined(FString* OutWhy = nullptr);
+#if !UE_BUILD_SHIPPING
+	/** (-OLRefreshHintProbe) a stand-in runtime with no headset: rates 72 80 90 120, every ask succeeds and the display
+	 *  stays at 72; false puts back what was there. */
+	OUTLAWSXR_API void TestFakeRuntime(bool bOn);
+	/** (-OLRefreshHintProbe) the stand-in's display refresh-changed event, as OnEvent takes the runtime's. */
+	OUTLAWSXR_API void TestFakeChange(float FromHz, float ToHz);
+#endif
 }
 
 /**

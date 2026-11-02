@@ -453,6 +453,25 @@ TArray<float> OutlawsDeviceProfile::RefreshRates()
 	return Rates;
 }
 
+bool OutlawsDeviceProfile::RefreshHintFor(bool bQuest)
+{
+	static const bool bOld = OLFlags::Param(TEXT("OLOldRefreshHint"));
+	return bQuest && !bOld && OutlawsXRRefresh::Declined();
+}
+
+FString OutlawsDeviceProfile::RefreshHint()
+{
+	// (the headset's own power saving: PC VR has none of it; -OLRefreshHintProbe stands in for the Quest on a desktop test)
+#if PLATFORM_ANDROID
+	const bool bQuest = true;
+#elif WITH_OUTLAWS_TESTS
+	static const bool bQuest = OLFlags::Param(TEXT("OLRefreshHintProbe"));
+#else
+	const bool bQuest = false;
+#endif
+	return RefreshHintFor(bQuest) ? FString(TEXT("Your headset stayed at 72 Hz.\nCheck that power saving is off in the Quest settings.")) : FString();
+}
+
 bool OutlawsDeviceProfile::IsRow(const FString& Name)
 {
 	return Name == TEXT("r_resolution") || Name == TEXT("r_refresh") || Name == TEXT("r_lamps") || Name == TEXT("r_perfhud") || Name == TEXT("r_grabglow") || Name == TEXT("r_objdetail") || Name == TEXT("r_pcview")

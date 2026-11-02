@@ -2285,6 +2285,16 @@ void AOutlawsLevelActor::Tick(float DeltaSeconds)
 		UE_LOG(LogOutlaws, Log, TEXT("OLRT %s (%s)"), *OutlawsXRRefresh::StatusText(), bReAsked ? TEXT("asked again") : TEXT("the display's rate changed"));
 		RefreshChangesSeen = RefreshChanges;
 	}
+	// (REQ-REFRESHHINT) the headset said yes and stayed at 72: one line as the Graphics page's note sets and one as it clears
+	static bool bRefreshDeclinedSeen = false;
+	if (OutlawsXRRefresh::Declined() != bRefreshDeclinedSeen)
+	{
+		FString DeclinedWhy;
+		bRefreshDeclinedSeen = OutlawsXRRefresh::Declined(&DeclinedWhy);
+		UE_LOG(LogOutlaws, Log, TEXT("OLRT refresh hint: %s (%s); the Graphics page's note %s"), bRefreshDeclinedSeen ? TEXT("set") : TEXT("cleared"), *DeclinedWhy,
+			!bRefreshDeclinedSeen ? TEXT("gone") : !OutlawsDeviceProfile::RefreshHint().IsEmpty() ? TEXT("shown")
+			: OutlawsDeviceProfile::RefreshHintFor(true) ? TEXT("not shown (not the Quest)") : TEXT("not shown (-OLOldRefreshHint)"));
+	}
 	OL_PERF_SCOPE("Level tick (total)");
 	Super::Tick(DeltaSeconds);
 	if (bMapLoadPending) return;               // (BUG-RESPAWNCRASH: L_Runtime is loading again; nothing of this world goes on)

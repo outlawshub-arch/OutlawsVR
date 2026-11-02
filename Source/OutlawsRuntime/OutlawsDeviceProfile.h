@@ -62,6 +62,11 @@ namespace OutlawsDeviceProfile
 	OUTLAWSRUNTIME_API float RefreshRate();
 	/** The rates offered (empty: no Refresh Rate row). -OLRefreshRates=60,72,90 stands in on a desktop test. */
 	OUTLAWSRUNTIME_API TArray<float> RefreshRates();
+	/** REQ-REFRESHHINT (user 2 Nov: the Quest's power saving held the display at 72 whatever was asked): the Graphics page's
+	 *  note under the Refresh Rate row while OutlawsXRRefresh::Declined, on the Quest only (empty on the PC, with
+	 *  -OLOldRefreshHint, or while the rate is as asked). RefreshHintFor is its gate with the platform given (the probe's). */
+	OUTLAWSRUNTIME_API FString RefreshHint();
+	OUTLAWSRUNTIME_API bool RefreshHintFor(bool bQuest);
 
 	/** QSPEED-5: the Graphics page's Quest 2 Mode row is shown (every headset but a Quest 2, and the PC); its setting. */
 	OUTLAWSRUNTIME_API bool ShowQuest2ModeRow();

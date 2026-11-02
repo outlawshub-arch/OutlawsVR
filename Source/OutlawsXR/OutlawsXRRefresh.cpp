@@ -34,6 +34,11 @@ namespace
 		float ChangeFrom = 0.f, ChangeTo = 0.f;
 		int32 Changes = 0;
 		int32 LastGetResult = 1;
+		// REQ-REFRESHHINT: the headset said yes and stayed at 72 (Declined)
+		bool bDeclined = false;
+		bool bAsksOk = true;           // every ask since the request (or the session start, or a reapply) succeeded
+		int32 ChangesAtAsk = 0;        // Changes then
+		FString DeclinedWhy;
 		// Q2PROFILE: XR_EXT_performance_settings (the CPU and GPU clock levels)
 		PFN_xrPerfSettingsSetPerformanceLevelEXT SetPerf = nullptr;
 		int32 PerfWanted = 0;          // 0 none, 1..4 power savings .. boost (OutlawsXRPerf::Request)
@@ -94,8 +99,43 @@ namespace
 		S.LastAskResult = int32(R);
 		S.LastAskWhy = Why;
 		++S.Asks;
+		S.bAsksOk &= XR_SUCCEEDED(R);
 		return R;
 	}
+
+	// (the lock held; REQ-REFRESHHINT) a new stretch of asks: the change count and the asks' results from here
+	void OlxrStartAsks(FOlxrRefreshState& S)
+	{
+		S.bAsksOk = true;
+		S.ChangesAtAsk = S.Changes;
+	}
+
+	void OlxrClearDeclined(FOlxrRefreshState& S, const FString& Why)
+	{
+		if (!S.bDeclined) return;
+		S.bDeclined = false;
+		S.DeclinedWhy = Why;
+	}
+
+	// (the lock held) the display refresh-changed event, the runtime's or the probe's stand-in
+	void OlxrChanged(FOlxrRefreshState& S, float From, float To)
+	{
+		S.Current = To;
+		S.ChangeFrom = From;
+		S.ChangeTo = To;
+		++S.Changes;
+		OlxrClearDeclined(S, FString::Printf(TEXT("a change event, %.0f -> %.0f Hz"), From, To));
+		OlxrLogRate(S, *FString::Printf(TEXT("changed from %.0f Hz"), From));
+	}
+
+#if !UE_BUILD_SHIPPING
+	// (-OLRefreshHintProbe) the stand-in runtime: every ask succeeds, the display stays where it is
+	float GOlxrFakeHz = 72.f;
+	XrResult XRAPI_CALL OlxrFakeAsk(XrSession, float) { return XR_SUCCESS; }
+	XrResult XRAPI_CALL OlxrFakeGet(XrSession, float* Hz) { if (Hz) *Hz = GOlxrFakeHz; return XR_SUCCESS; }
+	struct FOlxrSaved { bool bOn = false; XrSession Session = XR_NULL_HANDLE; PFN_xrGetDisplayRefreshRateFB Get = nullptr; PFN_xrRequestDisplayRefreshRateFB Ask = nullptr;
+		TArray<float> Rates; float Initial = 0.f, Current = 0.f, Wanted = 0.f; PFN_xrPerfSettingsSetPerformanceLevelEXT SetPerf = nullptr; } GOlxrSaved;
+#endif
 
 	class FOutlawsXRExtension : public IOpenXRExtensionPlugin
 	{
@@ -156,6 +196,7 @@ namespace
 			UE_LOG(LogOutlawsXR, Log, TEXT("OLRT display refresh: offered %s Hz, now %.0f Hz"), *OlxrRatesText(S.Rates), S.Current);
 			if (S.Wanted > 0.f && OlxrOffered(S, S.Wanted))
 			{
+				OlxrStartAsks(S);
 				const XrResult R = OlxrAsk(S, S.Wanted, TEXT("session start"));
 				S.Retries = 0;
 				S.LastAsk = FPlatformTime::Seconds();
@@ -209,11 +250,7 @@ namespace
 			const XrEventDataDisplayRefreshRateChangedFB* E = reinterpret_cast<const XrEventDataDisplayRefreshRateChangedFB*>(InHeader);
 			FOlxrRefreshState& S = OlxrState();
 			FScopeLock L(&S.Lock);
-			S.Current = E->toDisplayRefreshRate;
-			S.ChangeFrom = E->fromDisplayRefreshRate;
-			S.ChangeTo = E->toDisplayRefreshRate;
-			++S.Changes;
-			OlxrLogRate(S, *FString::Printf(TEXT("changed from %.0f Hz"), E->fromDisplayRefreshRate));
+			OlxrChanged(S, E->fromDisplayRefreshRate, E->toDisplayRefreshRate);
 		}
 	};
 
@@ -265,6 +302,8 @@ bool OutlawsXRRefresh::Request(float Hz)
 	FOlxrRefreshState& S = OlxrState();
 	FScopeLock L(&S.Lock);
 	if (Hz <= 0.f) return false;
+	// (REQ-REFRESHHINT: 72 or under asked, there is nothing for power saving to hold back)
+	if (Hz < 72.5f) OlxrClearDeclined(S, FString::Printf(TEXT("an ask of %.0f Hz"), Hz));
 	// (kept even before the session is up, so the session start asks for it; nothing is asked without the extension)
 	S.Wanted = Hz;
 	if (!S.Ask || S.Session == XR_NULL_HANDLE) return false;
@@ -276,6 +315,7 @@ bool OutlawsXRRefresh::Request(float Hz)
 	}
 	S.Retries = 0;
 	S.LastAsk = FPlatformTime::Seconds();
+	OlxrStartAsks(S);
 	const XrResult R = OlxrAsk(S, Hz, TEXT("set"));
 	float Now = 0.f;
 	if (S.Get && XR_SUCCEEDED(S.Get(S.Session, &Now))) S.Current = Now;
@@ -294,12 +334,24 @@ bool OutlawsXRRefresh::Maintain(double Now)
 	if (!XR_SUCCEEDED(G)) return false;
 	S.Current = Cur;
 	// (there: the count starts again, so a rate pulled back later is asked for again)
-	if (FMath::Abs(Cur - S.Wanted) < 0.5f) { S.Retries = 0; S.LastAsk = Now; return false; }
+	if (FMath::Abs(Cur - S.Wanted) < 0.5f)
+	{
+		S.Retries = 0;
+		S.LastAsk = Now;
+		OlxrClearDeclined(S, FString::Printf(TEXT("the display at %.0f Hz, as asked"), Cur));
+		return false;
+	}
 	if (!OlxrOffered(S, S.Wanted)) return false;
 	S.LastAsk = Now;
 	++S.Retries;
 	const XrResult R = OlxrAsk(S, S.Wanted, *FString::Printf(TEXT("still %.0f Hz, try %d"), Cur, S.Retries));
 	UE_LOG(LogOutlawsXR, Log, TEXT("OLRT display refresh: still %.0f Hz, asked again for %.0f Hz (try %d, result %d)"), Cur, S.Wanted, S.Retries, int32(R));
+	// (REQ-REFRESHHINT) the 3rd retry, about 9 s on: every ask said yes, no change event came and the display is at 72 still
+	if (S.Retries == 3 && !S.bDeclined && S.Wanted > 72.5f && FMath::Abs(Cur - 72.f) < 0.5f && S.bAsksOk && S.Changes == S.ChangesAtAsk)
+	{
+		S.bDeclined = true;
+		S.DeclinedWhy = FString::Printf(TEXT("asked %.0f Hz, every ask succeeded, the display at %.0f Hz after %d retries, no change event"), S.Wanted, Cur, S.Retries);
+	}
 	return true;
 }
 
@@ -310,6 +362,7 @@ bool OutlawsXRRefresh::Reapply(const TCHAR* Why)
 	if (S.Wanted <= 0.f || !S.Ask || S.Session == XR_NULL_HANDLE || !OlxrOffered(S, S.Wanted)) return false;
 	S.Retries = 0;
 	S.LastAsk = FPlatformTime::Seconds();
+	OlxrStartAsks(S);
 	const XrResult R = OlxrAsk(S, S.Wanted, Why);
 	float Now = 0.f;
 	if (S.Get && XR_SUCCEEDED(S.Get(S.Session, &Now))) S.Current = Now;
@@ -347,6 +400,58 @@ int32 OutlawsXRRefresh::ChangeCount()
 	FScopeLock L(&S.Lock);
 	return S.Changes;
 }
+
+bool OutlawsXRRefresh::Declined(FString* OutWhy)
+{
+	FOlxrRefreshState& S = OlxrState();
+	FScopeLock L(&S.Lock);
+	if (OutWhy) *OutWhy = S.DeclinedWhy;
+	return S.bDeclined;
+}
+
+#if !UE_BUILD_SHIPPING
+void OutlawsXRRefresh::TestFakeRuntime(bool bOn)
+{
+	FOlxrRefreshState& S = OlxrState();
+	FScopeLock L(&S.Lock);
+	if (bOn == GOlxrSaved.bOn) return;
+	if (bOn)
+	{
+		GOlxrSaved = { true, S.Session, S.Get, S.Ask, S.Rates, S.Initial, S.Current, S.Wanted, S.SetPerf };
+		GOlxrFakeHz = 72.f;
+		S.SetPerf = nullptr;                                            // (nor the clock levels)
+		S.Session = reinterpret_cast<XrSession>(UPTRINT(0x0F1));      // (never handed to a real runtime: Get and Ask are the stand-in's)
+		S.Get = &OlxrFakeGet;
+		S.Ask = &OlxrFakeAsk;
+		S.Rates = { 72.f, 80.f, 90.f, 120.f };
+		S.Initial = S.Current = 72.f;
+		S.Wanted = 0.f;
+		S.Retries = 0;
+		S.bDeclined = false;
+		S.DeclinedWhy.Reset();
+		return;
+	}
+	S.Session = GOlxrSaved.Session;
+	S.Get = GOlxrSaved.Get;
+	S.Ask = GOlxrSaved.Ask;
+	S.Rates = GOlxrSaved.Rates;
+	S.Initial = GOlxrSaved.Initial;
+	S.Current = GOlxrSaved.Current;
+	S.Wanted = GOlxrSaved.Wanted;
+	S.SetPerf = GOlxrSaved.SetPerf;
+	S.bDeclined = false;
+	GOlxrSaved = FOlxrSaved();
+}
+
+void OutlawsXRRefresh::TestFakeChange(float FromHz, float ToHz)
+{
+	FOlxrRefreshState& S = OlxrState();
+	FScopeLock L(&S.Lock);
+	if (!GOlxrSaved.bOn) return;
+	GOlxrFakeHz = ToHz;
+	OlxrChanged(S, FromHz, ToHz);
+}
+#endif
 
 bool OutlawsXRPerf::IsAvailable()
 {
