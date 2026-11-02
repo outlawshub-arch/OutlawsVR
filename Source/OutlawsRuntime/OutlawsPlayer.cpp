@@ -2114,8 +2114,21 @@ void AOutlawsPlayer::Locomotion(float Dt, bool& bOutMoving)
 	// the floor's own grip (the level's FRICTION per sector): a slope slides the player down it at gravity
 	// times its steepness times (1 - friction), unless it is NOSLIP; low friction also skates on the flat
 	// (ice). Friction 1, nearly every floor, grips: no slide (user 2026-09-27)
+	// (BUG-ICEJUMP, user 2 Nov: "if it's wrong here, it's off everywhere there's a slide"; icecaves' ice slope 215 never made
+	// the jump over the pit 232 to 228) every floor under friction 1, as the original's object physics: the push is gravity
+	// times the slope's gradient (tan, not sin) times (1 - friction), the only drag friction x 80 units/s^2 (2400 cm/s^2)
+	// against the floor's own motion (its VELOCITY carries the player apart, the level's push, so this is the body's own
+	// speed), and no top speed: the engine's braking (8 x grip friction, 3000 x grip deceleration) stopped a slide at the walk
+	// or run speed, at 312 cm/s with the stick let go, and crouching (a lower top speed) braked it.  Now the walk, run and
+	// crouch speeds only bound what the stick adds, the drag takes off what is over them: none on ice (friction 0), so neither
+	// crouch nor letting go brakes a slide.  The stick's push scales with the friction, with a small floor (SlideSteerFloor)
+	// so a little steering stays on ice (the user's "steer a little"; the original's input scaling there, inferred, gives
+	// none).  -OLOldSlide: every old value
 	if (M->IsMovingOnGround() && !bSwimming && !IsClimbing())
 	{
+		static const bool bOldSlide = OLFlags::Param(TEXT("OLOldSlide"));
+		constexpr float SlideSteerFloor = 0.03f;      // the stick's push on a friction-0 floor, as a part of its full push
+		constexpr float SlideDragPerFriction = 2400.f; // cm/s^2 at friction 1 (the original's FRICTION x 80 units/s^2)
 		float Friction = 1.f;
 		bool bSlides = false;
 		FVector Down = FVector::ZeroVector;
@@ -2124,17 +2137,29 @@ void AOutlawsPlayer::Locomotion(float Dt, bool& bOutMoving)
 		{
 			if (!LF->FloorUnder(Feet, Friction, bSlides, Down)) Friction = 1.f;
 		}
-		const float Grip = FMath::Max(0.03f, Friction);
+		const float Grip = FMath::Max(SlideSteerFloor, Friction);
 		// VR on a gripping floor: speeds switch on and off at once (comfort; user 2026-09-29); ice and mud keep their slide
 		const bool bInstant = bVR && Grip >= 0.999f;
-		M->GroundFriction = 8.f * Grip;
-		M->BrakingDecelerationWalking = bInstant ? VRInstantAcceleration : 3000.f * Grip;
+		const bool bSlideFloor = !bOldSlide && Friction < 0.999f;
+		M->GroundFriction = bSlideFloor ? 0.f : 8.f * Grip;
+		M->BrakingDecelerationWalking = bInstant ? VRInstantAcceleration : bSlideFloor ? SlideDragPerFriction * FMath::Max(0.f, Friction) : 3000.f * Grip;
 		M->MaxAcceleration = bInstant ? VRInstantAcceleration : (bVR ? VRAcceleration : Acceleration) * Grip;   // no traction to push off on ice or mud
+		// (the desktop's crouch is the engine's, which holds a crouched body at a ledge: a crouched slide stopped dead at 78's lip)
+		M->bCanWalkOffLedgesWhenCrouching = bSlideFloor;
 		const double Tan = Down.Size();
 		if (bSlides && Friction < 0.999f && Tan > 1e-3)
 		{
-			const double SinA = Tan / FMath::Sqrt(1.0 + Tan * Tan);
-			const float Slide = float(FMath::Abs(M->GetGravityZ()) * SinA * (1.0 - Friction));
+			const double Steep = bOldSlide ? Tan / FMath::Sqrt(1.0 + Tan * Tan) : Tan;
+			float Slide = float(FMath::Abs(M->GetGravityZ()) * Steep * (1.0 - Friction));
+			// (a slope steep enough to beat the drag slides from rest: the drag taken off the push instead of braked, as the
+			// engine's braking stops dead any speed under 10 cm/s it leaves, so a push of under 10 cm/s a frame over the drag,
+			// civlwar1's 0.05 slopes at the Quest's 72 Hz, never got going)
+			const float Drag = M->BrakingDecelerationWalking;
+			if (bSlideFloor && !bInstant && Slide > Drag)
+			{
+				Slide -= Drag;
+				M->BrakingDecelerationWalking = 0.f;
+			}
 			M->AddImpulse(Down / Tan * Slide * Dt, true);
 		}
 	}
