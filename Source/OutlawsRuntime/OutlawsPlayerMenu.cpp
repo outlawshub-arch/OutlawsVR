@@ -3734,11 +3734,12 @@ void AOutlawsPlayer::DrawFrontCanvas(UCanvas* C, int32 Width, int32 Height)
 #endif
 		// (the address, the line to read out or type, larger than the rest)
 		const bool bBigFirst = File == TEXT("#coophost") || File == TEXT("#coopjoin");
-		// (BUG-LASTMATCHFIT, 3 Nov) a line wider than the parchment (x 100..1530 about the page's middle, 815) is drawn smaller to
-		// fit it, a margin in from each side: the locked lobby's "Last match: <game> on <map>  (random map and game)" ran past
-		// it with a long map name (Hargrove's Pattern Repair).  -OLOldLastMatchFit: every line at its size, as before
+		// (BUG-LASTMATCHFIT, 3 Nov) a line wider than the parchment is drawn smaller to fit it: 1200 about the page's middle (815),
+		// clear of the art's torn right edge (about x 1430 at the lines' height; the fit check's 1530 is the art's frame), room
+		// for the pages' other lines at their size (bar the host's 76-letter shared-address Internet note).  The locked lobby's "Last match: <game> on <map>  (random map and game)"
+		// ran past it with a long map name (Hargrove's Pattern Repair).  -OLOldLastMatchFit: every line at its size, as before
 		static const bool bOldLastMatchFit = OLFlags::Param(TEXT("OLOldLastMatchFit"));
-		const float LineMaxW = bOldLastMatchFit ? 0.f : 1380.f;
+		const float LineMaxW = bOldLastMatchFit ? 0.f : 1200.f;
 		float Y = 362.f;
 		for (int32 k = 0; k < Lines.Num(); ++k)
 		{

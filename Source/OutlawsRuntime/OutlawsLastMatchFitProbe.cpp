@@ -2,9 +2,10 @@
 // map and game)" ran past the parchment with a long map name):
 //   -OLShots -OLLevel=town -OLNoFrontEnd -OLLastMatchFitProbe [-OLOldLastMatchFit] [-ResX=1832 -ResY=1920 -ForceRes]
 // The co-op Join page is opened with one last-match line drawn under its own lines at a time, as the lobby draws its lines (the
-// same font and place), and each is checked to sit on the parchment (AOutlawsPlayer::MenuPageFits): the longest stock line (Kill
-// The Fool With The Chicken on Hargrove's Pattern Repair), the reported one (Death Match on it), every native map listed (when
-// any are mounted), a long custom map's title, and a short one, which keeps its size.  One line a case "OLSHOT lastmatchfit
+// same font and place), and each is checked to sit on the parchment (AOutlawsPlayer::MenuPageFits, and clear of the art's torn
+// right edge): the longest stock line (Kill The Fool With The Chicken on Hargrove's Pattern Repair), the reported one (Death
+// Match on it), every native map listed (when any are mounted), a long custom map's title, a short one, and the longest lobby
+// line from before (its size kept).  One line a case "OLSHOT lastmatchfit
 // case PASS|FAIL: ...", then "OLSHOT lastmatchfit RESULT".  -OLOldLastMatchFit: every line at its size, as before (the long
 // cases fail there).
 
@@ -55,6 +56,7 @@ OL_SHOT_TEST(OLLastMatchFitProbe, 1720)
 		for (const FString& N : Natives) FitCases.Add(Line(EOutlawsGameClass::Chicken, N));
 		FitCases.Add(Line(EOutlawsGameClass::Chicken, TEXT("The Long Custom Map Of The Seven Canyons Revisited")));
 		FitCases.Add(TEXT("Last match: Death Match on Dry Gulch"));
+		FitCases.Add(TEXT("Enter Game when you are ready: the host's Start takes you in"));     // (the longest lobby line before: its size kept)
 		if (!bMenuOpen) OpenMenu();
 		ShowMenuPage(TEXT("#coopjoin"), true);
 		Case = 0;
@@ -77,8 +79,11 @@ OL_SHOT_TEST(OLLastMatchFitProbe, 1720)
 		OutlawsLastMatchFit::ProbeLines = { FitCases[Case] };
 		RedrawMenu();
 		FString Said;
-		const bool bFits = MenuPageFits(Said);
-		UE_LOG(LogOutlaws, Display, TEXT("OLSHOT lastmatchfit case %s: \"%s\" (%d letters) fits the parchment (%s)"), bFits ? TEXT("PASS") : TEXT("FAIL"), *FitCases[Case], FitCases[Case].Len(), *Said);
+		// the page's fit check (the art's frame, x 100..1530) and the parchment itself: clear of its torn right edge (x 1430 at
+		// the lines' height) and centred, the line's ink x 215..1415; a line that fits keeps its size (no wider than 1200 shrunk)
+		const bool bFits = MenuPageFits(Said) && FrontInk.bIsValid && FrontInk.Min.X >= 214.f && FrontInk.Max.X <= 1416.f;
+		UE_LOG(LogOutlaws, Display, TEXT("OLSHOT lastmatchfit case %s: \"%s\" (%d letters) fits the parchment, ink x %.0f..%.0f, %.0f wide (%s)"), bFits ? TEXT("PASS") : TEXT("FAIL"), *FitCases[Case],
+			FitCases[Case].Len(), FrontInk.Min.X, FrontInk.Max.X, FrontInk.Max.X - FrontInk.Min.X, *Said);
 		if (bFits) ++Passes; else ++Fails;
 		if (Case == 0)
 		{
