@@ -478,7 +478,22 @@ bool OutlawsDeviceProfile::IsRow(const FString& Name)
 		|| Name == TEXT("r_quest2mode");
 }
 
-bool OutlawsDeviceProfile::ShowQuest2ModeRow() { return !bOldpModelIsQuest2; }
+bool OutlawsDeviceProfile::IsReleaseBuild() { return OL_RELEASE_BUILD != 0; }
+
+bool OutlawsDeviceProfile::ShowQuest2ModeRowFor(bool bRelease) { return !bRelease && !bOldpModelIsQuest2; }
+
+bool OutlawsDeviceProfile::ShowQuest2ModeRow()
+{
+	// (REQ-Q2ROWHIDE, user 2 Nov) the row is gone from the release drop's builds and stays in the user's own (night.sh's: no
+	// OL_RELEASE_BUILD); nothing in the menu or on the command line turns it.  -OLQ2RowHideProbe stands in for a release
+	// build in a test build (none of that in Shipping)
+#if WITH_OUTLAWS_TESTS
+	static const bool bProbeRelease = OLFlags::Param(TEXT("OLQ2RowHideProbe")) && !OLFlags::Param(TEXT("OLQ2RowHideOff"));
+#else
+	constexpr bool bProbeRelease = false;
+#endif
+	return ShowQuest2ModeRowFor(IsReleaseBuild() || bProbeRelease);
+}
 bool OutlawsDeviceProfile::Quest2Mode() { return bOldpQuest2Mode; }
 
 FString OutlawsDeviceProfile::RowValue(const FString& Name)

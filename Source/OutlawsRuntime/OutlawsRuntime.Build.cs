@@ -12,6 +12,10 @@ public class OutlawsRuntime : ModuleRules
 		// the -OL test code (the test files, ShotTest, SmokeTest and their Tick dispatch): built in Development, Debug and the
 		// editor, none of it in a Shipping build
 		PublicDefinitions.Add("WITH_OUTLAWS_TESTS=" + (Target.Configuration == UnrealTargetConfiguration.Shipping ? "0" : "1"));
+		// (REQ-Q2ROWHIDE, user 2 Nov) the release drop's builds: OL_RELEASE_BUILD=1 in the environment of the package build (off
+		// by default, so night.sh's own builds for the user leave it off).  UBT keeps its makefile when only the environment
+		// changes, so a release package build also gives UBT an argument the nightly's does not (-ubtargs="... -NoUBTMakefiles")
+		PrivateDefinitions.Add("OL_RELEASE_BUILD=" + (System.Environment.GetEnvironmentVariable("OL_RELEASE_BUILD") == "1" ? "1" : "0"));
 		PublicDependencyModuleNames.AddRange(new string[] { "Core", "CoreUObject", "Engine", "InputCore", "Slate", "SlateCore", "RenderCore", "RHI", "ProceduralMeshComponent", "HeadMountedDisplay", "AudioMixer", "MediaAssets", "Media", "Json" });
 		PrivateDependencyModuleNames.Add("Sockets");          // co-op: the machine's local network address for the lobby
 		PrivateDependencyModuleNames.Add("HTTP");             // co-op (R8): the host's internet address for its lobby

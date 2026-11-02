@@ -68,8 +68,13 @@ namespace OutlawsDeviceProfile
 	OUTLAWSRUNTIME_API FString RefreshHint();
 	OUTLAWSRUNTIME_API bool RefreshHintFor(bool bQuest);
 
-	/** QSPEED-5: the Graphics page's Quest 2 Mode row is shown (every headset but a Quest 2, and the PC); its setting. */
+	/** QSPEED-5: the Graphics page's Quest 2 Mode row is shown (every headset but a Quest 2, and the PC); its setting.
+	 *  REQ-Q2ROWHIDE: never in a release build (IsReleaseBuild); ShowQuest2ModeRowFor is the rule. */
 	OUTLAWSRUNTIME_API bool ShowQuest2ModeRow();
+	OUTLAWSRUNTIME_API bool ShowQuest2ModeRowFor(bool bRelease);
+	/** REQ-Q2ROWHIDE: this build is the release drop's (OL_RELEASE_BUILD=1 in the environment of its package build, read by
+	 *  OutlawsRuntime.Build.cs); the user's own builds (night.sh's) are not. */
+	OUTLAWSRUNTIME_API bool IsReleaseBuild();
 	OUTLAWSRUNTIME_API bool Quest2Mode();
 
 	/** The menu: is this one of our rows, its value as shown, a press (next value; returns a one-line hint). */
