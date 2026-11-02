@@ -4,6 +4,7 @@
 #include "Misc/Paths.h"
 #include "Misc/ScopeLock.h"
 #include "HAL/PlatformFileManager.h"
+#include "HAL/FileManager.h"
 #include "GenericPlatform/GenericPlatformFile.h"
 #include "Misc/App.h"
 #include "Misc/CommandLine.h"
@@ -130,6 +131,44 @@ int32 FOutlawsAssets::Open(const FString& InRoot)
 		}
 	}
 	UE_LOG(LogOutlaws, Log, TEXT("Opened %d LAB archives under %s (%d names)"), Labs.Num(), *Root, Index.Num());
+	// (REQ-MAPQUICK, user 2 Nov: the 19 community maps playable now) every <native root>/<map>/*.lab after the stock order, at
+	// the LOWEST priority: a stock name stays the stock file, a map's own names (its .lvt, .inf, .obt, .itm, new textures) are
+	// found.  The quick step only: the per-map overlay of REQ-NATIVEMAPS replaces it (the original puts the level's LAB first,
+	// so an overriding map shows the stock art here, and the first map mounted wins a name two maps share: ColdWar and
+	// Frostbite share 20).  -OLNoNativeMaps: none.
+	NumStockLabs = Labs.Num();
+	NativeRoot.Reset();
+	if (NumStockLabs > 0)
+	{
+		const FString Natives = NativeMapsRoot();
+		if (!Natives.IsEmpty())
+		{
+			NativeRoot = Natives;
+			TArray<FString> Dirs;
+			IFileManager::Get().FindFiles(Dirs, *(Natives / TEXT("*")), false, true);
+			Dirs.Sort([](const FString& A, const FString& B) { return A.ToLower() < B.ToLower(); });
+			for (const FString& D : Dirs)
+			{
+				TArray<FString> Files;
+				IFileManager::Get().FindFiles(Files, *(Natives / D / TEXT("*.lab")), true, false);
+				Files.Sort([](const FString& A, const FString& B) { return A.ToLower() < B.ToLower(); });
+				for (const FString& F : Files)
+				{
+					TSharedPtr<FOutlawsLabFile> Lab = MakeShared<FOutlawsLabFile>();
+					if (!Lab->Open(Natives / D / F)) continue;
+					const int32 LabIdx = Labs.Add(Lab);
+					for (const TPair<FString, int32>& Kv : Lab->GetIndex())
+					{
+						if (!Index.Contains(Kv.Key))
+						{
+							Index.Add(Kv.Key, TPair<int32, int32>(LabIdx, Kv.Value));
+						}
+					}
+				}
+			}
+			UE_LOG(LogOutlaws, Log, TEXT("OLRT native maps: %d LABs from %s (%d names in all)"), Labs.Num() - NumStockLabs, *Natives, Index.Num());
+		}
+	}
 	return Labs.Num();
 }
 
@@ -209,12 +248,35 @@ void FOutlawsAssets::ListByExtension(const FString& LowerExt, TArray<FString>& O
 {
 	for (const TPair<FString, TPair<int32, int32>>& Kv : Index)
 	{
-		if (Kv.Key.EndsWith(LowerExt))
+		// (REQ-MAPQUICK) the install's names only: the level pickers, the item tables and the whole-install scans stay as they
+		// were with the native maps mounted (their files are found by name; ListMaps lists the maps from their RCMs)
+		if (Kv.Key.EndsWith(LowerExt) && Kv.Value.Key < NumStockLabs)
 		{
 			Out.Add(Kv.Key);
 		}
 	}
 	Out.Sort();
+}
+
+FString FOutlawsAssets::NativeMapsRoot()
+{
+	// (REQ-MAPQUICK) the MenuOverlay lookup's order (OutlawsMenuDoc.cpp FSource::Load): the command line, the settings file
+	// (editor runs), the PC package's Tools folder, then the headset's files folder (Install on Quest pushes it there)
+	if (OLFlags::Param(TEXT("OLNoNativeMaps"))) return FString();
+	TArray<FString> Tries;
+	FString Arg;
+	if (OLFlags::Value(TEXT("OLNativeMaps"), Arg, /*bShouldStopOnSeparator*/ false)) Tries.Add(FPaths::ConvertRelativePathToFull(Arg.TrimQuotes()));
+	const TMap<FString, FString> Settings = AOutlawsLevelActor::ReadSettings();
+	if (const FString* Set = Settings.Find(TEXT("NativeMapsPath"))) Tries.Add(FPaths::ConvertRelativePathToFull(Set->TrimQuotes()));
+	Tries.Add(FPaths::ConvertRelativePathToFull(FPaths::Combine(FPaths::RootDir(), TEXT("Tools"), TEXT("NativeMaps"))));
+#if PLATFORM_ANDROID
+	Tries.Add(FPaths::ConvertRelativePathToFull(FPaths::Combine(FPaths::ProjectPersistentDownloadDir(), TEXT("Outlaws"), TEXT("NativeMaps"))));
+#endif
+	for (const FString& T : Tries)
+	{
+		if (!T.IsEmpty() && FPaths::DirectoryExists(T)) return T;
+	}
+	return FString();
 }
 
 bool FOutlawsAssets::LooksLikeInstall(const FString& Dir)

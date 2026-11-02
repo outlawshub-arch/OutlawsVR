@@ -221,12 +221,57 @@ void OutlawsMpHost::ListMaps(const FOutlawsAssets* Assets, TArray<FOutlawsMpMap>
 		Out.Add(M);
 	}
 	const int32 NumStock = Out.Num();
+	int32 NoLab = 0;
+	// (REQ-MAPQUICK, user 2 Nov) the native maps: <native root>/<map>/<name>.rcm beside <name>.lab, whose LABs FOutlawsAssets::Open
+	// mounted (none with -OLNoNativeMaps).  Named from the RCM; the BUNKERS rule as for the stock ones (its level's .lvt in some
+	// LAB).  Before the game folder's custom maps, so a native wins over a custom copy of the same RCM.
+	const FString NativeRoot = Assets->GetNativeRoot();
+	if (!NativeRoot.IsEmpty())
+	{
+		TArray<FString> Dirs;
+		IFileManager::Get().FindFiles(Dirs, *(NativeRoot / TEXT("*")), false, true);
+		Dirs.Sort([](const FString& A, const FString& B) { return A.ToLower() < B.ToLower(); });
+		for (const FString& D : Dirs)
+		{
+			const FString Dir = NativeRoot / D;
+			TArray<FString> Rcms, LabFiles;
+			IFileManager::Get().FindFiles(Rcms, *(Dir / TEXT("*.rcm")), true, false);
+			IFileManager::Get().FindFiles(LabFiles, *(Dir / TEXT("*.lab")), true, false);
+			Rcms.Sort([](const FString& A, const FString& B) { return A.ToLower() < B.ToLower(); });
+			for (const FString& F : Rcms)
+			{
+				const FString Base = FPaths::GetBaseFilename(F);
+				const FString* Lab = LabFiles.FindByPredicate([&Base](const FString& L) { return FPaths::GetBaseFilename(L).Equals(Base, ESearchCase::IgnoreCase); });
+				if (!Lab) { ++NoLab; continue; }
+				if (Out.ContainsByPredicate([&F](const FOutlawsMpMap& M) { return M.File == F.ToLower(); })) continue;    // (a stock name)
+				FString Text, Why;
+				FOutlawsMpMap M;
+				M.File = F.ToLower();
+				M.Lab = Dir / *Lab;
+				M.bCustom = true;
+				M.bNative = true;
+				if (!FFileHelper::LoadFileToString(Text, *(Dir / F)) || !ParseRcm(Text, M, Why))
+				{
+					UE_LOG(LogOutlaws, Warning, TEXT("OLMPHOST native map %s left out: %s"), *F, Why.IsEmpty() ? TEXT("not readable") : *Why);
+					++Bad;
+					continue;
+				}
+				if (!bOldBunkers && !Assets->Has(M.Level + TEXT(".lvt")))
+				{
+					UE_LOG(LogOutlaws, Log, TEXT("OLMPHOST native map %s (%s) left out: its level %s.lvt is in none of the LABs"), *F, *M.Name, *M.Level);
+					++NoLvt;
+					continue;
+				}
+				Out.Add(M);
+			}
+		}
+	}
+	const int32 NumNative = Out.Num() - NumStock;
 	// the custom maps: <game folder>/<name>.rcm beside <name>.lab (how the original and the launcher's map loader find them)
 	const FString Root = Assets->GetRoot();
 	TArray<FString> Found;
 	IFileManager::Get().FindFiles(Found, *(Root / TEXT("*.rcm")), true, false);
 	Found.Sort([](const FString& A, const FString& B) { return A.ToLower() < B.ToLower(); });
-	int32 NoLab = 0;
 	for (const FString& F : Found)
 	{
 		const FString Base = FPaths::GetBaseFilename(F);
@@ -236,7 +281,7 @@ void OutlawsMpHost::ListMaps(const FOutlawsAssets* Assets, TArray<FOutlawsMpMap>
 			if (FPaths::FileExists(Root / Base + Ext)) { Lab = Root / Base + Ext; break; }
 		}
 		if (Lab.IsEmpty()) { ++NoLab; continue; }
-		if (Out.ContainsByPredicate([&F](const FOutlawsMpMap& M) { return M.File == F.ToLower(); })) continue;    // (a stock name)
+		if (Out.ContainsByPredicate([&F](const FOutlawsMpMap& M) { return M.File == F.ToLower(); })) continue;    // (a stock or native name)
 		FString Text, Why;
 		FOutlawsMpMap M;
 		M.File = F.ToLower();
@@ -251,7 +296,7 @@ void OutlawsMpHost::ListMaps(const FOutlawsAssets* Assets, TArray<FOutlawsMpMap>
 		Out.Add(M);
 	}
 	Out.Sort([](const FOutlawsMpMap& A, const FOutlawsMpMap& B) { return A.bCustom != B.bCustom ? !A.bCustom : A.Name.ToLower() < B.Name.ToLower(); });
-	UE_LOG(LogOutlaws, Log, TEXT("OLMPHOST maps: %d stock, %d custom (%d .rcm without a .lab skipped, %d unreadable, %d stock without their level)"), NumStock, Out.Num() - NumStock, NoLab, Bad, NoLvt);
+	UE_LOG(LogOutlaws, Log, TEXT("OLMPHOST maps: %d stock, %d custom (%d of them native; %d .rcm without a .lab skipped, %d unreadable, %d without their level)"), NumStock, Out.Num() - NumStock, NumNative, NoLab, Bad, NoLvt);
 }
 
 bool OutlawsMpHost::IsClassOn(EOutlawsGameClass C)
@@ -312,7 +357,7 @@ bool OutlawsMpHost::RollMatch(const TArray<FOutlawsMpMap>& Maps, FOutlawsMpHostO
 	}
 	for (const FOutlawsMpMap& M : Maps)
 	{
-		if (Out.bRandomMap ? M.bCustom : &M != Fixed) continue;
+		if (Out.bRandomMap ? !M.InRandomPool() : &M != Fixed) continue;     // (REQ-MAPQUICK: the native maps with the stock ones)
 		for (int32 c = 1; c <= 6; ++c)
 		{
 			const EOutlawsGameClass C = EOutlawsGameClass(c);

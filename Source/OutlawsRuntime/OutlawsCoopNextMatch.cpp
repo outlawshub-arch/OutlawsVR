@@ -604,8 +604,10 @@ void UOutlawsCoop::RunRandomTest()
 	const TSharedPtr<FOutlawsAssets> A = Root.IsEmpty() ? nullptr : FOutlawsAssets::GetShared(Root);
 	TArray<FOutlawsMpMap> Maps;
 	OutlawsMpHost::ListMaps(A.Get(), Maps);
+	// (REQ-MAPQUICK) the random pool: the stock maps and the native ones we ship (a player's own custom maps stay out)
 	const int32 Stock = Maps.FilterByPredicate([](const FOutlawsMpMap& M) { return !M.bCustom; }).Num();
-	Check(Stock >= 6, FString::Printf(TEXT("the map list: %d stock maps, %d custom"), Stock, Maps.Num() - Stock));
+	const int32 Native = Maps.FilterByPredicate([](const FOutlawsMpMap& M) { return M.bNative; }).Num();
+	Check(Stock >= 6, FString::Printf(TEXT("the map list: %d stock maps, %d custom (%d of them native)"), Stock, Maps.Num() - Stock, Native));
 	auto MapOf = [&Maps](const FString& File) { return Maps.FindByPredicate([&File](const FOutlawsMpMap& M) { return M.File == File; }); };
 	// rolls N matches in a row as the host does (each against the last), checking every roll; returns the maps and games seen
 	auto Rolls = [&](FOutlawsMpHostOptions O, int32 N, TSet<FString>& SeenMaps, TSet<int32>& SeenClasses, bool& bAllValid, bool& bChanged, TArray<FString>& Said)
@@ -620,7 +622,7 @@ void UOutlawsCoop::RunRandomTest()
 			FString Why;
 			if (!OutlawsMpHost::RollMatch(Maps, O, LastMap, LastClass, Why)) { bAllValid = false; Said.Add(TEXT("no roll: ") + Why); continue; }
 			const FOutlawsMpMap* M = MapOf(O.MapFile);
-			const bool bOk = M && M->Allows(O.GameClass) && OutlawsMpHost::IsClassOn(O.GameClass) && (!O.bRandomMap || !M->bCustom);
+			const bool bOk = M && M->Allows(O.GameClass) && OutlawsMpHost::IsClassOn(O.GameClass) && (!O.bRandomMap || M->InRandomPool());
 			bAllValid &= bOk;
 			if (O.bRandomMap) bChanged &= !O.MapFile.Equals(LastMap);
 			if (O.bRandomClass && !O.bRandomMap) bChanged &= O.GameClass != LastClass;

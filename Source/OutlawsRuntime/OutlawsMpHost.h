@@ -31,6 +31,11 @@ struct OUTLAWSRUNTIME_API FOutlawsMpMap
 	FString Lab;              // a custom map's LAB (full path); empty for a stock map
 	uint8 Modes = 0;          // bit (class - 1) per allowed game class
 	bool bCustom = false;
+	/** (REQ-MAPQUICK) one of the native maps we ship (FOutlawsAssets::NativeMapsRoot; bCustom too): its LAB is mounted, so it
+	 *  hosts, and the random pools take it as a stock map.  A player's own custom map (the game folder's) stays out of them. */
+	bool bNative = false;
+	/** In the random-map pools: a stock or native map. */
+	bool InRandomPool() const { return !bCustom || bNative; }
 	/** (M2, guess) no stock map lists Secret Document's letter, though most have its DOCSTART places: it is offered on every map
 	 *  (the document falls back to the chicken's or a flag place on a map without them). */
 	bool Allows(EOutlawsGameClass C) const { return C == EOutlawsGameClass::SecretDocument || (Modes & (1u << (uint8(C) - 1))) != 0; }

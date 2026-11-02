@@ -62,8 +62,15 @@ public:
 	bool GetSound(const FString& Name, bool bHD, TArray<uint8>& Out) const;
 	/** Which archive a name resolves to (for diagnostics). */
 	FString Where(const FString& Name) const;
-	/** Every name with the given extension (lower case, e.g. ".lvt"). */
+	/** Every name with the given extension (lower case, e.g. ".lvt"), from the install's LABs (not the native maps'). */
 	void ListByExtension(const FString& LowerExt, TArray<FString>& Out) const;
+	/** (REQ-MAPQUICK) The native maps' folder (one sub-folder a map: its LAB, RCM and readme): -OLNativeMaps=<dir>, else
+	 *  NativeMapsPath in OutlawsSettings.ini (editor runs), else Tools\NativeMaps in the PC package, else
+	 *  <files>/Outlaws/NativeMaps on a headset.  Empty with -OLNoNativeMaps or when none of them exists. */
+	static FString NativeMapsRoot();
+	/** The native maps' folder Open mounted from (empty when none), and how many of their LABs it opened. */
+	const FString& GetNativeRoot() const { return NativeRoot; }
+	int32 NumNativeLabs() const { return Labs.Num() - NumStockLabs; }
 
 	/** Install-folder discovery, first that qualifies (found once, then remembered): -OLInstall=<dir>, InstallPath= in
 	 *  Saved/OutlawsSettings.ini, the configured path, the drop-in folders (beside the exe, a headset's files folder),
@@ -98,6 +105,8 @@ public:
 
 private:
 	FString Root;
+	FString NativeRoot;
+	int32 NumStockLabs = 0;                      // Labs[0..NumStockLabs) are the install's; the native maps' follow
 	TArray<TSharedPtr<FOutlawsLabFile>> Labs;
 	TMap<FString, TPair<int32, int32>> Index;   // lower name -> (lab index, entry index)
 };

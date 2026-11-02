@@ -246,7 +246,7 @@ void AOutlawsPlayer::MpHostPress(const FString& Name)
 		{
 			if (!OutlawsMpHost::IsClassOn(C)) return false;       // (M2: a class switched off is not offered)
 			if (!O.bRandomMap) return !Map || Map->Allows(C);
-			return Menu.Maps.ContainsByPredicate([C](const FOutlawsMpMap& X) { return !X.bCustom && X.Allows(C); });
+			return Menu.Maps.ContainsByPredicate([C](const FOutlawsMpMap& X) { return X.InRandomPool() && X.Allows(C); });     // (REQ-MAPQUICK: natives too)
 		};
 		// (REQ-TRIGGERSTEP: a named list, round both ways; 0 stands for "Random each match", the last choice)
 		TArray<int32> Choices;
