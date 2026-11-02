@@ -4,6 +4,7 @@
 // the crawl's look (REQ-HOMCRAWL: mf3s.laf, white with a black drop shadow, rising flat up the full picture).
 #include "OutlawsMovieScreen.h"
 #include "OutlawsRuntime.h"
+#include "OutlawsFlags.h"
 #include "OutlawsFormats.h"
 #include "OutlawsPlayer.h"
 #include "MediaPlayer.h"
@@ -25,10 +26,32 @@ namespace
 	// the layout in the crawl's measure (the picture 1080 high).  The original drew its credits in credits.laf, 18 px a line
 	// on its 480-line screen (3.75% of the picture); mf3s.laf's 71 px line at 0.6 is the same share (3.9%).  Headings and
 	// names one size, as the original's one font; the headings in the menus' gold, the names in the crawl's white.
+	// REQ-TEXTSIZE (user 3 Nov: 1.5x): 0.9, the shadow with it, and 99 px a second so the roll keeps its 566 s and its lines
+	// a second (at 66 it would take 840 s); -OLOldTextSize: 0.6 and 66
 	constexpr double CreditsLayoutH = 1080.0;
-	constexpr double CreditsScale = 0.6;
-	constexpr double CreditsShadow = 5.0 * CreditsScale;
-	constexpr double CreditsPxPerSecond = 66.0;          // about a line and a half a second
+	constexpr double CreditsScaleOld = 0.6, CreditsScaleBig = 0.9;
+	constexpr double CreditsShadowAt1 = 5.0;             // (at the font's own size)
+	constexpr double CreditsPxPerSecondOld = 66.0;       // about a line and a half a second
+	constexpr double CreditsPxPerSecondBig = 99.0;
+
+	bool OldTextSize()
+	{
+		static const bool bOld = OLFlags::Param(TEXT("OLOldTextSize"));
+		return bOld;
+	}
+
+	// BUG-CREDITSBG (user 3 Nov, the user's snapshot #4: Extras > Credits rolled on the black): with no movie the roll goes
+	// over the Marshal Training sunset, as the crawl does; -OLOldCreditsBg: the black
+	bool OldCreditsBg()
+	{
+		static const bool bOld = OLFlags::Param(TEXT("OLOldCreditsBg"));
+		return bOld;
+	}
+}
+
+double AOutlawsMovieScreen::CreditsLookScale() const
+{
+	return OldTextSize() ? CreditsScaleOld : CreditsScaleBig;
 }
 
 void AOutlawsMovieScreen::SetUpCreditsLook(const OutlawsFormats::FLafFont* Font)
@@ -60,7 +83,8 @@ void AOutlawsMovieScreen::ArmCredits(const TArray<FOutlawsCreditLine>& Lines, co
 		CreditLines.Num(), CreditsLineCount(0), CreditsLineCount(1), CreditsStartAt, CreditsHoldAt, CreditsSeconds());
 }
 
-void AOutlawsMovieScreen::PlayCredits(const TArray<FOutlawsCreditLine>& Lines, const OutlawsFormats::FLafFont* Font, const FVector& Eye, const FVector& Forward)
+void AOutlawsMovieScreen::PlayCredits(const TArray<FOutlawsCreditLine>& Lines, const OutlawsFormats::FLafFont* Font, const FVector& Eye, const FVector& Forward,
+	UTexture* Backdrop, bool bHdBackdrop)
 {
 	// as a crawl stands: in front of the viewer at eye height, level, facing them
 	FVector Fwd = Forward;
@@ -94,8 +118,12 @@ void AOutlawsMovieScreen::PlayCredits(const TArray<FOutlawsCreditLine>& Lines, c
 		Finish();                         // (nothing to roll: at once)
 		return;
 	}
+	CrawlBack = nullptr;
+	if (!OldCreditsBg()) SetUpCrawlBackdrop(Backdrop, bHdBackdrop);
 	StartCreditsRoll();
-	HoldCreditsPicture(TEXT("no movie: the black"));
+	HoldCreditsPicture(CrawlBack ? TEXT("no movie: the crawl's picture") : TEXT("no movie: the black"));
+	UE_LOG(LogOutlaws, Log, TEXT("OLRT credits backdrop: %s (%dx%d), the letters at %.2f, %.0f px a second"), CrawlBack ? *CrawlBack->GetName() : TEXT("the black"),
+		CrawlBack ? int32(CrawlBack->GetSurfaceWidth()) : 0, CrawlBack ? int32(CrawlBack->GetSurfaceHeight()) : 0, CreditsLookScale(), CreditsSpeed());
 }
 
 void AOutlawsMovieScreen::StartCreditsRoll()
@@ -163,12 +191,12 @@ bool AOutlawsMovieScreen::TickCredits(float DeltaSeconds)
 double AOutlawsMovieScreen::CreditsRunPx() const
 {
 	// the first line comes up from under the picture's foot; the roll is over when the last has gone over its top
-	return CreditsLayoutH + CreditLines.Num() * double(CrawlLineH) * CreditsScale;
+	return CreditsLayoutH + CreditLines.Num() * double(CrawlLineH) * CreditsLookScale();
 }
 
 double AOutlawsMovieScreen::CreditsSpeed() const
 {
-	return CreditsPxPerSecond;
+	return OldTextSize() ? CreditsPxPerSecondOld : CreditsPxPerSecondBig;
 }
 
 int32 AOutlawsMovieScreen::CreditsLineCount(int32 Part) const
@@ -187,7 +215,7 @@ int32 AOutlawsMovieScreen::CreditsFirstLine(int32 Part) const
 void AOutlawsMovieScreen::SeekCredits(int32 Line, float BaselineFrac)
 {
 	if (!bCreditsRolling) return;
-	const double Start = CreditsLayoutH + double(CrawlAscent) * CreditsScale + Line * double(CrawlLineH) * CreditsScale;
+	const double Start = CreditsLayoutH + double(CrawlAscent) * CreditsLookScale() + Line * double(CrawlLineH) * CreditsLookScale();
 	CreditsAge = float(FMath::Max(0.0, (Start - BaselineFrac * CreditsLayoutH) / CreditsSpeed()));
 	if (CrawlCanvas) CrawlCanvas->UpdateResource();
 }
@@ -200,7 +228,8 @@ void AOutlawsMovieScreen::SeekMovie(float Seconds)
 void AOutlawsMovieScreen::DrawCredits(UCanvas* C, int32 Width, int32 Height)
 {
 	if (!C) return;
-	// the movie's picture as it is under the words (playing, then held); the black without one
+	// the movie's picture as it is under the words (playing, then held); without one the crawl's picture (BUG-CREDITSBG), the
+	// black where there is none
 	if (Player && Texture && Texture->GetResource())
 	{
 		// (REQ-MOVIE43) a narrower movie (the original 4:3 cutscenes) at the canvas's height in its middle, the black either side
@@ -209,9 +238,15 @@ void AOutlawsMovieScreen::DrawCredits(UCanvas* C, int32 Width, int32 Height)
 		Bg.BlendMode = SE_BLEND_Opaque;
 		C->DrawItem(Bg);
 	}
+	else if (!Player && CrawlBack && CrawlBack->GetResource())
+	{
+		FCanvasTileItem Bg(FVector2D::ZeroVector, CrawlBack->GetResource(), FVector2D(Width, Height), CrawlBackUV0, CrawlBackUV1, FLinearColor::White);
+		Bg.BlendMode = SE_BLEND_Opaque;
+		C->DrawItem(Bg);
+	}
 	if (!CrawlAtlas && !CrawlFont) return;
 	const double S = Height / CreditsLayoutH;
-	const double K = CreditsScale;
+	const double K = CreditsLookScale();
 	const double LineH = double(CrawlLineH) * K;
 	const double Across = CreditsLayoutH * Width / Height;
 	const double Top = CreditsLayoutH + double(CrawlAscent) * K - CreditsAge * CreditsSpeed();      // the first line's baseline
@@ -223,7 +258,7 @@ void AOutlawsMovieScreen::DrawCredits(UCanvas* C, int32 Width, int32 Height)
 	const int32 Last = FMath::Min(CreditLines.Num() - 1, FMath::CeilToInt((CreditsLayoutH - Top + LineH) / LineH));
 	for (int32 Pass = 0; Pass < 2; ++Pass)                                    // the shadows first, so none falls over a letter
 	{
-		const double Off = Pass == 0 ? CreditsShadow : 0.0;
+		const double Off = Pass == 0 ? CreditsShadowAt1 * K : 0.0;
 		for (int32 i = First; i <= Last; ++i)
 		{
 			const FOutlawsCreditLine& Line = CreditLines[i];

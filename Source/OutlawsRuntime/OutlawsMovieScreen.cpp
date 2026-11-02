@@ -456,7 +456,11 @@ namespace
 	// the crawl's layout in the remaster's measure (REQ-HOMCRAWL, from its own screenshots): the picture 1080 high, the font
 	// at its own size, one line height (71) a line and a blank line between paragraphs, the shadow 5 down and 5 right, black
 	constexpr double CrawlLayoutH = 1080.0;
-	constexpr double CrawlShadow = 5.0;
+	constexpr double CrawlShadow = 5.0;              // (at the font's own size: CrawlScale scales it with the letters)
+	// REQ-TEXTSIZE (user 3 Nov: the crawl's and the credits' words 1.5x): the letters, the line and the shadow 1.5x the
+	// remaster's (a 106.5 px line, the widest line 752 of the 1920: 39%), the speed with them so it still runs its 55 s;
+	// -OLOldTextSize: the remaster's own size
+	constexpr double CrawlScaleBig = 1.5;
 	const TCHAR* CrawlHdBackdrop = TEXT("gfx/hintro-4K-32_10.dds");
 
 	// the remaster prints the words in capitals and leaves out what is not a letter or a digit (the settlers' work.
@@ -511,8 +515,40 @@ void AOutlawsMovieScreen::PlayCrawl(const TArray<FString>& Lines, UTexture* Back
 		CrawlLineH = 71.f;
 		CrawlAscent = 60.f;
 	}
+	SetUpCrawlBackdrop(Backdrop, bHdBackdrop);
+	const UWorld* World = GetWorld();
+	const bool bMobile = World && World->FeatureLevel <= ERHIFeatureLevel::ES3_1;
+	const int32 CanvasW = bMobile ? 1280 : 1920, CanvasH = bMobile ? 720 : 1080;
+	CrawlLines.Reset();
+	for (const FString& L : Lines) CrawlLines.Add(CrawlText(L));
+	while (CrawlLines.Num() > 0 && CrawlLines.Last().IsEmpty()) CrawlLines.Pop();
+	CrawlSeconds = FMath::Max(Seconds, 3.f);
+	CrawlCanvas = NewObject<UCanvasRenderTarget2D>(this);
+	CrawlCanvas->RenderTargetFormat = RTF_RGBA8_SRGB;
+	CrawlCanvas->TargetGamma = 1.f;
+	CrawlCanvas->ClearColor = FLinearColor::Black;
+	// mips, so the thin strokes of the letters do not break up where the picture shows smaller than the canvas (the flat
+	// screen's view of it, and its far side in the headset)
+	CrawlCanvas->bAutoGenerateMips = true;
+	CrawlCanvas->MipsSamplerFilter = TF_Bilinear;
+	CrawlCanvas->InitAutoFormat(CanvasW, CanvasH);
+	CrawlCanvas->OnCanvasRenderTargetUpdate.AddDynamic(this, &AOutlawsMovieScreen::DrawCrawl);
+	if (Mid) Mid->SetTextureParameterValue(TEXT("Tex"), CrawlCanvas);
+	Age = 0.f;
+	ShownHoldSteps = -1;
+	Prompt->SetText(FText::GetEmpty());
+	bCrawl = true;
+	CrawlCanvas->UpdateResource();
+	UE_LOG(LogOutlaws, Log, TEXT("OLRT crawl: %d lines over %s (%dx%d) for %.0f s in %s, at %.1fx"), CrawlLines.Num(), CrawlBack ? *CrawlBack->GetName() : TEXT("black"),
+		CrawlBack ? int32(CrawlBack->GetSurfaceWidth()) : 0, CrawlBack ? int32(CrawlBack->GetSurfaceHeight()) : 0, CrawlSeconds,
+		CrawlAtlas ? TEXT("the game's font") : TEXT("a fallback font"), CrawlScale());
+}
+
+void AOutlawsMovieScreen::SetUpCrawlBackdrop(UTexture* Backdrop, bool bHdBackdrop)
+{
 	// the picture: the remaster's wide one (6912 x 2160, BC7) where the GPU reads BC7 and Remastered Graphics is on, else
 	// the game's 640 x 480; either cropped to the canvas's 16:9 about its middle, never stretched
+	AOutlawsPlayer* Pl = Cast<AOutlawsPlayer>(UGameplayStatics::GetPlayerPawn(this, 0));
 	const UWorld* World = GetWorld();
 	const bool bMobile = World && World->FeatureLevel <= ERHIFeatureLevel::ES3_1;
 	CrawlBack = Backdrop;
@@ -546,29 +582,39 @@ void AOutlawsMovieScreen::PlayCrawl(const TArray<FString>& Lines, UTexture* Back
 		if (Pic > Can) { const double U = Can / Pic; CrawlBackUV0.X = 0.5 - U * 0.5; CrawlBackUV1.X = 0.5 + U * 0.5; }
 		else { const double V = Pic / Can; CrawlBackUV0.Y = 0.5 - V * 0.5; CrawlBackUV1.Y = 0.5 + V * 0.5; }
 	}
-	CrawlLines.Reset();
-	for (const FString& L : Lines) CrawlLines.Add(CrawlText(L));
-	while (CrawlLines.Num() > 0 && CrawlLines.Last().IsEmpty()) CrawlLines.Pop();
-	CrawlSeconds = FMath::Max(Seconds, 3.f);
-	CrawlCanvas = NewObject<UCanvasRenderTarget2D>(this);
-	CrawlCanvas->RenderTargetFormat = RTF_RGBA8_SRGB;
-	CrawlCanvas->TargetGamma = 1.f;
-	CrawlCanvas->ClearColor = FLinearColor::Black;
-	// mips, so the thin strokes of the letters do not break up where the picture shows smaller than the canvas (the flat
-	// screen's view of it, and its far side in the headset)
-	CrawlCanvas->bAutoGenerateMips = true;
-	CrawlCanvas->MipsSamplerFilter = TF_Bilinear;
-	CrawlCanvas->InitAutoFormat(CanvasW, CanvasH);
-	CrawlCanvas->OnCanvasRenderTargetUpdate.AddDynamic(this, &AOutlawsMovieScreen::DrawCrawl);
-	if (Mid) Mid->SetTextureParameterValue(TEXT("Tex"), CrawlCanvas);
-	Age = 0.f;
-	ShownHoldSteps = -1;
-	Prompt->SetText(FText::GetEmpty());
-	bCrawl = true;
+}
+
+bool AOutlawsMovieScreen::SetCanvasSizeForTest(int32 W, int32 H)
+{
+	if (!CrawlCanvas || W <= 0 || H <= 0) return false;
+	CrawlCanvas->ResizeTarget(W, H);
 	CrawlCanvas->UpdateResource();
-	UE_LOG(LogOutlaws, Log, TEXT("OLRT crawl: %d lines over %s (%dx%d) for %.0f s in %s"), CrawlLines.Num(), CrawlBack ? *CrawlBack->GetName() : TEXT("black"),
-		CrawlBack ? int32(CrawlBack->GetSurfaceWidth()) : 0, CrawlBack ? int32(CrawlBack->GetSurfaceHeight()) : 0, CrawlSeconds,
-		CrawlAtlas ? TEXT("the game's font") : TEXT("a fallback font"));
+	return CrawlCanvas->SizeX == W && CrawlCanvas->SizeY == H;
+}
+
+double AOutlawsMovieScreen::WidestLineFrac(FString* Which) const
+{
+	// the ink from the first letter's left to the last one's right, in layout px, over the canvas's width in layout px
+	if (!CrawlCanvas || CrawlCanvas->SizeY <= 0) return 0.0;
+	const double Across = CrawlLayoutH * CrawlCanvas->SizeX / CrawlCanvas->SizeY;
+	const double K = bCredits ? double(CreditsLookScale()) : CrawlScale();
+	double Best = 0.0;
+	auto Measure = [&](const FString& Line)
+	{
+		double Pen = 0.0, Lo = 1e9, Hi = -1e9;
+		for (const TCHAR Ch : Line)
+		{
+			const FCrawlGlyph* G = CrawlGlyphs.Find(Ch);
+			if (!G) continue;
+			if (G->W > 0.f) { Lo = FMath::Min(Lo, Pen + G->OffX); Hi = FMath::Max(Hi, Pen + G->OffX + G->W); }
+			Pen += G->Advance;
+		}
+		const double Ink = Hi > Lo ? (Hi - Lo) * K : 0.0;
+		if (Ink > Best) { Best = Ink; if (Which) *Which = Line; }
+	};
+	if (bCredits) for (const FOutlawsCreditLine& L : CreditLines) Measure(L.Text);
+	else for (const FString& L : CrawlLines) Measure(L);
+	return Best / Across;
 }
 
 void AOutlawsMovieScreen::BuildCrawlAtlas(const OutlawsFormats::FLafFont& Font)
@@ -620,14 +666,20 @@ void AOutlawsMovieScreen::BuildCrawlAtlas(const OutlawsFormats::FLafFont& Font)
 double AOutlawsMovieScreen::CrawlSpeed() const
 {
 	// the first line comes up from under the picture's foot and the last has gone over its top when the time is up
-	const double Run = CrawlLayoutH + CrawlLines.Num() * double(CrawlLineH);
+	const double Run = CrawlLayoutH + CrawlLines.Num() * double(CrawlLineH) * CrawlScale();
 	return Run / FMath::Max(1.0, double(CrawlSeconds) - 0.5);
+}
+
+double AOutlawsMovieScreen::CrawlScale() const
+{
+	static const bool bOld = OLFlags::Param(TEXT("OLOldTextSize"));
+	return bOld ? 1.0 : CrawlScaleBig;
 }
 
 void AOutlawsMovieScreen::SeekCrawl(int32 Line, float BaselineFrac)
 {
 	if (!bCrawl) return;
-	const double Start = CrawlLayoutH + CrawlAscent + Line * double(CrawlLineH);
+	const double Start = CrawlLayoutH + (CrawlAscent + Line * double(CrawlLineH)) * CrawlScale();
 	Age = float((Start - BaselineFrac * CrawlLayoutH) / CrawlSpeed());
 	if (CrawlCanvas) CrawlCanvas->UpdateResource();
 }
@@ -669,26 +721,28 @@ void AOutlawsMovieScreen::DrawCrawl(UCanvas* C, int32 Width, int32 Height)
 	if (!CrawlAtlas && !CrawlFont) return;
 	// the lines rise flat up the picture at a steady speed, each centred, cut off at the picture's edges (no fade)
 	const double S = Height / CrawlLayoutH;
+	const double K = CrawlScale();                                             // (REQ-TEXTSIZE) the letters over the font's size
+	const double LineH = double(CrawlLineH) * K;
 	const double Across = CrawlLayoutH * Width / Height;                       // the canvas's width in layout px
-	const double Top = CrawlLayoutH + CrawlAscent - Age * CrawlSpeed();        // the first line's baseline, in layout px
+	const double Top = CrawlLayoutH + CrawlAscent * K - Age * CrawlSpeed();    // the first line's baseline, in layout px
 	const FLinearColor Ink = FLinearColor::FromSRGBColor(FColor(238, 236, 232));
 	const FLinearColor Shade = FLinearColor::Black;
 	for (int32 Pass = 0; Pass < 2; ++Pass)                                    // the shadows first, so none falls over a letter
 	{
-		const double Off = Pass == 0 ? CrawlShadow : 0.0;
+		const double Off = Pass == 0 ? CrawlShadow * K : 0.0;
 		const FLinearColor& Col = Pass == 0 ? Shade : Ink;
 		for (int32 i = 0; i < CrawlLines.Num(); ++i)
 		{
 			const FString& Line = CrawlLines[i];
 			if (Line.IsEmpty()) continue;
-			const double Base = Top + i * double(CrawlLineH);
-			if (Base + CrawlLineH < 0.0 || Base - CrawlLineH > CrawlLayoutH) continue;
+			const double Base = Top + i * LineH;
+			if (Base + LineH < 0.0 || Base - LineH > CrawlLayoutH) continue;
 			if (!CrawlAtlas)
 			{
 				float Tw = 0.f, Th = 0.f;
 				C->TextSize(CrawlFont, Line, Tw, Th, 1.f, 1.f);
-				FCanvasTextItem T(FVector2D((Across - Tw) * 0.5 * S + Off * S, (Base - CrawlAscent + Off) * S), FText::FromString(Line), CrawlFont, Col);
-				T.Scale = FVector2D(S, S);
+				FCanvasTextItem T(FVector2D((Across - Tw * K) * 0.5 * S + Off * S, (Base - CrawlAscent * K + Off) * S), FText::FromString(Line), CrawlFont, Col);
+				T.Scale = FVector2D(S * K, S * K);
 				T.BlendMode = SE_BLEND_Translucent;
 				C->DrawItem(T);
 				continue;
@@ -696,7 +750,7 @@ void AOutlawsMovieScreen::DrawCrawl(UCanvas* C, int32 Width, int32 Height)
 			double Run = 0.0;
 			for (const TCHAR Ch : Line)
 			{
-				if (const FCrawlGlyph* G = CrawlGlyphs.Find(Ch)) Run += G->Advance;
+				if (const FCrawlGlyph* G = CrawlGlyphs.Find(Ch)) Run += G->Advance * K;
 			}
 			double Pen = (Across - Run) * 0.5;
 			for (const TCHAR Ch : Line)
@@ -705,12 +759,12 @@ void AOutlawsMovieScreen::DrawCrawl(UCanvas* C, int32 Width, int32 Height)
 				if (!G) continue;
 				if (G->W > 0.f)
 				{
-					FCanvasTileItem T(FVector2D((Pen + G->OffX + Off) * S, (Base + G->OffY + Off) * S), CrawlAtlas->GetResource(),
-						FVector2D(G->W * S, G->H * S), G->UV0, G->UV1, Col);
+					FCanvasTileItem T(FVector2D((Pen + G->OffX * K + Off) * S, (Base + G->OffY * K + Off) * S), CrawlAtlas->GetResource(),
+						FVector2D(G->W * K * S, G->H * K * S), G->UV0, G->UV1, Col);
 					T.BlendMode = SE_BLEND_Translucent;
 					C->DrawItem(T);
 				}
-				Pen += G->Advance;
+				Pen += G->Advance * K;
 			}
 		}
 	}

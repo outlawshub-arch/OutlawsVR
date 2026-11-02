@@ -94,10 +94,13 @@ public:
 
 	/** (REQ-CREDITS, OutlawsMovieScreenCredits.cpp) the end credits, rolled flat up the picture in the crawl's look (mf3s.laf,
 	 *  black shadow): ArmCredits before Play, and the roll starts over the movie at StartAt s (James riding off into the
-	 *  sunset), the picture held at HoldAt s (before the movie's fade) while the roll goes on; PlayCredits rolls them on the
-	 *  black, no movie.  The screen finishes when the last line has gone over the top, or on a skip. */
+	 *  sunset), the picture held at HoldAt s (before the movie's fade) while the roll goes on; PlayCredits rolls them with no
+	 *  movie.  The screen finishes when the last line has gone over the top, or on a skip. */
 	void ArmCredits(const TArray<FOutlawsCreditLine>& Lines, const OutlawsFormats::FLafFont* Font, double StartAt, double HoldAt);
-	void PlayCredits(const TArray<FOutlawsCreditLine>& Lines, const OutlawsFormats::FLafFont* Font, const FVector& Eye, const FVector& Forward);
+	/** (BUG-CREDITSBG) with no movie the roll goes over Backdrop as the crawl's does (the Marshal Training sunset, bHdBackdrop
+	 *  its wide one), not the black (-OLOldCreditsBg: the black). */
+	void PlayCredits(const TArray<FOutlawsCreditLine>& Lines, const OutlawsFormats::FLafFont* Font, const FVector& Eye, const FVector& Forward,
+		class UTexture* Backdrop = nullptr, bool bHdBackdrop = false);
 	bool HasCredits() const { return bCredits; }
 	/** The roll has run here (started, or the player skipped the screen it was armed on): it is not to be played again. */
 	bool CreditsDone() const { return bCredits && (bCreditsRolling || bCreditsSkipped); }
@@ -110,6 +113,11 @@ public:
 	void SeekMovie(float Seconds);
 	int32 CreditsLineCount(int32 Part) const;
 	int32 CreditsFirstLine(int32 Part) const;
+	/** (tests, BUG-CREDITSBG / REQ-TEXTSIZE) the picture under the words (nullptr: the black); the canvas drawn at W x H (the
+	 *  Quest's 1280 x 720 on the PC); the widest line's ink over the canvas's width (the crawl's lines, or the credits'), its text. */
+	const class UTexture* CrawlBackdrop() const { return CrawlBack; }
+	bool SetCanvasSizeForTest(int32 W, int32 H);
+	double WidestLineFrac(FString* Which = nullptr) const;
 	/** The picture held (or the roll on the black from the start): the level starts the credits' music. */
 	DECLARE_MULTICAST_DELEGATE(FOnCreditsHeld);
 	FOnCreditsHeld OnCreditsHeld;
@@ -221,7 +229,11 @@ private:
 	float CrawlLineH = 71.f, CrawlAscent = 66.f;
 	FVector2D CrawlBackUV0 = FVector2D::ZeroVector, CrawlBackUV1 = FVector2D(1.0, 1.0);
 	void BuildCrawlAtlas(const OutlawsFormats::FLafFont& Font);
+	/** (BUG-CREDITSBG) the crawl's picture, PlayCrawl's and PlayCredits' one pick: Backdrop (hintro.pcx), or the remaster's wide
+	 *  one where bHdBackdrop and the GPU reads BC7; CrawlBackUV0/1 crop it to the canvas's 16:9 about its middle. */
+	void SetUpCrawlBackdrop(class UTexture* Backdrop, bool bHdBackdrop);
 	double CrawlSpeed() const;                     // layout px (the picture 1080 high) a second
+	double CrawlScale() const;                     // (REQ-TEXTSIZE) the crawl's letters over the font's own size
 	UFUNCTION()
 	void DrawCrawl(UCanvas* C, int32 Width, int32 Height);
 
@@ -239,6 +251,7 @@ private:
 	bool TickCredits(float DeltaSeconds);
 	double CreditsRunPx() const;
 	double CreditsSpeed() const;
+	double CreditsLookScale() const;   // (REQ-TEXTSIZE) the letters over the font's own size
 	UFUNCTION()
 	void DrawCredits(UCanvas* C, int32 Width, int32 Height);
 

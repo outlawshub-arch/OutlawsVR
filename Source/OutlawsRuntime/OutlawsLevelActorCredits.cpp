@@ -10,7 +10,8 @@
 // network.  A skip is the movies' skip (either player's skip ends it for both, UOutlawsCoop::NoteMovieSkip), and when the
 // host's roll ends the host ends the session as it did when its movie ended ("the game is won"), both to their menus.
 //
-// Tests: -OLLevel=ranch -OLNoFrontEnd -OLCreditsTest[=roll|noorig|natural] [-OLNoOrigCredits] [-OLCreditsShots]
+// Tests: -OLLevel=ranch -OLNoFrontEnd -OLCreditsTest[=roll|noorig|natural|black] [-OLNoOrigCredits] [-OLCreditsShots]
+// (black: the roll with no movie, BUG-CREDITSBG: its backdrop, its length, the widest line and canvas shots at 1920 and 1280 wide)
 #include "OutlawsLevelActor.h"
 #include "OutlawsFlags.h"
 #include "OutlawsRuntime.h"
@@ -19,7 +20,9 @@
 #include "OutlawsMovieScreen.h"
 #include "OutlawsLab.h"
 #include "OutlawsFormats.h"
+#include "OutlawsTextures.h"
 #include "OutlawsInfRuntime.h"
+#include "Engine/Texture2D.h"
 #include "Camera/CameraComponent.h"
 #include "GameFramework/CharacterMovementComponent.h"
 #include "GameFramework/PlayerController.h"
@@ -157,14 +160,33 @@ bool AOutlawsLevelActor::StartEndCreditsIfDue()
 	Movie->OnFinished.AddUObject(this, &AOutlawsLevelActor::StartNextLevel);
 	Movie->OnCreditsHeld.AddWeakLambda(this, [this]() { StartMusic(TEXT("credits.msc")); });
 	FadeCamera(1.f, 0.f, 1.f, false);
+	UE_LOG(LogOutlaws, Log, TEXT("OLRT credits with no movie (the end movie %s did not roll them)"), *NextMovie);
+	PlayCreditsWithoutMovie(Lines, P);
+	SetActorTickEnabled(true);
+	return true;
+}
+
+UTexture2D* AOutlawsLevelActor::MakeHintroBackdrop() const
+{
+	TArray<uint8> Bytes;
+	OutlawsFormats::FPcxImage Img;
+	if (!AssetsRef || !AssetsRef->Get(TEXT("hintro.pcx"), Bytes) || !OutlawsFormats::DecodePcx(Bytes, Img) || Img.Palette.Num() != 256 || Img.Indices.Num() != Img.W * Img.H) return nullptr;
+	TArray<FColor> Px;
+	Px.SetNumUninitialized(Img.W * Img.H);
+	for (int32 i = 0; i < Px.Num(); ++i) { Px[i] = Img.Palette[Img.Indices[i]]; Px[i].A = 255; }
+	return OutlawsTextures::MakeTextureBGRA(Img.W, Img.H, Px, false, TF_Bilinear, TA_Clamp);
+}
+
+void AOutlawsLevelActor::PlayCreditsWithoutMovie(const TArray<FOutlawsCreditLine>& Lines, AOutlawsPlayer* P)
+{
+	// (BUG-CREDITSBG) the story's end with no movie and Extras > Credits: over the Marshal Training sunset, as the crawl is
+	if (!Movie || !P) return;
 	OutlawsFormats::FLafFont Font;
 	TArray<uint8> FontBytes;
 	const bool bFont = AssetsRef && AssetsRef->Get(TEXT("mf3s.laf"), FontBytes) && OutlawsFormats::DecodeLaf(FontBytes, Font);
 	const UCameraComponent* Cam = P->FindComponentByClass<UCameraComponent>();
-	UE_LOG(LogOutlaws, Log, TEXT("OLRT credits on the black (the end movie %s did not roll them)"), *NextMovie);
-	Movie->PlayCredits(Lines, bFont ? &Font : nullptr, Cam ? Cam->GetComponentLocation() : P->GetActorLocation(), Cam ? Cam->GetForwardVector() : P->GetActorForwardVector());
-	SetActorTickEnabled(true);
-	return true;
+	Movie->PlayCredits(Lines, bFont ? &Font : nullptr, Cam ? Cam->GetComponentLocation() : P->GetActorLocation(), Cam ? Cam->GetForwardVector() : P->GetActorForwardVector(),
+		MakeHintroBackdrop(), bHDTextures);
 }
 
 bool AOutlawsLevelActor::PlayExtrasCredits()
@@ -189,12 +211,8 @@ bool AOutlawsLevelActor::PlayExtrasCredits()
 	StopMusic();
 	bMenuMusic = false;
 	StartMusic(TEXT("credits.msc"));
-	OutlawsFormats::FLafFont Font;
-	TArray<uint8> FontBytes;
-	const bool bFont = AssetsRef && AssetsRef->Get(TEXT("mf3s.laf"), FontBytes) && OutlawsFormats::DecodeLaf(FontBytes, Font);
-	const UCameraComponent* Cam = P->FindComponentByClass<UCameraComponent>();
-	UE_LOG(LogOutlaws, Log, TEXT("OLRT credits from Extras: %d lines on the black"), Lines.Num());
-	Movie->PlayCredits(Lines, bFont ? &Font : nullptr, Cam ? Cam->GetComponentLocation() : P->GetActorLocation(), Cam ? Cam->GetForwardVector() : P->GetActorForwardVector());
+	UE_LOG(LogOutlaws, Log, TEXT("OLRT credits from Extras: %d lines, no movie"), Lines.Num());
+	PlayCreditsWithoutMovie(Lines, P);
 	SetActorTickEnabled(true);
 	return true;
 }
@@ -236,7 +254,8 @@ void AOutlawsLevelActor::TickCreditsTest(float Dt)
 		Step = -1;
 		FGenericPlatformMisc::RequestExit(false);
 	};
-	const bool bShots = OLFlags::Param(TEXT("OLCreditsShots"));
+	const bool bBlack = Mode == TEXT("black");
+	const bool bShots = OLFlags::Param(TEXT("OLCreditsShots")) || bBlack;
 	auto Shot = [&](const TCHAR* Name)
 	{
 		if (!bShots || !Movie) return;
@@ -256,6 +275,22 @@ void AOutlawsLevelActor::TickCreditsTest(float Dt)
 		if (!P || bNeedPlace || bFrontEnd || !Inf || bRebuildPending || T < 4.0) return;
 		bInvincible = true;
 		UE_LOG(LogOutlaws, Display, TEXT("OLSHOT credits test (%s) in %s: the level is up"), *Mode, *LevelName);
+		if (bBlack)
+		{
+			// (BUG-CREDITSBG, REQ-TEXTSIZE) the roll with no movie, as Extras > Credits and the story's end without one roll it
+			TArray<FOutlawsCreditLine> Lines;
+			const bool bLines = BuildEndCredits(Lines);
+			if (Movie) { Movie->OnFinished.RemoveAll(this); Movie->Destroy(); Movie = nullptr; }
+			FActorSpawnParameters SP;
+			SP.ObjectFlags |= RF_Transient;
+			Movie = bLines ? World->SpawnActor<AOutlawsMovieScreen>(AOutlawsMovieScreen::StaticClass(), FTransform::Identity, SP) : nullptr;
+			if (Movie) PlayCreditsWithoutMovie(Lines, P);
+			Check(Movie && Movie->IsCreditsRolling(), FString::Printf(TEXT("the credits roll with no movie (%d lines)"), Lines.Num()));
+			if (!Movie || !Movie->IsCreditsRolling()) { Done(); return; }
+			Mark = T;
+			Step = 50;
+			return;
+		}
 		if (!bNatural)
 		{
 			CompleteLevel(TEXT("credits test"));
@@ -440,6 +475,51 @@ void AOutlawsLevelActor::TickCreditsTest(float Dt)
 		if (!bFrontEnd) return;
 		Check(HeldAt > 0.0, TEXT("the picture was held at its point"));
 		Check(true, FString::Printf(TEXT("the roll ran to its end (%.0f s from its start) and the main menu followed"), T - RollAt));
+		Done();
+		return;
+	// black: the backdrop, the length, a line well into the original's part at 1920 x 1080 and at the Quest's 1280 x 720
+	case 50:
+	{
+		if (!Movie || T - Mark < 1.5) return;
+		const bool bOldBg = OLFlags::Param(TEXT("OLOldCreditsBg")), bOldSize = OLFlags::Param(TEXT("OLOldTextSize"));
+		const UTexture* Back = Movie->CrawlBackdrop();
+		const int32 Bw = Back ? int32(Back->GetSurfaceWidth()) : 0, Bh = Back ? int32(Back->GetSurfaceHeight()) : 0;
+		if (bOldBg) Check(!Back, TEXT("old rule (-OLOldCreditsBg): the roll on the black"));
+		else Check(Back && ((Bw == 640 && Bh == 480) || (Bw == 6912 && Bh == 2160)), FString::Printf(TEXT("the roll over the crawl's picture %s (%dx%d; hintro.pcx 640x480 or the wide 6912x2160)"),
+			Back ? *Back->GetName() : TEXT("none"), Bw, Bh));
+		// the length as it was at 0.6 and 66 px a second (mf3s.laf's 71 px line): within 8 s
+		const int32 N = Movie->CreditsLineCount(0) + Movie->CreditsLineCount(1);
+		const double Was = (1080.0 + N * 71.0 * 0.6) / 66.0;
+		Check(FMath::Abs(Movie->CreditsSeconds() - Was) < 8.0, FString::Printf(TEXT("%s: the roll %.0f s for %d lines (%.0f s at the old size)"), bOldSize ? TEXT("old size (-OLOldTextSize)") : TEXT("1.5x the letters"),
+			Movie->CreditsSeconds(), N, Was));
+		Movie->SeekCredits(Movie->CreditsLineCount(0) + Movie->CreditsLineCount(1) / 3, 0.5f);
+		Mark = T;
+		Step = 51;
+		return;
+	}
+	case 51:
+	case 53:
+	{
+		if (T - Mark < 0.6) return;
+		const bool b720 = Step == 53;
+		Movie->SeekCredits(Movie->CreditsLineCount(0) + Movie->CreditsLineCount(1) / 3, 0.5f);
+		FString Widest;
+		const double Frac = Movie->WidestLineFrac(&Widest);
+		Check(Frac > 0.0 && Frac <= 0.9, FString::Printf(TEXT("%s: the widest line's ink %.1f%% of the canvas's width, inside a 5%% margin either side (\"%s\")"),
+			b720 ? TEXT("1280x720") : TEXT("1920x1080"), Frac * 100.0, *Widest));
+		Shot(b720 ? TEXT("720") : TEXT("1080"));
+		Mark = T;
+		Step = b720 ? 54 : 52;
+		return;
+	}
+	case 52:
+		if (T - Mark < 0.6) return;
+		Check(Movie->SetCanvasSizeForTest(1280, 720), TEXT("the canvas at the Quest's 1280x720"));
+		Mark = T;
+		Step = 53;
+		return;
+	case 54:
+		if (T - Mark < 1.0) return;
 		Done();
 		return;
 	default:

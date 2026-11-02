@@ -56,16 +56,7 @@ void AOutlawsLevelActor::StartHom(EOutlawsDifficulty InDifficulty)
 	TArray<FString> Lines;
 	FString Text;
 	if (AssetsRef && AssetsRef->GetText(TEXT("intro.txt"), Text)) Text.ParseIntoArrayLines(Lines, false);
-	UTexture2D* Back = nullptr;
-	TArray<uint8> Bytes;
-	OutlawsFormats::FPcxImage Img;
-	if (AssetsRef && AssetsRef->Get(TEXT("hintro.pcx"), Bytes) && OutlawsFormats::DecodePcx(Bytes, Img) && Img.Palette.Num() == 256 && Img.Indices.Num() == Img.W * Img.H)
-	{
-		TArray<FColor> Px;
-		Px.SetNumUninitialized(Img.W * Img.H);
-		for (int32 i = 0; i < Px.Num(); ++i) { Px[i] = Img.Palette[Img.Indices[i]]; Px[i].A = 255; }
-		Back = OutlawsTextures::MakeTextureBGRA(Img.W, Img.H, Px, false, TF_Bilinear, TA_Clamp);
-	}
+	UTexture2D* Back = MakeHintroBackdrop();
 	UWorld* World = GetWorld();
 	AOutlawsPlayer* P = World && World->GetFirstPlayerController() ? Cast<AOutlawsPlayer>(World->GetFirstPlayerController()->GetPawn()) : nullptr;
 	if (!World || !P || Lines.Num() == 0)
@@ -432,15 +423,23 @@ void AOutlawsLevelActor::TickHomTest(float T)
 		return;
 	case 20:
 	case 21:
+	case 23:
+	case 24:
 	{
-		const bool bEnd = HomTestStep == 21;
+		// (REQ-TEXTSIZE) the same two again on the Quest's 1280 x 720 canvas, and the widest line's ink inside a 5% margin
+		const bool bEnd = HomTestStep == 21 || HomTestStep == 24, b720 = HomTestStep >= 23;
 		const FString Dir = FPaths::ProjectSavedDir() / TEXT("OLShots");
-		const FString Name = bEnd ? TEXT("ol_crawl_end") : TEXT("ol_crawl_mid");
+		const FString Name = FString(bEnd ? TEXT("ol_crawl_end") : TEXT("ol_crawl_mid")) + (b720 ? TEXT("_720") : TEXT(""));
 		if (Movie) { if (bEnd) Movie->SeekCrawl(28, 0.876f); else Movie->SeekCrawl(18, 0.622f); }   // (it went on rising while it waited)
 		const bool bSaved = Movie && Movie->SaveCrawlPng(Dir / Name + TEXT("_canvas.png"));
 		FScreenshotRequest::RequestScreenshot(Dir / Name + TEXT(".png"), false, false);
-		UE_LOG(LogOutlaws, Display, TEXT("OLSHOT crawl shot %s (canvas %d)"), *Name, bSaved ? 1 : 0);
-		if (!bEnd) Step(21, 1.0);
+		FString Widest;
+		const double Frac = Movie ? Movie->WidestLineFrac(&Widest) : 0.0;
+		UE_LOG(LogOutlaws, Display, TEXT("OLSHOT crawl shot %s (canvas %d); crawl check %s: the widest line's ink %.1f%% of the width (\"%s\")"), *Name, bSaved ? 1 : 0,
+			bSaved && Frac > 0.0 && Frac <= 0.9 ? TEXT("PASS") : TEXT("FAIL"), Frac * 100.0, *Widest);
+		if (HomTestStep == 20) Step(21, 1.0);
+		else if (HomTestStep == 21) { const bool bSized = Movie && Movie->SetCanvasSizeForTest(1280, 720); UE_LOG(LogOutlaws, Display, TEXT("OLSHOT crawl check %s: the canvas at 1280x720"), bSized ? TEXT("PASS") : TEXT("FAIL")); Step(23, 1.0); }
+		else if (HomTestStep == 23) Step(24, 1.0);
 		else { UE_LOG(LogOutlaws, Display, TEXT("OLSHOT hom test done")); FGenericPlatformMisc::RequestExit(false); Step(99, 100.0); }
 		return;
 	}

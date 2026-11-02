@@ -529,6 +529,10 @@ public:
 	bool PlayExtrasCredits();
 	void ExtrasCreditsDone();
 	void TickCreditsTest(float Dt);
+	/** (BUG-CREDITSBG) the Marshal Training crawl's picture, hintro.pcx (nullptr where the player's files have none); the credits
+	 *  with no movie roll over it (or the remaster's wide one, bHDTextures) on Movie, from the player's eyes. */
+	class UTexture2D* MakeHintroBackdrop() const;
+	void PlayCreditsWithoutMovie(const TArray<FOutlawsCreditLine>& Lines, class AOutlawsPlayer* P);
 	/** (BUG-CLIMBBARS) tests: the first wall with a barred see-through middle (a mid texture that stops the body), on the floor or
 	 *  a sill up to 1.8 m: where to stand before it, a lip on the bars at chest height, the way in. */
 	bool DebugBarsSpot(FVector& OutStand, FVector& OutLip, FVector& OutIn, FString& OutWhat) const;
