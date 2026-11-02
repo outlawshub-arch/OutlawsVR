@@ -49,6 +49,11 @@
 #include "Serialization/JsonSerializer.h"
 #include "Components/CapsuleComponent.h"
 #include "ImageUtils.h"
+#include "IImageWrapper.h"
+#include "IImageWrapperModule.h"
+#include "Modules/ModuleManager.h"
+#include "UObject/UObjectArray.h"
+#include "Templates/Atomic.h"
 #include "OutlawsMenuDoc.h"
 #include "OutlawsTextures.h"
 #include "Components/AudioComponent.h"
@@ -1002,6 +1007,20 @@ bool AOutlawsPlayer::WeaponHasAmmo(int32 Wi) const
 	return false;
 }
 
+namespace
+{
+	/** (BUG-WHEELHITCH) the objects made while it lives (the engine tells it each one: a packaged build keeps no live count) */
+	struct FOLObjectsMade : public FUObjectArray::FUObjectCreateListener
+	{
+		TAtomic<int32> Made{ 0 };
+		FOLObjectsMade() { GUObjectArray.AddUObjectCreateListener(this); }
+		virtual ~FOLObjectsMade() { GUObjectArray.RemoveUObjectCreateListener(this); }
+		virtual void NotifyUObjectCreated(const UObjectBase* Object, int32 Index) override { ++Made; }
+		virtual void OnUObjectArrayShutdown() override {}
+		int32 Num() const { return Made.Load(); }
+	};
+}
+
 UStaticMeshComponent* AOutlawsPlayer::WheelSlotComponent(int32 Index, UTextRenderComponent*& OutLabel)
 {
 	// slots are pooled: the item ring grows with what the player carries
@@ -1040,26 +1059,11 @@ void AOutlawsPlayer::OpenWheel(int32 Hand)
 	{
 		return;
 	}
-	UStaticMesh* Cube = LoadObject<UStaticMesh>(nullptr, TEXT("/Engine/BasicShapes/Cube.Cube"));
-	if (!WheelRoot)
-	{
-		SlotMat = SolidMaterial(FColor(48, 36, 26));
-		SlotLitMat = SolidMaterial(FColor(200, 150, 60));
-		LaserMat = LaserMaterial();
-		WheelRoot = NewObject<USceneComponent>(this, TEXT("WeaponWheel"));
-		WheelRoot->SetupAttachment(VROrigin);
-		WheelRoot->RegisterComponent();
-	}
-	if (!Lasers[Hand])
-	{
-		Lasers[Hand] = NewObject<UStaticMeshComponent>(this);
-		Lasers[Hand]->SetStaticMesh(Cube);
-		Lasers[Hand]->SetMaterial(0, LaserMat);
-		Lasers[Hand]->SetCollisionEnabled(ECollisionEnabled::NoCollision);
-		Lasers[Hand]->SetCastShadow(false);
-		Lasers[Hand]->SetupAttachment(AimOf(Hand));
-		Lasers[Hand]->RegisterComponent();
-	}
+	// (BUG-WHEELHITCH, the Quest 2 Nov: the first open of a run cost 215 ms) what was made here on the first open is made at
+	// the level start under the fade (UpdatePlayWarm); here only what is missing (all of it with -OLOldWheelOpen)
+	const double OpenT0 = FPlatformTime::Seconds();
+	const FOLObjectsMade Objects;
+	BuildWheelParts(false, Hand);
 	// a second button while the wheel is up joins it: one wheel, a laser per hand
 	bWheelHeld[Hand] = true;
 	WheelPick[Hand] = -1;
@@ -1102,32 +1106,6 @@ void AOutlawsPlayer::OpenWheel(int32 Hand)
 		WheelIconOff.Add(FString::Printf(TEXT("gfx/wheel/weapons/off/%soff.png"), WeaponIcon(Wi)));
 	}
 	const int32 NumWheelWeapons = WheelWeapon.Num();
-	if (!WheelBase)
-	{
-		UMaterialInstanceDynamic* Mid = nullptr;
-		WheelBase = WheelPlane(Mid);
-		SetPlaneTexture(WheelBase, KpfTexture(TEXT("gfx/wheel/wheelbase.png")));
-		WheelBase->SetRelativeLocationAndRotation(FVector(-0.5, 0.0, 0.0), GPlaneFacing);
-		WheelBase->SetRelativeScale3D(FVector(0.36, 0.36, 1.0));
-		WheelBase->SetTranslucentSortPriority(1);
-		WheelDial = WheelPlane(Mid);
-		SetPlaneTexture(WheelDial, KpfTexture(TEXT("gfx/wheel/dialweapon.png")));
-		WheelDial->SetTranslucentSortPriority(2);
-		WheelItemDial = WheelPlane(Mid);
-		SetPlaneTexture(WheelItemDial, KpfTexture(TEXT("gfx/wheel/dialitem.png")));
-		WheelItemDial->SetTranslucentSortPriority(2);
-		WheelBanner = NewObject<UTextRenderComponent>(this);
-		WheelBanner->SetHorizontalAlignment(EHTA_Center);
-		WheelBanner->SetVerticalAlignment(EVRTA_TextCenter);
-		WheelBanner->SetWorldSize(1.7f);
-		WheelBanner->SetTextRenderColor(FColor(250, 225, 150));
-		if (UMaterialInterface* TextMat = WheelOverlayMaterial(true)) WheelBanner->SetTextMaterial(TextMat);
-		WheelBanner->SetTranslucentSortPriority(5);
-		WheelBanner->SetCollisionEnabled(ECollisionEnabled::NoCollision);
-		WheelBanner->SetupAttachment(WheelRoot);
-		WheelBanner->RegisterComponent();
-		WheelBanner->SetRelativeLocation(FVector(0.6, 0.0, 15.7));
-	}
 	WheelBase->SetVisibility(true);
 	WheelDial->SetVisibility(false);
 	WheelItemDial->SetVisibility(false);
@@ -1150,6 +1128,195 @@ void AOutlawsPlayer::OpenWheel(int32 Hand)
 	// the world slows to half speed and dims behind the wheel (R8, decided 2026-10-03: not in a co-op session, where the
 	// host's clock is both players' bad guys and doors; single player as before)
 	if (!UOutlawsCoop::IsActive(this)) UGameplayStatics::SetGlobalTimeDilation(this, 0.5f);
+	// (BUG-WHEELHITCH) a line an open, in the Shipping log too (hitches.csv's what happened): its cost and what it made
+	WheelOpenObjects = Objects.Num();
+	WheelOpenMs = float((FPlatformTime::Seconds() - OpenT0) * 1000.0);
+	UE_LOG(LogOutlaws, Log, TEXT("OLRT wheel open: %.1f ms, %d objects made (%d slots, %d plates%s)"), WheelOpenMs, WheelOpenObjects, WheelSlots.Num(), PlateRTs.Num(),
+		bWheelPrebuilt ? TEXT(", prebuilt") : TEXT(""));
+}
+
+int32 AOutlawsPlayer::BuildWheelParts(bool bAll, int32 Hand)
+{
+	const double T0 = FPlatformTime::Seconds();
+	const FOLObjectsMade Objects;
+	if (!WheelRoot)
+	{
+		SlotMat = SolidMaterial(FColor(48, 36, 26));
+		SlotLitMat = SolidMaterial(FColor(200, 150, 60));
+		LaserMat = LaserMaterial();
+		WheelRoot = NewObject<USceneComponent>(this, TEXT("WeaponWheel"));
+		WheelRoot->SetupAttachment(VROrigin);
+		WheelRoot->RegisterComponent();
+	}
+	for (int32 H = 0; H < 2; ++H)
+	{
+		if (Lasers[H] || !(bAll || H == Hand)) continue;
+		Lasers[H] = NewObject<UStaticMeshComponent>(this);
+		Lasers[H]->SetStaticMesh(LoadObject<UStaticMesh>(nullptr, TEXT("/Engine/BasicShapes/Cube.Cube")));
+		Lasers[H]->SetMaterial(0, LaserMat);
+		Lasers[H]->SetCollisionEnabled(ECollisionEnabled::NoCollision);
+		Lasers[H]->SetCastShadow(false);
+		Lasers[H]->SetupAttachment(AimOf(H));
+		Lasers[H]->RegisterComponent();
+		if (H != Hand) Lasers[H]->SetVisibility(false);
+	}
+	if (!WheelBase)
+	{
+		UMaterialInstanceDynamic* Mid = nullptr;
+		WheelBase = WheelPlane(Mid);
+		SetPlaneTexture(WheelBase, WheelBaseTexture());
+		WheelBase->SetRelativeLocationAndRotation(FVector(-0.5, 0.0, 0.0), GPlaneFacing);
+		WheelBase->SetRelativeScale3D(FVector(0.36, 0.36, 1.0));
+		WheelBase->SetTranslucentSortPriority(1);
+		WheelDial = WheelPlane(Mid);
+		SetPlaneTexture(WheelDial, KpfTexture(TEXT("gfx/wheel/dialweapon.png")));
+		WheelDial->SetTranslucentSortPriority(2);
+		WheelItemDial = WheelPlane(Mid);
+		SetPlaneTexture(WheelItemDial, KpfTexture(TEXT("gfx/wheel/dialitem.png")));
+		WheelItemDial->SetTranslucentSortPriority(2);
+		WheelBanner = NewObject<UTextRenderComponent>(this);
+		WheelBanner->SetHorizontalAlignment(EHTA_Center);
+		WheelBanner->SetVerticalAlignment(EVRTA_TextCenter);
+		WheelBanner->SetWorldSize(1.7f);
+		WheelBanner->SetTextRenderColor(FColor(250, 225, 150));
+		if (UMaterialInterface* TextMat = WheelOverlayMaterial(true)) WheelBanner->SetTextMaterial(TextMat);
+		WheelBanner->SetTranslucentSortPriority(5);
+		WheelBanner->SetCollisionEnabled(ECollisionEnabled::NoCollision);
+		WheelBanner->SetupAttachment(WheelRoot);
+		WheelBanner->RegisterComponent();
+		WheelBanner->SetRelativeLocation(FVector(0.6, 0.0, 15.7));
+	}
+	if (!bAll) return Objects.Num();
+	// the level start's prebuild: the slots, their plates and shades as many as a full wheel shows (9 weapons, the bag, the
+	// lantern, the plate and a dozen carried items) with room to spare; the wheel's art decoded (each weapon's icons, the
+	// fixed items' and what is carried's cards, the arrows); the map's parts and this level's drawing
+	for (int32 i = 0; i < WheelPoolSlots; ++i)
+	{
+		UTextRenderComponent* T = nullptr;
+		WheelSlotComponent(i, T);
+		WheelSlotParts(i);
+	}
+	int32 Art = 0;
+	auto Decode = [&](UTexture2D* Tex) { if (Tex) ++Art; };
+	for (int32 Wi = -1; Wi < NumWeapons; ++Wi)
+	{
+		Decode(KpfTexture(FString::Printf(TEXT("gfx/wheel/weapons/on/%s.png"), WeaponIcon(Wi))));
+		Decode(KpfTexture(FString::Printf(TEXT("gfx/wheel/weapons/off/%soff.png"), WeaponIcon(Wi))));
+	}
+	Decode(KpfTexture(TEXT("gfx/wheel/weapons/off/wemptyoff.png")));
+	for (const TCHAR* Png : { TEXT("gfx/wheel/prev.png"), TEXT("gfx/wheel/prevoff.png"), TEXT("gfx/wheel/next.png"), TEXT("gfx/wheel/nextoff.png") }) Decode(KpfTexture(Png));
+	TArray<FString> Items, Unused;
+	if (AOutlawsLevelActor* L = Level.Get()) L->GetWheelItems(Items, Unused);
+	for (const TCHAR* Fixed : { TEXT("idocbag"), TEXT("ilantern"), TEXT("ibplate") }) Items.AddUnique(Fixed);
+	for (const FString& It : Items)
+	{
+		Decode(ItemCard(It, false));
+		Decode(ItemCard(It, true));
+	}
+	UpdateWheelArrows();
+	BuildMapDrawing();
+	WheelMapParts();
+	// the count plates' font (the remaster's, with its fallback for the punctuation) loaded and its figures drawn once: the
+	// first plate drawn loaded both font files and laid out their glyphs (most of the first open's 87 ms on the desktop)
+	if (WheelCountPlates.Num() > 0 && WheelCountPlates[0] >= 0)
+	{
+		SetTextPlate(WheelCountPlates[0], TEXT("0123456789 | x% oil"));
+		SetTextPlate(WheelCountPlates[0], FString());
+	}
+	// all of it out of sight until the first open (each open shows its own parts)
+	WheelRoot->SetVisibility(false, true);
+	bWheelPrebuilt = true;
+	const int32 Made = Objects.Num();
+	UE_LOG(LogOutlaws, Log, TEXT("OLRT prebuild weapon wheel: %d slots, %d plates, %d pictures, the map's parts: %d objects made, %.1f ms"),
+		WheelSlots.Num(), PlateRTs.Num(), Art, Made, (FPlatformTime::Seconds() - T0) * 1000.0);
+	return Made;
+}
+
+bool AOutlawsPlayer::OldWheelOpen()
+{
+	static const bool bOld = OLFlags::Param(TEXT("OLOldWheelOpen"));
+	return bOld;
+}
+
+UTexture2D* AOutlawsPlayer::WheelBaseTexture()
+{
+	static const TCHAR* Path = TEXT("gfx/wheel/wheelbase.png");
+	if (OldWheelOpen()) return KpfTexture(Path);
+	// (BUG-WHEELHITCH) 1608 px square in the kpf (10.3 MB once decoded, no mips) for a plane some 560 px across on the Quest 2 at
+	// 2.4 m: at 1024 with mips, a third of the memory and no shimmer
+	const FString Key = FString(Path) + TEXT("#1024");
+	if (const TObjectPtr<UTexture2D>* Found = KpfTextures.Find(Key)) return *Found;
+	UTexture2D* T = nullptr;
+	TArray<uint8> Bytes;
+	if (LoadMenuSource() && MenuSource->ReadFile(Path, Bytes) && Bytes.Num() > 0)
+	{
+		IImageWrapperModule& Mod = FModuleManager::LoadModuleChecked<IImageWrapperModule>(TEXT("ImageWrapper"));
+		TSharedPtr<IImageWrapper> Png = Mod.CreateImageWrapper(EImageFormat::PNG);
+		TArray<uint8> Raw;
+		if (Png.IsValid() && Png->SetCompressed(Bytes.GetData(), Bytes.Num()) && Png->GetRaw(ERGBFormat::BGRA, 8, Raw))
+		{
+			const int32 W = int32(Png->GetWidth()), H = int32(Png->GetHeight());
+			TArray<FColor> Px;
+			Px.SetNumUninitialized(W * H);
+			FMemory::Memcpy(Px.GetData(), Raw.GetData(), FMath::Min<int64>(Raw.Num(), int64(Px.Num()) * 4));
+			const int32 Side = 1024;
+			if (W > Side || H > Side)
+			{
+				const int32 Dw = W >= H ? Side : FMath::Max(1, Side * W / H), Dh = H >= W ? Side : FMath::Max(1, Side * H / W);
+				TArray<FColor> Small;
+				FImageUtils::ImageResize(W, H, Px, Dw, Dh, Small, false, false);
+				T = OutlawsTextures::MakeTextureBGRA(Dw, Dh, Small, true, TF_Trilinear, TA_Clamp);
+			}
+			else
+			{
+				T = OutlawsTextures::MakeTextureBGRA(W, H, Px, true, TF_Trilinear, TA_Clamp);
+			}
+		}
+	}
+	if (!T) T = KpfTexture(Path);
+	KpfTextures.Add(Key, T);
+	return T;
+}
+
+void AOutlawsPlayer::WheelSlotParts(int32 i)
+{
+	// the weapon's rounds under its icon, "x2" on a pair, the darkening of one that cannot be picked (made once a slot)
+	while (WheelCountPlates.Num() <= i) WheelCountPlates.Add(-1);
+	if (WheelCountPlates[i] < 0) WheelCountPlates[i] = MakeTextPlate(WheelRoot, 2.f);
+	while (WheelPairPlates.Num() <= i) WheelPairPlates.Add(-1);
+	if (WheelPairPlates[i] < 0) WheelPairPlates[i] = MakeTextPlate(WheelRoot, 1.7f);
+	while (WheelShades.Num() <= i)
+	{
+		UMaterialInstanceDynamic* ShadeMid = nullptr;
+		UStaticMeshComponent* Sh = WheelPlane(ShadeMid);
+		if (!WheelShadeTex)
+		{
+			TArray<FColor> Px;
+			Px.Init(FColor(0, 0, 0, 205), 16);
+			WheelShadeTex = OutlawsTextures::MakeTextureBGRA(4, 4, Px, false, TF_Bilinear, TA_Clamp);
+			KeepAlive.Add(WheelShadeTex);
+		}
+		if (!WheelShadeDiscTex)
+		{
+			// (BUG-WHEELGREY, user 15 Oct: the darkening was a square box round the round slot) a disc as wide as the slot's
+			// circle, its edge a pixel and a half soft, clear outside it
+			constexpr int32 N = 128;
+			constexpr float R = N * 0.48f;
+			TArray<FColor> Px;
+			Px.SetNumUninitialized(N * N);
+			for (int32 y = 0; y < N; ++y)
+				for (int32 x = 0; x < N; ++x)
+				{
+					const float D = FMath::Sqrt(FMath::Square(x + 0.5f - N * 0.5f) + FMath::Square(y + 0.5f - N * 0.5f));
+					const float A = FMath::Clamp((R - D) / 1.5f + 0.5f, 0.f, 1.f);
+					Px[y * N + x] = FColor(0, 0, 0, uint8(FMath::RoundToInt(205.f * A)));
+				}
+			WheelShadeDiscTex = OutlawsTextures::MakeTextureBGRA(N, N, Px, false, TF_Bilinear, TA_Clamp);
+			KeepAlive.Add(WheelShadeDiscTex);
+		}
+		Sh->SetTranslucentSortPriority(4);            // over the icon (3)
+		WheelShades.Add(Sh);
+	}
 }
 
 void AOutlawsPlayer::RebuildWheelSlots()
@@ -1270,8 +1437,7 @@ void AOutlawsPlayer::RebuildWheelSlots()
 		S->SetRelativeLocationAndRotation(Local, GPlaneFacing);
 		S->SetRelativeScale3D(FVector(Size / 100.0, Size / 100.0, 1.0));
 		// the weapon's rounds (loaded and carried) under its icon, in the remaster's font (user 2026-09-27)
-		while (WheelCountPlates.Num() <= i) WheelCountPlates.Add(-1);
-		if (WheelCountPlates[i] < 0) WheelCountPlates[i] = MakeTextPlate(WheelRoot, 2.f);
+		WheelSlotParts(i);
 		{
 			const int32 Wi = WheelWeapon[i];
 			FString Count;
@@ -1300,8 +1466,6 @@ void AOutlawsPlayer::RebuildWheelSlots()
 		{
 			const int32 Wp = WheelWeapon[i];
 			const bool bPair = !bItem && Wp >= 0 && Wp < NumWeapons && GWeapons[Wp].Throw <= 0 && WeaponsOwned(Wp) >= 2;
-			while (WheelPairPlates.Num() <= i) WheelPairPlates.Add(-1);
-			if (WheelPairPlates[i] < 0) WheelPairPlates[i] = MakeTextPlate(WheelRoot, 1.7f);
 			PlateHolders[WheelPairPlates[i]]->SetRelativeLocationAndRotation(Local + FVector(0.5, -Size * 0.42, Size * 0.36), FRotator::ZeroRotator);
 			// (user 2026-10-02: revolvers past the pair are kept as spares: "x3", "x4")
 			SetTextPlate(WheelPairPlates[i], bPair ? FString::Printf(TEXT("x%d"), WeaponsOwned(Wp)) : FString());
@@ -1310,38 +1474,6 @@ void AOutlawsPlayer::RebuildWheelSlots()
 		// a weapon not carried, or with nothing left to fire, is blacked out and cannot be picked (user 2026-09-27)
 		while (WheelUsable.Num() <= i) WheelUsable.Add(true);
 		WheelUsable[i] = bItem ? !((WheelItem[i] == TEXT("idocbag") && Bags <= 0) || (WheelItem[i] == TEXT("ibplate") && PlateLeft <= 0)) : WeaponUsable(WheelWeapon[i]);
-		while (WheelShades.Num() <= i)
-		{
-			UMaterialInstanceDynamic* ShadeMid = nullptr;
-			UStaticMeshComponent* Sh = WheelPlane(ShadeMid);
-			if (!WheelShadeTex)
-			{
-				TArray<FColor> Px;
-				Px.Init(FColor(0, 0, 0, 205), 16);
-				WheelShadeTex = OutlawsTextures::MakeTextureBGRA(4, 4, Px, false, TF_Bilinear, TA_Clamp);
-				KeepAlive.Add(WheelShadeTex);
-			}
-			if (!WheelShadeDiscTex)
-			{
-				// (BUG-WHEELGREY, user 15 Oct: the darkening was a square box round the round slot) a disc as wide as the slot's
-				// circle, its edge a pixel and a half soft, clear outside it
-				constexpr int32 N = 128;
-				constexpr float R = N * 0.48f;
-				TArray<FColor> Px;
-				Px.SetNumUninitialized(N * N);
-				for (int32 y = 0; y < N; ++y)
-					for (int32 x = 0; x < N; ++x)
-					{
-						const float D = FMath::Sqrt(FMath::Square(x + 0.5f - N * 0.5f) + FMath::Square(y + 0.5f - N * 0.5f));
-						const float A = FMath::Clamp((R - D) / 1.5f + 0.5f, 0.f, 1.f);
-						Px[y * N + x] = FColor(0, 0, 0, uint8(FMath::RoundToInt(205.f * A)));
-					}
-				WheelShadeDiscTex = OutlawsTextures::MakeTextureBGRA(N, N, Px, false, TF_Bilinear, TA_Clamp);
-				KeepAlive.Add(WheelShadeDiscTex);
-			}
-			Sh->SetTranslucentSortPriority(4);            // over the icon (3)
-			WheelShades.Add(Sh);
-		}
 		// a weapon's slot is round: a disc over it; an item's card is square: the square
 		SetPlaneTexture(WheelShades[i], bItem ? WheelShadeTex : WheelShadeDiscTex);
 		WheelShades[i]->SetRelativeLocationAndRotation(Local + FVector(0.15, 0.0, 0.0), GPlaneFacing);

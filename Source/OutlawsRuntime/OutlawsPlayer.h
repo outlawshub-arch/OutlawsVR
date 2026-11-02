@@ -736,6 +736,20 @@ private:
 	/** (BUG-WHEELOCCLUDE) the wheel's overlay: the PC's, or the headset's 18 cm depth-tested copy */
 	UMaterialInterface* WheelOverlayMaterial(bool bText) const;
 	void UpdateWheelArrows();
+	/** (BUG-WHEELHITCH) the wheel's parts made: the root, the hand's laser (Hand >= 0) and the base, dials and banner; with
+	 *  bAll (the level start's prebuild, hidden under the fade) both lasers, a pool of WheelPoolSlots slots with their plates
+	 *  and shades, the arrows, the map's parts and drawing, and all the wheel's art decoded.  The number of objects made. */
+	int32 BuildWheelParts(bool bAll, int32 Hand = -1);
+	/** (BUG-WHEELHITCH) one slot's count plate, pair plate and shade (made once, kept) */
+	void WheelSlotParts(int32 Index);
+	static constexpr int32 WheelPoolSlots = 24;
+	/** -OLOldWheelOpen: no prebuild, the wheel made on its first open (and the full-size base picture), as before */
+	static bool OldWheelOpen();
+	bool bWheelPrebuilt = false;
+	int32 WheelOpenObjects = 0;                  // the last open's objects made and its cost (the probe reads them)
+	float WheelOpenMs = 0.f;
+	/** (BUG-WHEELHITCH) the base picture, 1608 px in the kpf: at 1024 with mips (the old switch: the kpf's as it is) */
+	class UTexture2D* WheelBaseTexture();
 	/** A picture from Common.kpf as a texture (cached; null when missing). */
 	class UTexture2D* KpfTexture(const FString& Path);
 	/** A flat picture facing the wheel's viewer, in the wheel art's unlit see-through material. */
@@ -1534,6 +1548,8 @@ private:
 	void UpdateWheelMap(float RealDt);
 	/** (BUG-MAPZOOMTRIGGER) the lasers on the map: the hand pointing, the darkening and prompt, the trigger's zoom */
 	void UpdateWheelMapPointer();
+	/** (BUG-WHEELHITCH) the map's parts on the wheel (made once, kept): the root, page, arrow, marks, names, shade */
+	void WheelMapParts();
 	/** Where a pointer from From along Dir crosses the wheel, on the map (its resting page, a margin once it is close) */
 	bool WheelMapHit(const FVector& From, const FVector& Dir) const;
 	UPROPERTY(Transient)

@@ -1744,6 +1744,12 @@ void AOutlawsPlayer::UpdatePlayWarm(AOutlawsLevelActor* L)
 	// (REQ-FIREBRIGHT3) and the fires' material (REQ-FIREBRIGHT2's M_OLR_SpriteFire), so the first campfire seen does not
 	// make its PSO then
 	if (L->SpriteFireMaterial && !AOutlawsLevelActor::OldFireBright2()) Mats.Add(L->SpriteFireMaterial);
+	// (BUG-WHEELHITCH) the weapon wheel's: its art's overlay, its text's and the count plates' (on the headset the "_Q"
+	// copies), which the first open drew for the first time
+	if (!OldWheelOpen())
+	{
+		for (UMaterialInterface* M : { WheelOverlayMaterial(false), WheelOverlayMaterial(true), LoadOverlayMaterial(TEXT("M_OLR_TextPlate")) }) if (M) Mats.AddUnique(M);
+	}
 	UStaticMesh* Plane = LoadObject<UStaticMesh>(nullptr, TEXT("/Engine/BasicShapes/Plane.Plane"));
 	const TArray<FVector> Pos = { FVector(0, -1, -1), FVector(0, 1, -1), FVector(0, 1, 1), FVector(0, -1, 1) };
 	const TArray<int32> Tri = { 0, 2, 1, 0, 3, 2 };
@@ -1786,9 +1792,29 @@ void AOutlawsPlayer::UpdatePlayWarm(AOutlawsLevelActor* L)
 		Pm->SetCustomDepthStencilValue(1);
 		WarmCards.Add(Pm);
 	}
+	// (BUG-WHEELHITCH) and the wheel's text as a text card (the text's own vertex factory: the banner, the labels, the map's names)
+	if (!OldWheelOpen())
+	{
+		if (UMaterialInterface* TextMat = WheelOverlayMaterial(true))
+		{
+			UTextRenderComponent* Tx = NewObject<UTextRenderComponent>(this);
+			Tx->SetText(FText::FromString(TEXT("0")));
+			Tx->SetWorldSize(0.02f);
+			Tx->SetTextMaterial(TextMat);
+			Tx->SetCollisionEnabled(ECollisionEnabled::NoCollision);
+			Tx->SetCastShadow(false);
+			Tx->SetupAttachment(Camera);
+			Tx->RegisterComponent();
+			Tx->SetRelativeLocationAndRotation(FVector(400.0, -40.0 + 6.0 * i++, -20.0), FRotator(0.0, 180.0, 0.0));
+			Tx->SetTranslucentSortPriority(-20);
+			WarmCards.Add(Tx);
+		}
+	}
 	WarmFrames = 0;
 	UE_LOG(LogOutlaws, Log, TEXT("OLRT prebuild effect materials warmed: %d materials, %d cards, %.1f ms"), Mats.Num(), WarmCards.Num(), (FPlatformTime::Seconds() - T0) * 1000.0);
 	if (!OldFirstUse()) WarmFirstUse(L);      // (FIRSTHITCH: the guns' held models and sounds, under the same dark)
+	// (BUG-WHEELHITCH) the weapon wheel made whole, hidden, under the same dark: its first open made it all in one frame
+	if (!OldWheelOpen() && !bWheelPrebuilt) BuildWheelParts(true);
 }
 
 bool AOutlawsPlayer::OldFirstUse()

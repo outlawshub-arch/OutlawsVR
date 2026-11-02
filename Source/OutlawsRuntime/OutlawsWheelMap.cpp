@@ -111,6 +111,41 @@ void AOutlawsPlayer::ShowWheelMap()
 	{
 		bDrawn = BuildMapDrawing();
 	}
+	WheelMapParts();
+	if (UMaterialInstanceDynamic* M = Cast<UMaterialInstanceDynamic>(WheelMapPage->GetMaterial(0)))
+	{
+		if (MapCanvas) M->SetTextureParameterValue(TEXT("Tex"), MapCanvas);
+	}
+	// the page's shape: the held page's, its longer side 15 cm on the wheel
+	const double K = PageMax / FMath::Max(1.0, FMath::Max(MapPageSize.X, MapPageSize.Y));
+	WheelMapHalf = MapPageSize * K * 0.5;
+	WheelMapPage->SetRelativeScale3D(FVector(WheelMapHalf.X * 2.0 / 100.0, WheelMapHalf.Y * 2.0 / 100.0, 1.0));
+	WheelMapShade->SetRelativeLocationAndRotation(FVector(ShadeLift, 0.0, 0.0), Facing());
+	WheelMapShade->SetRelativeScale3D(WheelMapPage->GetRelativeScale3D());
+	WheelMapShade->SetVisibility(false);
+	if (WheelMapPrompt) WheelMapPrompt->SetVisibility(false);
+	WheelMapNear = 0.f;
+	bWheelMapHover = false;
+	bWheelMapZoom = false;
+	WheelMapPointHand = -1;
+	bWheelMapTrigArmed[0] = bWheelMapTrigArmed[1] = false;     // (a trigger already held as the wheel opens zooms nothing)
+	WheelMapRoot->SetRelativeLocation(FVector(RestX, 0.0, 0.0));
+	WheelMapRoot->SetRelativeScale3D(FVector(1.0));
+	WheelMapPage->SetVisibility(bDrawn);
+	WheelMapArrow->SetVisibility(bDrawn);
+	for (int32 k = 0; k < MapMarks; ++k)
+	{
+		WheelMapMark[k]->SetVisibility(false);
+		WheelMapName[k]->SetVisibility(false);
+	}
+	UpdateWheelMap(0.f);
+	UE_LOG(LogOutlaws, Log, TEXT("OLRT wheel map: %s, page %.1f x %.1f cm on the wheel"), bDrawn ? TEXT("shown in the horseshoe") : TEXT("no level to draw"), WheelMapHalf.X * 2.0, WheelMapHalf.Y * 2.0);
+}
+
+void AOutlawsPlayer::WheelMapParts()
+{
+	using namespace OutlawsWheelMapLocal;
+	if (!WheelRoot) return;
 	if (!WheelMapRoot)
 	{
 		WheelMapRoot = NewObject<USceneComponent>(this, TEXT("WheelMap"));
@@ -158,34 +193,6 @@ void AOutlawsPlayer::ShowWheelMap()
 		WheelMapShade = Plane(DarkTex);
 		WheelMapShade->SetTranslucentSortPriority(8);
 	}
-	if (UMaterialInstanceDynamic* M = Cast<UMaterialInstanceDynamic>(WheelMapPage->GetMaterial(0)))
-	{
-		if (MapCanvas) M->SetTextureParameterValue(TEXT("Tex"), MapCanvas);
-	}
-	// the page's shape: the held page's, its longer side 15 cm on the wheel
-	const double K = PageMax / FMath::Max(1.0, FMath::Max(MapPageSize.X, MapPageSize.Y));
-	WheelMapHalf = MapPageSize * K * 0.5;
-	WheelMapPage->SetRelativeScale3D(FVector(WheelMapHalf.X * 2.0 / 100.0, WheelMapHalf.Y * 2.0 / 100.0, 1.0));
-	WheelMapShade->SetRelativeLocationAndRotation(FVector(ShadeLift, 0.0, 0.0), Facing());
-	WheelMapShade->SetRelativeScale3D(WheelMapPage->GetRelativeScale3D());
-	WheelMapShade->SetVisibility(false);
-	if (WheelMapPrompt) WheelMapPrompt->SetVisibility(false);
-	WheelMapNear = 0.f;
-	bWheelMapHover = false;
-	bWheelMapZoom = false;
-	WheelMapPointHand = -1;
-	bWheelMapTrigArmed[0] = bWheelMapTrigArmed[1] = false;     // (a trigger already held as the wheel opens zooms nothing)
-	WheelMapRoot->SetRelativeLocation(FVector(RestX, 0.0, 0.0));
-	WheelMapRoot->SetRelativeScale3D(FVector(1.0));
-	WheelMapPage->SetVisibility(bDrawn);
-	WheelMapArrow->SetVisibility(bDrawn);
-	for (int32 k = 0; k < MapMarks; ++k)
-	{
-		WheelMapMark[k]->SetVisibility(false);
-		WheelMapName[k]->SetVisibility(false);
-	}
-	UpdateWheelMap(0.f);
-	UE_LOG(LogOutlaws, Log, TEXT("OLRT wheel map: %s, page %.1f x %.1f cm on the wheel"), bDrawn ? TEXT("shown in the horseshoe") : TEXT("no level to draw"), WheelMapHalf.X * 2.0, WheelMapHalf.Y * 2.0);
 }
 
 bool AOutlawsPlayer::WheelMapHit(const FVector& From, const FVector& Dir) const
