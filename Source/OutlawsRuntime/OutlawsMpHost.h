@@ -85,8 +85,8 @@ namespace OutlawsMpHost
 	OUTLAWSRUNTIME_API bool IsClassOn(EOutlawsGameClass C);
 	/** An RCM's text: NAME, MODES, the STORY's LEVEL.  False (with why) when it has no level. */
 	OUTLAWSRUNTIME_API bool ParseRcm(const FString& Text, FOutlawsMpMap& Out, FString& Why);
-	/** The stock maps (every .rcm the LABs hold) then the custom ones (Root\NAME.rcm beside a NAME.lab); a map
-	 *  whose RCM does not read is logged and left out, never fatal. */
+	/** The stock maps (every .rcm the LABs hold whose level's .lvt they hold too: BUG-BUNKERS) then the custom ones
+	 *  (Root\NAME.rcm beside a NAME.lab); a map whose RCM does not read is logged and left out, never fatal. */
 	OUTLAWSRUNTIME_API void ListMaps(const FOutlawsAssets* Assets, TArray<FOutlawsMpMap>& Out);
 	/** The page's Start: the stub until the session takes it (logs the options; M1's wiring sets it). */
 	OUTLAWSRUNTIME_API TFunction<bool(const FOutlawsMpHostOptions&)>& OnHost();

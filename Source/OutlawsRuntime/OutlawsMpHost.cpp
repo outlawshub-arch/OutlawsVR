@@ -191,7 +191,12 @@ void OutlawsMpHost::ListMaps(const FOutlawsAssets* Assets, TArray<FOutlawsMpMap>
 {
 	Out.Reset();
 	if (!Assets) return;
-	int32 Bad = 0;
+	int32 Bad = 0, NoLvt = 0;
+	// BUG-BUNKERS (GATE4; user 2 Nov: hide Bunkers until it can load from what installs have): a stock map whose level is in
+	// none of the LABs is left out, so neither the Host Game page nor RollMatch's pool (both take this list) offers a level that
+	// never builds ("ERROR: lilbatl.lvt not found").  Bunkers (lilbatl.rcm) is one: olpatch3 carries its .lvb, .rcm, .chk,
+	// .itm and .obb but no install has lilbatl.lvt; one that does lists it again.  -OLOldBunkers: listed as before.
+	static const bool bOldBunkers = OLFlags::Param(TEXT("OLOldBunkers"));
 	// the stock maps: the RCMs the LABs hold (the patches' over the originals', as every other file)
 	TArray<FString> Stock;
 	Assets->ListByExtension(TEXT(".rcm"), Stock);
@@ -205,6 +210,12 @@ void OutlawsMpHost::ListMaps(const FOutlawsAssets* Assets, TArray<FOutlawsMpMap>
 		{
 			UE_LOG(LogOutlaws, Warning, TEXT("OLMPHOST map %s left out: %s"), *F, Why.IsEmpty() ? TEXT("not readable") : *Why);
 			++Bad;
+			continue;
+		}
+		if (!bOldBunkers && !Assets->Has(M.Level + TEXT(".lvt")))
+		{
+			UE_LOG(LogOutlaws, Log, TEXT("OLMPHOST map %s (%s) left out: its level %s.lvt is in none of the LABs"), *F, *MapTitle(M.File), *M.Level);
+			++NoLvt;
 			continue;
 		}
 		Out.Add(M);
@@ -240,7 +251,7 @@ void OutlawsMpHost::ListMaps(const FOutlawsAssets* Assets, TArray<FOutlawsMpMap>
 		Out.Add(M);
 	}
 	Out.Sort([](const FOutlawsMpMap& A, const FOutlawsMpMap& B) { return A.bCustom != B.bCustom ? !A.bCustom : A.Name.ToLower() < B.Name.ToLower(); });
-	UE_LOG(LogOutlaws, Log, TEXT("OLMPHOST maps: %d stock, %d custom (%d .rcm without a .lab skipped, %d unreadable)"), NumStock, Out.Num() - NumStock, NoLab, Bad);
+	UE_LOG(LogOutlaws, Log, TEXT("OLMPHOST maps: %d stock, %d custom (%d .rcm without a .lab skipped, %d unreadable, %d stock without their level)"), NumStock, Out.Num() - NumStock, NoLab, Bad, NoLvt);
 }
 
 bool OutlawsMpHost::IsClassOn(EOutlawsGameClass C)
