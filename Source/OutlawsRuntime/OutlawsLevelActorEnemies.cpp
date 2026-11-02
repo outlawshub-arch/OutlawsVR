@@ -1748,12 +1748,25 @@ void AOutlawsLevelActor::OnBossDefeated()
 	{
 		return;
 	}
+	// (REQ-ENDONBOSS, user 2-3 Nov) the Gameplay page's "End mission on boss down" (off by default, as the original): the
+	// mission over as its boss goes down.  Co-op: the host's setting (a client waits for the host's word as ever)
+	const UOutlawsCoop* Co = UOutlawsCoop::Get(this);
+	const bool bEndNow = bEndOnBoss && !(Co && Co->IsClient());
 	if (bHom)
 	{
 		// (HM1, REQ-HMBOSSEND) a historical mission ends at the horse, gripped empty-handed; the outlaw's fate is settled as he
 		// goes down, as the original's [EXE 0x14008b2e5]: punched or stabbed out captured, anything else killed.  Co-op: the
 		// host's call, its word to every client (UOutlawsCoop::HomBossDown)
 		const AOutlawsEnemy* B = HomBoss();
+		if (bEndNow && !bHomBossDown && B && B->IsDead())
+		{
+			// (REQ-ENDONBOSS) no lines and no ride back to the horse: straight to the card (HomMissionEnd, CAPTURED when he was
+			// taken alive)
+			bHomBossDown = true;
+			UE_LOG(LogOutlaws, Log, TEXT("OLRT hom: the outlaw is down (%s): the mission ends at once (End mission on boss down)"), B->bTakenAlive ? TEXT("captured") : TEXT("killed"));
+			CompleteLevel(TEXT("the outlaw down (End mission on boss down)"));
+			return;
+		}
 		if (!bHomBossDown && B && B->IsDead())
 		{
 			const int32 Outcome = B->bTakenAlive ? 1 : 2, NameId = HomBossNameId(B);
@@ -1791,6 +1804,12 @@ void AOutlawsLevelActor::OnBossDefeated()
 	// CompleteLevel ends it for all
 	static const bool bOldHandfulEnd = OLFlags::Param(TEXT("OLOldHandfulEnd"));
 	const bool bHandfulBoss = !bOldHandfulEnd && IsHandfulLevel(LevelName) && BossSlots.ContainsByPredicate([](const FBossSlot& S) { return S.Func == TEXT("bgy_new"); });
+	if (bHandfulBoss && bEndNow && !bInfEndsLevel)
+	{
+		UE_LOG(LogOutlaws, Log, TEXT("OLRT the Handful mission's boss is down: the level ends at once (End mission on boss down)"));
+		CompleteLevel(TEXT("the Handful mission's boss down (End mission on boss down)"));
+		return;
+	}
 	if (bHandfulBoss)
 	{
 		const FString Line = UserMessageOr(899, TEXT("Mission Complete!"));
@@ -2102,6 +2121,7 @@ void AOutlawsLevelActor::LoadSettings()
 	F(TEXT("MovieVolume"), MovieVolume, 0.f, 1.f);
 	B(TEXT("Autosave"), bAutosave);
 	F(TEXT("AutosaveMinutes"), AutosaveMinutes, 1.f, 30.f);
+	B(TEXT("EndOnBoss"), bEndOnBoss);                      // (REQ-ENDONBOSS)
 	// the Multiplayer page (user 2026-10-02)
 	B(TEXT("MpMicrophone"), bMpMicrophone);
 	if (const FString* X = S.Find(TEXT("MpPlayerName"))) MpPlayerName = CleanMpName(*X);
@@ -2160,6 +2180,7 @@ void AOutlawsLevelActor::GatherSettings(TMap<FString, FString>& Out) const
 	F(TEXT("MovieVolume"), MovieVolume);
 	B(TEXT("Autosave"), bAutosave);
 	F(TEXT("AutosaveMinutes"), AutosaveMinutes);
+	B(TEXT("EndOnBoss"), bEndOnBoss);
 	Out.Add(TEXT("MpMicrophone"), bMpMicrophone ? TEXT("1") : TEXT("0"));
 	Out.Add(TEXT("MpPushToTalk"), FString::FromInt(MpPushToTalk));
 	Out.Add(TEXT("CoopBadGuys"), CoopBadGuys <= 0.f ? FString(TEXT("auto")) : FString::Printf(TEXT("%.2f"), CoopBadGuys));

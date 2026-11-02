@@ -1581,6 +1581,8 @@ public:
 	bool bAutosave = true;
 	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Outlaws|Saves")
 	float AutosaveMinutes = 2.f;
+	/** (REQ-ENDONBOSS) the Gameplay page's "End mission on boss down": HM straight to the card, the Handful at once (off). */
+	bool bEndOnBoss = false;
 	double PlayTime = 0.0;                  // seconds played in this game (a save's game time)
 	float AutosaveWait = 0.f;
 	/** World seconds of the last shot at the player or hurt taken (the autosave waits out danger, user 2026-10-01). */

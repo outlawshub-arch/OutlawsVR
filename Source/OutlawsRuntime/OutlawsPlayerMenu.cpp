@@ -1049,6 +1049,13 @@ bool AOutlawsPlayer::ShowMenuPage(const FString& File, bool bPush)
 		F.Name = TEXT("autosave_minutes");
 		F.Options = { TEXT("1 minute"), TEXT("2 minutes"), TEXT("3 minutes"), TEXT("5 minutes"), TEXT("10 minutes"), TEXT("15 minutes") };
 		Page->Items.Add(F);
+		// REQ-ENDONBOSS (user 2-3 Nov): a mission over as its boss goes down (HM straight to the card, the Handful at once); off
+		// by default, as the original
+		OutlawsMenu::FItem Eb;
+		Eb.Kind = OutlawsMenu::EItemKind::Check;
+		Eb.Label = TEXT("End mission on boss down");
+		Eb.Name = TEXT("endonboss");
+		Page->Items.Add(Eb);
 		// REQ-SPMULT (user 2026-10-05): co-op's bad guys multiplier in single player, the same quarters up to four times
 		// (UNLOCKFREE, user decision for 0.95: there from the first start, x1 until the player sets it)
 		{
@@ -1221,7 +1228,7 @@ bool AOutlawsPlayer::ItemWorks(const OutlawsMenu::FItem& I, TSet<FString>& Visit
 	case EItemKind::Select:
 	case EItemKind::Range:
 		return Settings.Contains(I.Name) || I.Name.StartsWith(TEXT("vr_")) || I.Name.StartsWith(TEXT("cheat_")) || I.Name.StartsWith(TEXT("autosave"))
-			|| I.Name == TEXT("solo_badguys");
+			|| I.Name == TEXT("solo_badguys") || I.Name == TEXT("endonboss");
 	case EItemKind::Heading:
 		return true;           // kept only when something under it stays (ScrubPage)
 	default:
@@ -1368,6 +1375,7 @@ FString AOutlawsPlayer::MenuRowText(int32 Index) const
 		else if (I.Name == TEXT("r_quest2mode")) bOn = OutlawsDeviceProfile::IsQuest2();
 		else if (I.Name == TEXT("vr_facereload")) bOn = bFaceReload;
 		else if (I.Name == TEXT("autosave")) bOn = L && L->bAutosave;
+		else if (I.Name == TEXT("endonboss")) bOn = L && L->bEndOnBoss;
 		else if (I.Name == TEXT("mp_announce") || I.Name == TEXT("mp_listen")) bOn = UOutlawsBeacon::Setting(I.Name);
 		else if (I.Name == TEXT("mp_upnp")) bOn = UOutlawsCoop::UpnpSetting();
 		else if (I.Name == TEXT("mp_vfade")) bOn = L && L->bMpVoiceFade;
@@ -2216,6 +2224,7 @@ void AOutlawsPlayer::MenuActivate(int32 Hand, int32 Index)
 				L->bAutosave = true;
 				L->AutosaveMinutes = 2.f;
 				L->SoloBadGuys = 1.f;
+				L->bEndOnBoss = false;
 			}
 			if (I.Name == TEXT("defaults:vr"))
 			{
@@ -2529,6 +2538,13 @@ void AOutlawsPlayer::MenuActivate(int32 Hand, int32 Index)
 		if (I.Name == TEXT("autosave"))
 		{
 			if (AOutlawsLevelActor* L = Level.Get()) L->bAutosave = !L->bAutosave;
+			RefreshMenuRows();
+			SaveSettings();
+			return;
+		}
+		if (I.Name == TEXT("endonboss"))
+		{
+			if (AOutlawsLevelActor* L = Level.Get()) L->bEndOnBoss = !L->bEndOnBoss;
 			RefreshMenuRows();
 			SaveSettings();
 			return;

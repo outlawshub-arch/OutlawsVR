@@ -184,4 +184,134 @@ OL_SHOT_TEST(OLMissionEndProbe, 1640)
 		return;
 	}
 }
+
+// REQ-ENDONBOSS (user 2-3 Nov): -OLShots -OLLevel=villa|hideout -OLNoFrontEnd -OLEndOnBossProbe=on|off.  The Gameplay page's
+// "End mission on boss down" set as asked (not saved).  villa: CROWE shot; on: the level ends at once with no "Mission
+// Complete!"; off: the line, then the end about 5 s on (as BUG-HANDFULDONE).  Any other level: Marshal Training (StartHom), the Granary's poster,
+// SH_MARY punched out; on: straight to the end with no 822/830 lines and the result CAPTURED; off: the lines and no end in
+// 4 s (the ride back to the horse, as REQ-HMBOSSEND).  Lines "OLSHOT endonboss check PASS|FAIL: ..." and "... RESULT".
+namespace OutlawsEndOnBossProbeLocal
+{
+	int32 Passes = 0, Fails = 0;
+	float Wait = 0.f, KillAt = -1.f, WonAt = -1.f, LineAt = -1.f;
+
+	void Check(bool bOk, const FString& What)
+	{
+		UE_LOG(LogOutlaws, Display, TEXT("OLSHOT endonboss check %s: %s"), bOk ? TEXT("PASS") : TEXT("FAIL"), *What);
+		if (bOk) ++Passes; else ++Fails;
+	}
+}
+
+OL_SHOT_MATCH(OLEndOnBossProbe) { return OLFlags::Has(TEXT("OLEndOnBossProbe")); }
+
+OL_SHOT_TEST(OLEndOnBossProbe, 1650)
+{
+	using namespace OutlawsEndOnBossProbeLocal;
+	if (!L || ShotStep < 0) return;
+	const bool bOn = !OLFlags::ValueIs(TEXT("OLEndOnBossProbe"), TEXT("off"));
+	const bool bUp = !L->IsFrontEnd() && !L->IsRebuildPending() && L->HasActorBegunPlay() && !L->IsMoviePlaying() && !bDeadView && ShotTime > Wait;
+	const bool bHm = ShotStep >= 10;
+	const FString Here = bHm ? L->HomMission : FString(TEXT("villa"));
+	const FString Line = bHm ? L->UserMessageOr(830, TEXT("Now use your horse, and get while the gettin's good!")) : L->UserMessageOr(899, TEXT("Mission Complete!"));
+	if (KillAt >= 0.f)
+	{
+		if (WonAt < 0.f && (L->DebugLevelWon() || L->IsMoviePlaying() || !L->LevelName.Equals(Here, ESearchCase::IgnoreCase) || L->IsFrontEnd())) WonAt = ShotTime;
+		if (LineAt < 0.f) for (const FString& H : HudLines) if (H == Line) LineAt = ShotTime;
+	}
+	auto Since = [&](float T) { return T < 0.f ? -1.f : T - KillAt; };
+	auto Finish = [&]()
+	{
+		UE_LOG(LogOutlaws, Display, TEXT("OLSHOT endonboss RESULT %s (%d passed, %d failed) setting %s"), Fails == 0 && Passes > 0 ? TEXT("ALL PASS") : TEXT("FAIL"), Passes, Fails, bOn ? TEXT("on") : TEXT("off"));
+		ShotStep = -1;
+		FGenericPlatformMisc::RequestExit(false);
+	};
+	switch (ShotStep)
+	{
+	case 0:
+	{
+		if (ShotTime < 4.f || !bUp) return;
+		if (!L->LevelName.Equals(TEXT("villa"), ESearchCase::IgnoreCase)) { ShotStep = 2; return; }      // (another level: the HM part alone)
+		L->bInvincible = true;
+		L->bEndOnBoss = bOn;
+		AOutlawsEnemy* B = nullptr;
+		for (const TWeakObjectPtr<AOutlawsEnemy>& Wk : L->GetEnemies()) if (Wk.IsValid() && Wk->GetOutlawsName().Equals(TEXT("CROWE"), ESearchCase::IgnoreCase)) B = Wk.Get();
+		OutlawsMissionEndProbeLocal::Shoot(B);
+		UE_LOG(LogOutlaws, Display, TEXT("OLSHOT endonboss villa: CROWE found %d, dead %d (setting %s)"), B ? 1 : 0, B && B->IsDead() ? 1 : 0, bOn ? TEXT("on") : TEXT("off"));
+		KillAt = ShotTime; WonAt = -1.f; LineAt = -1.f;
+		Wait = ShotTime + 6.5f;
+		ShotStep = 1;
+		return;
+	}
+	case 1:
+		if (ShotTime < Wait && WonAt < 0.f) return;
+		if (bOn)
+		{
+			Check(WonAt >= 0.f && WonAt - KillAt < 1.f && LineAt < 0.f, FString::Printf(TEXT("villa (on): CROWE down ends it at once (%.1f s), no \"%s\" (%.1f s)"), Since(WonAt), *Line, Since(LineAt)));
+		}
+		else
+		{
+			Check(LineAt >= 0.f && WonAt >= 4.f + KillAt && WonAt <= 6.5f + KillAt, FString::Printf(TEXT("villa (off): \"%s\" (%.1f s), then the end about 5 s on (%.1f s)"), *Line, Since(LineAt), Since(WonAt)));
+		}
+		Finish();                  // (the Handful part alone: its end's hold and the menu after it are no place to start HM)
+		return;
+	case 2:
+		if (ShotTime < Wait) return;
+		UE_LOG(LogOutlaws, Display, TEXT("OLSHOT endonboss: Marshal Training"));
+		L->StartHom(EOutlawsDifficulty::Good);
+		Wait = ShotTime + 4.f;
+		ShotStep = 10;
+		return;
+	case 10:
+		if (ShotTime < Wait) return;
+		if (L->IsMoviePlaying()) { L->SkipMovie(); return; }
+		if (!L->LevelName.Equals(TEXT("office"), ESearchCase::IgnoreCase) || L->IsRebuildPending() || !L->HasActorBegunPlay()) return;
+		if (KillAt > -2.f) { KillAt = -2.f; Wait = ShotTime + 3.f; return; }          // (the office settled first, as the HM test)
+		KillAt = -1.f;
+		L->HomSpawnLevel(TEXT("SHGRANRY PORCH3D"));
+		if (IsMenuOpen()) CloseMenu();          // (the "ride out?" page answered yes, as the HM test rides)
+		L->HomRide();
+		Wait = ShotTime + 3.f;
+		ShotStep = 11;
+		return;
+	case 11:
+	{
+		if (!bUp || !L->LevelName.Equals(TEXT("shgranry"), ESearchCase::IgnoreCase)) return;
+		if (KillAt > -3.f) { KillAt = -3.f; Wait = ShotTime + 3.f; return; }          // (settled a while in the mission)
+		L->bInvincible = true;
+		L->bEndOnBoss = bOn;
+		AOutlawsEnemy* B = L->HomBoss();
+		if (B) B->SetDormant(false);
+		for (int32 k = 0; k < 40 && B && !B->IsDead(); ++k)
+		{
+			AOutlawsEnemy::GNextHitMelee = true;          // (a fist: taken alive)
+			B->TakeHit(1.f, B->GetActorLocation(), FVector(1.0, 0.0, 0.0), B->GetActorLocation() - FVector(30.0, 0.0, 0.0));
+		}
+		UE_LOG(LogOutlaws, Display, TEXT("OLSHOT endonboss shgranry (hom %d): boss %s punched: dead %d, taken alive %d"), L->bHom ? 1 : 0, B ? *B->GetOutlawsName() : TEXT("none"),
+			B && B->IsDead() ? 1 : 0, B && B->bTakenAlive ? 1 : 0);
+		KillAt = ShotTime; WonAt = -1.f; LineAt = -1.f;
+		Wait = ShotTime + 4.f;
+		ShotStep = 12;
+		return;
+	}
+	case 12:
+	{
+		if (ShotTime < Wait && WonAt < 0.f) return;
+		if (WonAt >= 0.f && ShotTime < WonAt + 0.2f) return;
+		const bool bCaptured = L->HomResultText.StartsWith(TEXT("You captured"));
+		if (bOn)
+		{
+			Check(WonAt >= 0.f && WonAt - KillAt < 1.f && LineAt < 0.f && bCaptured, FString::Printf(TEXT("shgranry (on): SH_MARY punched out ends it at once (%.1f s), no lines (830 at %.1f s), the result \"%s\""),
+				Since(WonAt), Since(LineAt), *L->HomResultText.Left(40)));
+		}
+		else
+		{
+			Check(WonAt < 0.f && LineAt >= 0.f, FString::Printf(TEXT("shgranry (off): the lines (830 at %.1f s) and no end in 4 s, the ride to the horse as before (end %.1f s)"), Since(LineAt), Since(WonAt)));
+		}
+		Finish();
+		return;
+	}
+	default:
+		return;
+	}
+}
 #endif // WITH_OUTLAWS_TESTS
