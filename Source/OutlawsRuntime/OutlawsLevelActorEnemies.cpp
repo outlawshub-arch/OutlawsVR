@@ -1509,7 +1509,9 @@ void AOutlawsLevelActor::ChangeDifficulty(EOutlawsDifficulty To)
 	// (only the autosave of the level being played: one left by another game is not touched)
 	// (never in co-op: the autosave there is single player's; REQ-PERFTESTMODE: nor in a performance test run, whose level the
 	// player's own autosave may be of)
-	const bool bSave = !UOutlawsCoop::IsActive(this) && !OutlawsPerfTest::IsOn() && ReadSaveInfo(-1).Level.Equals(LevelName, ESearchCase::IgnoreCase) && PatchSaveDifficulty(-1, To, Was);
+	// (REQ-AUTOSAVESLOTS: this level's mode's autosave)
+	const int32 AutoSlot = AutosaveSlotOf(LevelName);
+	const bool bSave = !UOutlawsCoop::IsActive(this) && !OutlawsPerfTest::IsOn() && ReadSaveInfo(AutoSlot).Level.Equals(LevelName, ESearchCase::IgnoreCase) && PatchSaveDifficulty(AutoSlot, To, Was);
 	UE_LOG(LogOutlaws, Log, TEXT("OLRT difficulty %s -> %s: %d bad guys rescaled (placed for %s), autosave %s"), OutlawsDifficulty::Name(Was), OutlawsDifficulty::Name(To), N,
 		OutlawsDifficulty::Name(SpawnDifficulty), bSave ? TEXT("follows") : TEXT("untouched"));
 }

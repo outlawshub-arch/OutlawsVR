@@ -882,7 +882,9 @@ bool AOutlawsPlayer::ShowMenuPage(const FString& File, bool bPush)
 			Shown.bEmpty = S.bEmpty;
 			Shown.Level = S.Level;
 			// (REQ-TITLEMENU: the autosaves on their own capsule art, named for what they are: the resume point, a co-op one)
-			Shown.Name = Slot == -2 ? FString::Printf(TEXT("Co-op: %s"), *S.Name) : Slot == -1 && !bSave ? FString::Printf(TEXT("Resume: %s"), *S.Name) : S.Name;
+			// (REQ-AUTOSAVESLOTS: the newest mode's autosave is the resume point; the others by their mode)
+			const bool bResume = !bSave && SlotsShown.Num() == 0 && AOutlawsLevelActor::IsAutosaveSlot(Slot);
+			Shown.Name = Slot < 0 && !bSave ? FString::Printf(TEXT("%s: %s"), bResume ? TEXT("Resume") : AOutlawsLevelActor::AutosaveModeName(Slot), *S.Name) : S.Name;
 			Shown.GameTime = S.GameTime;
 			Shown.Stamp = S.Stamp;
 			SlotsShown.Add(Shown);
@@ -895,15 +897,12 @@ bool AOutlawsPlayer::ShowMenuPage(const FString& File, bool bPush)
 		if (!bSave)
 		{
 			// REQ-TITLEMENU: the resume point (the last single-player autosave) first, then the other autosaves newest first (a
-			// co-op host's own, R7), then the player's own saves
-			if (AOutlawsLevelActor::HasAutosave()) AddSlot(-1);
-			TArray<TPair<FDateTime, int32>> Autos;
-			for (int32 a : { -2 })
-			{
-				if (!AOutlawsLevelActor::ReadSaveInfo(a).bEmpty) Autos.Emplace(IFileManager::Get().GetTimeStamp(*AOutlawsLevelActor::SavePath(a)), a);
-			}
-			Autos.StableSort([](const TPair<FDateTime, int32>& A, const TPair<FDateTime, int32>& B) { return A.Key > B.Key; });
-			for (const TPair<FDateTime, int32>& A : Autos) AddSlot(A.Value);
+			// co-op host's own, R7), then the player's own saves.  (REQ-AUTOSAVESLOTS: the resume point is the newest of the
+			// modes' autosaves, the other modes' next, newest first, then co-op's)
+			TArray<int32> Autos;
+			AOutlawsLevelActor::GetAutosaves(Autos);
+			if (!AOutlawsLevelActor::ReadSaveInfo(-2).bEmpty) Autos.Add(-2);
+			for (int32 a : Autos) AddSlot(a);
 		}
 		for (int32 s = 0; s < AOutlawsLevelActor::NumSaveSlots; ++s) AddSlot(s);
 	}
@@ -2167,7 +2166,7 @@ void AOutlawsPlayer::MenuActivate(int32 Hand, int32 Index)
 			}
 			// the last autosave, loaded as any save is (through black); should it not load, the main menu again
 			CloseMenu();
-			if (AOutlawsLevelActor* L = Level.Get(); L && !L->LoadGame(-1))
+			if (AOutlawsLevelActor* L = Level.Get(); L && !L->LoadGame(AOutlawsLevelActor::NewestAutosave()))      // (REQ-AUTOSAVESLOTS: the newest mode's)
 			{
 				L->ShowFrontMenu();
 				MenuToastText(TEXT("The last save could not be loaded"));
@@ -4506,7 +4505,8 @@ void AOutlawsPlayer::TitleLoadTestTick()
 		for (const OutlawsMenu::FItem& I : MenuPage->Items) Slots.Add(I.Name.StartsWith(TEXT("load:")) ? FCString::Atoi(*I.Name.Mid(5)) : -99);
 		FString Order;
 		for (int32 s : Slots) Order += FString::Printf(TEXT("%s%d"), Order.IsEmpty() ? TEXT("") : TEXT(" "), s);
-		const bool bResumeFirst = AOutlawsLevelActor::HasAutosave() && Slots.Num() > 0 && Slots[0] == -1 && MenuPage->Items[0].Label.StartsWith(TEXT("Resume: "));
+		// (REQ-AUTOSAVESLOTS: the resume point the newest mode's autosave, the other modes' newest first, then co-op's)
+		const bool bResumeFirst = AOutlawsLevelActor::HasAutosave() && Slots.Num() > 0 && Slots[0] == AOutlawsLevelActor::NewestAutosave() && MenuPage->Items[0].Label.StartsWith(TEXT("Resume: "));
 		Check(bResumeFirst, FString::Printf(TEXT("the resume point is the first row (%s)"), MenuPage->Items.Num() > 0 ? *MenuPage->Items[0].Label : TEXT("none")));
 		int32 FirstOwn = Slots.IndexOfByPredicate([](int32 s) { return s >= 0; });
 		bool bAutosBefore = FirstOwn != INDEX_NONE, bNewest = true, bOwnInOrder = true;
@@ -4514,10 +4514,12 @@ void AOutlawsPlayer::TitleLoadTestTick()
 		for (int32 k = 0; k < Slots.Num(); ++k)
 		{
 			if (k > FirstOwn && FirstOwn != INDEX_NONE && Slots[k] < 0) bAutosBefore = false;
-			if (Slots[k] < 0 && Slots[k] != -1)
+			if (Slots[k] < 0 && k > 0)
 			{
 				++Autos;
-				if (k > 1 && Slots[k - 1] < -1 && IFileManager::Get().GetTimeStamp(*AOutlawsLevelActor::SavePath(Slots[k - 1])) < IFileManager::Get().GetTimeStamp(*AOutlawsLevelActor::SavePath(Slots[k]))) bNewest = false;
+				const bool bSameKind = AOutlawsLevelActor::IsAutosaveSlot(Slots[k - 1]) == AOutlawsLevelActor::IsAutosaveSlot(Slots[k]);
+				if (k > 1 && Slots[k - 1] < 0 && bSameKind && IFileManager::Get().GetTimeStamp(*AOutlawsLevelActor::SavePath(Slots[k - 1])) < IFileManager::Get().GetTimeStamp(*AOutlawsLevelActor::SavePath(Slots[k]))) bNewest = false;
+				if (Slots[k - 1] == -2 && AOutlawsLevelActor::IsAutosaveSlot(Slots[k])) bNewest = false;        // (co-op's after every mode's)
 			}
 			if (FirstOwn != INDEX_NONE && k >= FirstOwn && Slots[k] != k - FirstOwn) bOwnInOrder = false;
 		}
@@ -4532,7 +4534,7 @@ void AOutlawsPlayer::TitleLoadTestTick()
 		{
 			for (int32 k = FMath::Max(FirstOwn, 0); k < Slots.Num() && PickRow == INDEX_NONE; ++k) if (Slots[k] >= 0 && !AOutlawsLevelActor::ReadSaveInfo(Slots[k]).bEmpty) { PickRow = k; Slot = Slots[k]; }
 		}
-		else PickRow = Slots.IndexOfByKey(-1);
+		else if (Slots.Num() > 0 && AOutlawsLevelActor::IsAutosaveSlot(Slots[0])) { PickRow = 0; Slot = Slots[0]; }
 		WantLevel = PickRow != INDEX_NONE ? AOutlawsLevelActor::ReadSaveInfo(Slot).Level : FString();
 		Check(PickRow != INDEX_NONE && !WantLevel.IsEmpty(), FString::Printf(TEXT("a %s to load (row %d, slot %d, %s)"), Mode == TEXT("slot") ? TEXT("save of the player's own") : TEXT("resume point"), PickRow, Slot, *WantLevel));
 		if (PickRow == INDEX_NONE) { Finish(); return; }

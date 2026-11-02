@@ -656,7 +656,14 @@ void UOutlawsCoop::TickHostLateJoinTest(double Now, AOutlawsLevelActor* L, AOutl
 	AOutlawsCoopLink* CL = GetLink(1);
 	if (!S || Now < TestAt) return;
 	const bool bEnd = TestOnly == TEXT("latejoinend");
-	auto Hash = []() { return LexToString(FMD5Hash::HashFile(*AOutlawsLevelActor::SavePath(-1))); };
+	// (REQ-AUTOSAVESLOTS: every single-player autosave, each mode's file)
+	auto Hash = []()
+	{
+		FString H;
+		for (int32 a : { int32(AOutlawsLevelActor::AutosaveStory), int32(AOutlawsLevelActor::AutosaveHom), int32(AOutlawsLevelActor::AutosaveHandful), int32(AOutlawsLevelActor::AutosaveCustom) })
+			H += LexToString(FMD5Hash::HashFile(*AOutlawsLevelActor::SavePath(a))) + TEXT(" ");
+		return H;
+	};
 	auto WorldClock = [this]() { const UWorld* W = CurrentWorld(); return W ? W->GetTimeSeconds() : 0.0; };
 	switch (TestStep)
 	{

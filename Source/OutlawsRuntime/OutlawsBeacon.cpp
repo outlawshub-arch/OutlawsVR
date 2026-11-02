@@ -680,7 +680,7 @@ void UOutlawsBeacon::OnPick(int32 Button)
 		bOpening = true;
 		OpeningAt = Now;
 		KnockFrom.Reset();
-		if (UOutlawsCoop* C = L ? UOutlawsCoop::Get(L) : nullptr) C->HostFromSave(-1);
+		if (UOutlawsCoop* C = L ? UOutlawsCoop::Get(L) : nullptr) C->HostFromSave(L->ResolveAutosave(-1));      // (REQ-AUTOSAVESLOTS: the one just written, this mode's)
 		return;
 	}
 	case EOutlawsBubbleKind::Asking:

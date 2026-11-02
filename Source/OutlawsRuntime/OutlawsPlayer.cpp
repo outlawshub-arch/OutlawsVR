@@ -4434,7 +4434,7 @@ void AOutlawsPlayer::RequestRespawn(bool bFromAutosave)
 		// B / Y: back to the autosave (user 2026-09-27), when there is one; the save loaded, when no autosave came after it
 		if (!bDeathAutosave) return;
 		UE_LOG(LogOutlaws, Log, TEXT("OLRT respawn from %s"), DeathSaveSlot >= 0 ? *FString::Printf(TEXT("slot %d (loaded again)"), DeathSaveSlot) : TEXT("the autosave"));
-		if (!L->LoadGame(DeathSaveSlot >= 0 ? DeathSaveSlot : -1)) L->RestartLevel();
+		if (!L->LoadGame(DeathSaveSlot >= 0 ? DeathSaveSlot : L->AutosaveSlotOf(L->LevelName))) L->RestartLevel();      // (REQ-AUTOSAVESLOTS: this level's mode's)
 		return;
 	}
 	UE_LOG(LogOutlaws, Log, TEXT("OLRT respawn"));

@@ -511,7 +511,7 @@ void AOutlawsLevelActor::TickMemSoak(float Dt)
 		}
 		else if (StepNow == TEXT("l"))
 		{
-			if (!SaveGame(-1) || !LoadGame(-1)) RestartLevel();      // (the autosave written, then loaded)
+			if (!SaveGame(-1) || !LoadGame(ResolveAutosave(-1))) RestartLevel();      // (the autosave written, then loaded: this level's mode's)
 			Phase = 0;
 		}
 		else if (StepNow == TEXT("d"))

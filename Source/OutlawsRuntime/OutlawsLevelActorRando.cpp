@@ -898,7 +898,7 @@ void AOutlawsLevelActor::TickRandoTest(float Dt)
 		Check(RunOrder == Again && S1 == S2 && RunOrder != Story, TEXT("the run's order is the story's levels, shuffled, the same each time asked"));
 		if (RandoRun.Order == 1) Check(RunOrder.Num() > 2 && RunOrder[0] == Story[0] && RunOrder.Last() == Story.Last(), TEXT("Shuffle middle: the first and the last in place"));
 		Check(SaveGame(-1), TEXT("saved (the autosave)"));
-		Check(LoadGame(-1), TEXT("loading it"));
+		Check(LoadGame(ResolveAutosave(-1)), TEXT("loading it"));
 		Step = 1;
 		return;
 	}
@@ -914,7 +914,7 @@ void AOutlawsLevelActor::TickRandoTest(float Dt)
 		TArray<FString> Now;
 		RandoLevelOrder(Now);
 		Check(Now == RunOrder, TEXT("the mission order is the run's still after the restart"));
-		Check(SaveGame(-1) && LoadGame(-1), TEXT("saved and loading again"));
+		Check(SaveGame(-1) && LoadGame(ResolveAutosave(-1)), TEXT("saved and loading again"));
 		Step = 3;
 		return;
 	}
@@ -960,7 +960,7 @@ void AOutlawsLevelActor::TickRandoTest(float Dt)
 		RandoOrder = 2;
 		RandoRun = FRandoRun();
 		Check(SaveGame(-1), TEXT("saved a game with no randomizer (the page's options all on)"));
-		Check(LoadGame(-1), TEXT("loading it"));
+		Check(LoadGame(ResolveAutosave(-1)), TEXT("loading it"));
 		Step = 8;
 		return;
 	case 8:

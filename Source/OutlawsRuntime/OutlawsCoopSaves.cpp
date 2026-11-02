@@ -36,7 +36,7 @@ namespace
 
 	FString SlotName(int32 Slot)
 	{
-		return Slot == -2 ? FString(TEXT("coop_autosave")) : Slot < 0 ? FString(TEXT("autosave")) : FString::Printf(TEXT("slot%d"), Slot);
+		return Slot < 0 ? FPaths::GetBaseFilename(AOutlawsLevelActor::SavePath(Slot)) : FString::Printf(TEXT("slot%d"), Slot);      // (REQ-AUTOSAVESLOTS: autosave_hom ...)
 	}
 
 	bool ParseJson(const FString& Text, TSharedPtr<FJsonObject>& Out)
@@ -71,8 +71,9 @@ bool UOutlawsCoop::MaySave(AOutlawsLevelActor* L, int32& Slot)
 	UOutlawsCoop* C = Get(L);
 	if (!C || !C->IsHost()) return false;          // (the client's game is the host's to save)
 	// R7 (user 2026-10-03: "an autosave should still work. In a separate co-op autosave"): the host's autosave goes to
-	// coop_autosave.json, never single player's autosave.json; Save Game's slots as before
-	if (Slot == -1) Slot = -2;
+	// coop_autosave.json, never single player's autosave.json; Save Game's slots as before.  (REQ-AUTOSAVESLOTS: nor any mode's
+	// single-player autosave, the one a level of its resolves to)
+	if (AOutlawsLevelActor::IsAutosaveSlot(Slot)) Slot = -2;
 	return true;
 }
 
@@ -862,7 +863,7 @@ void UOutlawsCoop::TickHostSaveTest(double Now, AOutlawsLevelActor* L, AOutlawsP
 		P->CoopOpenMenu();
 		P->CoopShowPage(TEXT("load_game.rml"), true);
 		UE_LOG(LogOutlawsCoop, Log, TEXT("OLCOOP test: the host's menu shows %s (an autosave here: %s)"), *P->CoopMenuPage(),
-			AOutlawsLevelActor::ReadSaveInfo(-1).bEmpty ? TEXT("no") : TEXT("yes"));
+			AOutlawsLevelActor::HasAutosave() ? TEXT("yes") : TEXT("no"));      // (REQ-AUTOSAVESLOTS: any mode's)
 		TestStep = 146;
 		TestAt = Now + 2.0;
 		return;

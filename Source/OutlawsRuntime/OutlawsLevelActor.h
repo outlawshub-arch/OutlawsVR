@@ -1496,8 +1496,29 @@ public:
 	// ---- saves and autosave (OutlawsSaveGame.cpp): Saved/OutlawsSaves/slot<n>.json and autosave.json ----
 	enum { NumSaveSlots = 10 };
 	struct FSaveInfo { int32 Slot = -1; bool bEmpty = true; FString Level; FString Name; FString GameTime; FString Stamp; };
-	/** Slot 0 .. NumSaveSlots - 1, -1 for the autosave, or -2 for a co-op host's own autosave (coop_autosave.json, R7). */
+	/** Slot 0 .. NumSaveSlots - 1, -1 for the autosave (the story's), -2 for a co-op host's own autosave (coop_autosave.json,
+	 *  R7), -3 .. -5 for the other modes' autosaves (REQ-AUTOSAVESLOTS). */
 	static FString SavePath(int32 Slot);
+	/** REQ-AUTOSAVESLOTS (user 2 Nov): one single-player autosave a mode, none writing over another's: the story's
+	 *  autosave.json (-1), Historical Missions' autosave_hom.json (-3: the office, its five missions and its ranked doors'
+	 *  levels), A Handful of Missions' autosave_handful.json (-4), any other level's autosave_custom.json (-5, one shared by
+	 *  every custom map for now).  By the level alone, so it holds at save, load and death time and for an old file.
+	 *  -OLOldAutosave: every mode in autosave.json, as before. */
+	enum { AutosaveStory = -1, AutosaveHom = -3, AutosaveHandful = -4, AutosaveCustom = -5 };
+	static int32 AutosaveSlotOf(const FString& Level);
+	static bool IsAutosaveSlot(int32 Slot) { return Slot == AutosaveStory || (Slot <= AutosaveHom && Slot >= AutosaveCustom); }
+	/** The mode's name on the load page ("Story", "Historical", "Handful", "Custom"). */
+	static const TCHAR* AutosaveModeName(int32 Slot);
+	/** The single-player autosaves there are, newest first (-OLOldAutosave: autosave.json alone). */
+	static void GetAutosaves(TArray<int32>& Out);
+	/** The newest of them (the main menu's Resume Game); -1 when there is none. */
+	static int32 NewestAutosave();
+	/** SaveGame's -1 resolved: the autosave of the level being played's mode; any other slot as it is.  (LoadGame's -1 is
+	 *  the story's file, as the load page lists it: a load of this level's mode's names its slot.) */
+	int32 ResolveAutosave(int32 Slot) const;
+	/** Once a run: an autosave.json of another mode's level (from before REQ-AUTOSAVESLOTS) moved to that mode's file, if
+	 *  that file is not there yet (else left as it is, and logged).  Nothing is ever deleted. */
+	static void MigrateAutosave(bool bAgain = false);      // (bAgain: tests, -OLAutosaveModesProbe)
 	/** Between two levels (the won level's fade, its cutscene, the story's first movie): the autosave written as the NEXT
 	 *  level's opening, with what is carried into it (user 2026-10-02: End Game in a cutscene resumed in the level just
 	 *  won).  Loading it starts that level from its beginning. */
@@ -1513,10 +1534,10 @@ public:
 	/** Write the game as it stands (the level, the player, the bad guys, what is left to pick up, the doors). */
 	bool SaveGame(int32 Slot);
 	/** The same as JSON text, written nowhere (a co-op host's join snapshot for a player joining late, R7). */
-	bool BuildSaveText(class AOutlawsPlayer* P, FString& OutText, int32& OutEnemies, int32& OutPickups);
+	bool BuildSaveText(class AOutlawsPlayer* P, FString& OutText, int32& OutEnemies, int32& OutPickups, bool bHomSave = false);
 	/** Rebuild the saved level and put it back as it was saved. */
 	bool LoadGame(int32 Slot);
-	static bool HasAutosave() { return !ReadSaveInfo(-1).bEmpty; }
+	static bool HasAutosave() { TArray<int32> A; GetAutosaves(A); return A.Num() > 0; }      // (any mode's, REQ-AUTOSAVESLOTS)
 	/** BUG-DEATHAUTOSAVE (user 2026-10-20): the save a death goes back to: the slot last loaded or saved when no autosave has
 	 *  been written since (OutSlot >= 0), else the autosave (-1); either only when it is of this level (false: none). */
 	bool DeathSave(int32& OutSlot) const;

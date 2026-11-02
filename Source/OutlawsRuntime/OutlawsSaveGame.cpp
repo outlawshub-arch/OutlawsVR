@@ -4,7 +4,8 @@
 // count and listed item, the guns in hand and their rounds, the lantern), the bad guys (where, facing,
 // health, alert, dead, a boss not yet out), what is left to pick up (and anything dropped since), broken
 // props, glass and dynamite, and the INF (elevator values and stops, trigger arming, scroll offsets, keys).
-// The autosave comes at the start of every level and every AutosaveMinutes after (options, default 2).
+// The autosave comes at the start of every level and every AutosaveMinutes after (options, default 2), one a mode
+// (REQ-AUTOSAVESLOTS: autosave.json the story's, autosave_hom.json, autosave_handful.json, autosave_custom.json).
 #include "OutlawsLevelActor.h"
 #include "OutlawsStats.h"
 #include "OutlawsPerf.h"
@@ -16,6 +17,7 @@
 #include "OutlawsCoop.h"
 #include "OutlawsSpriteActor.h"
 #include "OutlawsMovieScreen.h"
+#include "OutlawsFlags.h"
 #include "ProceduralMeshComponent.h"
 #include "Components/CapsuleComponent.h"
 #include "GameFramework/CharacterMovementComponent.h"
@@ -77,6 +79,15 @@ namespace
 		const TSharedRef<TJsonReader<>> Reader = TJsonReaderFactory<>::Create(Text);
 		return FJsonSerializer::Deserialize(Reader, Out) && Out.IsValid();
 	}
+
+	// (REQ-AUTOSAVESLOTS, user 2 Nov: the Historical Missions autosave "keeps the Marshal session") the session as a map
+	// load's rebuild carries it (WriteHomCarry), under its own name: a load of the file takes it back (LoadGame, ApplyLoad)
+	void AddHomSave(const AOutlawsLevelActor& L, FJsonObject& O)
+	{
+		FJsonObject H;
+		L.WriteHomCarry(H);
+		O.SetObjectField(TEXT("hom_save"), H.GetObjectField(TEXT("hom")));
+	}
 }
 
 // ---- level actor ---------------------------------------------------------------------------------------
@@ -107,17 +118,83 @@ bool AOutlawsLevelActor::DeathSave(int32& OutSlot) const
 			return true;
 		}
 	}
-	const FSaveInfo A = ReadSaveInfo(-1);
+	const FSaveInfo A = ReadSaveInfo(AutosaveSlotOf(LevelName));       // (REQ-AUTOSAVESLOTS: this level's mode's; OutSlot -1 loads it)
 	const bool bOk = !A.bEmpty && A.Level.Equals(LevelName, ESearchCase::IgnoreCase);
-	if (!bOk && !A.bEmpty) UE_LOG(LogOutlaws, Log, TEXT("OLRT death: the autosave is of %s, not %s: not offered"), *A.Level, *LevelName);
+	if (!bOk && !A.bEmpty) UE_LOG(LogOutlaws, Log, TEXT("OLRT death: the %s autosave is of %s, not %s: not offered"), AutosaveModeName(AutosaveSlotOf(LevelName)), *A.Level, *LevelName);
 	return bOk;
 }
 
 FString AOutlawsLevelActor::SavePath(int32 Slot)
 {
-	// (-2: a co-op host's own autosave, user 2026-10-03: "in a separate co-op autosave")
-	return FPaths::ProjectSavedDir() / TEXT("OutlawsSaves") / (Slot == -2 ? FString(TEXT("coop_autosave.json")) : Slot < 0 ? FString(TEXT("autosave.json"))
-		: FString::Printf(TEXT("slot%d.json"), Slot));
+	// (-2: a co-op host's own autosave, user 2026-10-03: "in a separate co-op autosave"; -3 .. -5: REQ-AUTOSAVESLOTS's modes)
+	const TCHAR* Auto = Slot == -2 ? TEXT("coop_autosave.json") : Slot == AutosaveHom ? TEXT("autosave_hom.json") : Slot == AutosaveHandful ? TEXT("autosave_handful.json")
+		: Slot == AutosaveCustom ? TEXT("autosave_custom.json") : TEXT("autosave.json");
+	return FPaths::ProjectSavedDir() / TEXT("OutlawsSaves") / (Slot < 0 ? FString(Auto) : FString::Printf(TEXT("slot%d.json"), Slot));
+}
+
+int32 AOutlawsLevelActor::AutosaveSlotOf(const FString& Level)
+{
+	// REQ-AUTOSAVESLOTS (user 2 Nov: story, Historical Missions, A Handful of Missions and custom maps "don't overwrite each
+	// other"): the story's levels (LevelPicture's, as outlaws.rcs plays them), Marshal Training's (the office, its five
+	// sh* missions, the ranked doors' GALLERY, SHOOT and INDY), the Handful's (civlwar2 with them), anything else custom
+	// (today the cheat's Skip to level or -OLLevel)
+	static const bool bOld = OLFlags::Param(TEXT("OLOldAutosave"));
+	const FString L = FPaths::GetBaseFilename(Level).ToLower();
+	if (bOld || L.IsEmpty() || LevelPicture(L) != 16) return AutosaveStory;
+	if (L == TEXT("office") || IsCareerMission(L) || L == TEXT("gallery") || L == TEXT("shoot") || L == TEXT("indy")) return AutosaveHom;
+	if (IsHandfulLevel(L)) return AutosaveHandful;
+	return AutosaveCustom;
+}
+
+const TCHAR* AOutlawsLevelActor::AutosaveModeName(int32 Slot)
+{
+	return Slot == AutosaveHom ? TEXT("Historical") : Slot == AutosaveHandful ? TEXT("Handful") : Slot == AutosaveCustom ? TEXT("Custom") : Slot == -2 ? TEXT("Co-op") : TEXT("Story");
+}
+
+void AOutlawsLevelActor::GetAutosaves(TArray<int32>& Out)
+{
+	static const bool bOld = OLFlags::Param(TEXT("OLOldAutosave"));
+	Out.Reset();
+	TArray<TPair<FDateTime, int32>> Found;
+	for (int32 a : { int32(AutosaveStory), int32(AutosaveHom), int32(AutosaveHandful), int32(AutosaveCustom) })
+	{
+		if (bOld && a != AutosaveStory) continue;
+		if (!ReadSaveInfo(a).bEmpty) Found.Emplace(IFileManager::Get().GetTimeStamp(*SavePath(a)), a);
+	}
+	Found.StableSort([](const TPair<FDateTime, int32>& A, const TPair<FDateTime, int32>& B) { return A.Key > B.Key; });
+	for (const TPair<FDateTime, int32>& F : Found) Out.Add(F.Value);
+}
+
+int32 AOutlawsLevelActor::NewestAutosave()
+{
+	TArray<int32> A;
+	GetAutosaves(A);
+	return A.Num() ? A[0] : int32(AutosaveStory);
+}
+
+int32 AOutlawsLevelActor::ResolveAutosave(int32 Slot) const
+{
+	return Slot == -1 ? AutosaveSlotOf(LevelName) : Slot;
+}
+
+void AOutlawsLevelActor::MigrateAutosave(bool bAgain)
+{
+	// (REQ-AUTOSAVESLOTS) the one autosave.json of before: a Handful, Historical or custom level's moved to its own file,
+	// so the story's file is the story's; a file already there for that mode wins, and the old one stays where it is
+	static bool bDone = false;
+	if ((bDone && !bAgain) || OLFlags::Param(TEXT("OLOldAutosave"))) return;
+	bDone = true;
+	const FSaveInfo S = ReadSaveInfo(AutosaveStory);
+	const int32 To = S.bEmpty ? int32(AutosaveStory) : AutosaveSlotOf(S.Level);
+	if (To == AutosaveStory) return;
+	const FString From = SavePath(AutosaveStory), Dest = SavePath(To);
+	if (FPaths::FileExists(Dest))
+	{
+		UE_LOG(LogOutlaws, Log, TEXT("OLRT autosave.json holds %s (%s), but %s is there already: both left as they are"), *S.Level, AutosaveModeName(To), *FPaths::GetCleanFilename(Dest));
+		return;
+	}
+	const bool bMoved = IFileManager::Get().Move(*Dest, *From, false);
+	UE_LOG(LogOutlaws, Log, TEXT("OLRT autosave.json holds %s (%s): %s %s"), *S.Level, AutosaveModeName(To), bMoved ? TEXT("moved to") : TEXT("NOT moved to"), *FPaths::GetCleanFilename(Dest));
 }
 
 bool AOutlawsLevelActor::PatchSaveDifficulty(int32 Slot, EOutlawsDifficulty To, EOutlawsDifficulty Was)
@@ -179,7 +256,7 @@ bool AOutlawsLevelActor::SaveLevelOpening()
 {
 	// (co-op: the host's goes to its own co-op autosave, R7; the client never saves)
 	const bool bCoop = UOutlawsCoop::IsActive(this);
-	int32 Slot = -1;
+	int32 Slot = AutosaveSlotOf(NextLevelName);       // (REQ-AUTOSAVESLOTS: the next level's mode's autosave)
 	// (REQ-TUTORIAL, REQ-PERFTESTMODE: nothing saved)
 	if (!IsBetweenLevels() || (bCoop && !UOutlawsCoop::MaySave(this, Slot)) || bTutorial || OutlawsPerfTest::IsOn())
 	{
@@ -217,6 +294,7 @@ bool AOutlawsLevelActor::SaveLevelOpening()
 		if (const AOutlawsPlayer* P = Cast<AOutlawsPlayer>(Wd->GetFirstPlayerController()->GetPawn())) P->WriteCarryMags(*O, false);
 	}
 	WriteRandoSave(*O, true);                          // (R10: the run's randomizer; the next level from its first roll)
+	if (Slot == AutosaveHom && bHom) AddHomSave(*this, *O);        // (REQ-AUTOSAVESLOTS: the Marshal session with it)
 	FString Text;
 	if (!FJsonSerializer::Serialize(O, TJsonWriterFactory<>::Create(&Text)))
 	{
@@ -225,14 +303,15 @@ bool AOutlawsLevelActor::SaveLevelOpening()
 	const FString Path = SavePath(Slot);
 	IFileManager::Get().MakeDirectory(*FPaths::GetPath(Path), true);
 	const bool bOk = FFileHelper::SaveStringToFile(Text, *Path);
-	UE_LOG(LogOutlaws, Log, TEXT("OLRT %s %s: the opening of %s (the level before it is won), %.0f s played"), Slot == -2 ? TEXT("co-op autosave") : TEXT("autosave"),
-		bOk ? TEXT("written") : TEXT("FAILED"), *NextLevelName, PlayTime);
-	if (bOk && Slot == -1) NoteDeathSlot(-1);          // (BUG-DEATHAUTOSAVE: the autosave is the newest again)
+	UE_LOG(LogOutlaws, Log, TEXT("OLRT %s %s: the opening of %s (the level before it is won), %.0f s played -> %s"), Slot == -2 ? TEXT("co-op autosave") : TEXT("autosave"),
+		bOk ? TEXT("written") : TEXT("FAILED"), *NextLevelName, PlayTime, *FPaths::GetCleanFilename(Path));
+	if (bOk && IsAutosaveSlot(Slot)) NoteDeathSlot(-1);          // (BUG-DEATHAUTOSAVE: the autosave is the newest again)
 	return bOk;
 }
 
 bool AOutlawsLevelActor::SaveGame(int32 Slot)
 {
+	Slot = ResolveAutosave(Slot);          // (REQ-AUTOSAVESLOTS: -1, the autosave of this level's mode)
 	UWorld* W = GetWorld();
 	AOutlawsPlayer* P = W && W->GetFirstPlayerController() ? Cast<AOutlawsPlayer>(W->GetFirstPlayerController()->GetPawn()) : nullptr;
 	// (never the main menu's level: bFrontEnd)
@@ -252,7 +331,7 @@ bool AOutlawsLevelActor::SaveGame(int32 Slot)
 	}
 	FString Text;
 	int32 NumEnemies = 0, NumPickups = 0;
-	if (!BuildSaveText(P, Text, NumEnemies, NumPickups))
+	if (!BuildSaveText(P, Text, NumEnemies, NumPickups, Slot == AutosaveHom && bHom))
 	{
 		return false;
 	}
@@ -272,7 +351,7 @@ bool AOutlawsLevelActor::SaveGame(int32 Slot)
 	return bOk;
 }
 
-bool AOutlawsLevelActor::BuildSaveText(AOutlawsPlayer* P, FString& OutText, int32& OutEnemies, int32& OutPickups)
+bool AOutlawsLevelActor::BuildSaveText(AOutlawsPlayer* P, FString& OutText, int32& OutEnemies, int32& OutPickups, bool bHomSave)
 {
 	// the game as it stands, as JSON (SaveGame writes it to a file; a co-op host sends it to a player joining late, R7)
 	// (DM-ROTATE: a level with no .inf, as six of the stock match maps, has no INF runtime: the rest is still the game, and a
@@ -375,6 +454,7 @@ bool AOutlawsLevelActor::BuildSaveText(AOutlawsPlayer* P, FString& OutText, int3
 	if (Inf) Inf->WriteState(*In);                     // (none: an empty block, which a load reads as nothing)
 	O->SetObjectField(TEXT("inf"), In);
 	WriteRandoSave(*O, false);                         // (R10: the run's randomizer and this level's roll, so a load builds the same)
+	if (bHomSave) AddHomSave(*this, *O);               // (REQ-AUTOSAVESLOTS: the Historical Missions autosave, the Marshal session with it)
 	if (UOutlawsCoop::IsActive(this)) UOutlawsCoop::AddPlayer2(this, *O);      // (co-op: the other player's own state, which a solo load ignores)
 
 	const TSharedRef<TJsonWriter<>> Writer = TJsonWriterFactory<>::Create(&OutText);
@@ -400,7 +480,17 @@ bool AOutlawsLevelActor::LoadGame(int32 Slot)
 		return false;
 	}
 	NoteDeathSlot(Slot >= 0 ? Slot : -1);              // (BUG-DEATHAUTOSAVE: until the next autosave, a death loads this again)
-	LoadGameFrom(O, Slot < 0 ? TEXT("autosave") : FString::Printf(TEXT("slot %d"), Slot));
+	// (REQ-AUTOSAVESLOTS) a Historical Missions autosave's Marshal session back before the build (the office's stamps, the
+	// way back from a mission), as a map load's rebuild takes it; any other single-player save of a level outside Marshal
+	// Training leaves no session on (a resume of the story after the office goes on with the story)
+	const TSharedPtr<FJsonObject>* H = nullptr;
+	if (O->TryGetObjectField(TEXT("hom_save"), H) && H && H->IsValid()) ReadHomCarry(**H);
+	else if (bHom && AutosaveSlotOf(O->GetStringField(TEXT("level"))) != AutosaveHom && !OLFlags::Param(TEXT("OLOldAutosave")))
+	{
+		UE_LOG(LogOutlaws, Log, TEXT("OLRT load: %s is no Historical Missions level: the session ends"), *O->GetStringField(TEXT("level")));
+		bHom = false;
+	}
+	LoadGameFrom(O, Slot < 0 ? FString::Printf(TEXT("the %s autosave"), AutosaveModeName(Slot)) : FString::Printf(TEXT("slot %d"), Slot));
 	return true;
 }
 
@@ -485,7 +575,7 @@ void AOutlawsLevelActor::TickSaves(float Dt)
 		{
 			if (!bSteady || !AutosaveDanger().IsEmpty()) StartSaveDelay = 0.5f;       // not mid-fall, nor in danger: in a moment
 			else if (UOutlawsCoop::IsActive(this) && UOutlawsCoop::HoldStartAutosave(this)) StartSaveDelay = 0.5f;   // (R8: the partner's kit first)
-			else if (bAutosave) SaveGame(-1);
+			else if (bAutosave) SaveGame(-1);          // (-1: this level's mode's autosave, REQ-AUTOSAVESLOTS)
 			AutosaveWait = 0.f;
 		}
 		return;
@@ -561,6 +651,15 @@ void AOutlawsLevelActor::ApplyLoad(const FJsonObject& O, bool bWorldOnly)
 		ArmourMax = FMath::Max(ArmourMax, Armour);
 		Gold = int32(O.GetNumberField(TEXT("gold")));
 		Kills = int32(O.GetNumberField(TEXT("kills")));
+		// (REQ-AUTOSAVESLOTS) a Historical Missions autosave: the mission's own counts as saved (the rebuild began the
+		// mission again from nothing), so its results card counts from where the mission began
+		const TSharedPtr<FJsonObject>* Hs = nullptr;
+		if (bHom && O.TryGetObjectField(TEXT("hom_save"), Hs) && Hs && Hs->IsValid())
+		{
+			HomWounds = int32((*Hs)->GetNumberField(TEXT("mission_wounds")));
+			HomGoldAtStart = int32((*Hs)->GetNumberField(TEXT("gold_at_start")));
+			HomKillsAtStart = int32((*Hs)->GetNumberField(TEXT("kills_at_start")));
+		}
 		PlayTime = O.GetNumberField(TEXT("playtime"));
 		UOutlawsStats::NoteLoaded(this, O.HasField(TEXT("level_seconds")) ? float(O.GetNumberField(TEXT("level_seconds"))) : -1.f);      // (REQ-LEVELTIMER)
 		OilBurn = float(O.GetNumberField(TEXT("oilburn")));

@@ -2147,6 +2147,7 @@ void AOutlawsLevelActor::BeginPlay()
 		bEnemiesActive = false;    // the smoke test wakes one when it gets to enemies
 	}
 	LoadSettings();                    // the menu settings the player saved last time
+	MigrateAutosave();                 // (REQ-AUTOSAVESLOTS: an old autosave.json of another mode's level to its own file, once a run)
 	// the game starts at the hideout, the story's first level (user 2026-09-27); test runs keep the map's own level
 	if (!OLFlags::Param(TEXT("OLShots")) && !OLFlags::Param(TEXT("OLSmokeTest")))
 	{

@@ -391,8 +391,9 @@ void UOutlawsCoop::Initialize(FSubsystemCollectionBase& Collection)
 		};
 	}
 	// milestone 8: -OLCoopLoad=<slot|auto> (the host's lobby starts from that save), -OLLoadTest=<...> (single player loads it
-	// from the title menu and reports; a test).  (R7: "coopauto" is the co-op host's own autosave again, coop_autosave.json)
-	auto SlotOf = [](const FString& V) { return V.Equals(TEXT("auto"), ESearchCase::IgnoreCase) ? -1 : V.Equals(TEXT("coopauto"), ESearchCase::IgnoreCase) ? -2 : FCString::Atoi(*V); };
+	// from the title menu and reports; a test).  (R7: "coopauto" is the co-op host's own autosave again, coop_autosave.json;
+	// REQ-AUTOSAVESLOTS: "auto" the newest single-player autosave, of whichever mode)
+	auto SlotOf = [](const FString& V) { return V.Equals(TEXT("auto"), ESearchCase::IgnoreCase) ? AOutlawsLevelActor::NewestAutosave() : V.Equals(TEXT("coopauto"), ESearchCase::IgnoreCase) ? -2 : FCString::Atoi(*V); };
 	FString Ld;
 	if (OLFlags::Value(TEXT("OLCoopLoad"), Ld) && !Ld.IsEmpty())
 	{
