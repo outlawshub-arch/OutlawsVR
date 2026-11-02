@@ -694,6 +694,11 @@ void AOutlawsLevelActor::UpdateBoss(float Dt)
 	static const bool bRanchDoorTest = OLFlags::Param(TEXT("OLRanchDoorTest"));
 	if (bRanchDoorTest) TickRanchDoorTest(Dt);
 #endif
+	if (HandfulEndTimer >= 0.f)
+	{
+		HandfulEndTimer -= Dt;          // (BUG-HANDFULDONE: "Mission Complete!" read, then the level's end)
+		if (HandfulEndTimer < 0.f) CompleteLevel(TEXT("the Handful mission's boss down"));
+	}
 	if (LevelEndTimer >= 0.f)
 	{
 		LevelEndTimer -= Dt;
@@ -1780,6 +1785,24 @@ void AOutlawsLevelActor::OnBossDefeated()
 		return;
 	}
 	bBossDefeated = true;
+	// (BUG-HANDFULDONE) a Handful mission's boss (ITM BOSS TRUE) down: the original's message 899 "Mission Complete!" once
+	// [EXE 0x14008b5da], from the game's own table; the original ends nothing after it (the player leaves from the menu), ours
+	// ends the level by itself 5 s on (user 2 Nov).  Co-op: each machine says it on its own boss's death, the host's
+	// CompleteLevel ends it for all
+	static const bool bOldHandfulEnd = OLFlags::Param(TEXT("OLOldHandfulEnd"));
+	const bool bHandfulBoss = !bOldHandfulEnd && IsHandfulLevel(LevelName) && BossSlots.ContainsByPredicate([](const FBossSlot& S) { return S.Func == TEXT("bgy_new"); });
+	if (bHandfulBoss)
+	{
+		const FString Line = UserMessageOr(899, TEXT("Mission Complete!"));
+		Notify(Line, 5.f);
+		UE_LOG(LogOutlaws, Log, TEXT("OLRT the Handful mission's boss is down: \"%s\"%s"), *Line, bInfEndsLevel ? TEXT(" (the level's own trigger ends it)") : TEXT("; the level ends in 5 s"));
+		if (!bInfEndsLevel)
+		{
+			HandfulEndTimer = 5.f;
+			SetActorTickEnabled(true);
+		}
+		return;
+	}
 	if (bInfEndsLevel)
 	{
 		// the level's own trigger ends it (the train: the door behind Bloodworth)

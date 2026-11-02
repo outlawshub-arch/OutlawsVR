@@ -212,6 +212,7 @@ void AOutlawsLevelActor::Clear()
 	DuckedSounds.Reset();
 	bMidMovieOn = false;
 	LevelEndTimer = -1.f;
+	HandfulEndTimer = -1.f;
 	for (FSoundGen& G : SoundGens)
 	{
 		for (TWeakObjectPtr<UAudioComponent>& A : G.Playing) if (A.IsValid()) A->Stop();
@@ -1712,6 +1713,30 @@ void AOutlawsLevelActor::Build()
 		{
 			++NumEnemies;
 			if (bRandomBoss) RandomBossActors.Add(Enemies.Last());
+			// (BUG-HANDFULDONE / BUG-ICEMARY, user 2 Nov: the Handful's civlwar2, villa and wharf never ended, icecaves ended on
+			// Mary) the ITM key BOSS TRUE is the original's boss flag 0x200000 [EXE 0x14008fa05]: only Kenny, Crowe, Dorsey and
+			// Confed2 (FUNC BGY_New) and the historical outlaws carry it.  A Handful mission's one is its boss: a slot of its own
+			// that ends the level (OnBossDefeated), and the flag's melee rule (bTakenAlive).  Mary_New without the key stays a
+			// named outlaw who ends nothing once such a boss is there (icecaves ends on CONFED2).  -OLOldHandfulEnd: the key
+			// unread, as before (icecaves ends on Mary, the other three never)
+			static const bool bOldHandfulEnd = OLFlags::Param(TEXT("OLOldHandfulEnd"));
+			const bool bKeyBoss = !bOldHandfulEnd && !bHom && !bChicken && IsHandfulLevel(LevelName)
+				&& ItmData.FindRef(TEXT("BOSS")).Equals(TEXT("TRUE"), ESearchCase::IgnoreCase);
+			if (bKeyBoss)
+			{
+				if (AOutlawsEnemy* E = Enemies.Last().Get())
+				{
+					E->bBoss = true;
+					FBossSlot& Slot = BossSlots.AddDefaulted_GetRef();
+					Slot.Func = TEXT("bgy_new");
+					Slot.Name = O.Name.ToUpper();
+					Slot.Spawns.Add(E->GetActorLocation());
+					Slot.Actor = E;
+					++TotalBadGuys;
+					UE_LOG(LogOutlaws, Log, TEXT("OLRT %s is the mission's boss (ITM BOSS TRUE)"), *O.Name);
+				}
+				continue;
+			}
 			// the boss comes at 80 % of the bad guys: chickens are not counted
 			if (bChicken)
 			{
@@ -2468,7 +2493,7 @@ void AOutlawsLevelActor::Tick(float DeltaSeconds)
 		DeathTimer += DeltaSeconds;
 		if (!UOutlawsCoop::IsActive(this)) return;      // (co-op: it goes on for the other player)
 	}
-	if (bGame && (Inf || bLampOn || bFrontEnd || SkyMesh || Movie || Pickups.Num() > 0 || CollectBoxActor.IsValid() || Props.Num() > 0 || Panes.Num() > 0 || Sparks.Num() > 0 || GlassBursts.Num() > 0 || SoundGens.Num() > 0 || ItemGens.Num() > 0 || Boss.IsValid() || LevelEndTimer >= 0.f))
+	if (bGame && (Inf || bLampOn || bFrontEnd || SkyMesh || Movie || Pickups.Num() > 0 || CollectBoxActor.IsValid() || Props.Num() > 0 || Panes.Num() > 0 || Sparks.Num() > 0 || GlassBursts.Num() > 0 || SoundGens.Num() > 0 || ItemGens.Num() > 0 || Boss.IsValid() || LevelEndTimer >= 0.f || HandfulEndTimer >= 0.f))
 	{
 		if (Inf) TickInf(DeltaSeconds);
 		// (the level behind the main menu is a still picture: nothing picked up, generated, carried or won there)

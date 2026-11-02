@@ -337,6 +337,9 @@ public:
 		return nullptr;
 	}
 	bool DebugLevelEnding() const { return bBossDefeated || LevelEndTimer >= 0.f; }
+	/** (BUG-HANDFULDONE's probe) the level's end under way (CompleteLevel's fade), and the Handful's wait before it (-1: none). */
+	bool DebugLevelWon() const { return LevelEndTimer >= 0.f; }
+	float DebugHandfulEndIn() const { return HandfulEndTimer; }
 	// ---- the front end (user 2026-09-27): the opening movie, then the remaster's main menu on the player's own
 	// panel; Main Game plays the story's first movie into the hideout, a historical mission loads at once ----
 	bool bFrontEnd = false;                 // the title flow is up: no level
@@ -1756,6 +1759,7 @@ private:
 	bool bBossDefeated = false;
 	bool bCutToMovie = false;               // this level ends on a hard cut to its movie (no fades)
 	float LevelEndTimer = -1.f;
+	float HandfulEndTimer = -1.f;           // (BUG-HANDFULDONE) a Handful mission's boss down: "Mission Complete!", the end this long after
 	FString NextLevelName;
 	FString NextMovie;
 	UPROPERTY(Transient)
