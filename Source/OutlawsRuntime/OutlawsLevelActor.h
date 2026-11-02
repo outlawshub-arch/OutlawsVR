@@ -1409,6 +1409,8 @@ public:
 	bool bEnemyBlast = false;
 	// (the tests': a bad guy's blasts and knives; the last blast's place, its stick's time from the hand, and its thrower)
 	int32 EnemyBlasts = 0, EnemyKnifeHits = 0, EnemyKnivesSpent = 0;
+	int32 EnemyKnivesLeft = 0;                       // (a missed knife's gknife left on the level, and the last one)
+	TWeakObjectPtr<AActor> LastEnemyKnifeDrop;
 	FVector LastEnemyBlastAt = FVector::ZeroVector;
 	float LastEnemyFuse = 0.f;
 	FString LastEnemyBlastBy;

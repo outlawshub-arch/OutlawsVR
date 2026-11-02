@@ -61,6 +61,7 @@ struct FOutlawsEnemyDef
 	FString ThrowItem;
 	float ThrowVelocity = 70.f;
 	float ThrowLife = 4.5f;
+	FString ThrowDead;                // (the thrown item's DEAD_ITEM: pknife's gknife, what a knife that comes down leaves)
 	int32 WatchChor = 0, WalkChor = 1, RunChor = 2, DuckChor = 3, ShootChor = 10, HitChor = 20;
 	int32 ChestDieChor = 21, LegDieChor = 22, WalkShootChor = 31, RunShootChor = 32;
 	FString ShootSound = TEXT("enmyshot");
@@ -254,6 +255,15 @@ public:
 	 *  stick flies, lies lit and goes off as the player's does (AOutlawsLevelActor::AddEnemyThrown).  -OLOldDynThrow: they
 	 *  hold fire, as before. */
 	static bool OldDynThrow();
+	/** (the DYNTHROW follow-up, user 2 Nov) a thrower that advances on a player inside 20 units goes to a place 10 to 20 units
+	 *  from them, as the original's advance does [EXE 0x14008c343..0x14008c3a0], so he is out past THROW_MIN to throw (Dick
+	 *  Farmer's hunt walked right up and then could not); a knife that misses leaves its DEAD_ITEM (gknife) where it comes
+	 *  down [EXE 0x1400d084b..0x1400d087e].  -OLOldDynThrow2: both as f0bb31d left them. */
+	static bool OldDynThrow2();
+	/** A reachable place MinU..MaxU units (octagonal) from Centre, any way round it (the original's 0x140088000). */
+	bool PickPointNear(const FVector& Centre, float MinU, float MaxU, int32 Tries, FVector& Out, bool bAvoidCrowd = false) const;
+	/** The original's close advance applies: a thrower (not a match bot), the new rule. */
+	bool KeepsThrowSpacing() const;
 	bool IsThrower() const { return Def.ThrowMax > 0.f; }
 	/** A throw from where he stands to a mark by these feet (TargetHeight tall): his hand, the launch velocity, the flight's
 	 *  time and the landing mark; up to Tries marks round the feet (the first on them when bScatter is off), the lower arc

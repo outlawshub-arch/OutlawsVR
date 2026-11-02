@@ -156,6 +156,7 @@ void FOutlawsEnemyDef::Read(const TMap<FString, FString>& Data)
 	F(TEXT("THROW_VELOCITY"), ThrowVelocity);
 	if (const FString* T = Data.Find(TEXT("THROW_ITEM"))) ThrowItem = FPaths::GetBaseFilename(*T).ToLower();
 	if (const FString* T = Data.Find(TEXT("THROW_ITEM_LIFE"))) ThrowLife = FCString::Atof(**T) / 1000.f;     // (the item's LIFE, ms)
+	if (const FString* T = Data.Find(TEXT("THROW_ITEM_DEAD"))) ThrowDead = FPaths::GetBaseFilename(*T).ToLower();
 	I(TEXT("WATCH_CHOR"), WatchChor);
 	I(TEXT("WALK_CHOR"), WalkChor);
 	I(TEXT("RUN_CHOR"), RunChor);
@@ -724,7 +725,15 @@ void AOutlawsEnemy::Decide()
 	// retreats and cover (his low confidence and aggressiveness on Good) walked him about in view and off out of it
 	if (IsFightingBoss() && bSeen)
 	{
-		if (OctDist(GetActorLocation(), TargetPos) <= Def.Range)
+		// (the DYNTHROW follow-up) a thrower inside THROW_MIN, who cannot throw from there, takes the original's close advance:
+		// out to 10..20 units from the player (DecideMove), and stands and throws from there
+		const double Off = OctDist(GetActorLocation(), TargetPos);
+		if (KeepsThrowSpacing() && Off <= Def.ThrowMin && Off <= 20.0)
+		{
+			bAdvanceNext = true;
+			if (DecideMove(false)) return;
+		}
+		if (Off <= Def.Range)
 		{
 			SetSub(SubFace);
 			return;
@@ -771,11 +780,16 @@ bool AOutlawsEnemy::DecideMove(bool bAvoidCrowd)
 	}
 	if (Choice == 2)
 	{
-		// advance: 5..15 units toward the player, widening the search 15 degrees a try
-		for (int32 i = 0; i < 10; ++i)
+		// advance: 5..15 units toward the player, widening the search 15 degrees a try; (the DYNTHROW follow-up) a thrower
+		// within 20 units of them, or with no way toward them, goes to a place 10..20 units from them any way round, as the
+		// original's advance [EXE 0x14008c343: past 20 units the 5..15 toward them (0x14008c8e0); within, or that failing,
+		// 0x140088000 round the target 10..20 units]
+		const bool bClose = KeepsThrowSpacing() && OctDist(Here, TargetPos) <= 20.0;
+		for (int32 i = 0; !bClose && i < 10; ++i)
 		{
 			if (PickPoint(5.f, 15.f, ToTarget, 20.f + 15.f * i, 1, false, P, bAvoidCrowd)) { Go(P, SubAdvance); return true; }
 		}
+		if (KeepsThrowSpacing() && PickPointNear(TargetPos, 10.f, 20.f, 12, P, bAvoidCrowd)) { Go(P, SubAdvance); return true; }
 	}
 	else if (Choice == 4)
 	{
@@ -794,6 +808,38 @@ bool AOutlawsEnemy::DecideMove(bool bAvoidCrowd)
 		{
 			if (PickPoint(5.f, 25.f, ToTarget + 180.f, 20.f + 15.f * i, 1, false, P, bAvoidCrowd)) { Go(P, SubRetreat); return true; }
 		}
+	}
+	return false;
+}
+
+bool AOutlawsEnemy::OldDynThrow2()
+{
+	static const bool bOld = OLFlags::Param(TEXT("OLOldDynThrow2"));
+	return bOld;
+}
+
+bool AOutlawsEnemy::KeepsThrowSpacing() const
+{
+	return IsThrower() && CoopSelf < 0 && !OldDynThrow() && !OldDynThrow2();
+}
+
+bool AOutlawsEnemy::PickPointNear(const FVector& Centre, float MinU, float MaxU, int32 Tries, FVector& Out, bool bAvoidCrowd) const
+{
+	// a place round Centre (any way) MinU..MaxU units off it, walked to from here as PickPoint walks (the body fits the way,
+	// a floor under it); a place the way's wall cut short is kept only if it is still in the ring
+	const FVector Here = GetActorLocation();
+	for (int32 i = 0; i < Tries; ++i)
+	{
+		const FVector Dir = FRotator(0.0, FMath::FRandRange(0.f, 360.f), 0.0).Vector();
+		const FVector Want = FVector(Centre.X, Centre.Y, Here.Z) + Dir * (FMath::FRandRange(MinU, MaxU) * UnitCm);
+		const float D = float(FVector::Dist2D(Here, Want) / UnitCm);
+		if (D < 1.f) continue;
+		FVector P;
+		if (!PickPoint(D, D, float((Want - Here).Rotation().Yaw), 0.f, 1, false, P, bAvoidCrowd)) continue;
+		const double Off = OctDist(P, Centre);
+		if (Off <= MinU || Off > MaxU * 1.1) continue;        // (past MinU: THROW_MIN's test is a strict one)
+		Out = P;
+		return true;
 	}
 	return false;
 }
@@ -923,6 +969,13 @@ void AOutlawsEnemy::MoveAlong(float Dt)
 			if (bHunt) HuntWait = 0.f;
 			return;
 		}
+	}
+	// (the DYNTHROW follow-up) a thrower's hunt step that comes in sight of the player within 20 units of them ends there:
+	// the close advance (Decide) keeps him 10..20 units off to throw, as the original's advance; he walked right up before
+	if (bHuntStep && bSeen && KeepsThrowSpacing() && OctDist(Here, TargetPos) <= 20.0)
+	{
+		SetSub(SubDecide);
+		return;
 	}
 	if (To.Size() < 50.0 || SubTime > 8.f)
 	{

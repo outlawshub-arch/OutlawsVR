@@ -242,6 +242,7 @@ bool AOutlawsLevelActor::SpawnEnemy(const FString& Name, const TMap<FString, FSt
 		TMap<FString, FString> ThrowData;
 		OutlawsFormats::ParseItm(ThrowText, Func, ThrowData);
 		if (const FString* V = ThrowData.Find(TEXT("LIFE"))) Data.Add(TEXT("THROW_ITEM_LIFE"), *V);
+		if (const FString* V = ThrowData.Find(TEXT("DEAD_ITEM"))) Data.Add(TEXT("THROW_ITEM_DEAD"), *V);     // (pknife's gknife.itm)
 	}
 	E->Init(this, Name, Data, S, Yaw);
 	E->SetAtlas(Atlas);

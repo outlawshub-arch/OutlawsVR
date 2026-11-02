@@ -46,6 +46,7 @@ namespace OLDynThrow
 		float Age = 0.f;                     // seconds since it left the hand
 		float Fuse = 4.5f;                   // a stick: goes off at this age; a knife: given up at it
 		float Damage = 0.f;                  // a knife's
+		FString DeadItem;                    // (the thrown ITM's DEAD_ITEM: what a knife leaves where it comes down)
 		float Spin = 0.f, Yaw = 0.f;
 		bool bRest = false;
 		FOutlawsThrownLook Look;
@@ -82,7 +83,15 @@ bool AOutlawsEnemy::TargetInThrowRange(float* OutDist) const
 	float R = 0.f, H = 0.f;
 	if (!IsThrower() || !PlayerView(Eye, Feet, R, H)) return false;
 	const float Half = GetCapsuleComponent()->GetScaledCapsuleHalfHeight();
-	const float D = float(FVector::Dist2D(Feet, GetActorLocation() - FVector(0.0, 0.0, Half)));
+	const FVector MyFeet = GetActorLocation() - FVector(0.0, 0.0, Half);
+	float D = float(FVector::Dist2D(Feet, MyFeet));
+	// (the DYNTHROW follow-up) by the original's own measure, the octagonal one (max + half the min [EXE 0x14008d04a..0x14008d0ee]),
+	// as the close advance's 10..20 units are: the flat one left a man the advance put at 10 units just inside THROW_MIN
+	if (!OldDynThrow2())
+	{
+		const double DX = FMath::Abs(Feet.X - MyFeet.X), DY = FMath::Abs(Feet.Y - MyFeet.Y);
+		D = float(FMath::Max(DX, DY) + 0.5 * FMath::Min(DX, DY));
+	}
 	if (OutDist) *OutDist = D;
 	// [EXE 0x14008cfe0]: the target's distance strictly between THROW_MIN and THROW_MAX
 	return D > Def.ThrowMin * OLDynThrow::UnitCm && D < Def.ThrowMax * OLDynThrow::UnitCm;
@@ -168,6 +177,7 @@ void AOutlawsLevelActor::AddEnemyThrown(AOutlawsEnemy* By, int32 Kind, const FVe
 	F.Vel = Vel;
 	F.Fuse = Fuse;
 	F.Damage = Damage;
+	if (By) F.DeadItem = By->Def.ThrowDead;
 	F.Yaw = float(Vel.Rotation().Yaw);
 	// the player's own look of it (the held model on the held material, a lit stick's wick and flame)
 	AOutlawsPlayer* Me = LocalThrowViewer(GetWorld());
@@ -318,6 +328,19 @@ void AOutlawsLevelActor::TickEnemyThrown(float Dt)
 					{
 						++EnemyKnivesSpent;
 						UE_LOG(LogOutlawsAI, Log, TEXT("OLRT %s's knife misses: spent on the level at %s"), *F.ByName, *F.Pos.ToCompactString());
+						// (the DYNTHROW follow-up, user 2 Nov) it lies where it came down as the knife the level places, its DEAD_ITEM
+						// [EXE 0x1400d084b..0x1400d087e: a projectile come to rest makes its DEAD_ITEM there]; picked up, a knife.
+						// One that strikes the player leaves none (user 2 Nov: none unless the original does; its strike path is
+						// not read to the end yet)
+						if (!AOutlawsEnemy::OldDynThrow2() && !F.DeadItem.IsEmpty())
+						{
+							if (AActor* Drop = SpawnGroundItem(F.DeadItem, F.Pos))
+							{
+								++EnemyKnivesLeft;
+								LastEnemyKnifeDrop = Drop;
+								UE_LOG(LogOutlawsAI, Log, TEXT("OLRT %s's knife left as %s at %s"), *F.ByName, *F.DeadItem, *Drop->GetActorLocation().ToCompactString());
+							}
+						}
 						bGone = true;
 					}
 				}
