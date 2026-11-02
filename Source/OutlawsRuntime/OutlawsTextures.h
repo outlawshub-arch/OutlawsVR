@@ -24,7 +24,9 @@ namespace OutlawsTextures
 		bool bKeepCpu = false;
 		bool IsValid() const { return W > 0 && H > 0 && Mips.Num() > 0; }
 	};
-	OUTLAWSRUNTIME_API bool PrepareBGRA(int32 W, int32 H, const TArray<FColor>& Pixels, bool bMips, TextureFilter Filter, TextureAddress Address, FPreparedTex& Out);
+	/** bKeepClear: the mips keep the colour of all-clear texels (a level PCX's index 0, which opaque walls draw), not black. */
+	OUTLAWSRUNTIME_API bool PrepareBGRA(int32 W, int32 H, const TArray<FColor>& Pixels, bool bMips, TextureFilter Filter, TextureAddress Address, FPreparedTex& Out,
+		bool bKeepClear = false);
 	/** BC7 kept as is where the GPU has it; elsewhere (the Quest, or -OLCpuBC7) decoded to BGRA8 with mips, through Saved/TexCache. */
 	OUTLAWSRUNTIME_API bool PrepareBC7(int32 W, int32 H, int32 Mips, const uint8* Data, int32 DataSize, TextureFilter Filter, FPreparedTex& Out);
 	/** Game thread: the texture from prepared levels (which it empties). */

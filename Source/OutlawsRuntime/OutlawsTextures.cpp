@@ -26,19 +26,20 @@ using namespace OutlawsFormats;
 
 namespace
 {
-	/** 2x2 box filter; colours weighted by alpha so transparent texels do not bleed their colour. */
-	void Downsample(const TArray<FColor>& Src, int32 W, int32 H, TArray<FColor>& Dst, int32& OW, int32& OH)
+	/** 2x2 box filter; colours weighted by alpha so transparent texels do not bleed their colour.  bKeepClear: four clear
+	 *  texels keep their own colour (their plain mean), not black (a level PCX, whose index 0 an opaque wall draws). */
+	void Downsample(const TArray<FColor>& Src, int32 W, int32 H, TArray<FColor>& Dst, int32& OW, int32& OH, bool bKeepClear = false)
 	{
 		OW = FMath::Max(1, W / 2);
 		OH = FMath::Max(1, H / 2);
 		Dst.SetNumUninitialized(OW * OH);
 		const int32 DW = OW, DH = OH;
 		// rows across the cores for the big ones: a level start builds a hundred 1024 px mip chains (Quest load time)
-		ParallelFor(DH, [&Src, &Dst, W, H, DW](int32 y)
+		ParallelFor(DH, [&Src, &Dst, W, H, DW, bKeepClear](int32 y)
 		{
 			for (int32 x = 0; x < DW; ++x)
 			{
-				uint32 R = 0, G = 0, B = 0, Aw = 0, ASum = 0, N = 0;
+				uint32 R = 0, G = 0, B = 0, Aw = 0, ASum = 0, N = 0, PR = 0, PG = 0, PB = 0;
 				for (int32 dy = 0; dy < 2; ++dy)
 				{
 					for (int32 dx = 0; dx < 2; ++dx)
@@ -47,6 +48,7 @@ namespace
 						const int32 sy = FMath::Min(H - 1, y * 2 + dy);
 						const FColor& C = Src[sy * W + sx];
 						R += C.R * C.A; G += C.G * C.A; B += C.B * C.A; Aw += C.A;
+						PR += C.R; PG += C.G; PB += C.B;
 						ASum += C.A;
 						++N;
 					}
@@ -55,6 +57,10 @@ namespace
 				if (Aw > 0)
 				{
 					O.R = uint8(R / Aw); O.G = uint8(G / Aw); O.B = uint8(B / Aw);
+				}
+				else if (bKeepClear)
+				{
+					O.R = uint8(PR / N); O.G = uint8(PG / N); O.B = uint8(PB / N);
 				}
 				else
 				{
@@ -443,7 +449,7 @@ namespace
 	}
 
 	/** Copies a BGRA picture into a prepared texture's first level, with its alpha-weighted mip chain under it. */
-	void FillBGRA(int32 W, int32 H, const TArray<FColor>& Pixels, bool bMips, OutlawsTextures::FPreparedTex& Out)
+	void FillBGRA(int32 W, int32 H, const TArray<FColor>& Pixels, bool bMips, OutlawsTextures::FPreparedTex& Out, bool bKeepClear = false)
 	{
 		Out.W = W;
 		Out.H = H;
@@ -460,7 +466,7 @@ namespace
 		while (PW > 1 || PH > 1)
 		{
 			int32 NW, NH;
-			Downsample(*Src, PW, PH, Next, NW, NH);
+			Downsample(*Src, PW, PH, Next, NW, NH, bKeepClear);
 			TArray<uint8>& Mip = Out.Mips.AddDefaulted_GetRef();
 			Mip.SetNumUninitialized(int64(NW) * NH * 4);
 			FMemory::Memcpy(Mip.GetData(), Next.GetData(), int64(NW) * NH * 4);
@@ -516,14 +522,15 @@ OutlawsTextures::FLoadStats OutlawsTextures::GetLoadStats()
 	return S;
 }
 
-bool OutlawsTextures::PrepareBGRA(int32 W, int32 H, const TArray<FColor>& Pixels, bool bMips, TextureFilter Filter, TextureAddress Address, FPreparedTex& Out)
+bool OutlawsTextures::PrepareBGRA(int32 W, int32 H, const TArray<FColor>& Pixels, bool bMips, TextureFilter Filter, TextureAddress Address, FPreparedTex& Out,
+	bool bKeepClear)
 {
 	Out = FPreparedTex();
 	if (W <= 0 || H <= 0 || Pixels.Num() < W * H)
 	{
 		return false;
 	}
-	FillBGRA(W, H, Pixels, bMips, Out);
+	FillBGRA(W, H, Pixels, bMips, Out, bKeepClear);
 	Out.Filter = Filter;
 	Out.Address = Address;
 	return true;
@@ -763,7 +770,13 @@ void OutlawsTextures::PrepareLevelTexture(const FOutlawsAssets& A, const FString
 	}
 	if (bWantLo && bPcx)
 	{
-		PrepareBGRA(Img.W, Img.H, PcxToBGRA(Img, Palette, Shades), true, bLinear ? TF_Trilinear : TF_Nearest, TA_Wrap, Lo);
+		// (REQ-NATIVEMAPS part 1, the zekes slab, user 2 Nov: a large black and grey slab standing in the sky behind Zeke's
+		// Cabins' spawn) an opaque wall draws index 0 in its palette colour, as the original does (zekes' tree walls: trees
+		// under a cyan top).  The mips had every all-clear 2x2 block black, so the same wall drew cyan near and black from
+		// about 30 m (a far tree wall's top a black slab against the sky, a mid one a dark cyan box between).  A level PCX's
+		// mips keep the clear texels' colour; masked mids still cut them by their alpha.  -OLOldClearMips: black as before
+		static const bool bOldClearMips = OLFlags::Param(TEXT("OLOldClearMips"));
+		PrepareBGRA(Img.W, Img.H, PcxToBGRA(Img, Palette, Shades), true, bLinear ? TF_Trilinear : TF_Nearest, TA_Wrap, Lo, !bOldClearMips);
 	}
 }
 
