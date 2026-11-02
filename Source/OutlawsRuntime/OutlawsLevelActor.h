@@ -615,6 +615,13 @@ public:
 #if WITH_OUTLAWS_TESTS
 	void DebugMovingFloors(TArray<int32>& OutSectors, TArray<FString>& OutNames, TArray<FVector>& OutTops) const;
 	double DebugFloorZ(int32 Sector, const FVector& At) const;   // the sector's floor under At now (cm)
+	/** (BUG-STAIRWALLS) GOTO_STOP Stop to the elevators named Target; for each lift's group whose elevator's name starts with
+	 *  Prefix: its walls as last drawn against a fresh build from the live heights (lines in OutReport; how many groups, how
+	 *  many differ); how many links from a lift to another lift's group holding walls on it; those lifts all at rest. */
+	void DebugInfGotoStop(const FString& Target, int32 Stop);
+	int32 DebugLiftWallsCheck(const FString& Prefix, int32& OutGroups, FString& OutReport) const;
+	int32 DebugLiftNeighbourLinks() const;
+	bool DebugLiftsAtRest(const FString& Prefix) const;
 #endif
 	bool DebugNudgeWall(const FString& Name, const FString& WallId);
 	bool DebugWallSpot(const FString& Name, const FString& WallId, FVector& Out) const;
@@ -2141,6 +2148,7 @@ private:
 		TMap<FString, FOutlawsMeshSection> Shape;     // morph: the sections as built (the batch bakes them)
 		int32 Updates = 0;                            // (tests, -OLMoverStats) UpdateGroup calls since the last report
 		bool bWallsLate = false;                      // (QSPEED-3) vertical: moved out of sight, its walls not built since
+		TArray<int32> Neighbours;                     // (BUG-STAIRWALLS) the other lifts' groups holding walls on this one's sectors
 	};
 	double MoverStatsNext = 0.0;
 	bool PlayerNearMover(const FMoverGroup& G) const;

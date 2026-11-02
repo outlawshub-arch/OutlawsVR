@@ -2240,6 +2240,45 @@ void AOutlawsLevelActor::BuildInf(const FOutlawsLevel& L, const FString& InfText
 		}
 		E.Group = Groups.Add(G);
 	}
+	// (BUG-STAIRWALLS, user 3 Nov, the user's snapshots #10 and #11: the villa's spiral stair round the bath, STEP01..07, each
+	// step its own MOVE_FLOOR, kept a riser band missing after THE_BATH_ITSELF lowered them) a wall goes to one group, the
+	// first lift in INF order that touches it, and a group rebuilt its walls only when its own lift moved; each riser is the
+	// lower step's wall facing the step above, held by the step above, which stops first (while the riser is still 0 tall)
+	// and never rebuilt it as the lower step went on down.  The original draws every wall from the live heights each frame.
+	// So each group notes the other lifts' groups holding walls on its sectors (theirs, or theirs facing it): when it moves
+	// those are rebuilt too (OnElevatorMoved).  -OLOldLiftNeighbours: as before
+	if (!OLFlags::Param(TEXT("OLOldLiftNeighbours")))
+	{
+		TMap<int32, TArray<int32>> SectorGroups;        // a lift's sector: the groups whose lift moves it
+		for (int32 g = 0; g < Groups.Num(); ++g)
+		{
+			if (Groups[g].bMorph || !Inf->Elevators.IsValidIndex(Groups[g].Elevator)) continue;
+			for (int32 s : Inf->Elevators[Groups[g].Elevator].Sectors) SectorGroups.FindOrAdd(s).AddUnique(g);
+		}
+		int32 Links = 0;
+		for (int32 a = 0; a < Groups.Num(); ++a)
+		{
+			if (Groups[a].bMorph) continue;
+			for (const uint64 K : Groups[a].GroupFilter.OnlyWalls)
+			{
+				const int32 s = int32(K >> 32), w = int32(K & 0xffffffffu);
+				if (!Live.Sectors.IsValidIndex(s) || !Live.Sectors[s].Walls.IsValidIndex(w)) continue;
+				const FOutlawsWall& W = Live.Sectors[s].Walls[w];
+				for (const int32 Touch : { s, W.Adjoin, W.DAdjoin })
+				{
+					const TArray<int32>* Movers = Touch >= 0 ? SectorGroups.Find(Touch) : nullptr;
+					if (!Movers) continue;
+					for (const int32 b : *Movers)
+					{
+						if (b == a || Groups[b].Neighbours.Contains(a)) continue;
+						Groups[b].Neighbours.Add(a);
+						++Links;
+					}
+				}
+			}
+		}
+		if (Links > 0) UE_LOG(LogOutlaws, Log, TEXT("OLRT INF lifts: %d links from a lift to another lift's group holding walls on it (rebuilt with it)"), Links);
+	}
 	// scrolls: out of the static world onto their own meshes (BuildScrolls), one per kind of motion;
 	// surfaces a mover already owns stay with the mover
 	ScrollMeshes.Reset();
@@ -2339,6 +2378,8 @@ void AOutlawsLevelActor::BuildInf(const FOutlawsLevel& L, const FString& InfText
 	Inf->OnElevatorMoved = [this](const FOutlawsElevator& E)
 	{
 		if (Groups.IsValidIndex(E.Group)) Groups[E.Group].bDirty = true;
+		// (BUG-STAIRWALLS) the groups holding walls on this lift's sectors, rebuilt from the live heights with it
+		if (Groups.IsValidIndex(E.Group)) for (const int32 n : Groups[E.Group].Neighbours) if (Groups.IsValidIndex(n)) Groups[n].bDirty = true;
 		// (user 2026-10-03, BUG-HAYBALE) a second elevator on the same sector (ranch's HAY1: its floor and its ceiling
 		// each their own) moves walls the first one's group holds: that group is rebuilt too, or the bale's sides hang
 		// where the floor stopped while its ceiling falls on
@@ -5278,6 +5319,66 @@ bool AOutlawsLevelActor::SlopeFoot(int32 Sector, FVector& OutFeet, float& OutYaw
 }
 
 #if WITH_OUTLAWS_TESTS
+void AOutlawsLevelActor::DebugInfGotoStop(const FString& Target, int32 Stop)
+{
+	if (!Inf) return;
+	FOutlawsInfMessage M;
+	M.Target = Target;
+	M.Type = EOutlawsInfMsg::GotoStop;
+	M.Arg = Stop;
+	Inf->Send(Target, FString(), M);
+}
+
+bool AOutlawsLevelActor::DebugLiftsAtRest(const FString& Prefix) const
+{
+	if (!Inf) return true;
+	for (const FOutlawsElevator& E : Inf->Elevators) if (E.Name.StartsWith(Prefix, ESearchCase::IgnoreCase) && (E.Target >= 0 || E.bWaiting)) return false;
+	return true;
+}
+
+int32 AOutlawsLevelActor::DebugLiftNeighbourLinks() const
+{
+	int32 N = 0;
+	for (const FMoverGroup& G : Groups) N += G.Neighbours.Num();
+	return N;
+}
+
+int32 AOutlawsLevelActor::DebugLiftWallsCheck(const FString& Prefix, int32& OutGroups, FString& OutReport) const
+{
+	// (BUG-STAIRWALLS) each lift group's walls as last drawn (WallShape) against the same filter built again from Live now: the
+	// same faces with the same corners, or the drawn walls are stale
+	OutGroups = 0;
+	int32 Differ = 0;
+	if (!Inf) return 0;
+	for (const FMoverGroup& G : Groups)
+	{
+		if (G.bMorph || !G.Main || !Inf->Elevators.IsValidIndex(G.Elevator)) continue;
+		const FOutlawsElevator& E = Inf->Elevators[G.Elevator];
+		if (!E.Name.StartsWith(Prefix, ESearchCase::IgnoreCase)) continue;
+		++OutGroups;
+		FOutlawsBuildFilter F = G.GroupFilter;
+		FillFloorShift(F);
+		FOutlawsGeometry GW;
+		GW.Build(Inf->Live, TexInfoCache, bReverseWinding, &F);
+		int32 TrisDrawn = 0, TrisFresh = 0;
+		double Worst = 0.0;
+		bool bSame = GW.World.Num() == G.WallShape.Num();
+		for (const auto& Kv : GW.World)
+		{
+			TrisFresh += Kv.Value.Triangles.Num() / 3;
+			const FOutlawsMeshSection* Was = G.WallShape.Find(Kv.Key);
+			if (!Was || Was->Positions.Num() != Kv.Value.Positions.Num()) { bSame = false; continue; }
+			for (int32 i = 0; i < Kv.Value.Positions.Num(); ++i) Worst = FMath::Max(Worst, FVector::Dist(Was->Positions[i], Kv.Value.Positions[i]));
+		}
+		for (const auto& Kv : G.WallShape) TrisDrawn += Kv.Value.Triangles.Num() / 3;
+		bSame = bSame && TrisDrawn == TrisFresh && Worst < 0.5;
+		Differ += bSame ? 0 : 1;
+		OutReport += FString::Printf(TEXT(" %s(%d walls, at %.2f): drawn %d tris, fresh %d, worst corner %.1f cm%s;"), *E.Name, G.GroupFilter.OnlyWalls.Num(), E.Current, TrisDrawn, TrisFresh, Worst,
+			bSame ? TEXT("") : TEXT(" STALE"));
+	}
+	return Differ;
+}
+
 void AOutlawsLevelActor::DebugMovingFloors(TArray<int32>& OutSectors, TArray<FString>& OutNames, TArray<FVector>& OutTops) const
 {
 	// (QSPEED-3, -OLLiftRideTest) each lift floor's first sector (MOVE_FLOOR, MOVE_FC) that moves by itself (a stop that
