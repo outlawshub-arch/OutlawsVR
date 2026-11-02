@@ -24,6 +24,8 @@
 #include "HAL/PlatformMisc.h"
 #include "HAL/PlatformTime.h"
 #include "Misc/Crc.h"
+#include "Misc/CommandLine.h"
+#include "Misc/Parse.h"
 #include "Misc/Paths.h"
 #include "UObject/UObjectIterator.h"
 #include "UnrealClient.h"
@@ -158,6 +160,11 @@ OL_SHOT_TEST(OLMapOverlayProbe, 1750)
 		Check(Shared.Num() >= 15 && Overrides.Num() >= 3, FString::Printf(TEXT("the cases are there: %d shared names, %d Bankrupt overrides (want 15+, 3+)"), Shared.Num(), Overrides.Num()));
 		const TSharedPtr<FOutlawsLabFile> NoLab;
 		Plan = { { *Cw, NativeLabs[0] }, { *Fb, NativeLabs[1] }, { *St, NoLab }, { *Bk, NativeLabs[2] }, { *Fb, NativeLabs[1] }, { *Cw, NativeLabs[0] }, { *St, NoLab } };
+		// -OLMapOverlayRounds=<n>: n more rounds of ColdWar, Frostbite, the stock map, Bankrupt (4 switches each) after the 7,
+		// the memory logged at each ColdWar, to see whether it keeps growing (the 7 builds rose 1907 to 2026 MB)
+		int32 Rounds = 0;
+		FParse::Value(FCommandLine::Get(), TEXT("OLMapOverlayRounds="), Rounds);
+		for (int32 r = 0; r < FMath::Clamp(Rounds, 0, 10); ++r) Plan.Append({ { *Cw, NativeLabs[0] }, { *Fb, NativeLabs[1] }, { *St, NoLab }, { *Bk, NativeLabs[2] } });
 		SerialWas = FOutlawsAssets::OverlaySerial();
 		Next = -1;
 		Stage = 3;
@@ -264,6 +271,17 @@ OL_SHOT_TEST(OLMapOverlayProbe, 1750)
 			Check(MemOne.bSet && MemSix.Labs <= MemOne.Labs && MemSix.Textures <= MemOne.Textures + 8 && MemSix.MB <= MemOne.MB + 128.0,
 				FString::Printf(TEXT("no leak: ColdWar after 1 switch: %d LAB files open, %d textures, %.0f MB; after %d switches: %d, %d, %.0f MB (want no more LABs, textures within 8, memory within 128 MB)"),
 					MemOne.Labs, MemOne.Textures, MemOne.MB, Switches, MemSix.Labs, MemSix.Textures, MemSix.MB));
+		}
+		if (bCw)
+		{
+			const FMem M = Measure();
+			UE_LOG(LogOutlaws, Display, TEXT("OLSHOT mapoverlay memory at ColdWar, build %d, %d switches: %d LAB files open, %d textures, %.0f MB"), Builds, Switches, M.Labs, M.Textures, M.MB);
+			// the longer run: the last ColdWar no higher than build 6's (the first rounds' growth not going on)
+			if (Builds > 6 && Next == Plan.Num() - 4 && MemSix.bSet)
+			{
+				Check(M.Labs <= MemSix.Labs && M.Textures <= MemSix.Textures + 8 && M.MB <= MemSix.MB + 128.0,
+					FString::Printf(TEXT("no growth: ColdWar after %d switches: %d, %d, %.0f MB against build 6's %d, %d, %.0f MB"), Switches, M.Labs, M.Textures, M.MB, MemSix.Labs, MemSix.Textures, MemSix.MB));
+			}
 		}
 		Stage = 3;
 		StageAt = Now;
