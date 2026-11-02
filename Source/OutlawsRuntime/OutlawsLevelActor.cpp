@@ -1577,6 +1577,7 @@ void AOutlawsLevelActor::Build()
 				Gen.Freq = ItmData.Contains(TEXT("FREQ")) ? FCString::Atof(*ItmData[TEXT("FREQ")]) : 5.f;
 				Gen.Pos = Pos;
 				Gen.bPoint = Type == TEXT("POINT_SOUND");
+				Gen.Sector = Sec ? int32(Sec - L.Sectors.GetData()) : -1;
 				Gen.Max = FMath::Max(1, FCString::Atoi(*ItmData.FindRef(TEXT("MAX_GENERATEES"))));
 				// the first one: soon for the continuous sounds, some while in for the occasional ones
 				Gen.Wait = Gen.Freq < 0.f ? FMath::FRandRange(0.2f, FMath::Max(0.3f, -Gen.Freq)) : FMath::FRandRange(3.f, 60.f / FMath::Max(0.1f, Gen.Freq));

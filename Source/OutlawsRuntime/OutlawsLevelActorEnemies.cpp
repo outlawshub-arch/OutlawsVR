@@ -2571,14 +2571,61 @@ void AOutlawsLevelActor::UpdateSoundGens(float Dt)
 		{
 			continue;
 		}
+		// (BUG-VILLADRIP) a point sound only where its room is in view, as the original's Gen think
+		const int32 Gate = G.bPoint ? PointSoundGate(G, Listener) : 2;
+		if (Gate == 0)
+		{
+			continue;
+		}
 		if (UAudioComponent* A = PlayWav(G.Wav, G.bPoint ? G.Pos : Listener, false, !G.bPoint))
 		{
 			// the fires' crackle (SFIRE generators, fire.wav: the hideout's and the ranch's) at a quarter (user 2026-09-27)
 			if (G.Wav.Equals(TEXT("fire"), ESearchCase::IgnoreCase)) A->SetVolumeMultiplier(A->VolumeMultiplier * 0.25f);
+			if (Gate == 1) A->SetVolumeMultiplier(A->VolumeMultiplier * 0.5f);
 			VaryPitch(A);
 			G.Playing.Add(A);
+			++G.Plays;
 		}
 	}
+}
+
+int32 AOutlawsLevelActor::PointSoundGate(const FSoundGen& G, const FVector& Listener) const
+{
+	// BUG-VILLADRIP (user 3 Nov, the user's snapshots #7 to #9: the underground's drips, SDRIP2 in sector 696 and SDRIP3 in 677,
+	// heard all over the villa through the ground, 8 to 20 m off).  The original's Gen think (0x14006f790) makes a POINT_SOUND's
+	// sound only within its MAX_PLAYER_DIST (200 units by default) and only when the player's sector is the generator's or in
+	// that sector's visible list; then at full volume with a clear line from it to the eye, at half without.  Ours: the ear in
+	// its sector, or a clear line from it to the ear, or its sector in the eye's portal flood (IsSectorSeen: that one follows
+	// the view, so alone it would silence a sound behind the player).  -OLOldPointSound: by distance alone, as before
+	static const bool bOld = OLFlags::Param(TEXT("OLOldPointSound"));
+	if (bOld) return 2;
+	constexpr double MaxDist = 200.0 * 30.0;
+	if (FVector::Dist(G.Pos, Listener) > MaxDist) return 0;
+	const bool bClear = CanSee(G.Pos + FVector(0.0, 0.0, 30.0), Listener, nullptr);      // (a unit up: the drips stand on their floor)
+	if (G.Sector >= 0 && !bClear && G.Sector != CullSectorOf(Listener) && !IsSectorSeen(G.Sector)) return 0;
+	return bClear ? 2 : 1;
+}
+
+int32 AOutlawsLevelActor::DebugPointSoundCount() const
+{
+	int32 N = 0;
+	for (const FSoundGen& G : SoundGens) N += G.bPoint ? 1 : 0;
+	return N;
+}
+
+int32 AOutlawsLevelActor::DebugPointSound(int32 I, const FVector& Listener, FString& OutWav, int32& OutSector, FVector& OutPos, int32& OutPlays) const
+{
+	int32 k = 0;
+	for (const FSoundGen& G : SoundGens)
+	{
+		if (!G.bPoint || k++ != I) continue;
+		OutWav = G.Wav;
+		OutSector = G.Sector;
+		OutPos = G.Pos;
+		OutPlays = G.Plays;
+		return PointSoundGate(G, Listener);
+	}
+	return -1;
 }
 
 UTexture* AOutlawsLevelActor::SpriteHdFor(const TSharedPtr<OutlawsTextures::FSpriteAtlas>& Atlas)

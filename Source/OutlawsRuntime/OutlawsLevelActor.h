@@ -1113,6 +1113,10 @@ public:
 	/** Whether a sector may be seen from the eye this tick (VisibleSectors: the portal flood plus one adjoin); true for no
 	 *  sector (-1) and while culling is off or not yet valid, so nothing freezes by mistake. */
 	bool IsSectorSeen(int32 Sector) const;
+	/** (tests, BUG-VILLADRIP) the point sound generators: how many; the I'th one's wav, sector and place, and what it would do
+	 *  for a listener at Listener now (PointSoundGate: 2 full, 1 half, 0 not), its plays so far. */
+	int32 DebugPointSoundCount() const;
+	int32 DebugPointSound(int32 I, const FVector& Listener, FString& OutWav, int32& OutSector, FVector& OutPos, int32& OutPlays) const;
 	/** A thing a moving sector carries along right now (riding a lift, a scrolling floor). */
 	bool IsCarriedBySector(const AActor* A) const;
 	/** CPU2: a bad guy the enemy throttle leaves alone (always FULL, outside the caps): the named outlaws, the dying,
@@ -1786,9 +1790,15 @@ private:
 		bool bPoint = false;
 		int32 Max = 1;
 		float Wait = 0.f;
+		int32 Sector = -1;               // (BUG-VILLADRIP) the generator's own sector (-1: none known)
+		int32 Plays = 0;                 // (tests) sounds started
 		TArray<TWeakObjectPtr<UAudioComponent>> Playing;
 	};
 	TArray<FSoundGen> SoundGens;
+	/** (BUG-VILLADRIP) whether a point sound plays now for a listener there: 2 full, 1 at half (no line from it to the ear),
+	 *  0 not (over 200 units off, or the ear neither in its sector, nor in a clear line from it, nor with its sector in view);
+	 *  -OLOldPointSound: 2 always (by distance alone, as before). */
+	int32 PointSoundGate(const FSoundGen& G, const FVector& Listener) const;
 	// item generators (Gen_New TYPE ITEM: the train's rocks, shrubs and cacti dropped onto the rushing ground):
 	// one scenery sprite every |FREQ| s (plus up to |RAND|), the first after |DELAY|, at most MAX_GENERATEES
 	struct FItemGen
