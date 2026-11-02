@@ -273,9 +273,14 @@ void AOutlawsLevelActor::HomOnOffice()
 	{
 		if (HomGameScore >= Rk.Score && GetCount(Rk.Badge) <= 0) AddCount(Rk.Badge, 1);
 	}
+	// (REQ-OFFICECAPTURED, user 2 Nov, the user's snapshot #38: "remove" the "You captured Bloodeye Tim!" line on the way back
+	// in, and the "Welcome back" one on a resume) the original's office.inf says nothing on return: the porch's event only
+	// stamps the poster and lights the cell, as above.  The result stays in the log, the card and co-op's word; the line
+	// shows again with -OLOldOfficeResult
 	if (!HomResultText.IsEmpty())
 	{
-		Notify(HomResultText, 10.f);
+		if (OLFlags::Param(TEXT("OLOldOfficeResult"))) Notify(HomResultText, 10.f);
+		UE_LOG(LogOutlaws, Log, TEXT("OLRT hom: back in the office: %s (%s)"), *HomResultText, OLFlags::Param(TEXT("OLOldOfficeResult")) ? TEXT("shown, -OLOldOfficeResult") : TEXT("not shown"));
 		HomResultText.Reset();
 	}
 	HomCardRows.Reset();
