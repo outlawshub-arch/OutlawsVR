@@ -780,6 +780,11 @@ private:
 	float RecoilPitch[2] = { 0.f, 0.f };
 	FRotator GunBaseRot[2];
 	bool bTriggerArmed[2] = { true, true };
+	// REQ-SMASHTRIGGER: a held bad guy died in this hand and dropped out of it: no shot from it till its trigger is let
+	// go, SmashTriggerFloor after the drop at the soonest
+	bool bDeathDropTrigger[2] = { false, false };
+	double DeathDropAt[2] = { 0.0, 0.0 };
+	static constexpr double SmashTriggerFloor = 0.3;    // s (user 2026-11-02: about 0.3 s)
 	float FanHide[2] = { 0.f, 0.f };   // seconds this hand's own gun stays put away while it fans the other
 	float FxLeft[2] = { 0.f, 0.f };
 	UPROPERTY(Transient)

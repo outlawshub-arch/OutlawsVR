@@ -2756,6 +2756,13 @@ void AOutlawsPlayer::UpdateGuns(float Dt)
 		{
 			bTriggerArmed[H] = true;
 		}
+		// REQ-SMASHTRIGGER: a held bad guy dead in this hand and out of it on his own: its trigger let go first, and not
+		// within SmashTriggerFloor of the drop, before this hand shoots or throws again (the gatling too)
+		if (bDeathDropTrigger[H])
+		{
+			if (T < 0.3f && GetWorld()->GetTimeSeconds() - DeathDropAt[H] >= SmashTriggerFloor) bDeathDropTrigger[H] = false;
+			else bTriggerArmed[H] = false;
+		}
 		if (W.Throw > 0)
 		{
 			if (!bPutAway)
@@ -2768,7 +2775,7 @@ void AOutlawsPlayer::UpdateGuns(float Dt)
 				ShowThrowArc(H, false);                     // nothing thrown from a hand that is busy
 			}
 		}
-		else if (T > 0.7f && (bTriggerArmed[H] || W.bAuto) && !bWheelHeld[H] && !bPutAway)
+		else if (T > 0.7f && (bTriggerArmed[H] || (W.bAuto && !bDeathDropTrigger[H])) && !bWheelHeld[H] && !bPutAway)
 		{
 			bTriggerArmed[H] = false;
 			FireGun(H, false);
@@ -5996,6 +6003,16 @@ void AOutlawsPlayer::UpdateEnemyGrab(float Dt)
 		if (!E->bHeldByPlayer || bDeadView || GrabHand == H)
 		{
 			// shot dead in the hands (it let go itself), or the hand went to a ledge; a body taken up is held (user 2026-10-01)
+			// REQ-SMASHTRIGGER (user 2026-11-02): dead in the hand and out of it on his own (the smash of two held, a shot),
+			// with its trigger held (the throw's arc out): the gun given back fired at once.  The hand waits for
+			// its trigger let go (UpdateGuns).  -OLOldSmashTrigger: it fires, as before
+			static const bool bOldSmashTrigger = OLFlags::Param(TEXT("OLOldSmashTrigger"));
+			if (!bOldSmashTrigger && !E->bHeldByPlayer && E->IsDead() && !bDeadView)
+			{
+				bDeathDropTrigger[H] = true;
+				DeathDropAt[H] = GetWorld()->GetTimeSeconds();
+				UE_LOG(LogOutlaws, Log, TEXT("OLRT %s died in the %s hand: no shot from it till its trigger is let go"), *E->GetName(), H == 0 ? TEXT("left") : TEXT("right"));
+			}
 			LetGoEnemy(H, false);
 			continue;
 		}
