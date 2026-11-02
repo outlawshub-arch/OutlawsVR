@@ -242,8 +242,14 @@ public:
 	UPROPERTY(Transient)
 	TArray<TObjectPtr<UTextRenderComponent>> WristNumbers;
 	struct FWristIconSrc { UTexture* Tex = nullptr; FVector2D Scale = FVector2D(1.0, 1.0); FVector2D Offset = FVector2D::ZeroVector; float Aspect = 1.f; };
-	TMap<FString, FWristIconSrc> WristIconCache;     // "nwx:intheart" / "kpf:idocbag" (+ the HD switch) -> its picture
+	// (BUG-WRISTCRASH, the user's Quest crash 2 Nov: the cache held the level's sprite atlases by a raw pointer; a restart's
+	// Clear() and GC freed them and the next relayout handed a freed texture to the card's material) the picture is held
+	// weakly: an entry whose texture is gone is a miss, rebuilt from the level as it is now
+	struct FWristIconHeld { FWristIconSrc Src; TWeakObjectPtr<UTexture> Live; };
+	TMap<FString, FWristIconHeld> WristIconCache;     // "nwx:intheart" / "kpf:idocbag" (+ the HD switch) -> its picture
+	int32 WristIconRebuilt = 0;                       // (tests) stale entries found and rebuilt since the start
 	bool WristIcon(const FString& Key, FWristIconSrc& Out);
+	int32 WristIconCacheStale(FString* Keys = nullptr) const;     // (tests) entries whose texture is gone; the weak side only, never the pointer
 	class UStaticMeshComponent* WristIconPlane(int32 Index);
 	void LayoutWrist();
 

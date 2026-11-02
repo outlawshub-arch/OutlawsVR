@@ -1095,6 +1095,8 @@ void AOutlawsPlayer::ResetForLevel()
 	MantleLeft = 0.f;
 	NudgedDoor = -1;
 	WristLast.Reset();
+	// (BUG-WRISTCRASH) a new start: the level's atlases are new, the wrist's pictures looked up again (-OLOldWristCache: kept)
+	if (!OLFlags::Param(TEXT("OLOldWristCache"))) WristIconCache.Reset();
 	UE_LOG(LogOutlaws, Log, TEXT("OLRT one controller: %s"), OneController == 1 ? TEXT("Left only") : OneController == 2 ? TEXT("Right only") : TEXT("Off"));
 }
 
@@ -4573,10 +4575,23 @@ bool AOutlawsPlayer::WristIcon(const FString& Key, FWristIconSrc& Out)
 {
 	AOutlawsLevelActor* L = Level.Get();
 	const FString CacheKey = Key + (L && L->bHDTextures ? TEXT("#hd") : TEXT("#sd"));
-	if (const FWristIconSrc* Hit = WristIconCache.Find(CacheKey))
+	static const bool bOldCache = OLFlags::Param(TEXT("OLOldWristCache"));     // (the raw cache, for the probe's before/after only)
+	if (const FWristIconHeld* Hit = WristIconCache.Find(CacheKey))
 	{
-		Out = *Hit;
-		return Out.Tex != nullptr;
+		if (bOldCache)
+		{
+			Out = Hit->Src;
+			return Out.Tex != nullptr;
+		}
+		// (BUG-WRISTCRASH) its texture went with a level's Clear(): rebuilt below, never handed out
+		if (!Hit->Src.Tex || Hit->Live.IsValid())
+		{
+			Out = Hit->Src;
+			Out.Tex = Hit->Live.Get();
+			return Out.Tex != nullptr;
+		}
+		++WristIconRebuilt;
+		UE_LOG(LogOutlaws, Log, TEXT("OLRT wrist icon %s: its texture is gone (a level cleared), rebuilt"), *CacheKey);
 	}
 	FWristIconSrc Src;
 	if (Key.StartsWith(TEXT("nwx:")))
@@ -4589,9 +4604,21 @@ bool AOutlawsPlayer::WristIcon(const FString& Key, FWristIconSrc& Out)
 		Src.Tex = ItemCard(Key.Mid(4), true);
 		Src.Aspect = 152.f / 216.f;
 	}
-	WristIconCache.Add(CacheKey, Src);
+	WristIconCache.Add(CacheKey, FWristIconHeld{ Src, Src.Tex });
 	Out = Src;
 	return Src.Tex != nullptr;
+}
+
+int32 AOutlawsPlayer::WristIconCacheStale(FString* Keys) const
+{
+	int32 N = 0;
+	for (const TPair<FString, FWristIconHeld>& Kv : WristIconCache)
+	{
+		if (!Kv.Value.Src.Tex || Kv.Value.Live.IsValid()) continue;
+		++N;
+		if (Keys) *Keys += (Keys->IsEmpty() ? TEXT("") : TEXT(" ")) + Kv.Key;
+	}
+	return N;
 }
 
 UStaticMeshComponent* AOutlawsPlayer::WristIconPlane(int32 Index)
@@ -4751,7 +4778,7 @@ void AOutlawsPlayer::UpdateWrist()
 	// when that wrist is raised in front of the face (-OLWristTest: held in front of the desktop camera)
 	UpdateBadgeIcon();
 	WristText->SetVisibility(false);
-	const bool bTest = OLFlags::Param(TEXT("OLWristTest"));
+	const bool bTest = OLFlags::Param(TEXT("OLWristTest")) || OLFlags::Has(TEXT("OLWristCrashProbe"));     // (BUG-WRISTCRASH's probe too)
 	static const bool bHandTest = OLFlags::Param(TEXT("OLChestTest"));     // (REQ-CHESTPLATE: on the off hand, on the desktop)
 	if (!bVR && !bTest && !bHandTest)
 	{
