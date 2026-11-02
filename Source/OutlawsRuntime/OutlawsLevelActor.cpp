@@ -185,6 +185,7 @@ void AOutlawsLevelActor::Clear()
 	Props.Reset();
 	Panes.Reset();
 	Dynamite.Reset();
+	ClearEnemyThrown();                     // (BUG-DYNTHROW: a bad guy's sticks and knives in the air)
 	Sparks.Reset();
 	LogFarSummary();                        // (the level's far-freeze and far-sound line, user 2026-10-03)
 	Enemies.Reset();
@@ -2474,6 +2475,7 @@ void AOutlawsLevelActor::Tick(float DeltaSeconds)
 		if (!bFrontEnd) CarryBySectors(DeltaSeconds);
 		if (!bFrontEnd && Enemies.Num() > 0) TickEnemyThrottle(DeltaSeconds);   // (CPU2)
 		if (!bFrontEnd && Enemies.Num() > 0) TickTaunts(DeltaSeconds);          // (BUG-TAUNTRATE)
+		if (!bFrontEnd) TickEnemyThrown(DeltaSeconds);                          // (BUG-DYNTHROW)
 		if (!bFrontEnd && Enemies.Num() > 0)
 		{
 			// the far-freeze book (user 2026-10-03): how many held still, for how long, and the ticks that spared

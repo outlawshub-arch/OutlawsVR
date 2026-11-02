@@ -1152,15 +1152,19 @@ void AOutlawsLevelActor::Explode(const FVector& Where)
 				if (UOutlawsCoop::BlastShooter >= 0) UOutlawsCoop::BlastHostDealt = Dealt;
 				else if (!(bCoopRemote && UOutlawsCoop::BlastsDealtByHost(this)))
 				{
-					if (!bCoopRemote) HurtCause = uint8(EOutlawsHurtCause::OwnBlast);     // (REQ-KILLFEED: this machine's own stick)
+					// (BUG-DYNTHROW: a bad guy's stick hurts as a bad guy's shot does, not as the player's own stick)
+					if (bEnemyBlast) bHurtByBadGuy = true;
+					else if (!bCoopRemote) HurtCause = uint8(EOutlawsHurtCause::OwnBlast);     // (REQ-KILLFEED: this machine's own stick)
 					DamagePlayer(Dealt);
 				}
 				if (AOutlawsPlayer* PP = Cast<AOutlawsPlayer>(Pawn)) PP->BlastThrow(From, Dealt);
 			}
 		}
 	}
-	if (!bCoopRemote) UOutlawsCoop::BlastAtPlayers(this, From, float(R), BlastDamage * PlayerDamageScale());     // (a match: the other players in reach)
-	FOutlawsStatsScope BlastBy(EOutlawsStatsBy::Me, true);      // (the level's end panels: a blast's kills are dynamite kills)
+	// (BUG-DYNTHROW) a bad guy's stick: the bad guys it kills are no one's (the end panels, the achievements), the badge no part of it
+	const float BlastScale = bEnemyBlast ? 1.f : PlayerDamageScale();
+	if (!bCoopRemote) UOutlawsCoop::BlastAtPlayers(this, From, float(R), BlastDamage * BlastScale);     // (a match: the other players in reach)
+	FOutlawsStatsScope BlastBy(bEnemyBlast ? EOutlawsStatsBy::Nobody : EOutlawsStatsBy::Me, true);      // (the level's end panels: a blast's kills are dynamite kills)
 	int32 BlastKills = 0;                                      // (REQ-EXTRAS dynamite3: the bad guys this one blast killed)
 	for (const TWeakObjectPtr<AOutlawsEnemy>& Wk : Enemies)
 	{
@@ -1169,11 +1173,11 @@ void AOutlawsLevelActor::Explode(const FVector& Where)
 		const double D = FVector::Dist(From, E->GetActorLocation());
 		if (D < R && CanSee(From, E->GetActorLocation(), E))
 		{
-			E->TakeHit(BlastDamage * Falloff(D) * PlayerDamageScale(), E->GetActorLocation(), (E->GetActorLocation() - Where).GetSafeNormal(), Where, true);
+			E->TakeHit(BlastDamage * Falloff(D) * BlastScale, E->GetActorLocation(), (E->GetActorLocation() - Where).GetSafeNormal(), Where, true);
 			BlastKills += E->IsDead() && !E->bVoiceOnly && !E->bNotBadGuy ? 1 : 0;
 		}
 	}
-	if (BlastKills > 0) OutlawsAchievements::NoteBlastKills(this, BlastKills);
+	if (BlastKills > 0 && !bEnemyBlast) OutlawsAchievements::NoteBlastKills(this, BlastKills);
 	// every prop in range reacts as if shot; glass whose wall middle is in range shatters
 	RefreshPropBases();
 	for (int32 i = 0; i < Props.Num() && !bCoopRemote; ++i)

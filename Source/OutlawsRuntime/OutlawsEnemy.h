@@ -56,6 +56,11 @@ struct FOutlawsEnemyDef
 	int32 ShotMultiples = 1;
 	float ThrowMax = 0.f;             // a thrower (dynamite, knives) instead of a shooter when set
 	float ThrowMin = 0.f;
+	// BUG-DYNTHROW: what he throws (THROW_ITEM's name: pdynam, pknife) and how fast (THROW_VELOCITY, units a second); the
+	// thrown item's own LIFE (a stick's fuse, ms in its ITM: seconds here) the level actor adds from that ITM
+	FString ThrowItem;
+	float ThrowVelocity = 70.f;
+	float ThrowLife = 4.5f;
 	int32 WatchChor = 0, WalkChor = 1, RunChor = 2, DuckChor = 3, ShootChor = 10, HitChor = 20;
 	int32 ChestDieChor = 21, LegDieChor = 22, WalkShootChor = 31, RunShootChor = 32;
 	FString ShootSound = TEXT("enmyshot");
@@ -243,6 +248,23 @@ public:
 	/** BUG-NOFLOORSTUCK: -OLOldNoFloorStuck, no floor found ahead stops him even with a wall between (no walk into it, no
 	 *  other way for a hunter). */
 	static bool OldNoFloorStuck();
+	/** BUG-DYNTHROW (user 2 Nov, the user's snapshot #41: shgulch's Dick Farmer only looked): a bad guy whose ITM has a
+	 *  THROW_MAX throws his THROW_ITEM (a stick of dynamite, a knife) at the player instead of shooting, as the original
+	 *  [EXE 0x140089fcb, 0x14008cfe0, 0x140090670]: only between THROW_MIN and THROW_MAX and only when a lob reaches; the
+	 *  stick flies, lies lit and goes off as the player's does (AOutlawsLevelActor::AddEnemyThrown).  -OLOldDynThrow: they
+	 *  hold fire, as before. */
+	static bool OldDynThrow();
+	bool IsThrower() const { return Def.ThrowMax > 0.f; }
+	/** A throw from where he stands to a mark by these feet (TargetHeight tall): his hand, the launch velocity, the flight's
+	 *  time and the landing mark; up to Tries marks round the feet (the first on them when bScatter is off), the lower arc
+	 *  then (a stick) the upper, its whole flight clear (OutlawsThrowArc::ArcClear).  False: none reaches. */
+	bool SolveThrow(const FVector& TargetFeet, float TargetHeight, int32 Tries, bool bScatter, FVector& OutHand, FVector& OutVel, double& OutTime, FVector& OutMark) const;
+	/** Whether the player he is after stands between THROW_MIN and THROW_MAX of him (flat distance, cm in OutDist). */
+	bool TargetInThrowRange(float* OutDist = nullptr) const;
+	int32 ThrowsTotal = 0;             // (tests: throws he has made)
+	double LastThrowAt = -1.0;         // (tests: world seconds of the last, its mark and the player's flat distance then, cm)
+	FVector LastThrowMark = FVector::ZeroVector;
+	float LastThrowDist = 0.f;
 	/** BUG-BOSSWALL: what his movement ran into, kept for the slide along it (ACharacter's hook, from the movement's impact). */
 	virtual void MoveBlockedBy(const FHitResult& Impact) override;
 	// an outlaw's voice alone (RADIUS 0: the ranch's BOBVCE, 4 px tall, 999 health, no damage): taunts, nothing else
@@ -512,6 +534,8 @@ private:
 	void StartShootMove();
 	void BeginShotWindup();
 	void FireAtPlayer();
+	/** BUG-DYNTHROW: a thrower's EVENT(FIRE): his THROW_ITEM lobbed at the player (OutlawsEnemyThrow.cpp). */
+	void ThrowAtPlayer();
 	/** An event's taunt (an alert, a friend taken, a lit stick): through the level's taunt clock (BUG-TAUNTRATE). */
 	void Taunt(const TArray<FString>& List, const TCHAR* Why = TEXT("event"));
 	/** A line of List (not the last one twice running) played at this one's eyes; OutLine the line said. */

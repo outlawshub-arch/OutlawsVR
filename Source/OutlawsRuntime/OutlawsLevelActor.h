@@ -1393,6 +1393,27 @@ public:
 	bool bArmourPassive = true;
 	int32 BlastsSeen = 0;                                          // (the tests': blasts gone off here)
 	float BlastRadiusCm() const { return BlastRadius * 30.f; }      // (pdynam's 50 units)
+	/** BUG-DYNTHROW (OutlawsEnemyThrow.cpp): a bad guy's stick (Kind 1: it flies, lies lit and goes off Fuse seconds after it
+	 *  left his hand, the level's own blast) or knife (2: Damage to the player it strikes, spent on the level), let go at From
+	 *  at Vel; flown, drawn (the player's own look of it) and set off here, on the host or the single player's machine. */
+	void AddEnemyThrown(class AOutlawsEnemy* By, int32 Kind, const FVector& From, const FVector& Vel, float Fuse, float Damage);
+	void TickEnemyThrown(float Dt);
+	void ClearEnemyThrown();
+	int32 EnemyThrownCount() const;
+	/** Set while a bad guy's stick goes off (Explode): its harm is no one's doing (no kill, stat or achievement of the
+	 *  player's; the player's own hurt is a bad guy's, not "your own stick"), and the badge does not double it. */
+	bool bEnemyBlast = false;
+	// (the tests': a bad guy's blasts and knives; the last blast's place, its stick's time from the hand, and its thrower)
+	int32 EnemyBlasts = 0, EnemyKnifeHits = 0, EnemyKnivesSpent = 0;
+	FVector LastEnemyBlastAt = FVector::ZeroVector;
+	float LastEnemyFuse = 0.f;
+	FString LastEnemyBlastBy;
+	/** (tests) The first of this level's bad guys' sticks and knives in the air or lying lit: where, how long since it left
+	 *  the hand, its kind, whether it is at rest and drawn; false: none. */
+	bool DebugEnemyThrown(FVector& OutPos, float& OutAge, int32& OutKind, bool& bOutRest, bool& bOutDrawn) const;
+	/** (tests) That one's look: the stick's place and size, its flame's and core's, shown or hidden. */
+	FString DebugEnemyThrownLook() const;
+	void TestSetHealth(float Points) { Health = Points; }      // (tests: BUG-DYNTHROW's probe takes its blasts on a deep pool)
 	FVector SettleLookAt = FVector::ZeroVector;     // (a test aid: the 3D item SettleItemModels moved most, -OLSettleLook)
 	void SetArmour(int32 Points) { Armour = FMath::Max(0, Points); }
 	/** The level as it stands (the INF's live copy), for the held map. */

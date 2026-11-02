@@ -234,6 +234,15 @@ bool AOutlawsLevelActor::SpawnEnemy(const FString& Name, const TMap<FString, FSt
 			}
 		}
 	}
+	// (BUG-DYNTHROW) a thrower's THROW_ITEM: its LIFE (pdynam's 4500 ms, the stick's fuse) as THROW_ITEM_LIFE
+	FString ThrowText;
+	if (const FString* Throw = ItmData.Find(TEXT("THROW_ITEM")); Throw && AssetsRef && AssetsRef->GetText(FPaths::GetBaseFilename(*Throw).ToLower() + TEXT(".itm"), ThrowText))
+	{
+		FString Func;
+		TMap<FString, FString> ThrowData;
+		OutlawsFormats::ParseItm(ThrowText, Func, ThrowData);
+		if (const FString* V = ThrowData.Find(TEXT("LIFE"))) Data.Add(TEXT("THROW_ITEM_LIFE"), *V);
+	}
 	E->Init(this, Name, Data, S, Yaw);
 	E->SetAtlas(Atlas);
 #if WITH_EDITOR

@@ -153,6 +153,9 @@ void FOutlawsEnemyDef::Read(const TMap<FString, FString>& Data)
 	I(TEXT("SHOT_MULTIPLES"), ShotMultiples);
 	F(TEXT("THROW_MAX"), ThrowMax);
 	F(TEXT("THROW_MIN"), ThrowMin);
+	F(TEXT("THROW_VELOCITY"), ThrowVelocity);
+	if (const FString* T = Data.Find(TEXT("THROW_ITEM"))) ThrowItem = FPaths::GetBaseFilename(*T).ToLower();
+	if (const FString* T = Data.Find(TEXT("THROW_ITEM_LIFE"))) ThrowLife = FCString::Atof(**T) / 1000.f;     // (the item's LIFE, ms)
 	I(TEXT("WATCH_CHOR"), WatchChor);
 	I(TEXT("WALK_CHOR"), WalkChor);
 	I(TEXT("RUN_CHOR"), RunChor);
@@ -1134,6 +1137,7 @@ void AOutlawsEnemy::StartShooting(int32 FromSub)
 	{
 		BurstLeft = Mode == 1 ? 1 : 0;
 	}
+	if (BurstLeft > 0 && IsThrower()) BurstLeft = 1;      // (BUG-DYNTHROW: one throw a shoot timer)
 	if (BurstLeft <= 0 || Def.ShootChor < 0)
 	{
 		return;
@@ -1175,6 +1179,11 @@ void AOutlawsEnemy::StartShootMove()
 
 void AOutlawsEnemy::FireAtPlayer()
 {
+	if (IsThrower() && !OldDynThrow())
+	{
+		ThrowAtPlayer();                          // (BUG-DYNTHROW: the shoot chor's EVENT(FIRE) lets the stick or the knife go)
+		return;
+	}
 	AOutlawsLevelActor* L = Level.Get();
 	FVector Eye, Feet;
 	float R, H;
@@ -2590,13 +2599,34 @@ void AOutlawsEnemy::Tick(float Dt)
 				}
 				ShootWait = 0.25f;
 			}
-			// throwers (THROW_MAX) lob dynamite or knives instead: not built yet, so they hold fire
-			if ((bSeen || bInReach) && bPlayer && !bVoiceOnly && Def.ShootChor >= 0 && Def.ThrowMax <= 0.f && Sub != SubShoot && Sub != SubShootMove
-				&& !L->TakeAttackToken(this))
+			// throwers (THROW_MAX) lob dynamite or knives instead (BUG-DYNTHROW, the user's snapshot #41: they held fire, "not
+			// built yet"): only with the player between THROW_MIN and THROW_MAX of him and a lob that reaches him clear
+			// [EXE 0x14008cfe0]; -OLOldDynThrow: they hold fire, as before
+			auto ThrowReaches = [this]()
+			{
+				FVector PEye, PFeet, Hand, Vel, Mark;
+				float PR = 0.f, PH = 0.f;
+				double T = 0.0;
+				return TargetInThrowRange() && PlayerView(PEye, PFeet, PR, PH) && SolveThrow(PFeet, float(PEye.Z - PFeet.Z), 10, false, Hand, Vel, T, Mark);
+			};
+			const bool bMayAttack = (bSeen || bInReach) && bPlayer && !bVoiceOnly && Def.ShootChor >= 0 && Sub != SubShoot && Sub != SubShootMove
+				&& (!IsThrower() || (!OldDynThrow() && ThrowReaches()));
+			if (IsThrower() && !bMayAttack && !OldDynThrow() && bSeen && bPlayer)
+			{
+				// (the log: a thrower in sight of the player who does not throw at his timer, and why)
+				float D = 0.f;
+				const bool bIn = TargetInThrowRange(&D);
+				UE_LOG(LogOutlawsAI, Log, TEXT("OLRT %s's shoot timer: no throw (sees %d, sub %d, %.1f m, in his reach %d)"), *OutlawsName, bSeen ? 1 : 0, Sub, D / 100.f, bIn ? 1 : 0);
+			}
+			if (bMayAttack && !L->TakeAttackToken(this))
 			{
 				ShootWait = FMath::FRandRange(0.3f, 0.8f);      // (CPU2: enough of them firing at that player now; soon again)
 			}
-			else if ((bSeen || bInReach) && bPlayer && !bVoiceOnly && Def.ShootChor >= 0 && Def.ThrowMax <= 0.f && Sub != SubShoot && Sub != SubShootMove)
+			else if (bMayAttack && IsThrower())
+			{
+				StartShooting(IsFightingBoss() ? SubFace : Sub);     // (a throw never on the move: he stops, throws, goes on)
+			}
+			else if (bMayAttack)
 			{
 				// (BUG-BOSSPASSIVE) a shot on the move only with a shoot-on-the-move chor in his sprite: the named outlaws' NWXs
 				// (and the marshals' and the Gatling man's) have 27 chors or fewer, none of 31 / 32, so he walked on with no
