@@ -31,6 +31,7 @@
 #include "OutlawsRuntime.h"
 #include "OutlawsBoxHand.h"
 #include "OutlawsLevelActor.h"
+#include "OutlawsLevel.h"
 #include "OutlawsCoop.h"
 #include "OutlawsTextures.h"
 #include "Camera/CameraComponent.h"
@@ -1649,7 +1650,21 @@ void AOutlawsPlayer::Tick(float Dt)
 		// (twice the fall it took before, user 2026-10-02: the canyon's Dead Man's Leap set it off: 4.25 s, the drop of a
 		// steady fall growing with the time squared, and 30 m under the lowest floor, from 3 s and 15 m)
 		const bool bDeepUnder = GetActorLocation().Z < LF->LowestFloorZ() - 3000.f;
-		if (bFalling && (Now - FallSince > 4.25 || (bDeepUnder && Now - FallSince > 1.0)))
+		// (BUG-ICEJUMP, user 2 Nov) only out of the map: the rescue is for a body under which there is no floor, outside every
+		// sector (the void, a gap in the geometry).  A sector's floor below, however deep, is a fall like any other: the
+		// landing's damage or death, then the normal respawn (icecaves' 78 into the death pit 232, 508 units and 5.2 s, was
+		// rescued mid-fall and stood by a bad guy's spawn).  -OLOldOob: on the time alone, as before
+		static const bool bOldOob = OLFlags::Param(TEXT("OLOldOob"));
+		auto OutOfMap = [&]()
+		{
+			if (bOldOob) return true;
+			const FOutlawsLevel* Lv = LF->LiveLevel();
+			const FVector Ol = FOutlawsGeometry::ToOutlaws(GetActorLocation() - FVector(0.0, 0.0, GetCapsuleComponent()->GetScaledCapsuleHalfHeight()), 0.2);
+			const FOutlawsSector* Under = Lv ? Lv->SectorAt(Ol) : nullptr;
+			// (SectorAt gives the sector whose floor is highest under the point, else the lowest over it: under every floor is out too)
+			return !Under || Lv->SurfaceY(*Under, FVector2D(Ol.X, Ol.Z), true) > Ol.Y + 0.01;
+		};
+		if (bFalling && (Now - FallSince > 4.25 || (bDeepUnder && Now - FallSince > 1.0)) && OutOfMap())
 		{
 			FVector Spot;
 			if (LF->FindGroundNear(FallFrom, GetCapsuleComponent()->GetScaledCapsuleHalfHeight(), Spot))
