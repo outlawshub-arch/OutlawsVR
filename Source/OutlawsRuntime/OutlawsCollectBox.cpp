@@ -5,8 +5,9 @@
 // pickups are taken; it flies to the waist as they do.  Found, it is kept on this profile (OutlawsAchievements::NoteBoxFound:
 // the box achievements and the Extras shelf) and never placed again on that profile, whatever is saved, loaded or restarted.
 // Co-op: each machine places its own player's box and keeps its own profile; a box one player takes stays for the other until
-// they take it themselves.  Not in matches, the tutorial, Historical Missions, or a changed level (its sector count differs).
-// The Randomizer moves pickups, not the boxes.  -OLNoCollectBox: none placed.
+// they take it themselves.  Not in matches, the tutorial, Historical Missions, or a changed level (its sector count is none of
+// the counts it shipped with: GBoxSpots' and GBoxAlts').  The Randomizer moves pickups, not the boxes.  -OLNoCollectBox: none
+// placed.
 //
 // The spots (GBoxSpots, chosen from the levels' own data by an offline scan of their sectors and objects): each a side room cut off from the rest of its level by
 // one opening (no way through it), holding the original's own pickups (a player is meant to get there), off the way from the
@@ -65,10 +66,33 @@ namespace
 			TEXT("the back of a cellar store under the ranch (one way in), behind its barrels and canteens") },
 	};
 
+	// BUG-HIDEOUTBOX (GATE4, 2 Nov): a level that ships in another version too, its spot the same sector there.  The hideout's 435
+	// is the hideout.lvt of the launcher-made olpatch5.lab (a Steam install with the user's launcher); the remaster's own, in
+	// olpatch4.lab (any stock install), has 434: olpatch5 cuts the four outer yard sectors 402-405 back and lays the rest of that
+	// ground as a new last sector 434, and sector 340 (the cow room's far end) is the same in both.  -OLOldHideoutBox: the
+	// GBoxSpots count only, as before (no box in a stock hideout).
+	struct FBoxAlt
+	{
+		const TCHAR* Level;
+		int32 NumSectors;
+	};
+	const FBoxAlt GBoxAlts[] =
+	{
+		{ TEXT("hideout"), 434 },
+	};
+
 	const FBoxSpot* SpotOf(const FString& Level)
 	{
 		for (const FBoxSpot& S : GBoxSpots) if (Level.Equals(S.Level, ESearchCase::IgnoreCase)) return &S;
 		return nullptr;
+	}
+
+	bool ShippedCount(const FBoxSpot& S, int32 NumSectors)
+	{
+		if (NumSectors == S.NumSectors) return true;
+		if (OLFlags::Param(TEXT("OLOldHideoutBox"))) return false;
+		for (const FBoxAlt& A : GBoxAlts) if (A.NumSectors == NumSectors && FCString::Stricmp(A.Level, S.Level) == 0) return true;
+		return false;
 	}
 
 	// the box: upright, as a game box stands on a shelf (cm)
@@ -148,7 +172,7 @@ FString AOutlawsLevelActor::PlaceCollectBox(const FOutlawsLevel& Lv)
 	if (!S) return TEXT("collectible box: none (not a story level)");
 	if (bTutorial || bHom || UOutlawsCoop::IsMatchActive(this)) return TEXT("collectible box: none (the tutorial, Historical Missions or a match)");
 	if (OLFlags::Param(TEXT("OLNoCollectBox"))) return TEXT("collectible box: none (-OLNoCollectBox)");
-	if (Lv.Sectors.Num() != S->NumSectors || !Lv.Sectors.IsValidIndex(S->Sector))
+	if (!ShippedCount(*S, Lv.Sectors.Num()) || !Lv.Sectors.IsValidIndex(S->Sector))
 	{
 		return FString::Printf(TEXT("collectible box: none (a changed %s: %d sectors, %d as shipped)"), S->Level, Lv.Sectors.Num(), S->NumSectors);
 	}
