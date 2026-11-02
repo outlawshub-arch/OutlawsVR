@@ -3892,7 +3892,8 @@ void AOutlawsPlayer::DrawFrontCanvas(UCanvas* C, int32 Width, int32 Height)
 	// (user 14 Oct: the public release is v0.9, a beta) the main menu says so before its build; Line() itself stays as it was for
 	// the co-op build comparison, the beacon and the logs
 	// (BUG-MENUGLYPH2: centred under the flat screen's line again, as before it moved; in VR where it was)
-	if (File == TEXT("#front")) Txt(SaveFont(3), FString::Printf(TEXT("v0.95  build %s"), OutlawsBuildInfo::Commit()), WideHelpInk.bIsValid ? float(WideHelpInk.GetCenter().X) : HelpX, 1062.f, 1, Help, true);
+	// (BUILDLABEL, user 1 Nov: "v0.95 hotfix 2  build <hash>", the version and the label from OutlawsBuildInfo.cpp alone)
+	if (File == TEXT("#front")) Txt(SaveFont(3), OutlawsBuildInfo::MenuLine(), WideHelpInk.bIsValid ? float(WideHelpInk.GetCenter().X) : HelpX, 1062.f, 1, Help, true);
 }
 
 // ---- the letters keyboard (user 2026-10-02) ------------------------------------------------------------------------------
