@@ -1321,3 +1321,11 @@ void OlEmptyItemTemplates()
 {
 	GItemTemplates.Empty();
 }
+
+// (REQ-NATIVEMAPS) the native map overlay changed: the item models (a from_3do model's sections are the LABs' 3DO) read again
+int32 OlForgetItemModels()
+{
+	const int32 N = GItemModels.Num();
+	GItemModels.Empty();
+	return N;
+}

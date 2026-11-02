@@ -100,10 +100,10 @@ OL_SHOT_TEST(OLNativeMapsQuickProbe, 1630)
 			Rcms += F.Num();
 		}
 		Check(!Root.IsEmpty() && A->NumNativeLabs() == Dirs.Num() && Natives.Num() == Rcms && Rcms > 0,
-			FString::Printf(TEXT("the native maps' folder %s: %d folders, %d LABs mounted, %d RCMs, %d native maps listed (the Host Game page lists %d: %d stock + %d native + %d custom)"),
+			FString::Printf(TEXT("the native maps' folder %s: %d folders, %d LABs found, %d RCMs, %d native maps listed (the Host Game page lists %d: %d stock + %d native + %d custom)"),
 				*Root, Dirs.Num(), A->NumNativeLabs(), Rcms, Natives.Num(), Maps.Num(), Stock, Natives.Num(), Maps.Num() - Stock - Natives.Num()));
 		bool bLevels = true;
-		for (const FOutlawsMpMap& M : Natives) bLevels &= A->Has(M.Level + TEXT(".lvt")) && !M.Lab.IsEmpty() && FPaths::FileExists(M.Lab);
+		for (const FOutlawsMpMap& M : Natives) bLevels &= A->HasLevel(M.Level) && !M.Lab.IsEmpty() && FPaths::FileExists(M.Lab);     // (REQ-NATIVEMAPS: mounted or not)
 		Check(bLevels, TEXT("every native map's level .lvt is found and its LAB is there"));
 		// RollMatch's pool: random map and game
 		const int32 Pool = Maps.FilterByPredicate([](const FOutlawsMpMap& M) { return M.InRandomPool(); }).Num();

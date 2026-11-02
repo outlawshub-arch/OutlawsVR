@@ -4,6 +4,7 @@
 // cross-faded over half a second; every positioned game sound sends to it by the class it comes from, drier when near;
 // gunshots, taunts and blasts in the open get one soft, muffled echo off a wall or cliff face behind them.  ol.ReverbScale.
 #include "OutlawsLevelActor.h"
+#include "OutlawsLab.h"
 #include "OutlawsFlags.h"
 #include "OutlawsRuntime.h"
 #include "OutlawsLevel.h"
@@ -139,6 +140,8 @@ void AOutlawsLevelActor::EndPlay(const EEndPlayReason::Type EndPlayReason)
 {
 	ReleaseRoomSound();
 	DisarmMusic();                // (a next track made ahead and never started)
+	// (REQ-NATIVEMAPS) the level ended: a native map's LAB closes with it (its owner's only: a newer world keeps its own)
+	if (AssetsRef && AssetsRef->CloseOverlay(this)) ForgetLabFiles(TEXT("the level ended"));
 	Super::EndPlay(EndPlayReason);
 	// (whatever is still rooted inside the world now asserts in the map load that follows: named, and let go, RC1's net
 	// for anything else the engine roots while in use; the map load runs every end play before it marks the world)

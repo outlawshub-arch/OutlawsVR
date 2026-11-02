@@ -1771,6 +1771,15 @@ namespace
 	}
 }
 
+// (REQ-NATIVEMAPS) the native map overlay changed: the textures painted from the LABs' sprites let go (painted again from the
+// next map's files at their next use)
+int32 OlForgetItem3dTextures()
+{
+	const int32 N = GTextures.Num();
+	GTextures.Empty();
+	return N;
+}
+
 bool OutlawsItem3d::Paint(AOutlawsLevelActor* L, const FString& RecipePath, TArray<FColor>& Out, int32& OutW, int32& OutH, FString& OutError)
 {
 	const TSharedPtr<FJsonObject> J = LoadJson(RecipePath);

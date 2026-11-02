@@ -125,6 +125,12 @@ namespace
 	const FBotChar& ReadBotChar(const AOutlawsLevelActor* L, const FOutlawsMpCharacter* Ch)
 	{
 		static TMap<FString, FBotChar> Cache;
+		static uint32 CachedUnder = 0;          // (REQ-NATIVEMAPS: another map's overlay, its own ITMs: read again)
+		if (CachedUnder != FOutlawsAssets::OverlaySerial())
+		{
+			Cache.Reset();
+			CachedUnder = FOutlawsAssets::OverlaySerial();
+		}
 		if (const FBotChar* C = Cache.Find(Ch->Short)) return *C;
 		FBotChar& Out = Cache.Add(Ch->Short);
 		FString Text, Func;

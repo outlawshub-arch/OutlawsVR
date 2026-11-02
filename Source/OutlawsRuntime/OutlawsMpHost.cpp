@@ -223,8 +223,9 @@ void OutlawsMpHost::ListMaps(const FOutlawsAssets* Assets, TArray<FOutlawsMpMap>
 	const int32 NumStock = Out.Num();
 	int32 NoLab = 0;
 	// (REQ-MAPQUICK, user 2 Nov) the native maps: <native root>/<map>/<name>.rcm beside <name>.lab, whose LABs FOutlawsAssets::Open
-	// mounted (none with -OLNoNativeMaps).  Named from the RCM; the BUNKERS rule as for the stock ones (its level's .lvt in some
-	// LAB).  Before the game folder's custom maps, so a native wins over a custom copy of the same RCM.
+	// read (none with -OLNoNativeMaps).  Named from the RCM; the BUNKERS rule as for the stock ones (its level's .lvt in some
+	// LAB; REQ-NATIVEMAPS: in the native LABs' directories, none of them mounted).  Before the game folder's custom maps, so a
+	// native wins over a custom copy of the same RCM.
 	const FString NativeRoot = Assets->GetNativeRoot();
 	if (!NativeRoot.IsEmpty())
 	{
@@ -256,7 +257,7 @@ void OutlawsMpHost::ListMaps(const FOutlawsAssets* Assets, TArray<FOutlawsMpMap>
 					++Bad;
 					continue;
 				}
-				if (!bOldBunkers && !Assets->Has(M.Level + TEXT(".lvt")))
+				if (!bOldBunkers && !Assets->HasLevel(M.Level))
 				{
 					UE_LOG(LogOutlaws, Log, TEXT("OLMPHOST native map %s (%s) left out: its level %s.lvt is in none of the LABs"), *F, *M.Name, *M.Level);
 					++NoLvt;

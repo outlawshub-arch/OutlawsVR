@@ -26,6 +26,8 @@ public:
 
 	FOutlawsLabFile();
 	~FOutlawsLabFile();
+	/** (REQ-NATIVEMAPS, tests) how many LAB files are open in this run (each holds a read handle). */
+	static int32 NumLive();
 
 	bool Open(const FString& InPath);
 	const FString& GetPath() const { return Path; }
@@ -68,9 +70,27 @@ public:
 	 *  NativeMapsPath in OutlawsSettings.ini (editor runs), else Tools\NativeMaps in the PC package, else
 	 *  <files>/Outlaws/NativeMaps on a headset.  Empty with -OLNoNativeMaps or when none of them exists. */
 	static FString NativeMapsRoot();
-	/** The native maps' folder Open mounted from (empty when none), and how many of their LABs it opened. */
+	/** The native maps' folder Open read (empty when none), and how many of their LABs it found (mounted, -OLOldNativeMount). */
 	const FString& GetNativeRoot() const { return NativeRoot; }
-	int32 NumNativeLabs() const { return Labs.Num() - NumStockLabs; }
+	int32 NumNativeLabs() const { return bOldNativeMount ? Labs.Num() - NumStockLabs : NativeLabs.Num(); }
+	/** (REQ-NATIVEMAPS) the native LAB that holds <Level>.lvt (Open read the native LABs' directories, mounting none), empty
+	 *  for a stock level or none.  HasLevel: the level's .lvt is in the install's LABs or a native map's. */
+	FString NativeLabFor(const FString& Level) const;
+	bool HasLevel(const FString& Level) const;
+	/** (REQ-NATIVEMAPS, user 2 Nov) the per-map overlay: a native map's level builds with THAT map's LAB in front of the stock
+	 *  order (the original opens the level's LAB first, so its files win for its own level only), no other native LAB open; a
+	 *  stock level with none.  The level build calls it (AOutlawsLevelActor::Build, on the game thread, before it reads a
+	 *  file), so the overlay changes only between levels, never mid-frame.  True when it changed: the caller then forgets
+	 *  every file it holds by name (AOutlawsLevelActor::ForgetLabFiles).  Owner: the level actor that opened it, so an old
+	 *  world's end never closes a new world's overlay.  -OLOldNativeMount: MAPQUICK's lowest-priority mount, never an overlay. */
+	bool UseLevelOverlay(const FString& Level, const void* Owner);
+	/** The level ended: its owner closes the overlay (true when one was open and its own). */
+	bool CloseOverlay(const void* Owner);
+	/** The overlay LAB's path, empty when none. */
+	FString GetOverlay() const;
+	/** Counts every overlay change in this run (any root): a cache filled under another count holds an old map's files. */
+	static uint32 OverlaySerial();
+	static bool OldNativeMount();
 
 	/** Install-folder discovery, first that qualifies (found once, then remembered): -OLInstall=<dir>, InstallPath= in
 	 *  Saved/OutlawsSettings.ini, the configured path, the drop-in folders (beside the exe, a headset's files folder),
@@ -106,7 +126,13 @@ public:
 private:
 	FString Root;
 	FString NativeRoot;
-	int32 NumStockLabs = 0;                      // Labs[0..NumStockLabs) are the install's; the native maps' follow
+	int32 NumStockLabs = 0;                      // Labs[0..NumStockLabs) are the install's; the native maps' follow (-OLOldNativeMount)
 	TArray<TSharedPtr<FOutlawsLabFile>> Labs;
 	TMap<FString, TPair<int32, int32>> Index;   // lower name -> (lab index, entry index)
+	// (REQ-NATIVEMAPS) the native LABs found (full paths), each level's .lvt to its LAB, and the one open over its level
+	bool bOldNativeMount = false;
+	TArray<FString> NativeLabs;
+	TMap<FString, int32> NativeLevels;          // lower level name -> NativeLabs index
+	TSharedPtr<FOutlawsLabFile> Overlay;
+	const void* OverlayOwner = nullptr;
 };

@@ -255,6 +255,16 @@ public:
 	FString LastBuiltLevel;             // (BUG-RESPAWNCRASH) the level the caches were filled for: emptied when another is built
 	/** Before a rebuild's Build: the caches of another level emptied, the freed memory handed back (the old level collected twice). */
 	void ReleaseBeforeBuild();
+	/** (REQ-NATIVEMAPS) the native map overlay changed (FOutlawsAssets::UseLevelOverlay): every cache that holds the LABs' files
+	 *  by name lets them go, the level's and the game's (sounds, ground models, SPX cells, the item tables, the item models'
+	 *  materials and templates, the 3D items' painted textures, the held guns, the character kits), so no file of the old map
+	 *  shows on the next.  Logged with the counts.  (The level's textures, atlases and palettes went with Clear.) */
+	void ForgetLabFiles(const TCHAR* Why);
+	int32 LabForgets = 0;               // (tests) how many times this actor forgot them
+	/** (tests) the CRC of a sound's samples as the level's cache holds it now; 0 when it is not there. */
+	uint32 DebugCachedWavCrc(const FString& Name) const;
+	/** (tests) the level material's key ("<parent>|<texture stem>"), empty when it is none of the level's. */
+	FString DebugMaterialKey(const UMaterialInterface* M) const;
 	TArray<TWeakObjectPtr<class AOutlawsEnemy>> RandomBossActors;
 	/** (BUG-HOMCELL) the figure generators by object id (the office's cell outlaws): shown on the INF's MASTER_ON to them. */
 	TMap<FString, TWeakObjectPtr<class AOutlawsSpriteActor>> CellGens;

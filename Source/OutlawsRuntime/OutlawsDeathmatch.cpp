@@ -103,6 +103,12 @@ const FOutlawsCharKit& FOutlawsCharKit::Of(const FOutlawsAssets* A, const FStrin
 {
 	static TMap<FString, FOutlawsCharKit> Cache;
 	static const FOutlawsCharKit None;
+	static uint32 CachedUnder = 0;              // (REQ-NATIVEMAPS: another map's overlay, its own ITMs: read again)
+	if (CachedUnder != FOutlawsAssets::OverlaySerial())
+	{
+		Cache.Reset();
+		CachedUnder = FOutlawsAssets::OverlaySerial();
+	}
 	const FOutlawsMpCharacter* Ch = FOutlawsMpCharacter::Find(Short);
 	if (!Ch) return None;
 	if (const FOutlawsCharKit* K = Cache.Find(Ch->Short)) return *K;

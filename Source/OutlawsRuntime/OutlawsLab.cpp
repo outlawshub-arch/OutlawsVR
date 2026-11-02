@@ -3,6 +3,7 @@
 #include "OutlawsRuntime.h"
 #include "Misc/Paths.h"
 #include "Misc/ScopeLock.h"
+#include "HAL/ThreadSafeCounter.h"
 #include "HAL/PlatformFileManager.h"
 #include "HAL/FileManager.h"
 #include "GenericPlatform/GenericPlatformFile.h"
@@ -14,8 +15,15 @@
 #include "OutlawsLevelActor.h"         // the settings file (InstallPath=)
 #include "OutlawsInstallWindows.h"
 
-FOutlawsLabFile::FOutlawsLabFile() = default;
-FOutlawsLabFile::~FOutlawsLabFile() = default;
+namespace
+{
+	FThreadSafeCounter GLiveLabFiles;          // (REQ-NATIVEMAPS: the overlay probe's leak check)
+	FThreadSafeCounter GOverlaySerial;
+}
+
+FOutlawsLabFile::FOutlawsLabFile() { GLiveLabFiles.Increment(); }
+FOutlawsLabFile::~FOutlawsLabFile() { GLiveLabFiles.Decrement(); }
+int32 FOutlawsLabFile::NumLive() { return GLiveLabFiles.GetValue(); }
 
 bool FOutlawsLabFile::Open(const FString& InPath)
 {
@@ -136,8 +144,16 @@ int32 FOutlawsAssets::Open(const FString& InRoot)
 	// found.  The quick step only: the per-map overlay of REQ-NATIVEMAPS replaces it (the original puts the level's LAB first,
 	// so an overriding map shows the stock art here, and the first map mounted wins a name two maps share: ColdWar and
 	// Frostbite share 20).  -OLNoNativeMaps: none.
+	// (REQ-NATIVEMAPS, user 2 Nov) that mount is now -OLOldNativeMount only: by default each native LAB's directory is read
+	// here for the levels it holds and the file is closed again; the level build opens its own map's LAB in front of the stock
+	// order (UseLevelOverlay) and no other.
 	NumStockLabs = Labs.Num();
 	NativeRoot.Reset();
+	NativeLabs.Reset();
+	NativeLevels.Reset();
+	Overlay.Reset();
+	OverlayOwner = nullptr;
+	bOldNativeMount = OldNativeMount();
 	if (NumStockLabs > 0)
 	{
 		const FString Natives = NativeMapsRoot();
@@ -156,6 +172,18 @@ int32 FOutlawsAssets::Open(const FString& InRoot)
 				{
 					TSharedPtr<FOutlawsLabFile> Lab = MakeShared<FOutlawsLabFile>();
 					if (!Lab->Open(Natives / D / F)) continue;
+					if (!bOldNativeMount)
+					{
+						// its levels (the first LAB found wins a level two maps hold); a stock level stays the install's
+						const int32 At = NativeLabs.Add(Natives / D / F);
+						for (const TPair<FString, int32>& Kv : Lab->GetIndex())
+						{
+							if (!Kv.Key.EndsWith(TEXT(".lvt"))) continue;
+							const FString Level = Kv.Key.LeftChop(4);
+							if (!Index.Contains(Kv.Key) && !NativeLevels.Contains(Level)) NativeLevels.Add(Level, At);
+						}
+						continue;                  // (closed: its handle goes with Lab)
+					}
 					const int32 LabIdx = Labs.Add(Lab);
 					for (const TPair<FString, int32>& Kv : Lab->GetIndex())
 					{
@@ -166,14 +194,91 @@ int32 FOutlawsAssets::Open(const FString& InRoot)
 					}
 				}
 			}
-			UE_LOG(LogOutlaws, Log, TEXT("OLRT native maps: %d LABs from %s (%d names in all)"), Labs.Num() - NumStockLabs, *Natives, Index.Num());
+			if (bOldNativeMount)
+			{
+				UE_LOG(LogOutlaws, Log, TEXT("OLRT native maps: %d LABs from %s (%d names in all; -OLOldNativeMount)"), Labs.Num() - NumStockLabs, *Natives, Index.Num());
+			}
+			else
+			{
+				UE_LOG(LogOutlaws, Log, TEXT("OLRT native maps: %d LABs in %s hold %d levels; none mounted (each opens over its own level)"), NativeLabs.Num(), *Natives, NativeLevels.Num());
+			}
 		}
 	}
 	return Labs.Num();
 }
 
+bool FOutlawsAssets::OldNativeMount()
+{
+	static const bool bOld = OLFlags::Param(TEXT("OLOldNativeMount"));
+	return bOld;
+}
+
+uint32 FOutlawsAssets::OverlaySerial()
+{
+	return uint32(GOverlaySerial.GetValue());
+}
+
+FString FOutlawsAssets::NativeLabFor(const FString& Level) const
+{
+	const int32* At = NativeLevels.Find(Level.ToLower());
+	return At ? NativeLabs[*At] : FString();
+}
+
+bool FOutlawsAssets::HasLevel(const FString& Level) const
+{
+	return Index.Contains(Level.ToLower() + TEXT(".lvt")) || NativeLevels.Contains(Level.ToLower());
+}
+
+FString FOutlawsAssets::GetOverlay() const
+{
+	return Overlay ? Overlay->GetPath() : FString();
+}
+
+bool FOutlawsAssets::UseLevelOverlay(const FString& Level, const void* Owner)
+{
+	if (bOldNativeMount) return false;
+	const FString Want = Index.Contains(Level.ToLower() + TEXT(".lvt")) ? FString() : NativeLabFor(Level);
+	if (Want.IsEmpty() ? !Overlay : (Overlay && Overlay->GetPath() == Want))
+	{
+		OverlayOwner = Overlay ? Owner : nullptr;            // (the same map again: this build owns it now)
+		return false;
+	}
+	const FString Was = GetOverlay();
+	Overlay.Reset();                                         // (the old map's handle closed)
+	OverlayOwner = nullptr;
+	if (!Want.IsEmpty())
+	{
+		TSharedPtr<FOutlawsLabFile> Lab = MakeShared<FOutlawsLabFile>();
+		if (Lab->Open(Want))
+		{
+			Overlay = Lab;
+			OverlayOwner = Owner;
+		}
+	}
+	GOverlaySerial.Increment();
+	UE_LOG(LogOutlaws, Log, TEXT("OLRT native map overlay: %s (%d names) over the stock order for %s, was %s"), Overlay ? *FPaths::GetCleanFilename(Want) : TEXT("none"),
+		Overlay ? Overlay->GetIndex().Num() : 0, *Level, Was.IsEmpty() ? TEXT("none") : *FPaths::GetCleanFilename(Was));
+	return true;
+}
+
+bool FOutlawsAssets::CloseOverlay(const void* Owner)
+{
+	if (!Overlay || Owner != OverlayOwner) return false;
+	UE_LOG(LogOutlaws, Log, TEXT("OLRT native map overlay: %s closed (its level ended)"), *FPaths::GetCleanFilename(Overlay->GetPath()));
+	Overlay.Reset();
+	OverlayOwner = nullptr;
+	GOverlaySerial.Increment();
+	return true;
+}
+
 bool FOutlawsAssets::GetSound(const FString& Name, bool bHD, TArray<uint8>& Out) const
 {
+	// (REQ-NATIVEMAPS) the level's own LAB first, in either set: a map's own sound is the one its author meant (Bankrupt_RM
+	// keeps its dog1/dog2/chaching.wav over the stock ones)
+	if (Overlay)
+	{
+		if (const int32* E = Overlay->GetIndex().Find(Name.ToLower())) return Overlay->Read(*E, Out);
+	}
 	if (bHD)
 	{
 		// the Remastered sets first: olsfxhd keeps the names, oltaunthd holds the taunts as .ogg
@@ -207,11 +312,17 @@ bool FOutlawsAssets::GetSound(const FString& Name, bool bHD, TArray<uint8>& Out)
 
 bool FOutlawsAssets::Has(const FString& Name) const
 {
-	return Index.Contains(Name.ToLower());
+	const FString Key = Name.ToLower();
+	return (Overlay && Overlay->GetIndex().Contains(Key)) || Index.Contains(Key);
 }
 
 bool FOutlawsAssets::Get(const FString& Name, TArray<uint8>& Out) const
 {
+	// (REQ-NATIVEMAPS) the level's own LAB in front of the stock order
+	if (Overlay)
+	{
+		if (const int32* E = Overlay->GetIndex().Find(Name.ToLower())) return Overlay->Read(*E, Out);
+	}
 	const TPair<int32, int32>* Hit = Index.Find(Name.ToLower());
 	if (!Hit)
 	{
@@ -240,6 +351,7 @@ bool FOutlawsAssets::GetText(const FString& Name, FString& Out) const
 
 FString FOutlawsAssets::Where(const FString& Name) const
 {
+	if (Overlay && Overlay->GetIndex().Contains(Name.ToLower())) return FPaths::GetCleanFilename(Overlay->GetPath());
 	const TPair<int32, int32>* Hit = Index.Find(Name.ToLower());
 	return Hit ? FPaths::GetCleanFilename(Labs[Hit->Key]->GetPath()) : FString();
 }

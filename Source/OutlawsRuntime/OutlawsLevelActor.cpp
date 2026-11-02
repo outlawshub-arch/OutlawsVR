@@ -1087,6 +1087,9 @@ void AOutlawsLevelActor::Build()
 	}
 	const FOutlawsAssets& A = *Assets;
 	AssetsRef = Assets;
+	// (REQ-NATIVEMAPS) a native map's level opens its own LAB in front of the stock order (a stock level none), here before any
+	// file of it is read: the only place the overlay changes, between levels.  A change lets go of every file held by name.
+	if (Assets->UseLevelOverlay(LevelName, this)) ForgetLabFiles(*FString::Printf(TEXT("%s built"), *LevelName));
 	const double T1 = FPlatformTime::Seconds();
 
 	// ---- level text ----------------------------------------------------------------------------

@@ -835,9 +835,11 @@ namespace
 	{
 		static int32 Slots[NumWeapons] = {};
 		static bool bRead = false;
-		if (!bRead && A)
+		static uint32 ReadUnder = 0;              // (REQ-NATIVEMAPS: read again under another map's overlay)
+		if ((!bRead || ReadUnder != FOutlawsAssets::OverlaySerial()) && A)
 		{
 			bRead = true;
+			ReadUnder = FOutlawsAssets::OverlaySerial();
 			for (int32 i = 0; i < NumWeapons; ++i)
 			{
 				FString Text, Func;
@@ -848,6 +850,19 @@ namespace
 		}
 		return Wi >= 0 && Wi < NumWeapons ? Slots[Wi] : 0;
 	}
+}
+
+// (REQ-NATIVEMAPS) the native map overlay changed (AOutlawsLevelActor::ForgetLabFiles): the held guns built from the pickup
+// sprites, their textures and the OBJ cache that holds the runtime builds' groups let go, and the character's ITM stats read
+// again at the next SetWeaponCharacter (a map's own weapon ITMs: Dookes' longer pistol range).  Returns the entries let go.
+int32 OlForgetHeldGuns()
+{
+	const int32 N = GRuntimeGuns.Num() + GShippedGunTextures.Num() + GObjCache.Num();
+	GRuntimeGuns.Reset();
+	GShippedGunTextures.Reset();
+	GObjCache.Reset();
+	GWeaponsWorn = TEXT("-");
+	return N;
 }
 
 bool AOutlawsPlayer::StockGun(int32 Weapon, FStockGun& Out)

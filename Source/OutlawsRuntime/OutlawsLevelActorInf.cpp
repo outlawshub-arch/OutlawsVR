@@ -1036,6 +1036,51 @@ void AOutlawsLevelActor::RestartLevelThen(TFunction<void()> Then)
 }
 
 void OlEmptyItemTemplates();
+int32 OlForgetItemModels();            // (OutlawsLevelActorItems.cpp)
+int32 OlForgetItem3dTextures();        // (OutlawsItem3d.cpp)
+int32 OlForgetHeldGuns();              // (OutlawsPlayerWeapons.cpp)
+
+void AOutlawsLevelActor::ForgetLabFiles(const TCHAR* Why)
+{
+	// (REQ-NATIVEMAPS, user 2 Nov: a map's files apply ONLY on their own map) every cache keyed by a LAB file's name, emptied
+	// whole: the overlay changes only between levels, where a new level fills them again.  The level's textures, sprite atlases
+	// (WAX/NWX), sky and palettes are Clear's (each Build); the HD art (HDX/SPX) is looked up through the LABs at each use; the
+	// music is the install's files on disk (no LAB), so its cache stays.  The character kits and the bots' stats check
+	// FOutlawsAssets::OverlaySerial themselves.
+	++LabForgets;
+	const int32 Sounds = WavCache.Num(), Ground = GroundModels.Num(), Cells = SpxCells.Num(), Items = ItemDefs.Num(), Mats = ItemModelMats.Num();
+	WavCache.Reset();                   // sounds (WarmWav / PlayWav)
+	GroundModels.Reset();               // a 3D ground item's sections by .3do
+	SpxCells.Reset();                   // SPX frames made textures
+	SpxCellSizes.Reset();
+	ItemDefs.Reset();                   // the ITM tables (read again when empty)
+	UseIdByItem.Reset();
+	ItemsByUseId.Reset();
+	UserMessages.Reset();               // local.msg
+	ItemModelMats.Reset();              // materials by texture name
+	TexInfoCache.Reset();
+	OlEmptyItemTemplates();             // the item models' templates per light
+	const int32 Models = OlForgetItemModels();
+	const int32 Painted = OlForgetItem3dTextures();
+	const int32 Guns = OlForgetHeldGuns();
+	UE_LOG(LogOutlaws, Log, TEXT("OLRT native map files forgotten (%s): %d sounds, %d ground models, %d SPX cells, %d item defs, %d item materials, %d item models, %d painted item textures, %d held gun entries"),
+		Why, Sounds, Ground, Cells, Items, Mats, Models, Painted, Guns);
+}
+
+uint32 AOutlawsLevelActor::DebugCachedWavCrc(const FString& Name) const
+{
+	const TSharedPtr<FWav>* W = WavCache.Find(Name.ToLower());
+	return W && W->IsValid() && (*W)->Pcm.Num() > 0 ? FCrc::MemCrc32((*W)->Pcm.GetData(), (*W)->Pcm.Num()) : 0u;
+}
+
+FString AOutlawsLevelActor::DebugMaterialKey(const UMaterialInterface* M) const
+{
+	for (const TPair<FString, TObjectPtr<UMaterialInstanceDynamic>>& Kv : Materials)
+	{
+		if (Kv.Value.Get() == M) return Kv.Key;
+	}
+	return FString();
+}
 
 void AOutlawsLevelActor::ReleaseBeforeBuild()
 {
