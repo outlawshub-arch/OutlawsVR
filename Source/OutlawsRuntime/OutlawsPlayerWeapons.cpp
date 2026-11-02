@@ -5170,10 +5170,18 @@ AOutlawsEnemy* AOutlawsPlayer::FindGrabEnemy(int32 Hand, bool bRemote, double& O
 	const FVector Fist = GripOf(Hand)->GetComponentLocation();
 	AOutlawsEnemy* Best = nullptr;
 	UWorld* World = GetWorld();
+	// REQ-CORPSEGRAB (user 2026-11-02: reaching for a bad guy in front often took a body at the feet that was a little
+	// nearer): a body is taken only by a hand down near the floor it lies on (CorpseGrabFloorReach), and a live one in
+	// reach wins over a body.  -OLOldCorpseGrab: the nearest of them all, as before
+	static const bool bOldCorpseGrab = OLFlags::Param(TEXT("OLOldCorpseGrab"));
+	double DeadScore = TNumericLimits<double>::Max();
+	AOutlawsEnemy* BestDead = nullptr;
 	for (const TWeakObjectPtr<AOutlawsEnemy>& Wk : L->GetEnemies())
 	{
 		AOutlawsEnemy* E = Wk.Get();
 		if (!E || !E->CanBeGrabbed()) continue;
+		const bool bBody = !bOldCorpseGrab && E->IsDead();
+		if (bBody && Fist.Z > E->GetActorLocation().Z - E->GetCapsuleComponent()->GetScaledCapsuleHalfHeight() + CorpseGrabFloorReach) continue;
 		// loosely (user 2026-09-29: it wanted a precise aim at his chest): anywhere about his body, his whole height from
 		// the feet to the head, not one point; the fist within 60 cm of it, or the open palm facing him up to 2 m off
 		// (PointedNear) with nothing between (user 2026-09-29: grabbed from a couple of metres, snapped to the hand)
@@ -5197,11 +5205,24 @@ AOutlawsEnemy* AOutlawsPlayer::FindGrabEnemy(int32 Hand, bool bRemote, double& O
 				&& World->LineTraceTestByChannel(Fist, E->GrabChest(), ECC_Visibility, Q, RP)) continue;
 		}
 		const double Score = bNear ? D : ReachScore;
-		if (Score < OutScore)
+		if (bBody)
+		{
+			if (Score < DeadScore)
+			{
+				DeadScore = Score;
+				BestDead = E;
+			}
+		}
+		else if (Score < OutScore)
 		{
 			OutScore = Score;
 			Best = E;
 		}
+	}
+	if (!Best && BestDead)
+	{
+		OutScore = DeadScore;
+		Best = BestDead;
 	}
 	return Best;
 }

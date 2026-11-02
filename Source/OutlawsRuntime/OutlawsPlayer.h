@@ -970,8 +970,10 @@ private:
 	 *  world speed of a hand on a running player passes the 4 m/s sanity cap and read as none: user 2026-10-01). */
 	FVector HeldPushVel(int32 Hand) const;
 	bool TryGrabEnemy(int32 Hand, class AOutlawsEnemy* Pick = nullptr);
-	/** The bad guy a hand would take: touching (the fist within 60 cm of his height) or, bRemote, pointed near. */
+	/** The bad guy a hand would take: touching (the fist within 60 cm of his height) or, bRemote, pointed near.  A live one
+	 *  before a body; a body only with the fist down near its floor (REQ-CORPSEGRAB). */
 	class AOutlawsEnemy* FindGrabEnemy(int32 Hand, bool bRemote, double& OutScore) const;
+	static constexpr double CorpseGrabFloorReach = 30.0;   // cm above a body's floor the fist may be to take it (user 2026-11-02; by feel)
 	bool TryTakeEnemyFromOther(int32 Hand);
 	/** From the first bad guy taken till the last let go: what each hand held before, given back at the end (user
 	 *  2026-09-29: two held at once, the weapons holstered or moved meanwhile). */
