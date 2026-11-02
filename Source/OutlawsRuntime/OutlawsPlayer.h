@@ -529,6 +529,11 @@ private:
 	void UpdateFuseLook(int32 Hand);
 	/** (BUG-FUSEAFTERDEATH) the hand's fuse out: not lit, its sound stopped, its flame (a child of the hand's reused gun mesh) hidden. */
 	void PutOutHeldFuse(int32 Hand);
+	/** (BUG-LASTTHROWABLE) a stick (knife) for this hand of throwable Wi: the count, the ones in hand among them, is more than the
+	 *  other hand holds (always with unlimited ammunition). */
+	bool ThrowableForHand(int32 Hand, int32 Wi) const;
+	/** -OLOldThrowCount: a stick (knife) given free on drawing it, the count taken at each refill, as before. */
+	static bool OldThrowCount();
 	/** bHeld: the flame takes the held gear's pulled depth (M_OLR_FxGlowHeld), as the stick it burns on does. */
 	void MakeFuseFlame(USceneComponent* Parent, class UStaticMeshComponent*& OutFlame, class UStaticMeshComponent*& OutCore, bool bHeld = true);
 	/** The wick at F of its length (0..1) on StickMesh's Section (when bWick), the flame on its end, upright. */

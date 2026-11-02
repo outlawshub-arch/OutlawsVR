@@ -2273,6 +2273,9 @@ void AOutlawsPlayer::Equip(int32 Hand, int32 Weapon)
 	{
 		const int32* Saved = SavedMag.Find(Hand * 16 + Equipped[Hand]);
 		Mag[Hand] = Saved ? *Saved : GWeapons[Equipped[Hand]].Capacity;
+		// (BUG-LASTTHROWABLE) a stick or a knife is one of the count, not one more: in hand only while the count has one the
+		// other hand does not hold (the 6-stick kit threw 8: a free one drawn into each hand)
+		if (GWeapons[Equipped[Hand]].Throw > 0 && !OldThrowCount()) Mag[Hand] = ThrowableForHand(Hand, Equipped[Hand]) ? 1 : 0;
 		FireCooldown[Hand] = 0.f;
 		RecoilPitch[Hand] = 0.f;
 		RecoilKick[Hand] = 0.f;
@@ -2864,7 +2867,8 @@ void AOutlawsPlayer::UpdateGuns(float Dt)
 		}
 		PlateHolders[AmmoPlate[H]]->SetWorldLocationAndRotation(Above, FRotationMatrix::MakeFromXZ(Camera->GetComponentLocation() - Above, Camera->GetUpVector()).Rotator());
 		PlateHolders[AmmoPlate[H]]->SetWorldScale3D(FVector::OneVector);
-		SetTextPlate(AmmoPlate[H], FString::Printf(TEXT("%d | %d"), Mag[H], Reserve));
+		// (BUG-LASTTHROWABLE) a stick or a knife: the count only, the one in hand among it, as the wheel shows it
+		SetTextPlate(AmmoPlate[H], W.Throw > 0 && !OldThrowCount() ? FString::FromInt(Reserve) : FString::Printf(TEXT("%d | %d"), Mag[H], Reserve));
 		PlatePlanes[AmmoPlate[H]]->SetVisibility(!bPutAway && !bMenuPistol && !AimingDownSights(H));   // (out of the sight picture)
 	}
 }
@@ -2916,7 +2920,9 @@ void AOutlawsPlayer::UpdateThrowable(int32 Hand, float Trigger, float Dt)
 		// the next one from the pouch (no arc until it is in hand)
 		ShowThrowArc(Hand, false);
 		ThrowRestock[Hand] -= Dt;
-		if (ThrowRestock[Hand] <= 0.f && (bUnlimitedAmmo || L->TakeCount(W.AmmoItem, 1)))
+		// (BUG-LASTTHROWABLE) the count goes down at the throw, not here; the next one only while the count has one the
+		// other hand does not hold (the last stick in the left hand is not drawn into the right as well)
+		if (ThrowRestock[Hand] <= 0.f && (OldThrowCount() ? bUnlimitedAmmo || L->TakeCount(W.AmmoItem, 1) : ThrowableForHand(Hand, Equipped[Hand])))
 		{
 			Mag[Hand] = 1;
 		}
@@ -2977,6 +2983,7 @@ void AOutlawsPlayer::UpdateThrowable(int32 Hand, float Trigger, float Dt)
 				if (FuseSound[Hand].IsValid()) FuseSound[Hand]->Stop();
 				Mag[Hand] = 0;
 				ThrowRestock[Hand] = 0.6f;
+				if (!OldThrowCount() && !bUnlimitedAmmo) L->TakeCount(W.AmmoItem, 1);     // (BUG-LASTTHROWABLE: spent, as a throw)
 				L->Explode(Tip);
 				// in the hand there is no surviving it: the blast's own falloff and the armour do not apply (user 2026-09-28)
 				L->SetHurtSource(Tip);
@@ -4309,6 +4316,7 @@ void AOutlawsPlayer::ThrowHeld(int32 Hand, bool bUnlit, bool bDrop)
 	if (UOutlawsCoop::IsActive(L)) UOutlawsCoop::NoteThrow(L, T.Type, T.Pos, T.Vel, T.Pull / 980.f, T.Fuse);       // (co-op: seen flying there, at its fall)
 	FuseSound[Hand] = nullptr;
 	bFuseLit[Hand] = false;
+	if (Mag[Hand] > 0 && !OldThrowCount() && !bUnlimitedAmmo) L->TakeCount(W.AmmoItem, 1);     // (BUG-LASTTHROWABLE: the count goes down as it leaves the hand)
 	Mag[Hand] = 0;
 	ThrowRestock[Hand] = 0.6f;
 	if (!bDrop) L->PlaySoundAt(W.FireSound, T.Pos);
@@ -6953,6 +6961,21 @@ void AOutlawsPlayer::PutOutHeldFuse(int32 Hand)
 	bFuseLit[Hand] = false;
 	if (FuseFlame[Hand]) FuseFlame[Hand]->SetVisibility(false);
 	if (FuseCore[Hand]) FuseCore[Hand]->SetVisibility(false);
+}
+
+bool AOutlawsPlayer::OldThrowCount()
+{
+	static const bool bOld = OLFlags::Param(TEXT("OLOldThrowCount"));
+	return bOld;
+}
+
+bool AOutlawsPlayer::ThrowableForHand(int32 Hand, int32 Wi) const
+{
+	if (bUnlimitedAmmo) return true;
+	const AOutlawsLevelActor* L = Level.Get();
+	if (!L || Wi < 0 || Wi >= NumWeapons || !GWeapons[Wi].AmmoItem) return false;
+	const int32 Other = Equipped[1 - Hand] == Wi && Mag[1 - Hand] > 0 ? 1 : 0;
+	return L->GetCount(GWeapons[Wi].AmmoItem) > Other;
 }
 
 AOutlawsEnemy* AOutlawsPlayer::KnifeTargetNear(const FVector& From, const FVector& Vel) const
