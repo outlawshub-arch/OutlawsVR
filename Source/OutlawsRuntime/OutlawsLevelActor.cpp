@@ -2172,6 +2172,8 @@ void AOutlawsLevelActor::BeginPlay()
 	FOutlawsGeometry::bOldSkygap = OLFlags::Param(TEXT("OLOldSkygap"));
 	// (-OLOldSkyWall: BUG-SKYWALL's before-picture) a wall's top part drawn as sky by its own sector's flag
 	FOutlawsGeometry::bOldSkyWall = OLFlags::Param(TEXT("OLOldSkyWall"));
+	// (-OLOldShutPart: BUG-CRACKYOFF's before-picture) a shut wall drawn as its mid unless the mid is DEFAULT
+	FOutlawsGeometry::bOldShutPart = OLFlags::Param(TEXT("OLOldShutPart"));
 	if (OLFlags::Param(TEXT("OLSmokeTest")))
 	{
 		bEnemiesActive = false;    // the smoke test wakes one when it gets to enemies

@@ -185,6 +185,7 @@ TMap<int32, FIntVector> FOutlawsGeometry::SectorLight;
 bool FOutlawsGeometry::bOldSignRule = false;
 bool FOutlawsGeometry::bOldSkygap = false;
 bool FOutlawsGeometry::bOldSkyWall = false;
+bool FOutlawsGeometry::bOldShutPart = false;
 
 namespace
 {
@@ -576,7 +577,30 @@ void FOutlawsGeometry::Build(const FOutlawsLevel& L, const TMap<FString, FOutlaw
 			// stand on the 0.01-unit sky sector 524, there to leave the 30 units of rock wall over the rim undrawn along 6200
 			// units of it, and civlwar2's 912 on 905 and 865 the same.  Before, only a DEFAULT mid's part was, by this flag
 			const bool bShutSky = (bShutUnder || bShutOver) && SkyRule(bShutUnder, Shut, bDefaultMid && (S.Flags & (bShutUnder ? ExtTopAdjoin : ExtBtmAdjoin)) != 0);
-			if (bShutUnder && (bDefaultMid || bShutSky))
+			// (BUG-CRACKYOFF, user 2 Nov, snapshot #31: civlwar1's dynamite crack wall, 449 wall 8, shut from below by BLAMMO's
+			// floor until the blast, its bricks 6.4 units low against its neighbours') the original draws a shut wall as its
+			// top (bottom) part whatever its mid, with that part's texture and offsets (TFE wall_process, wall_drawBottom); here
+			// only a DEFAULT mid's was (BUG-MILLVIS), the rest drew the mid (449's FWWAREH2 at y 3.75 where its bottom part's
+			// 10.13 lines up with the neighbours' mids).  A part that is the DEFAULT placeholder, not drawn here (BUG-DEFAULTBAND),
+			// keeps the mid, or the wall would stand open (townex's 13 dig walls, one in the mill).  -OLOldShutPart: the mid, as before
+			const bool bDefaultPart = (bShutUnder || bShutOver) && L.TexStem(bShutUnder ? W.Top : W.Bot).Equals(TEXT("DEFAULT"), ESearchCase::IgnoreCase);
+			const bool bShutPart = bDefaultMid || bShutSky || (!bOldShutPart && !bOldMillvis && !bDefaultPart);
+			if (ShutAudit && (bShutUnder || bShutOver) && !bDefaultMid && !bShutSky)
+			{
+				FShutPart P;
+				P.Sector = S.Index;
+				P.Wall = WallIndex;
+				P.bKeptMid = bDefaultPart;
+				P.bTop = bShutUnder;
+				P.Tex = bShutUnder ? W.Top : W.Bot;
+				P.X = bShutUnder ? W.TopX : W.BotX;
+				P.Y = bShutUnder ? W.TopY : W.BotY;
+				P.MidTex = W.Mid;
+				P.MidX = W.MidX;
+				P.MidY = W.MidY;
+				ShutAudit->Add(P);
+			}
+			if (bShutUnder && bShutPart)
 			{
 				// (BUG-MILLVIS) an opening shut by the sector beyond, its ceiling at or under this floor (the mill's flume gates
 				// let down): the original draws the wall's top part down to this floor (TFE wall_process: the top from the
@@ -586,7 +610,7 @@ void FOutlawsGeometry::Build(const FOutlawsLevel& L, const TMap<FString, FOutlaw
 				else Bands.Add({ EBand::Top, FA, FB, CA, CB, W.Top, W.TopX, W.TopY, (FA + FB) * 0.5, false });
 				Stat(TEXT("wall_top_shut"));
 			}
-			else if (bShutOver && (bDefaultMid || bShutSky))
+			else if (bShutOver && bShutPart)
 			{
 				// (BUG-MILLVIS) ... and shut from below, its floor at or over this ceiling: the bottom part up to this ceiling
 				if (bShutSky) Bands.Add({ EBand::Bot, FA, FB, CA, CB, -1, 0.0, 0.0, 0.0, false, true });   // sky

@@ -143,8 +143,16 @@ struct OUTLAWSRUNTIME_API FOutlawsGeometry
 	/** -OLOldSkyWall (before-and-after shots; the -OLSkyWallProbe survey builds both ways): a wall's top (bottom) part is
 	 *  drawn as sky by its own sector's exterior adjoin flag, as before BUG-SKYWALL, and stops nothing. */
 	static bool bOldSkyWall;
+	/** -OLOldShutPart (before-and-after shots; the -OLShutPartProbe survey builds both ways): a wall shut by the sector beyond
+	 *  is drawn as its top (bottom) part only when its mid is DEFAULT or the part is sky, its mid otherwise, as before
+	 *  BUG-CRACKYOFF. */
+	static bool bOldShutPart;
 	/** -OLAdjoinScan only: when set, one line per surface on an adjoined wall that the original would not draw. */
 	TArray<FString>* Audit = nullptr;
+	/** (BUG-CRACKYOFF) -OLShutPartProbe only: when set, every shut wall whose part the rule draws where -OLOldShutPart drew its
+	 *  mid (not DEFAULT, not sky), the part and the mid it stands for; bKeptMid: the part is DEFAULT, so the mid is kept. */
+	struct FShutPart { int32 Sector = -1, Wall = -1; bool bTop = false, bKeptMid = false; int32 Tex = -1, MidTex = -1; double X = 0, Y = 0, MidX = 0, MidY = 0; };
+	TArray<FShutPart>* ShutAudit = nullptr;
 
 private:
 	void AddTo(TMap<FString, FOutlawsMeshSection>& Map, const FString& Tex, bool bMasked, const FVector* Pts, const FVector2D* UVs, int32 N, float Brightness, bool bReverse, bool bNoCollision = false, bool bSwirl = false, int32 WaterGroup = -1, int64 AtxWall = -1,
