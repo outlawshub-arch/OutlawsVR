@@ -350,6 +350,13 @@ protected:
 	/** Fall damage (user 2026-09-27), by how hard the landing is. */
 	virtual void Landed(const FHitResult& Hit) override;
 	double FallGraceUntil = 0.0;         // no fall damage until then (world seconds): a level start or a respawn drops the player in
+	/** (BUG-FALLDAMAGE) the fall under way: its highest point (the jump's apex, or where the floor was left) and the last Z seen. */
+	bool bFallTracked = false;
+	float FallTopZ = 0.f, FallLastZ = 0.f;
+	/** (BUG-FALLDAMAGE's probe) the last landing's drop (cm) and the damage it came to, whether or not it was dealt. */
+	float LastFallDropCm = -1.f, LastFallDamage = -1.f;
+	/** The fall's height kept while falling (Tick, beside UpdateGravity). */
+	void TrackFall(float Dt);
 	virtual void SetupPlayerInputComponent(UInputComponent* PlayerInputComponent) override;
 	virtual void OnStartCrouch(float HalfHeightAdjust, float ScaledHalfHeightAdjust) override;
 	virtual void OnEndCrouch(float HalfHeightAdjust, float ScaledHalfHeightAdjust) override;

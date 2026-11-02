@@ -643,7 +643,20 @@ void AOutlawsPlayer::Landed(const FHitResult& Hit)
 	AOutlawsLevelActor* L = Level.Get();
 	const float Down = FMath::Max(0.f, float(-GetCharacterMovement()->Velocity.Z));
 	const float G = FMath::Max(1.f, FMath::Abs(GetWorld()->GetGravityZ()) * BaseGravityScale);
-	const float Drop = Down * Down / (2.f * G);                 // cm
+	// (BUG-FALLDAMAGE, user 2 Nov: icecaves' WATERFALL03 into POOL04, 157.5 m, left the desktop player alive) the drop read
+	// back from the landing speed was this game's gravity's, capped by the engine's 40 m/s: a long fall came to 17.8 m on the
+	// desktop (4.59 g), 54.4 m in the headset (1.5 g).  Now the drop itself, from the fall's highest point (TrackFall: the
+	// apex of a jump, as the original's landing speed counts it), into the original's rule: the impact speed v = sqrt(2 g h)
+	// in units/s with g half the sector's GRAVITY (60: 30 u/s^2, EXE 0x1400b8cb0 / 0x1400b8ec9..0x1400b8eff), and damage
+	// 0.2 x (v - 45) past 45 [EXE 0x1400bac88..0x1400baccc, defaults 0x1400b27c4 / 0x1400b27ce] on a health of 10, times
+	// the character's DAMAGE_MULTIPLIER (the marshal has none: 1) [EXE 0x1400bade3..0x1400badee]; the same on both paths.
+	// About 10 m costs nothing, about 45 m kills.  -OLOldFallDamage: the speed's height and the 8 m / 24 m rule, as before
+	static const bool bOldFall = OLFlags::Param(TEXT("OLOldFallDamage"));
+	const float Measured = bFallTracked ? FMath::Max(0.f, FallTopZ - float(GetActorLocation().Z)) : 0.f;
+	bFallTracked = false;
+	const float Drop = bOldFall ? Down * Down / (2.f * G) : Measured;          // cm
+	LastFallDropCm = Drop;
+	LastFallDamage = 0.f;
 	if (!L || bDeadView || Drop < 10.f)
 	{
 		return;
@@ -651,7 +664,10 @@ void AOutlawsPlayer::Landed(const FHitResult& Hit)
 	const FVector Feet = GetActorLocation() - FVector(0.0, 0.0, GetCapsuleComponent()->GetScaledCapsuleHalfHeight());
 	constexpr float SafeCm = 800.f, LethalCm = 2400.f;   // twice as far before it hurts, half the damage a metre after (user 2026-09-27)
 	const bool bGrace = GetWorld()->GetTimeSeconds() < FallGraceUntil;
-	const float Damage = bGrace || Drop <= SafeCm ? 0.f : 10.f * (Drop - SafeCm) / (LethalCm - SafeCm);
+	const float Impact = FMath::Sqrt(FMath::Abs(L->GravityAt(Feet)) * Drop / float(FOutlawsGeometry::UnitsToCm));      // (sqrt(2 g h), g = |GRAVITY| / 2)
+	const float Rule = bOldFall ? (Drop <= SafeCm ? 0.f : 10.f * (Drop - SafeCm) / (LethalCm - SafeCm)) : FMath::Max(0.f, 0.2f * (Impact - 45.f));
+	LastFallDamage = Rule;
+	const float Damage = bGrace ? 0.f : Rule;
 	if (Damage <= 0.f)
 	{
 		L->PlaySoundAt(Drop < 500.f ? TEXT("landlite") : TEXT("land"), Feet);   // SND_LANDLT after a jump, SND_LAND from over 5 m (user 2026-09-27)
@@ -660,11 +676,33 @@ void AOutlawsPlayer::Landed(const FHitResult& Hit)
 	const bool bLethal = Damage >= L->GetHealth() && !L->bInvincible;
 	L->PlaySoundAt(TEXT("crunch"), Feet);        // any fall that hurts (user 2026-09-27)
 	(void)bLethal;
-	UE_LOG(LogOutlaws, Log, TEXT("OLRT fall: %.0f cm/s down (a %.1f m drop): %.1f damage"), Down, Drop / 100.f, Damage);
+	UE_LOG(LogOutlaws, Log, TEXT("OLRT fall: %.0f cm/s down (a %.1f m drop, %s; impact %.0f u/s): %.1f damage"), Down, Drop / 100.f,
+		bOldFall ? TEXT("-OLOldFallDamage: from the speed") : TEXT("measured"), Impact, Damage);
 	L->HurtCause = uint8(EOutlawsHurtCause::Fall);       // (REQ-KILLFEED)
 	L->DamagePlayer(Damage, 1.f, true);
 	Pulse(0, 0.6f);
 	Pulse(1, 0.6f);
+}
+
+void AOutlawsPlayer::TrackFall(float Dt)
+{
+	// (BUG-FALLDAMAGE) the fall's highest point while the body is in the air (a jump's rise counts to its apex); climbing,
+	// swimming or on the ground no fall.  A teleport or a rescue that moves it further in a tick than its speed could is no
+	// fall: measured again from there (as the bad guys' fall cry, OutlawsEnemy.cpp)
+	const UCharacterMovementComponent* M = GetCharacterMovement();
+	const float Z = float(GetActorLocation().Z);
+	if (!M || M->MovementMode != MOVE_Falling || IsClimbing() || MantleLeft > 0.f)
+	{
+		bFallTracked = false;
+		return;
+	}
+	if (!bFallTracked || FMath::Abs(Z - FallLastZ) > 300.f + FMath::Abs(float(M->Velocity.Z)) * 2.f * FMath::Max(Dt, 0.05f))
+	{
+		bFallTracked = true;
+		FallTopZ = Z;
+	}
+	FallLastZ = Z;
+	FallTopZ = FMath::Max(FallTopZ, Z);
 }
 
 UMaterialInterface* AOutlawsPlayer::HeldBase() const
@@ -1638,6 +1676,7 @@ void AOutlawsPlayer::Tick(float Dt)
 	Swimming();
 	SwimStrokes(Dt);
 	UpdateGravity(Dt);
+	TrackFall(Dt);                      // (BUG-FALLDAMAGE: the drop measured, not read back from the landing speed)
 	// out of the map: a fall that goes on for three seconds (or well under the lowest floor) ends back on the
 	// ground near where it began, at a bad guy's empty spawn point, else the level start (user 2026-09-27)
 	if (AOutlawsLevelActor* LF = Level.Get(); LF && !LF->IsFrontEnd() && !bDeadView && !bSwimming && !IsClimbing())
