@@ -2585,10 +2585,24 @@ private:
 	/** A jump at the lower movement speeds reaches further than its walk alone would carry it, without going any faster
 	 *  (user 2026-10-02: a first version scaled the speed across up and launched the player forward; "keep this slow", half
 	 *  the full reach at 20 %, linear to all of it at 100 %): the speed across stays the walk's own, and the jump lasts
-	 *  longer, as high as ever (launch / K, gravity / K^2), until the landing or the fall past the take-off's height. */
+	 *  longer, as high as ever (launch / K, gravity / K^2), until the landing or the fall past the take-off's height.
+	 *  BUG-JUMPSPEED (user 3 Nov, "ease it"): that is now -OLOldJumpSpeed only; the speed across is the original's reach (900
+	 *  cm running, 600 walking) over our air time, eased in over JumpEaseSeconds and held in the air (Locomotion). */
 	virtual void OnJumped_Implementation() override;
+	/** -OLOldJumpSpeed (BUG-JUMPSPEED): the jump's old stretch and the slide floor's brake down to the dial's speed. */
+	static bool OldJumpSpeed();
 	bool bJumpBoost = false;
 	bool bLanternLow[2] = { false, false };    // the lantern hung lower: its fist holds the other hand's long gun
 	float JumpStretch = 1.f;                   // K: how many times longer the jump lasts
 	float JumpOffZ = 0.f;                      // the feet at the take-off
+	float JumpAirSpeed = 0.f;                  // (BUG-JUMPSPEED) the speed across held after the ease (0: none)
+	float JumpEaseFrom = 0.f;                  // the take-off's speed across, the ease's start
+	float JumpAge = 0.f;                       // seconds since the take-off, for the ease
+	FVector JumpDir = FVector::ZeroVector;     // the take-off's direction across
+	static constexpr float JumpEaseSeconds = 0.1f;
+public:
+	/** (tests, BUG-JUMPSPEED) the last jump's speed across held in the air (cm/s, 0: none), and the air time up and back to
+	 *  the take-off's height under the gravity now (s). */
+	float DebugJumpAirSpeed() const { return JumpAirSpeed; }
+	float DebugJumpAirTime() const;
 };
