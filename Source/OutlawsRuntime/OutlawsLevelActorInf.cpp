@@ -2261,6 +2261,22 @@ void AOutlawsLevelActor::BuildInf(const FOutlawsLevel& L, const FString& InfText
 				const FOutlawsSector& S0 = Live.Sectors[Sc.Sectors[0]];
 				Live.SurfaceTexFrame(S0, !M.bCeil, O, M.FrameA, M.FrameN, M.Stretch);
 				M.Rad = FMath::DegreesToRadians(-(M.bCeil ? S0.Ceil.Angle : S0.Floor.Angle));
+				// (BUG-SLOPESCROLL, the user's snapshot #2: icecaves' WATERFALL01 ran sideways) 809f200 lays a slope's texture in
+				// the exe's hinge frame (SurfaceUV), the scroll still went through the old frame and ran off its axis.  The scroll
+				// moves the plane's offsets, as the exe and Jedi do, so its texture shift is what SurfaceUV makes of it: the
+				// texels a unit of world offset gives, read from SurfaceUV (the shift is the same anywhere on the plane).  The
+				// way it runs is unchanged (ANGLE in the slope's frame, 0 straight downhill).  Flat floors as before;
+				// -OLOldSlopeScroll (or -OLOldDamAfter, the old base): the old frame
+				static const bool bOldSlopeScroll = OLFlags::Param(TEXT("OLOldSlopeScroll")) || OLFlags::Param(TEXT("OLOldDamAfter"));
+				FVector2D SA, SN;
+				if (!bOldSlopeScroll && Live.SlopeFrame(S0, !M.bCeil, SA, SN) && S0.Verts.Num() > 0)
+				{
+					const FVector2D P0 = S0.Verts[0];
+					const FVector2D T0 = Live.SurfaceUV(S0, !M.bCeil, P0, 1.0, 1.0, false);
+					M.bSurfaceFrame = true;
+					M.TexelsPerX = Live.SurfaceUV(S0, !M.bCeil, P0 + FVector2D(1.0, 0.0), 1.0, 1.0, false) - T0;
+					M.TexelsPerZ = Live.SurfaceUV(S0, !M.bCeil, P0 + FVector2D(0.0, 1.0), 1.0, 1.0, false) - T0;
+				}
 			}
 			M.Filter.bOnly = true;
 			Found = &ScrollKinds.Add(Kind, ScrollMeshes.Add(M));
@@ -3096,10 +3112,8 @@ void AOutlawsLevelActor::TickScrolls()
 			}
 			else
 			{
-				// the world offset in the surface's texture frame, as the builder lays the texture (u runs along -x)
-				const double Lx = FVector2D::DotProduct(O, SM.FrameA), Lz = FVector2D::DotProduct(O, SM.FrameN) * SM.Stretch;
-				const double Rx = Lx * FMath::Cos(SM.Rad) - Lz * FMath::Sin(SM.Rad), Rz = Lx * FMath::Sin(SM.Rad) + Lz * FMath::Cos(SM.Rad);
-				D = FVector2D(FMath::Frac(-Rx * K.X), FMath::Frac((SM.bCeil ? Rz : -Rz) * K.Y));
+				const FVector2D Shift = ScrollShift(SM, O, K, false);
+				D = FVector2D(FMath::Frac(Shift.X), FMath::Frac(Shift.Y));
 			}
 			if (j == 0)
 			{
@@ -3111,6 +3125,63 @@ void AOutlawsLevelActor::TickScrolls()
 			for (FVector2D& U : UVs) U += D;
 			if (!OutlawsPerf::FreezeMeshUpdates()) SM.Mesh->UpdateMeshSection_LinearColor(j, S.Positions, S.Normals, UVs, S.Colors, TArray<FProcMeshTangent>(), bOldScrollSrgb);
 		}
+	}
+}
+
+FVector2D AOutlawsLevelActor::ScrollShift(const FScrollMesh& SM, const FVector2D& O, const FVector2D& K, bool bOld) const
+{
+	if (SM.bSurfaceFrame && !bOld)
+	{
+		// (BUG-SLOPESCROLL) the plane's offsets moved by O: what SurfaceUV makes of it (the texture runs the way the offset does not)
+		const FVector2D Tex = SM.TexelsPerX * O.X + SM.TexelsPerZ * O.Y;
+		return FVector2D(Tex.X * K.X, Tex.Y * K.Y) / FOutlawsGeometry::TexelsPerUnit;
+	}
+	// the world offset in the surface's texture frame, as the builder lays the texture (u runs along -x)
+	const double Lx = FVector2D::DotProduct(O, SM.FrameA), Lz = FVector2D::DotProduct(O, SM.FrameN) * SM.Stretch;
+	const double Rx = Lx * FMath::Cos(SM.Rad) - Lz * FMath::Sin(SM.Rad), Rz = Lx * FMath::Sin(SM.Rad) + Lz * FMath::Cos(SM.Rad);
+	return FVector2D(-Rx * K.X, (SM.bCeil ? Rz : -Rz) * K.Y);
+}
+
+void AOutlawsLevelActor::DebugScrollDirs(TArray<FDebugScrollDir>& Out) const
+{
+	Out.Reset();
+	if (!Inf) return;
+	const FOutlawsLevel& Lv = Inf->Live;
+	const double Tpu = FOutlawsGeometry::TexelsPerUnit;
+	for (const FScrollMesh& SM : ScrollMeshes)
+	{
+		if (SM.bWall || SM.bCeil || !Inf->Scrolls.IsValidIndex(SM.Scroll)) continue;
+		const FOutlawsScroll& Sc = Inf->Scrolls[SM.Scroll];
+		if (Sc.Sectors.Num() == 0 || !Lv.Sectors.IsValidIndex(Sc.Sectors[0])) continue;
+		const FOutlawsSector& S = Lv.Sectors[Sc.Sectors[0]];
+		FDebugScrollDir R;
+		R.Sector = S.Index;
+		FVector2D SA, SN;
+		R.bSloped = Lv.SlopeFrame(S, true, SA, SN);
+		// the base texture's texels per unit of x and z (as drawn: the new frame unless -OLOldDamAfter)
+		static const bool bOldBase = OLFlags::Param(TEXT("OLOldDamAfter"));
+		const FVector2D P0 = S.Verts.Num() > 0 ? S.Verts[0] : FVector2D::ZeroVector;
+		const FVector2D T0 = Lv.SurfaceUV(S, true, P0, 1.0, 1.0, bOldBase);
+		const FVector2D Jx = Lv.SurfaceUV(S, true, P0 + FVector2D(1.0, 0.0), 1.0, 1.0, bOldBase) - T0;
+		const FVector2D Jz = Lv.SurfaceUV(S, true, P0 + FVector2D(0.0, 1.0), 1.0, 1.0, bOldBase) - T0;
+		const double Det = Jx.X * Jz.Y - Jz.X * Jx.Y;
+		// the world way the texture runs for a shift D: the point P' with UV(P') = UV(P) + D lies where the pattern came from
+		auto Way = [&](const FVector2D& D) -> FVector2D
+		{
+			if (FMath::Abs(Det) < 1e-9) return FVector2D::ZeroVector;
+			const FVector2D Back((D.X * Jz.Y - Jz.X * D.Y) / Det, (Jx.X * D.Y - D.X * Jx.Y) / Det);
+			return (-Back).GetSafeNormal();
+		};
+		R.Dir = Way(ScrollShift(SM, Sc.Dir, FVector2D(Tpu, Tpu), false));
+		R.OldDir = Way(ScrollShift(SM, Sc.Dir, FVector2D(Tpu, Tpu), true));
+		// downhill: against the floor's rise about its middle
+		FVector2D C = FVector2D::ZeroVector;
+		for (const FVector2D& V : S.Verts) C += V;
+		C /= FMath::Max(1, S.Verts.Num());
+		const double Gx = Lv.SurfaceY(S, C + FVector2D(0.5, 0.0), true) - Lv.SurfaceY(S, C - FVector2D(0.5, 0.0), true);
+		const double Gz = Lv.SurfaceY(S, C + FVector2D(0.0, 0.5), true) - Lv.SurfaceY(S, C - FVector2D(0.0, 0.5), true);
+		R.Downhill = FVector2D(-Gx, -Gz).GetSafeNormal();
+		Out.Add(R);
 	}
 }
 

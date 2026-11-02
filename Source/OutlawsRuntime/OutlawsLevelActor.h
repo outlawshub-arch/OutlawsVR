@@ -309,6 +309,10 @@ public:
 	 *  (the still faces' rule), as sRGB-converted, not black or white; the largest section's middle and a side to see it from. */
 	void DebugScrollColours(int32& OutSections, int32& OutSlid, int32& OutVerts, int32& OutAsStill, int32& OutAsOld, int32& OutLit, FVector& OutAt, FVector& OutFacing,
 		FString& OutWhere) const;
+	/** (tests, BUG-SLOPESCROLL) each floor scroll mesh: its first sector, sloped or not, and which way its texture runs over the
+	 *  world (plan, Outlaws x/z, unit length) as drawn now and by the old frame, read back through the surface's own UVs. */
+	struct FDebugScrollDir { int32 Sector = -1; bool bSloped = false; FVector2D Dir = FVector2D::ZeroVector, OldDir = FVector2D::ZeroVector, Downhill = FVector2D::ZeroVector; };
+	void DebugScrollDirs(TArray<FDebugScrollDir>& Out) const;
 	/** (tests, BUG-OUTHOUSEWALL) the explodable walls: how many; wall i's drawn plug and its sector's floor-to-ceiling box,
 	 *  false when it has no plug drawn; blow wall i as dynamite would from above it. */
 	int32 DebugExplodeWallCount() const;
@@ -2144,6 +2148,10 @@ private:
 		// world offset goes into texture space through them
 		FVector2D FrameA = FVector2D(1.0, 0.0), FrameN = FVector2D(0.0, 1.0);
 		double Stretch = 1.0, Rad = 0.0;
+		// (BUG-SLOPESCROLL) a sloped floor (ceiling) laid in the exe's hinge frame (SurfaceUV): the texels one unit of world
+		// offset along x and along z moves its texture, taken from SurfaceUV itself
+		bool bSurfaceFrame = false;
+		FVector2D TexelsPerX = FVector2D::ZeroVector, TexelsPerZ = FVector2D::ZeroVector;
 		FOutlawsBuildFilter Filter;
 		TObjectPtr<class UProceduralMeshComponent> Mesh;
 		TArray<FOutlawsMeshSection> Sections;
@@ -2154,6 +2162,9 @@ private:
 	void BuildScrolls(const FOutlawsLevel& L, const TMap<FString, FOutlawsTexInfo>& TexInfo);
 	void FillFloorShift(FOutlawsBuildFilter& F) const;
 	void TickScrolls();
+	/** A floor's (ceiling's) scroll mesh's texture shift, in UV, for the world offset O (units) at UV-per-unit K, unwrapped;
+	 *  bOld: the old frame's (SurfaceTexFrame and the plane's turn) on every surface, as before BUG-SLOPESCROLL. */
+	FVector2D ScrollShift(const FScrollMesh& SM, const FVector2D& O, const FVector2D& K, bool bOld) const;
 	// (REQ-SECTORLIGHT) the sectors an INF CHANGE_LIGHT lights: the drawn sections of their faces (the builder keeps them
 	// apart: FOutlawsGeometry::SectorLight), and the sprites and 3D models standing in them, drawn at the light's level
 	struct FLightFace
