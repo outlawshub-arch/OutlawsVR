@@ -898,9 +898,18 @@ bool AOutlawsPlayer::ShowMenuPage(const FString& File, bool bPush)
 		{
 			// REQ-TITLEMENU: the resume point (the last single-player autosave) first, then the other autosaves newest first (a
 			// co-op host's own, R7), then the player's own saves.  (REQ-AUTOSAVESLOTS: the resume point is the newest of the
-			// modes' autosaves, the other modes' next, newest first, then co-op's)
+			// modes' autosaves, the other modes' next, then co-op's; user 2 Nov evening: the other modes in a fixed order, Story,
+			// Historical, Handful, Custom, not newest first)
 			TArray<int32> Autos;
 			AOutlawsLevelActor::GetAutosaves(Autos);
+			if (Autos.Num() > 2)
+			{
+				auto Rank = [](int32 a) { return a == AOutlawsLevelActor::AutosaveStory ? 0 : a == AOutlawsLevelActor::AutosaveHom ? 1 : a == AOutlawsLevelActor::AutosaveHandful ? 2 : 3; };
+				const int32 Newest = Autos[0];
+				Autos.RemoveAt(0);
+				Autos.StableSort([&Rank](int32 A, int32 B) { return Rank(A) < Rank(B); });
+				Autos.Insert(Newest, 0);
+			}
 			if (!AOutlawsLevelActor::ReadSaveInfo(-2).bEmpty) Autos.Add(-2);
 			for (int32 a : Autos) AddSlot(a);
 		}
@@ -4379,7 +4388,7 @@ void AOutlawsPlayer::TitleLoadTestTick()
 {
 	// the runner puts saves in place (saves, slot) or none: the title menu's rows, Load Game pressable or greyed out, each row's
 	// pointer box over its label for each pointing hand (right-handed, left-handed, one controller left or right), then Load
-	// Game pressed: the load page in order (the resume point, the other autosaves newest first, the player's own saves) and the
+	// Game pressed: the load page in order (the resume point, the other modes' autosaves in their order, co-op's, the player's own saves) and the
 	// resume point (saves) or the first own save (slot) loaded from it.  With none, Load Game cannot be pointed at or pressed
 	static int32 Passes = 0, Fails = 0;
 	static float NextAt = 0.f, LoadAt = 0.f;
@@ -4531,7 +4540,7 @@ void AOutlawsPlayer::TitleLoadTestTick()
 		for (const OutlawsMenu::FItem& I : MenuPage->Items) Slots.Add(I.Name.StartsWith(TEXT("load:")) ? FCString::Atoi(*I.Name.Mid(5)) : -99);
 		FString Order;
 		for (int32 s : Slots) Order += FString::Printf(TEXT("%s%d"), Order.IsEmpty() ? TEXT("") : TEXT(" "), s);
-		// (REQ-AUTOSAVESLOTS: the resume point the newest mode's autosave, the other modes' newest first, then co-op's)
+		// (REQ-AUTOSAVESLOTS: the resume point the newest mode's autosave, the other modes' in their fixed order, then co-op's)
 		const bool bResumeFirst = AOutlawsLevelActor::HasAutosave() && Slots.Num() > 0 && Slots[0] == AOutlawsLevelActor::NewestAutosave() && MenuPage->Items[0].Label.StartsWith(TEXT("Resume: "));
 		Check(bResumeFirst, FString::Printf(TEXT("the resume point is the first row (%s)"), MenuPage->Items.Num() > 0 ? *MenuPage->Items[0].Label : TEXT("none")));
 		int32 FirstOwn = Slots.IndexOfByPredicate([](int32 s) { return s >= 0; });
@@ -4543,13 +4552,15 @@ void AOutlawsPlayer::TitleLoadTestTick()
 			if (Slots[k] < 0 && k > 0)
 			{
 				++Autos;
-				const bool bSameKind = AOutlawsLevelActor::IsAutosaveSlot(Slots[k - 1]) == AOutlawsLevelActor::IsAutosaveSlot(Slots[k]);
-				if (k > 1 && Slots[k - 1] < 0 && bSameKind && IFileManager::Get().GetTimeStamp(*AOutlawsLevelActor::SavePath(Slots[k - 1])) < IFileManager::Get().GetTimeStamp(*AOutlawsLevelActor::SavePath(Slots[k]))) bNewest = false;
+				// (user 2 Nov evening: after the resume point the modes in a fixed order, Story, Historical, Handful, Custom: their
+				// slots -1, -3, -4, -5 going down)
+				const bool bBothModes = AOutlawsLevelActor::IsAutosaveSlot(Slots[k - 1]) && AOutlawsLevelActor::IsAutosaveSlot(Slots[k]);
+				if (k > 1 && bBothModes && Slots[k - 1] < Slots[k]) bNewest = false;
 				if (Slots[k - 1] == -2 && AOutlawsLevelActor::IsAutosaveSlot(Slots[k])) bNewest = false;        // (co-op's after every mode's)
 			}
 			if (FirstOwn != INDEX_NONE && k >= FirstOwn && Slots[k] != k - FirstOwn) bOwnInOrder = false;
 		}
-		Check(bAutosBefore && bNewest, FString::Printf(TEXT("the autosaves come first, newest first (%d besides the resume point), then the player's own saves (slots %s)"), Autos, *Order));
+		Check(bAutosBefore && bNewest, FString::Printf(TEXT("the autosaves come first, the modes Story, Historical, Handful, Custom after the resume point (%d besides it), then the player's own saves (slots %s)"), Autos, *Order));
 		Check(bOwnInOrder && FirstOwn != INDEX_NONE && Slots.Num() - FirstOwn == AOutlawsLevelActor::NumSaveSlots, FString::Printf(TEXT("the player's own saves in slot order, all %d slots"), int32(AOutlawsLevelActor::NumSaveSlots)));
 		Check(Autos >= 1 || Mode != TEXT("saves"), FString::Printf(TEXT("the runner's co-op autosave is listed (%d)"), Autos));
 		Shot(TEXT("loadpage"));

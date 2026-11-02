@@ -2,12 +2,15 @@
 // and custom maps "don't overwrite each other"): -OLShots -OLLevel=hideout -OLNoFrontEnd -OLAutosaveModesProbe
 // [-OLOldAutosave].  (a) the classifier, level by level; (b) an autosave in the story (hideout), then the Handful (villa),
 // Historical Missions (shfort, a Marshal session on) and a custom map (town_2p): each mode's file holds its level, the
-// others untouched, the death offer and the Beacon's slot this mode's; (c) the load page: the newest the resume point,
-// the other modes by name, newest first, then co-op's, then the slots; (d) the Historical Missions autosave loaded from the
-// custom map: the Marshal session back, the mission's counts as saved; then the story's: the session ends; (e) the
-// migration of an old autosave.json of the Handful's villa: moved to its file when that file is absent (the same bytes),
-// left alone when it is there.  -OLOldAutosave: every mode in autosave.json, no migration.  Lines "OLSHOT autosavemodes
-// check PASS|FAIL: ..." and "OLSHOT autosavemodes RESULT".
+// others untouched, the death offer and the Beacon's slot this mode's; (c) the load page with each mode's autosave the
+// newest in turn: that one the resume point, the other modes by name in the fixed order Story, Historical, Handful, Custom
+// (user 2 Nov evening), then co-op's, then the slots; (d) the Historical Missions autosave loaded from the custom map: the
+// Marshal session back, the mission's counts as saved; then the story's: the session ends; (f) user 2 Nov evening: a slot
+// saved in the story carries no session, one saved during the session carries it, the story's slot loaded during the
+// session ends it and the mission's slot loaded from the story puts it back; (e) the migration of an old autosave.json of
+// the Handful's villa: moved to its file when that file is absent (the same bytes), left alone when it is there.
+// -OLOldAutosave: every mode in autosave.json, no migration, a slot saved with a session on carries none.  Lines "OLSHOT
+// autosavemodes check PASS|FAIL: ..." and "OLSHOT autosavemodes RESULT".
 
 #include "OutlawsPlayer.h"
 #include "OutlawsLevelActor.h"
@@ -30,6 +33,7 @@ namespace
 {
 	using ALA = AOutlawsLevelActor;
 	const int32 ModeSlots[] = { ALA::AutosaveStory, ALA::AutosaveHandful, ALA::AutosaveHom, ALA::AutosaveCustom };       // (in (b)'s order)
+	const int32 SlotStory = ALA::NumSaveSlots - 1, SlotHom = ALA::NumSaveSlots - 2;       // ((f)'s slots: the run's Saved is put back after)
 
 	FString FileMd5(const FString& Path)
 	{
@@ -158,37 +162,57 @@ OL_SHOT_TEST(OLAutosaveModesProbe, 1500)
 	case 3:
 	{
 		if (ShotTime < Wait) return;
-		TArray<int32> Slots;
-		TArray<FString> Rows;
-		if (MenuPage.IsValid())
-		{
-			for (const OutlawsMenu::FItem& I : MenuPage->Items)
-			{
-				Slots.Add(I.Name.StartsWith(TEXT("load:")) ? FCString::Atoi(*I.Name.Mid(5)) : -99);
-				Rows.Add(FString::Printf(TEXT("%s [%s]"), *I.Label, *I.Name));
-			}
-		}
-		UE_LOG(LogOutlaws, Display, TEXT("OLSHOT autosavemodes load page: %s"), *FString::Join(Rows, TEXT(" | ")));
-		TArray<int32> Want;
-		if (bOld) Want.Add(ALA::AutosaveStory);
-		else Want = { ALA::AutosaveCustom, ALA::AutosaveHom, ALA::AutosaveHandful, ALA::AutosaveStory };      // (newest first: saved in the reverse order)
-		const int32 Co = ALA::ReadSaveInfo(-2).bEmpty ? 0 : 1;
-		bool bOrder = Slots.Num() == Want.Num() + Co + ALA::NumSaveSlots;
-		for (int32 k = 0; bOrder && k < Want.Num(); ++k) bOrder = Slots[k] == Want[k];
-		if (bOrder && Co) bOrder = Slots[Want.Num()] == -2;
-		for (int32 k = 0; bOrder && k < ALA::NumSaveSlots; ++k) bOrder = Slots[Want.Num() + Co + k] == k;
-		Check(bOrder, FString::Printf(TEXT("(c) the load page: the modes' autosaves newest first, %sthen the %d slots"), Co ? TEXT("co-op's after them, ") : TEXT(""), int32(ALA::NumSaveSlots)));
-		bool bLabels = MenuPage.IsValid() && MenuPage->Items.Num() >= Want.Num() && MenuPage->Items[0].Label.StartsWith(TEXT("Resume: "));
+		// (c) the load page with each mode's autosave the newest in turn (its file's time now, the others' an hour back): that
+		// one "Resume:", then the other modes in the fixed order Story, Historical, Handful, Custom (user 2 Nov evening, not
+		// newest first), co-op's, the slots
+		const int32 Fixed[] = { ALA::AutosaveStory, ALA::AutosaveHom, ALA::AutosaveHandful, ALA::AutosaveCustom };
 		static const TCHAR* Names[] = { TEXT("Story: "), TEXT("Historical: "), TEXT("Handful: "), TEXT("Custom: ") };
-		for (int32 k = 1; bLabels && k < Want.Num(); ++k)
+		const int32 Co = ALA::ReadSaveInfo(-2).bEmpty ? 0 : 1;
+		for (int32 c = 0; c < (bOld ? 1 : 4); ++c)
 		{
-			const int32 i = Want[k] == ALA::AutosaveStory ? 0 : Want[k] == ALA::AutosaveHom ? 1 : Want[k] == ALA::AutosaveHandful ? 2 : 3;
-			bLabels = MenuPage->Items[k].Label.StartsWith(Names[i]);
+			const int32 Newest = Fixed[c];
+			if (!bOld) for (int32 s : Fixed) IFileManager::Get().SetTimeStamp(*ALA::SavePath(s), s == Newest ? FDateTime::UtcNow() : FDateTime::UtcNow() - FTimespan::FromHours(1.0));
+			CoopShowPage(TEXT("load_game.rml"), false);
+			TArray<int32> Slots;
+			TArray<FString> Rows;
+			if (MenuPage.IsValid())
+			{
+				for (const OutlawsMenu::FItem& I : MenuPage->Items)
+				{
+					Slots.Add(I.Name.StartsWith(TEXT("load:")) ? FCString::Atoi(*I.Name.Mid(5)) : -99);
+					Rows.Add(FString::Printf(TEXT("%s [%s]"), *I.Label, *I.Name));
+				}
+			}
+			const FString Case = FString::Printf(TEXT("%s newest"), ALA::AutosaveModeName(Newest));
+			UE_LOG(LogOutlaws, Display, TEXT("OLSHOT autosavemodes load page, %s: %s"), *Case, *FString::Join(Rows, TEXT(" | ")));
+			TArray<int32> Want = { Newest };
+			if (!bOld) for (int32 s : Fixed) if (s != Newest) Want.Add(s);
+			bool bOrder = Slots.Num() == Want.Num() + Co + ALA::NumSaveSlots;
+			for (int32 k = 0; bOrder && k < Want.Num(); ++k) bOrder = Slots[k] == Want[k];
+			if (bOrder && Co) bOrder = Slots[Want.Num()] == -2;
+			for (int32 k = 0; bOrder && k < ALA::NumSaveSlots; ++k) bOrder = Slots[Want.Num() + Co + k] == k;
+			Check(bOrder, FString::Printf(TEXT("(c) %s: the load page \"Resume:\" it, the other modes Story, Historical, Handful, Custom, %sthen the %d slots"), *Case,
+				Co ? TEXT("co-op's after them, ") : TEXT(""), int32(ALA::NumSaveSlots)));
+			bool bLabels = MenuPage.IsValid() && MenuPage->Items.Num() >= Want.Num() && MenuPage->Items[0].Label.StartsWith(TEXT("Resume: "));
+			for (int32 k = 1; bLabels && k < Want.Num(); ++k)
+			{
+				const int32 i = Want[k] == ALA::AutosaveStory ? 0 : Want[k] == ALA::AutosaveHom ? 1 : Want[k] == ALA::AutosaveHandful ? 2 : 3;
+				bLabels = MenuPage->Items[k].Label.StartsWith(Names[i]);
+			}
+			Check(bLabels, FString::Printf(TEXT("(c) %s: \"Resume:\" first, the others named by their mode"), *Case));
+			Check(ALA::NewestAutosave() == Newest, FString::Printf(TEXT("(c) %s: the title's Resume Game loads it (%d)"), *Case, ALA::NewestAutosave()));
 		}
-		Check(bLabels, TEXT("(c) the newest is \"Resume:\", the others named by their mode"));
-		Check(ALA::NewestAutosave() == Want[0], FString::Printf(TEXT("(c) the title's Resume Game loads the newest (%d)"), ALA::NewestAutosave()));
 		CloseMenu();
-		if (bOld) { Mode = 9; Wait = ShotTime + 0.5f; ShotStep = 8; return; }
+		if (bOld)
+		{
+			// (f) -OLOldAutosave: a slot saved with a Marshal session on carries none, as before
+			L->bHom = true;
+			const bool bSaved = L->SaveGame(SlotHom);
+			L->bHom = false;
+			const TSharedPtr<FJsonObject> O = ReadSaveFile(SlotHom);
+			Check(bSaved && O.IsValid() && !O->HasField(TEXT("hom_save")), FString::Printf(TEXT("(f) -OLOldAutosave: slot %d saved with a session on carries none"), SlotHom));
+			Mode = 9; Wait = ShotTime + 0.5f; ShotStep = 8; return;
+		}
 		// (d) the Historical Missions autosave from the custom map, the session gone first
 		L->bHom = false;
 		L->HomMission.Reset();
@@ -221,6 +245,55 @@ OL_SHOT_TEST(OLAutosaveModesProbe, 1500)
 	{
 		if (ShotTime < Wait) return;
 		Check(!L->bHom, FString::Printf(TEXT("(d) the story's autosave ends the Marshal session (hom %d)"), L->bHom ? 1 : 0));
+		// (f) user 2 Nov evening: a slot saved in the story carries no session
+		const bool bSaved = L->SaveGame(SlotStory);
+		const TSharedPtr<FJsonObject> O = ReadSaveFile(SlotStory);
+		Check(bSaved && O.IsValid() && !O->HasField(TEXT("hom_save")), FString::Printf(TEXT("(f) slot %d saved in the story (%s) carries no Marshal session"), SlotStory, *L->LevelName));
+		// then into the mission again by its autosave, for a slot saved there
+		Check(L->LoadGame(ALA::AutosaveHom), TEXT("(f) the Historical Missions autosave loaded again"));
+		WantLevel = TEXT("shfort");
+		ShotStep = 10;
+		return;
+	}
+	case 10:
+	case 12:
+	case 14:
+		if (!bUp || !L->LevelName.Equals(WantLevel, ESearchCase::IgnoreCase)) return;
+		Wait = ShotTime + 3.f;
+		++ShotStep;
+		return;
+	case 11:
+	{
+		if (ShotTime < Wait) return;
+		// (f) a slot saved during the session carries it (the same "hom_save" block as the autosave)
+		const bool bSaved = L->bHom && L->SaveGame(SlotHom);
+		const TSharedPtr<FJsonObject> O = ReadSaveFile(SlotHom);
+		const TSharedPtr<FJsonObject>* H = nullptr;
+		const bool bHas = O.IsValid() && O->TryGetObjectField(TEXT("hom_save"), H) && H && H->IsValid();
+		Check(bSaved && bHas && (*H)->GetStringField(TEXT("mission")) == TEXT("shfort") && int32((*H)->GetNumberField(TEXT("score"))) == 4321,
+			FString::Printf(TEXT("(f) slot %d saved during the session carries it (%s)"), SlotHom, bHas ? *FString::Printf(TEXT("mission %s, score %d"), *(*H)->GetStringField(TEXT("mission")), int32((*H)->GetNumberField(TEXT("score")))) : TEXT("none")));
+		// the story's slot loaded with the session on: it ends
+		Check(L->LoadGame(SlotStory), FString::Printf(TEXT("(f) slot %d (the story) loaded during the session"), SlotStory));
+		WantLevel = TEXT("hideout");
+		ShotStep = 12;
+		return;
+	}
+	case 13:
+	{
+		if (ShotTime < Wait) return;
+		Check(!L->bHom, FString::Printf(TEXT("(f) the story's slot ends the session (hom %d)"), L->bHom ? 1 : 0));
+		Check(L->LoadGame(SlotHom), FString::Printf(TEXT("(f) slot %d (the mission's) loaded from the story"), SlotHom));
+		WantLevel = TEXT("shfort");
+		ShotStep = 14;
+		return;
+	}
+	case 15:
+	{
+		if (ShotTime < Wait) return;
+		Check(L->bHom && L->HomMission == TEXT("shfort") && L->HomReturnSector == TEXT("PORCH1D") && L->HomGameScore == 4321 && L->HomPorchEvents.FindRef(TEXT("PORCH3D")) == 131072
+			&& L->HomWounds == 3 && L->HomGoldAtStart == 7 && L->HomKillsAtStart == 2,
+			FString::Printf(TEXT("(f) the mission's slot puts the session back (hom %d, mission %s, back to %s, score %d, porches %d, wounds %d, gold at start %d, kills at start %d)"),
+				L->bHom ? 1 : 0, *L->HomMission, *L->HomReturnSector, L->HomGameScore, L->HomPorchEvents.Num(), L->HomWounds, L->HomGoldAtStart, L->HomKillsAtStart));
 		Wait = ShotTime + 0.5f;
 		ShotStep = 8;
 		return;

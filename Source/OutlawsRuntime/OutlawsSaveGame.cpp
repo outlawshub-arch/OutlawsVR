@@ -331,7 +331,11 @@ bool AOutlawsLevelActor::SaveGame(int32 Slot)
 	}
 	FString Text;
 	int32 NumEnemies = 0, NumPickups = 0;
-	if (!BuildSaveText(P, Text, NumEnemies, NumPickups, Slot == AutosaveHom && bHom))
+	// (REQ-AUTOSAVESLOTS: the Historical Missions autosave carries the Marshal session; user 2 Nov evening: a slot saved during
+	// one carries it too, so loading it goes back into the session as the autosave does; a save outside one carries none)
+	static const bool bOldAutosave = OLFlags::Param(TEXT("OLOldAutosave"));
+	const bool bHomSave = bHom && (Slot == AutosaveHom || (Slot >= 0 && !bOldAutosave && !UOutlawsCoop::IsActive(this)));
+	if (!BuildSaveText(P, Text, NumEnemies, NumPickups, bHomSave))
 	{
 		return false;
 	}
@@ -481,7 +485,8 @@ bool AOutlawsLevelActor::LoadGame(int32 Slot)
 	}
 	NoteDeathSlot(Slot >= 0 ? Slot : -1);              // (BUG-DEATHAUTOSAVE: until the next autosave, a death loads this again)
 	// (REQ-AUTOSAVESLOTS) a Historical Missions autosave's Marshal session back before the build (the office's stamps, the
-	// way back from a mission), as a map load's rebuild takes it; any other single-player save of a level outside Marshal
+	// way back from a mission), as a map load's rebuild takes it (user 2 Nov evening: a slot saved during the session the
+	// same, SaveGame); any other single-player save of a level outside Marshal
 	// Training leaves no session on (a resume of the story after the office goes on with the story)
 	const TSharedPtr<FJsonObject>* H = nullptr;
 	if (O->TryGetObjectField(TEXT("hom_save"), H) && H && H->IsValid()) ReadHomCarry(**H);
