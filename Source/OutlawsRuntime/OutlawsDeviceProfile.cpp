@@ -129,10 +129,11 @@ namespace
 		const float HzNow = OutlawsXRRefresh::CurrentRate();
 		const FString HzText = HzNow > 0.f ? FString::Printf(TEXT("%.0f Hz"), HzNow) : FString(TEXT("n/a"));
 		const FString HmdPd = Hmd ? FString::Printf(TEXT("%.2f"), Hmd->GetPixelDenity()) : FString(TEXT("n/a"));
-		return FString::Printf(TEXT("refresh %s (asked %.0f), vr.PixelDensity %.2f, headset pixel density %s, foveation level %d dynamic %d, %s, %s"),
+		// (BUG-REFRESHRATE, user 2 Nov: the XR side's answer to the ask, the offered rates and the retries too)
+		return FString::Printf(TEXT("refresh %s (asked %.0f), vr.PixelDensity %.2f, headset pixel density %s, foveation level %d dynamic %d, %s, %s, %s"),
 			*HzText, OutlawsXRRefresh::Wanted(), Pd ? Pd->GetFloat() : -1.f, *HmdPd,
 			OldpCvarInt(TEXT("vr.VRS.HMDFixedFoveationLevel")), OldpCvarInt(TEXT("vr.VRS.HMDFixedFoveationDynamic")),
-			*OutlawsXRPerf::StatusText(), *OldpClocksText());
+			*OutlawsXRPerf::StatusText(), *OldpClocksText(), *OutlawsXRRefresh::StatusText());
 	}
 
 	void OldpOnForeground() { OutlawsDeviceProfile::OnAppResume(TEXT("app resumed")); }
@@ -661,6 +662,7 @@ void OutlawsDeviceProfile::Apply(const TCHAR* Why)
 		{
 			OutlawsXRRefresh::Request(Want);
 			OldpHzAsked = Want;
+			UE_LOG(LogOutlaws, Log, TEXT("OLRT %s (%s)"), *OutlawsXRRefresh::StatusText(), Why);     // (BUG-REFRESHRATE: the answer, in Shipping too)
 		}
 		if (Fps)
 		{
@@ -677,6 +679,7 @@ void OutlawsDeviceProfile::Apply(const TCHAR* Why)
 			const float Back = OutlawsXRRefresh::InitialRate() > 0.f ? OutlawsXRRefresh::InitialRate() : 72.f;
 			OutlawsXRRefresh::Request(Back);
 			OldpHzAsked = 0.f;
+			UE_LOG(LogOutlaws, Log, TEXT("OLRT %s (%s, back to the session's own)"), *OutlawsXRRefresh::StatusText(), Why);
 		}
 		if (bOldpFpsTouched && Fps) { Fps->Set(OldpFpsOriginal, ECVF_SetByCode); bOldpFpsTouched = false; }
 		const float Now = OutlawsXRRefresh::CurrentRate();

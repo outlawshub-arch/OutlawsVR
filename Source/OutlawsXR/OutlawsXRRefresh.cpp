@@ -26,6 +26,14 @@ namespace
 		float Wanted = 0.f;            // our last request (asked again on a new session)
 		double LastAsk = 0.0;          // (Maintain: when it last asked again)
 		int32 Retries = 0;
+		// BUG-REFRESHRATE: the facts StatusText gives the game (this module's own lines are not in a Shipping log)
+		float LastAskHz = 0.f;
+		int32 LastAskResult = 1;       // (1: not asked yet; XR results are 0 or negative)
+		FString LastAskWhy;
+		int32 Asks = 0;
+		float ChangeFrom = 0.f, ChangeTo = 0.f;
+		int32 Changes = 0;
+		int32 LastGetResult = 1;
 		// Q2PROFILE: XR_EXT_performance_settings (the CPU and GPU clock levels)
 		PFN_xrPerfSettingsSetPerformanceLevelEXT SetPerf = nullptr;
 		int32 PerfWanted = 0;          // 0 none, 1..4 power savings .. boost (OutlawsXRPerf::Request)
@@ -76,6 +84,17 @@ namespace
 		TArray<FString> Parts;
 		for (const float R : Rates) Parts.Add(FString::Printf(TEXT("%.0f"), R));
 		return FString::Join(Parts, TEXT(" "));
+	}
+
+	// (the lock held; BUG-REFRESHRATE) ask the runtime for a rate and keep its answer for StatusText
+	XrResult OlxrAsk(FOlxrRefreshState& S, float Hz, const TCHAR* Why)
+	{
+		const XrResult R = S.Ask(S.Session, Hz);
+		S.LastAskHz = Hz;
+		S.LastAskResult = int32(R);
+		S.LastAskWhy = Why;
+		++S.Asks;
+		return R;
 	}
 
 	class FOutlawsXRExtension : public IOpenXRExtensionPlugin
@@ -131,11 +150,13 @@ namespace
 				S.Rates.Sort();
 			}
 			float Now = 0.f;
-			if (XR_SUCCEEDED(S.Get(InSession, &Now))) S.Initial = S.Current = Now;
+			const XrResult G = S.Get(InSession, &Now);
+			S.LastGetResult = int32(G);
+			if (XR_SUCCEEDED(G)) S.Initial = S.Current = Now;
 			UE_LOG(LogOutlawsXR, Log, TEXT("OLRT display refresh: offered %s Hz, now %.0f Hz"), *OlxrRatesText(S.Rates), S.Current);
 			if (S.Wanted > 0.f && OlxrOffered(S, S.Wanted))
 			{
-				const XrResult R = S.Ask(InSession, S.Wanted);
+				const XrResult R = OlxrAsk(S, S.Wanted, TEXT("session start"));
 				S.Retries = 0;
 				S.LastAsk = FPlatformTime::Seconds();
 				OlxrLogRate(S, *FString::Printf(TEXT("session start, result %d"), int32(R)));
@@ -164,7 +185,7 @@ namespace
 				FScopeLock L(&S.Lock);
 				if (St->state == XR_SESSION_STATE_FOCUSED && S.Ask && S.Session != XR_NULL_HANDLE && S.Wanted > 0.f)
 				{
-					const XrResult R = S.Ask(S.Session, S.Wanted);
+					const XrResult R = OlxrAsk(S, S.Wanted, TEXT("the session has the focus"));
 					UE_LOG(LogOutlawsXR, Log, TEXT("OLRT display refresh: the session has the focus: asked again for %.0f Hz (result %d)"), S.Wanted, int32(R));
 				}
 				// (Q2PROFILE: after a suspend the clock levels may be back at the runtime's; asked again with the focus)
@@ -189,6 +210,9 @@ namespace
 			FOlxrRefreshState& S = OlxrState();
 			FScopeLock L(&S.Lock);
 			S.Current = E->toDisplayRefreshRate;
+			S.ChangeFrom = E->fromDisplayRefreshRate;
+			S.ChangeTo = E->toDisplayRefreshRate;
+			++S.Changes;
 			OlxrLogRate(S, *FString::Printf(TEXT("changed from %.0f Hz"), E->fromDisplayRefreshRate));
 		}
 	};
@@ -252,28 +276,31 @@ bool OutlawsXRRefresh::Request(float Hz)
 	}
 	S.Retries = 0;
 	S.LastAsk = FPlatformTime::Seconds();
-	const XrResult R = S.Ask(S.Session, Hz);
+	const XrResult R = OlxrAsk(S, Hz, TEXT("set"));
 	float Now = 0.f;
 	if (S.Get && XR_SUCCEEDED(S.Get(S.Session, &Now))) S.Current = Now;
 	OlxrLogRate(S, *FString::Printf(TEXT("set, result %d"), int32(R)));
 	return XR_SUCCEEDED(R);
 }
 
-void OutlawsXRRefresh::Maintain(double Now)
+bool OutlawsXRRefresh::Maintain(double Now)
 {
 	FOlxrRefreshState& S = OlxrState();
 	FScopeLock L(&S.Lock);
-	if (!S.Ask || !S.Get || S.Session == XR_NULL_HANDLE || S.Wanted <= 0.f || S.Retries >= 10 || Now - S.LastAsk < 3.0) return;
+	if (!S.Ask || !S.Get || S.Session == XR_NULL_HANDLE || S.Wanted <= 0.f || S.Retries >= 10 || Now - S.LastAsk < 3.0) return false;
 	float Cur = 0.f;
-	if (!XR_SUCCEEDED(S.Get(S.Session, &Cur))) return;
+	const XrResult G = S.Get(S.Session, &Cur);
+	S.LastGetResult = int32(G);
+	if (!XR_SUCCEEDED(G)) return false;
 	S.Current = Cur;
 	// (there: the count starts again, so a rate pulled back later is asked for again)
-	if (FMath::Abs(Cur - S.Wanted) < 0.5f) { S.Retries = 0; S.LastAsk = Now; return; }
-	if (!OlxrOffered(S, S.Wanted)) return;
+	if (FMath::Abs(Cur - S.Wanted) < 0.5f) { S.Retries = 0; S.LastAsk = Now; return false; }
+	if (!OlxrOffered(S, S.Wanted)) return false;
 	S.LastAsk = Now;
 	++S.Retries;
-	const XrResult R = S.Ask(S.Session, S.Wanted);
+	const XrResult R = OlxrAsk(S, S.Wanted, *FString::Printf(TEXT("still %.0f Hz, try %d"), Cur, S.Retries));
 	UE_LOG(LogOutlawsXR, Log, TEXT("OLRT display refresh: still %.0f Hz, asked again for %.0f Hz (try %d, result %d)"), Cur, S.Wanted, S.Retries, int32(R));
+	return true;
 }
 
 bool OutlawsXRRefresh::Reapply(const TCHAR* Why)
@@ -283,7 +310,7 @@ bool OutlawsXRRefresh::Reapply(const TCHAR* Why)
 	if (S.Wanted <= 0.f || !S.Ask || S.Session == XR_NULL_HANDLE || !OlxrOffered(S, S.Wanted)) return false;
 	S.Retries = 0;
 	S.LastAsk = FPlatformTime::Seconds();
-	const XrResult R = S.Ask(S.Session, S.Wanted);
+	const XrResult R = OlxrAsk(S, S.Wanted, Why);
 	float Now = 0.f;
 	if (S.Get && XR_SUCCEEDED(S.Get(S.Session, &Now))) S.Current = Now;
 	OlxrLogRate(S, *FString::Printf(TEXT("%s, asked again, result %d"), Why, int32(R)));
@@ -295,6 +322,30 @@ float OutlawsXRRefresh::Wanted()
 	FOlxrRefreshState& S = OlxrState();
 	FScopeLock L(&S.Lock);
 	return S.Wanted;
+}
+
+FString OutlawsXRRefresh::StatusText()
+{
+	FOlxrRefreshState& S = OlxrState();
+	FScopeLock L(&S.Lock);
+	if (S.Session == XR_NULL_HANDLE) return FString::Printf(TEXT("refresh: %.0f Hz kept to ask, no session"), S.Wanted);
+	if (!S.Ask || !S.Get) return FString::Printf(TEXT("refresh: %.0f Hz kept to ask, no XR_FB_display_refresh_rate here"), S.Wanted);
+	// (the display's rate read now, as Maintain reads it)
+	float Now = 0.f;
+	const XrResult G = S.Get(S.Session, &Now);
+	S.LastGetResult = int32(G);
+	if (XR_SUCCEEDED(G)) S.Current = Now;
+	const FString Ask = S.Asks > 0 ? FString::Printf(TEXT("last ask %.0f Hz result %d (%s)"), S.LastAskHz, S.LastAskResult, *S.LastAskWhy) : FString(TEXT("not asked"));
+	const FString Change = S.Changes > 0 ? FString::Printf(TEXT("last change %.0f -> %.0f Hz (%d changes)"), S.ChangeFrom, S.ChangeTo, S.Changes) : FString(TEXT("no change seen"));
+	return FString::Printf(TEXT("refresh: offered %s Hz (at the start %.0f), asked %.0f, display %.0f Hz (get result %d); %s, %d asks, retries %d of 10; %s"),
+		*OlxrRatesText(S.Rates), S.Initial, S.Wanted, S.Current, S.LastGetResult, *Ask, S.Asks, S.Retries, *Change);
+}
+
+int32 OutlawsXRRefresh::ChangeCount()
+{
+	FOlxrRefreshState& S = OlxrState();
+	FScopeLock L(&S.Lock);
+	return S.Changes;
 }
 
 bool OutlawsXRPerf::IsAvailable()

@@ -2266,7 +2266,16 @@ void AOutlawsLevelActor::BeginPlay()
 
 void AOutlawsLevelActor::Tick(float DeltaSeconds)
 {
-	OutlawsXRRefresh::Maintain(FPlatformTime::Seconds());       // (BUG-REFRESH: the rate asked for, kept)
+	// (BUG-REFRESH: the rate asked for, kept.  BUG-REFRESHRATE, user 2 Nov: the XR module's lines are not in a Shipping log,
+	// so a re-ask and a change of the display's rate are told here, one line each: at most ten re-asks a request)
+	static int32 RefreshChangesSeen = 0;
+	const bool bReAsked = OutlawsXRRefresh::Maintain(FPlatformTime::Seconds());
+	const int32 RefreshChanges = OutlawsXRRefresh::ChangeCount();
+	if (bReAsked || RefreshChanges != RefreshChangesSeen)
+	{
+		UE_LOG(LogOutlaws, Log, TEXT("OLRT %s (%s)"), *OutlawsXRRefresh::StatusText(), bReAsked ? TEXT("asked again") : TEXT("the display's rate changed"));
+		RefreshChangesSeen = RefreshChanges;
+	}
 	OL_PERF_SCOPE("Level tick (total)");
 	Super::Tick(DeltaSeconds);
 	if (bMapLoadPending) return;               // (BUG-RESPAWNCRASH: L_Runtime is loading again; nothing of this world goes on)

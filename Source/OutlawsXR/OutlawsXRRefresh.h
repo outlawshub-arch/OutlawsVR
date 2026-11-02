@@ -20,8 +20,15 @@ namespace OutlawsXRRefresh
 	 *  offers is asked for. False when not available, not offered or refused. Logs "OLRT refresh: requested, actual". */
 	OUTLAWSXR_API bool Request(float Hz);
 	/** Called every frame or so (user 2026-10-03, BUG-REFRESH: asked 90, the display stayed at 72): while the display is
-	 *  not at the rate asked for, ask again every 3 s, ten times at most per request. */
-	OUTLAWSXR_API void Maintain(double Now);
+	 *  not at the rate asked for, ask again every 3 s, ten times at most per request. True when it asked again just now. */
+	OUTLAWSXR_API bool Maintain(double Now);
+	/** BUG-REFRESHRATE (user 2 Nov: Horizon logged our 120 and 90 asks, the display stayed at 72): this module's lines are
+	 *  compiled out of Shipping, so the facts are kept for the game to log. One line: "refresh: offered 72 80 90 120 Hz,
+	 *  asked 90, display 72 Hz (get result 0); last ask 90 Hz result 0 (set), 3 asks, retries 2 of 10; last change 72 -> 90 Hz
+	 *  (1 change)", or "... no session" / "... no XR_FB_display_refresh_rate here". */
+	OUTLAWSXR_API FString StatusText();
+	/** The display's refresh-changed events seen so far (the game logs StatusText when it moves). */
+	OUTLAWSXR_API int32 ChangeCount();
 }
 
 /**
