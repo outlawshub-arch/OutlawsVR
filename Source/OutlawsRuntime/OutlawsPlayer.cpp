@@ -4449,6 +4449,12 @@ void AOutlawsPlayer::OnDied()
 	{
 		ReleaseGrab(false);
 	}
+	// (BUG-FUSEAFTERDEATH) a lit stick in hand goes out with the player: no flame or hiss through the death view, and the bad
+	// guys no longer flee from it (LitDynamite); -OLOldFuseReset: it burned on
+	if (!OLFlags::Param(TEXT("OLOldFuseReset")))
+	{
+		for (int32 H = 0; H < 2; ++H) PutOutHeldFuse(H);
+	}
 	GetCharacterMovement()->StopMovementImmediately();
 	// (BUG-DEATHAUTOSAVE: the save loaded when no autosave has come since, and never an autosave of another level)
 	const AOutlawsLevelActor* DL = Level.Get();

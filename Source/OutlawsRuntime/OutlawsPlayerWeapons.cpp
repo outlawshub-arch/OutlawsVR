@@ -2249,6 +2249,11 @@ void AOutlawsPlayer::Equip(int32 Hand, int32 Weapon)
 	DropTool(Hand);
 	// a throw in hand is put away: no arc, and a lit fuse goes out
 	ShowThrowArc(Hand, false);
+	// (BUG-FUSEAFTERDEATH, thudtowr, the user's snapshot #1: the fuse's flame burned on the revolver after a death) its flame
+	// too: it hangs on the hand's gun mesh, which the next weapon reuses, and only UpdateFuseLook (dynamite in hand) hid it.
+	// -OLOldFuseReset: the flag and the sound only, as before
+	static const bool bOldFuseReset = OLFlags::Param(TEXT("OLOldFuseReset"));
+	if (!bOldFuseReset) PutOutHeldFuse(Hand);
 	if (bFuseLit[Hand] && FuseSound[Hand].IsValid()) FuseSound[Hand]->Stop();
 	bFuseLit[Hand] = false;
 	bKnifeReady[Hand] = false;
@@ -6939,6 +6944,15 @@ void AOutlawsPlayer::UpdateFuseLook(int32 Hand)
 	}
 	// (BUG-FUSEMATCH) the thrown stick's flame size in the hand too
 	PlaceFuse(Gun, FuseSection[Hand], FuseRestPos[Hand], FuseRestNrm[Hand], FuseRestUV[Hand], FuseRestCol[Hand], F, bWick, FuseFlame[Hand], FuseCore[Hand], 1.8f);
+}
+
+void AOutlawsPlayer::PutOutHeldFuse(int32 Hand)
+{
+	if (FuseSound[Hand].IsValid()) FuseSound[Hand]->Stop();     // (a thrown stick took its own sound with it: ThrowHeld)
+	FuseSound[Hand] = nullptr;
+	bFuseLit[Hand] = false;
+	if (FuseFlame[Hand]) FuseFlame[Hand]->SetVisibility(false);
+	if (FuseCore[Hand]) FuseCore[Hand]->SetVisibility(false);
 }
 
 AOutlawsEnemy* AOutlawsPlayer::KnifeTargetNear(const FVector& From, const FVector& Vel) const

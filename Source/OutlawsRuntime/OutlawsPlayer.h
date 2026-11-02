@@ -527,6 +527,8 @@ private:
 	UPROPERTY(Transient)
 	TObjectPtr<class UStaticMeshComponent> FuseCore[2];
 	void UpdateFuseLook(int32 Hand);
+	/** (BUG-FUSEAFTERDEATH) the hand's fuse out: not lit, its sound stopped, its flame (a child of the hand's reused gun mesh) hidden. */
+	void PutOutHeldFuse(int32 Hand);
 	/** bHeld: the flame takes the held gear's pulled depth (M_OLR_FxGlowHeld), as the stick it burns on does. */
 	void MakeFuseFlame(USceneComponent* Parent, class UStaticMeshComponent*& OutFlame, class UStaticMeshComponent*& OutCore, bool bHeld = true);
 	/** The wick at F of its length (0..1) on StickMesh's Section (when bWick), the flame on its end, upright. */
