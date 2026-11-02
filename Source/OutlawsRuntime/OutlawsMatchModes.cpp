@@ -4,11 +4,16 @@
 // - CHCKGENE: the chicken's place (drygulch); DOCSTART: the document's (five to thirteen a map); the one farthest from every
 //   player start is used, never within 15 m of one (user 2026-10-03).  No document object: the chicken's place; neither: the
 //   farthest flag place.
+// - (REQ-NATIVEMAPS part 1, user 2 Nov) BALLSTAR: the chicken's start places, as the original reads them (every K map has
+//   them, the stock ones too); the chicken starts at the one farthest from every player start (the original's own pick among
+//   them is not known).  Before them only the farthest flag place was used, and on a map with no flag place (arizonas, aband2s)
+//   the chicken landed ON a player start.  -OLOldBallStar: as before (CHCKGENE, then DOCSTART, then FLAGSTAR).
 // - The items' own sprites: grflag / gbflag (the flags on the ground), ichick (the chicken), gdoc (the document).
 // - The remaster's words: "You got the red team's flag!", "The blue team captured the flag!", "You got the chicken!",
 //   "<name> is now toting the chicken!", "Bawk! The chicken is loose!", "TAG -- you're IT!", "<name> is IT!",
 //   "You captured Secret Document!".
 #include "OutlawsMatchModes.h"
+#include "OutlawsFlags.h"
 #include "OutlawsRuntime.h"
 #include "OutlawsLevel.h"
 #include "OutlawsGeometry.h"
@@ -60,13 +65,15 @@ FString FOutlawsMatchModes::ReadLevel(const FOutlawsLevel& L)
 	Items.Reset();
 	Bases.Reset();
 	CapturePoints.Reset();
-	TArray<FVector> Flags, Docs, Starts, Chickens;
+	TArray<FVector> Flags, Docs, Starts, Chickens, Balls;
+	static const bool bOldBallStar = OLFlags::Param(TEXT("OLOldBallStar"));
 	for (const FOutlawsObject& O : L.Objects)
 	{
 		const FVector At = FOutlawsGeometry::ToUE(O.Pos.X, O.Pos.Y, O.Pos.Z);
 		if (O.Name == TEXT("FLAGSTAR")) Flags.Add(At);
 		else if (O.Name == TEXT("DOCSTART")) Docs.Add(At);
 		else if (O.Name == TEXT("CHCKGENE")) Chickens.Add(At);
+		else if (O.Name == TEXT("BALLSTAR") && !bOldBallStar) Balls.Add(At);
 		else if (O.Name == TEXT("STARTPOS") || O.Name == TEXT("PLAYER")) Starts.Add(At);
 	}
 	// the bases: the two flag places farthest apart (the player starts if a map has fewer than two)
@@ -115,13 +122,14 @@ FString FOutlawsMatchModes::ReadLevel(const FOutlawsLevel& L)
 	case EOutlawsGameClass::Chicken:
 	{
 		double Near = 0.0;
-		const TArray<FVector>& Pool = Chickens.Num() > 0 ? Chickens : Docs.Num() > 0 ? Docs : Flags;
+		const TArray<FVector>& Pool = Balls.Num() > 0 ? Balls : Chickens.Num() > 0 ? Chickens : Docs.Num() > 0 ? Docs : Flags;
 		const int32 i = FarthestFromStarts(Pool, Near);
 		FOutlawsModeItem& I = Items.AddDefaulted_GetRef();
 		I.Kind = EOutlawsModeItemKind::Chicken;
 		I.Home = I.At = i >= 0 ? Pool[i] : (Starts.Num() > 0 ? Starts[0] : FVector::ZeroVector);
 		How = FString::Printf(TEXT("the chicken at %s (%s, %.0f m from the nearest player start)"), *I.Home.ToCompactString(),
-			Chickens.Num() > 0 ? TEXT("the map's CHCKGENE") : Docs.Num() > 0 ? TEXT("no CHCKGENE: a document place") : TEXT("no CHCKGENE: a flag place"), Near / 100.0);
+			Balls.Num() > 0 ? *FString::Printf(TEXT("the farthest of the map's %d BALLSTAR"), Balls.Num()) : Chickens.Num() > 0 ? TEXT("the map's CHCKGENE")
+			: Docs.Num() > 0 ? TEXT("no BALLSTAR or CHCKGENE: a document place") : i >= 0 ? TEXT("no BALLSTAR or CHCKGENE: a flag place") : TEXT("no place of its own: a player start"), Near / 100.0);
 		break;
 	}
 	case EOutlawsGameClass::SecretDocument:

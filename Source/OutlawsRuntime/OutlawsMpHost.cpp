@@ -340,7 +340,31 @@ FString OutlawsMpHost::MapTitle(const FString& File)
 		{ TEXT("mltsimms.rcm"), TEXT("Simms At Night") }, { TEXT("orleans.rcm"), TEXT("Orleans") }, { TEXT("thudtowr.rcm"), TEXT("Thud Tower") },
 		{ TEXT("town_2p.rcm"), TEXT("Sanctuary") }, { TEXT("wilderns.rcm"), TEXT("Wilderness") } };
 	const FString* Nice = Names.Find(File.ToLower());
-	return Nice ? *Nice : FPaths::GetBaseFilename(File);
+	if (Nice) return *Nice;
+	// (REQ-NATIVEMAPS part 1, user 2 Nov: the toast and the match line said "Capture The Flag on armad") a native map by its
+	// RCM's NAME, read once from the native maps' folder (every machine that has the map, a joiner too, says the same)
+	static TMap<FString, FString> NativeNames;
+	static bool bNativeRead = false;
+	if (!bNativeRead)
+	{
+		bNativeRead = true;
+		const FString Root = FOutlawsAssets::NativeMapsRoot();
+		TArray<FString> Dirs;
+		if (!Root.IsEmpty()) IFileManager::Get().FindFiles(Dirs, *(Root / TEXT("*")), false, true);
+		for (const FString& D : Dirs)
+		{
+			TArray<FString> Rcms;
+			IFileManager::Get().FindFiles(Rcms, *(Root / D / TEXT("*.rcm")), true, false);
+			for (const FString& F : Rcms)
+			{
+				FString Text, Why;
+				FOutlawsMpMap M;
+				if (!NativeNames.Contains(F.ToLower()) && FFileHelper::LoadFileToString(Text, *(Root / D / F)) && ParseRcm(Text, M, Why)) NativeNames.Add(F.ToLower(), M.Name);
+			}
+		}
+	}
+	if (const FString* Native = NativeNames.Find(File.ToLower())) return *Native;
+	return FPaths::GetBaseFilename(File);
 }
 
 bool OutlawsMpHost::RollMatch(const TArray<FOutlawsMpMap>& Maps, FOutlawsMpHostOptions& Out, const FString& LastMap, EOutlawsGameClass LastClass, FString& Said)

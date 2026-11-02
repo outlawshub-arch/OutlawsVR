@@ -46,7 +46,7 @@ OL_SHOT_TEST(OLLastMatchFitProbe, 1720)
 		const FString Hargrove = OutlawsMpHost::MapTitle(TEXT("hargrove.rcm"));
 		FitCases.Add(Line(EOutlawsGameClass::Chicken, Hargrove));
 		FitCases.Add(Line(EOutlawsGameClass::DeathMatch, Hargrove));
-		// the native maps by the title the line gives them (their file's name), the longest first
+		// the native maps by the title the line gives them (their RCM's NAME since REQ-NATIVEMAPS), the longest first
 		TArray<FOutlawsMpMap> Maps;
 		OutlawsMpHost::ListMaps(L->GetAssets(), Maps);
 		TArray<FString> Natives;

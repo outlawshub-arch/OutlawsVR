@@ -96,8 +96,8 @@ namespace OutlawsMpHost
 	/** The page's Start: the stub until the session takes it (logs the options; M1's wiring sets it). */
 	OUTLAWSRUNTIME_API TFunction<bool(const FOutlawsMpHostOptions&)>& OnHost();
 	OUTLAWSRUNTIME_API bool Host(const FOutlawsMpHostOptions& Options);
-	/** A map's English name for the lines every machine shows (the stock maps' names as the remaster says them; a custom
-	 *  map by its file). */
+	/** A map's English name for the lines every machine shows (the stock maps' names as the remaster says them; a native map
+	 *  by its RCM's NAME, REQ-NATIVEMAPS; a player's own custom map by its file). */
 	OUTLAWSRUNTIME_API FString MapTitle(const FString& File);
 	/** REQ-MPLOBBY (b), decision 4: the map and the game of the next match when either is "Random each match" (the flags stay
 	 *  set; MapFile and GameClass take the roll).  A random map comes from the stock maps that allow the game (a custom map is
