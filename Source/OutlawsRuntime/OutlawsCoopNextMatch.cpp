@@ -44,7 +44,18 @@ void UOutlawsCoop::HostEndGameFor(const UObject* Context)
 
 FString UOutlawsCoop::MatchLineFor(uint8 Class, const FString& MapFile, uint8 RandomBits)
 {
-	FString Line = FString::Printf(TEXT("%s on %s"), *OutlawsMpHost::ClassLabel(EOutlawsGameClass(FMath::Clamp<int32>(Class, 1, 6))), *OutlawsMpHost::MapTitle(MapFile));
+	FString Game = OutlawsMpHost::ClassLabel(EOutlawsGameClass(FMath::Clamp<int32>(Class, 1, 6))), Map = OutlawsMpHost::MapTitle(MapFile);
+#if WITH_OUTLAWS_TESTS
+	// (BUG-LASTMATCHFIT: -OLLastMatchFitLong, the longest line a stock match can make, the longest game's name on the longest
+	// map's; -OLLastMatchFitLong=<title> on that map instead, a custom map's)
+	FString Long;
+	if (OLFlags::Value(TEXT("OLLastMatchFitLong"), Long, /*bShouldStopOnSeparator*/ false) || OLFlags::Param(TEXT("OLLastMatchFitLong")))
+	{
+		Game = OutlawsMpHost::ClassLabel(EOutlawsGameClass::Chicken);
+		Map = Long.IsEmpty() ? OutlawsMpHost::MapTitle(TEXT("hargrove.rcm")) : Long.TrimQuotes();
+	}
+#endif
+	FString Line = FString::Printf(TEXT("%s on %s"), *Game, *Map);
 	if ((RandomBits & 3) == 3) Line += TEXT("  (random map and game)");
 	else if (RandomBits & 1) Line += TEXT("  (random map)");
 	else if (RandomBits & 2) Line += TEXT("  (random game)");

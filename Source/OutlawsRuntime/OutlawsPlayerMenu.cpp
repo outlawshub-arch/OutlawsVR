@@ -3579,6 +3579,13 @@ int32 AOutlawsPlayer::SheetMaxScroll()
 	return Max;
 }
 
+#if WITH_OUTLAWS_TESTS
+namespace OutlawsLastMatchFit
+{
+	TArray<FString> ProbeLines;          // (BUG-LASTMATCHFIT: -OLLastMatchFitProbe's lines, drawn under a co-op page's own)
+}
+#endif
+
 void AOutlawsPlayer::DrawFrontCanvas(UCanvas* C, int32 Width, int32 Height)
 {
 	// the remaster's title screens (main.rml, difficulty.rml, select_rcp.rml) laid out as menu.rcss does: a
@@ -3611,8 +3618,9 @@ void AOutlawsPlayer::DrawFrontCanvas(UCanvas* C, int32 Width, int32 Height)
 		}
 		C->DrawItem(I);
 	};
-	// text at view coordinates; Align 0 left, 1 centre; returns its box (view coordinates)
-	auto Txt = [&](UFont* F, const FString& Str, float X, float Y, int32 Align, const FLinearColor& Colour, bool bShadow, const FLinearColor* Outline = nullptr) -> FBox2D
+	// text at view coordinates; Align 0 left, 1 centre; returns its box (view coordinates); MaxW > 0: drawn smaller to fit that
+	// width, as the save page's Txt does (BUG-LASTMATCHFIT)
+	auto Txt = [&](UFont* F, const FString& Str, float X, float Y, int32 Align, const FLinearColor& Colour, bool bShadow, const FLinearColor* Outline = nullptr, float MaxW = 0.f) -> FBox2D
 	{
 		if (!F || Str.IsEmpty()) return FBox2D(FVector2D(X, Y), FVector2D(X, Y));
 		FBox2D Glyphs;
@@ -3620,15 +3628,17 @@ void AOutlawsPlayer::DrawFrontCanvas(UCanvas* C, int32 Width, int32 Height)
 			return FBox2D(Glyphs.Min / K, Glyphs.Max / K);       // (REQ-BUTTONGLYPHS)
 		float XL = 0.f, YL = 0.f;
 		C->TextSize(F, Str, XL, YL);
+		const float Sc = MaxW > 0.f && XL > MaxW * K ? MaxW * K / XL : 1.f;
 		float X0 = X * K;
-		if (Align == 1) X0 -= XL * 0.5f;
+		if (Align == 1) X0 -= XL * Sc * 0.5f;
 		FCanvasTextItem T(FVector2D(X0, Y * K), FText::FromString(Str), F, Colour);
+		T.Scale = FVector2D(Sc, Sc);
 		T.bCentreY = true;
 		T.BlendMode = SE_BLEND_Translucent;
 		if (bShadow) T.EnableShadow(FLinearColor::Black, FVector2D(4.f * K, 2.f * K));
 		if (Outline) { T.bOutlined = true; T.OutlineColor = *Outline; }
 		C->DrawItem(T);
-		return FBox2D(FVector2D(X0 / K, Y - YL * 0.5f / K), FVector2D((X0 + XL) / K, Y + YL * 0.5f / K));
+		return FBox2D(FVector2D(X0 / K, Y - YL * Sc * 0.5f / K), FVector2D((X0 + XL * Sc) / K, Y + YL * Sc * 0.5f / K));
 	};
 	const int32 Hot = MenuHover[1] >= 0 ? MenuHover[1] : MenuHover[0];
 	const FLinearColor Warm = Col(0xe9, 0x93, 0x1c), White = FLinearColor::White, Black = FLinearColor::Black;
@@ -3719,13 +3729,21 @@ void AOutlawsPlayer::DrawFrontCanvas(UCanvas* C, int32 Width, int32 Height)
 		Txt(SaveFont(0), MenuPage->Title, 815.f, 176.f, 1, Ink, false);
 		TArray<FString> Lines;
 		UOutlawsCoop::StatusLines(this, File, Lines);
+#if WITH_OUTLAWS_TESTS
+		Lines.Append(OutlawsLastMatchFit::ProbeLines);
+#endif
 		// (the address, the line to read out or type, larger than the rest)
 		const bool bBigFirst = File == TEXT("#coophost") || File == TEXT("#coopjoin");
+		// (BUG-LASTMATCHFIT, 3 Nov) a line wider than the parchment (x 100..1530 about the page's middle, 815) is drawn smaller to
+		// fit it, a margin in from each side: the locked lobby's "Last match: <game> on <map>  (random map and game)" ran past
+		// it with a long map name (Hargrove's Pattern Repair).  -OLOldLastMatchFit: every line at its size, as before
+		static const bool bOldLastMatchFit = OLFlags::Param(TEXT("OLOldLastMatchFit"));
+		const float LineMaxW = bOldLastMatchFit ? 0.f : 1380.f;
 		float Y = 362.f;
 		for (int32 k = 0; k < Lines.Num(); ++k)
 		{
 			const bool bBig = bBigFirst && k == 0;
-			FrontInk += Txt(SaveFont(bBig ? 9 : 5), Lines[k], 815.f, bBig ? Y + 6.f : Y, 1, Ink, false);
+			FrontInk += Txt(SaveFont(bBig ? 9 : 5), Lines[k], 815.f, bBig ? Y + 6.f : Y, 1, Ink, false, nullptr, LineMaxW);
 			Y += bBig ? 66.f : File == TEXT("#coophost") || File == TEXT("#cooplobby") || File == TEXT("#coopclient") || File == TEXT("#coopscore") || File == TEXT("#cooppause") ? 38.f : 44.f;      // (REQ-COOPLOBBY: the host's lines closer, for its rows)
 		}
 		for (int32 i = 0; i < MenuPage->Items.Num(); ++i)
