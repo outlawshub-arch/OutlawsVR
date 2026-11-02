@@ -3070,7 +3070,10 @@ void AOutlawsPlayer::UpdateMenuHelpPlate(const FString& Line)
 	// (the save and load pages: 1 cm in from the right edge, so the two rows clear the slot list's frame, which ends 17 cm from it)
 	// (REQ-EXTRAS: the achievements page's VR prompts left of its frame, where the remaster puts that page's help, menu.rcss
 	// menu_helps.achiev right 990: at the sheet's corner the two rows stood over the frame)
-	const float InsetRight = IsAchievPage() ? (1920.f - 953.f + 24.f) * SheetW / 1920.f : IsSavePage() ? 1.f : MenuHelpInsetCm;
+	// (BUG-ACHIEVBOX: the frame's left edge as it is drawn, 1012 since it shrank)
+	float AchFx = 953.f, AchFy = 0.f, AchFw = 0.f, AchFh = 0.f;
+	AchievFrameBox(AchFx, AchFy, AchFw, AchFh);
+	const float InsetRight = IsAchievPage() ? (1920.f - AchFx + 24.f) * SheetW / 1920.f : IsSavePage() ? 1.f : MenuHelpInsetCm;
 	MenuHelpPlate->PlaceFacing(FVector(-0.4, -(SheetW * 0.5f - InsetRight - RightCm), -SheetH * 0.5f + MenuHelpInsetCm + FootCm), FQuat::Identity, true);
 	MenuHelpPlate->SetVisibility(bMenuOpen);
 }
@@ -3870,10 +3873,11 @@ void AOutlawsPlayer::DrawFrontCanvas(UCanvas* C, int32 Width, int32 Height)
 		Stage(TEXT("StartGame_Background"), 3264.f - 2000.f, -180.f, 2000.f, 1440.f);
 		Stage(TEXT("StartGame_Base"), 1024.f - 1344.f, -180.f, 1844.f, 1440.f);
 		const FLinearColor Ink = Col(0x1d, 0x08, 0x00), Faded = Col(0x6a, 0x50, 0x38);
-		Txt(SaveFont(0), MenuPage->Title, 815.f, 176.f, 1, Ink, false);
+		ShelfTitleInk = Txt(SaveFont(0), MenuPage->Title, 815.f, 176.f, 1, Ink, false);
 		int32 Found = 0;
 		for (const OutlawsMenu::FItem& It : MenuPage->Items) Found += It.Classes.Contains(TEXT("disabled")) ? 0 : 1;
-		FrontInk += Txt(SaveFont(5), FString::Printf(TEXT("Boxes found: %d of %d"), Found, MenuPage->Items.Num()), 815.f, 372.f, 1, Ink, false);
+		ShelfCountInk = Txt(SaveFont(5), FString::Printf(TEXT("Boxes found: %d of %d"), Found, MenuPage->Items.Num()), 815.f, 372.f, 1, Ink, false);
+		FrontInk += ShelfCountInk;
 		auto Rect = [&](float X, float Y, float W, float H, float Edge, const FLinearColor& Colour)
 		{
 			for (const FBox2D& B : { FBox2D(FVector2D(X, Y), FVector2D(X + W, Y + Edge)), FBox2D(FVector2D(X, Y + H - Edge), FVector2D(X + W, Y + H)),
@@ -3903,7 +3907,14 @@ void AOutlawsPlayer::DrawFrontCanvas(UCanvas* C, int32 Width, int32 Height)
 			FrontItemInk[i] = Lb;
 			if (bFound) FrontHits.Emplace(FBox2D(Box.Min, FVector2D(Box.Max.X, Lb.Max.Y)), i);
 		}
-		FrontInk += Txt(SaveFont(5), OutlawsAchievements::BoxesPlaced ? TEXT("One hidden in each level of the story") : TEXT("Hidden boxes: coming soon"), 815.f, 970.f, 1, Ink, false);
+		// (BUG-COLLECTTEXT) a toast takes the note's line while it shows (ToastY below)
+		static const bool bOldShelfNote = OLFlags::Param(TEXT("OLOldExtrasLayout"));
+		ShelfNoteInk = FBox2D(ForceInit);
+		if (bOldShelfNote || !MenuToast || MenuToast->Text.IsEmpty())
+		{
+			ShelfNoteInk = Txt(SaveFont(5), OutlawsAchievements::BoxesPlaced ? TEXT("One hidden in each level of the story") : TEXT("Hidden boxes: coming soon"), 815.f, 970.f, 1, Ink, false);
+			FrontInk += ShelfNoteInk;
+		}
 	}
 	else
 	{
@@ -3954,6 +3965,11 @@ void AOutlawsPlayer::DrawFrontCanvas(UCanvas* C, int32 Width, int32 Height)
 			const float HelpTop = WideHelpInk.bIsValid ? float(WideHelpInk.Min.Y) : 1062.f;
 			if (SaveFont(2)) C->TextSize(SaveFont(2), MenuToast->Text.ToString(), XL, YL);
 			if (HelpTop - RowsBottom >= YL / K + 8.f) ToastY = (RowsBottom + HelpTop) * 0.5f;
+			// (BUG-COLLECTTEXT, user 3 Nov, the user's snapshot #6: "Found in X", midway between the boxes' labels and the help
+			// line, lay on the shelf's note under the boxes; there is no room for a line of its own between the note and the
+			// flat screen's help line: it takes the note's line while it shows.  -OLOldExtrasLayout: midway, over the note)
+			static const bool bOldShelf = OLFlags::Param(TEXT("OLOldExtrasLayout"));
+			if (File == TEXT("#extras_shelf") && !bOldShelf) ToastY = 970.f;
 		}
 		SheetToastInk.Add(Txt(SaveFont(2), MenuToast->Text.ToString(), HelpX, ToastY, 1, Col(0xf2, 0xaa, 0x44), true));
 	}

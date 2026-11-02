@@ -2050,6 +2050,11 @@ private:
 	void DrawAchievCanvas(class UCanvas* C, int32 Width, int32 Height);
 	int32 AchievRowAt(double Px, double Py) const;
 	static void AchievListBox(float& OutX, float& OutY, float& OutW, float& OutH);
+	/** (BUG-ACHIEVBOX) the frame's box in the 1920 x 1080 view; the title's, the count's and the toast's ink as last drawn (tests). */
+	static void AchievFrameBox(float& OutX, float& OutY, float& OutW, float& OutH);
+	FBox2D AchievTitleInk = FBox2D(ForceInit), AchievCountInk = FBox2D(ForceInit), AchievToastInk = FBox2D(ForceInit);
+	/** (BUG-COLLECTTEXT) the Collectibles shelf's title, "Boxes found" line and note under the boxes as last drawn. */
+	FBox2D ShelfTitleInk = FBox2D(ForceInit), ShelfCountInk = FBox2D(ForceInit), ShelfNoteInk = FBox2D(ForceInit);
 	int32 AchievFocus = 0;
 	static constexpr int32 AchievRowsShown = 4;
 	FString MenuRowText(int32 Index) const;
