@@ -1090,6 +1090,8 @@ public:
 	TSharedPtr<OutlawsTextures::FSpriteAtlas> LoadSpriteSet(const FString& Nwx) { return GetAtlas(Nwx, true); }
 	UFUNCTION(BlueprintCallable, Category = "Outlaws|Enemies")
 	int32 GetKills() const { return Kills; }
+	int32 DebugTotalBadGuys() const { return TotalBadGuys; }      // (tests, BUG-SAMENEMY) the bad guys counted at the load
+	TArray<FString> DebugTracedTurns;        // (tests, BUG-CANNONYAW) each model turned by its traced view: "<stem> <id> <old> -> <new>"
 	// far and unseen (user 2026-10-03, AOutlawsEnemy::UpdateFarFreeze): the level's part of it
 	/** The sector of the static plan under P, for the visibility test (-1: in none). Hint: the caller's last sector,
 	 *  looked at first (then its adjoins, then every sector); the answer is the full search's either way. */
@@ -2578,6 +2580,14 @@ public:
 	FString DebugInvisScan(const APawn* Body, int32& OutCandidates) const;
 	mutable int32 DebugFloodMode = 0;         // (tests) the flood's rules lifted, DebugVisScan
 	mutable int32 DebugFloodPops = 0;         // (tests) the last flood's arrivals passed on
+	/** (BUG-ENEMYVIS, tests) the flood's winding rule: -1 as the command line has it, 0 the walls', 1 the vertex list's. */
+	mutable int32 DebugFloodWinding = -1;
+#if WITH_OUTLAWS_TESTS
+	/** (BUG-ENEMYVIS, -OLFloodWindingProbe) the eye's flood from From in L (null: the live level) by the vertex list's winding
+	 *  (bOldWinding) or the walls'; the live level's unblown explodable walls shut only on the live level.  The sectors reached. */
+	int32 DebugFloodBy(const FOutlawsLevel* L, int32 From, const FVector2D& Eye, double EyeZ, bool bOldWinding, TSet<int32>* OutSeen = nullptr);
+	const FOutlawsLevel* DebugLiveLevel() const;
+#endif
 	FString DebugGroupsHidden() const;        // (tests) the doors and lifts the culling hides, by name
 private:
 	TArray<FBox2D> CullBoxes;                 // the static plan's sector boxes, for the sprites' sector lookups

@@ -129,6 +129,8 @@ public:
 	int32 HomeSector = -1;                  // (V1) the OB's own sector, its first membership (the level sets it at spawn)
 	int32 DebugCullSector() const { return CullSector; }
 	bool DebugCulled() const { return bCulled; }
+	bool DebugEmptyCell() const { return bEmptyCell; }       // (tests, BUG-DRIPABOVE) a frame with nothing to draw on show
+	int32 DebugCell() const { return CurrentCell; }
 	/** (BUG-STUTTER2 item 6) A move kept back while the sprite is culled (a scrolling floor carries it out of sight): put on
 	 *  when it is drawn again, or when its place is next asked for (FlushHeldMove). Its cull follows the place with it. */
 	void HoldMove(const FVector& By) { HeldMove += By; }
@@ -326,6 +328,9 @@ private:
 	/** (REQ-FIREBRIGHT2) the MID's light: the fire mask for the look shown when its material takes one, and Brightness. */
 	void ApplyLitLook();
 	void ApplyCell(int32 Cell);
+	/** (BUG-DRIPABOVE) ApplyCell, or for -1 (a frame with nothing to draw) the quad hidden while it is on. */
+	void ShowCell(int32 Cell);
+	bool bEmptyCell = false;
 	/** The quad's place for the cell shown and the viewer (SetFeet). */
 	void PlaceQuad(const FVector* Viewer);
 	TArray<int16> CellBelowPx;

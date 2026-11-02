@@ -352,6 +352,15 @@ void AOutlawsEnemy::Play(int32 Chor, bool bLoop)
 	if (Chor >= 0 && (Chor == Def.ChestDieChor || Chor == Def.LegDieChor)) ++DieChorsPlayed;
 	bHeldForCutscene = false;                     // (a held frame lets go with any new choreography)
 	Sprite->PlayChor(Chor, bLoop);
+	// (BUG-SAMENEMY) art with no death (MAX.NWX: three chors, none past 2): the dead bad guy goes as he falls, not left
+	// standing on his first frame for good (-OLOldMaxStatue: as before)
+	static const bool bOldMaxStatue = OLFlags::Param(TEXT("OLOldMaxStatue"));
+	if (!bOldMaxStatue && State == EOutlawsEnemyState::Dead && Chor >= 0 && (Chor == Def.ChestDieChor || Chor == Def.LegDieChor) &&
+		!Sprite->Chors.IsValidIndex(Chor) && !Sprite->IsHidden())
+	{
+		Sprite->SetActorHiddenInGame(true);
+		UE_LOG(LogOutlawsAI, Log, TEXT("OLRT %s dies with no death in its art (chor %d of %d): gone"), *OutlawsName, Chor, Sprite->Chors.Num());
+	}
 	// the body is as tall as the frame on show [EXE 0x140088aad]: a crouch art frame makes it short,
 	// a stand-in duck frame (the families without crouch art) keeps it standing
 	if (State != EOutlawsEnemyState::Dead && Sprite->Chors.IsValidIndex(Chor))
@@ -2434,6 +2443,7 @@ void AOutlawsEnemy::Tick(float Dt)
 	}
 	StateTime += Dt;
 	SubTime += Dt;
+	static const bool bOldNoChor = OLFlags::Param(TEXT("OLOldMaxStatue"));     // (BUG-SAMENEMY: a chor his art lacks counts as played out)
 	if (State == EOutlawsEnemyState::Dead)
 	{
 		// the boss's death played out (message 99 on chor END): the level is won [EXE 0x14006ae20]
@@ -2444,7 +2454,7 @@ void AOutlawsEnemy::Tick(float Dt)
 		}
 		if (bHeldForCutscene && StateTime > 1.5f && !L->DebugLevelEnding() && !L->IsMoviePlaying()) FallbackFromHold();
 		// the drop comes once the death has played out and the body lies still
-		if (!bDropped && (!Sprite || Sprite->IsChorDone() || bHeldForCutscene) && GetVelocity().Size() < 30.f)
+		if (!bDropped && (!Sprite || Sprite->IsChorDone() || bHeldForCutscene || (!bOldNoChor && Sprite->GetPlayingChor() < 0)) && GetVelocity().Size() < 30.f)
 		{
 			bDropped = true;
 			if (!Def.DropItem.IsEmpty())
@@ -2535,7 +2545,8 @@ void AOutlawsEnemy::Tick(float Dt)
 		break;
 
 	case EOutlawsEnemyState::Hit:
-		if ((!Sprite || Sprite->IsChorDone()) && StateTime > 0.25f)
+		// (BUG-SAMENEMY) art with no hit chor (Max) plays none, so none is left to finish: he goes on at once, not stunned for good
+		if ((!Sprite || Sprite->IsChorDone() || (!bOldNoChor && Sprite->GetPlayingChor() < 0)) && StateTime > 0.25f)
 		{
 			State = EOutlawsEnemyState::Chase;
 			StateTime = 0.f;

@@ -1000,7 +1000,13 @@ TSharedPtr<OutlawsTextures::FSpriteAtlas> OutlawsTextures::BuildSpriteAtlas(cons
 			FMemory::Memcpy(Out->Indices.GetData() + (Y0 + y) * AW + X0, Rd.Ix8.GetData() + y * Rd.W, Rd.W);
 		}
 	}
-	auto AddGrid = [&CellOf](const TArray<TArray<int32>>& ChorR, int32 Frames, TArray<int32>& Grid)
+	// (BUG-DRIPABOVE, user 2 Nov, snapshots #36/#37: in shgranry a DRIP's drop hung over the walkway above its room between
+	// falls) a frame with nothing to draw (DRIP's frame 0, a 0 x 17 cell: the wait between drops, 43 of its 82 script frames)
+	// has no cell; it was given cell 0, the first drawn frame, DRIP's drop at the top of its fall, 208 px over the floor.  It
+	// is -1 now, and the sprite shows nothing while it is on (the Jedi engine draws the empty cell as nothing).
+	// -OLOldEmptyFrame: cell 0, as before
+	static const bool bOldEmpty = OLFlags::Param(TEXT("OLOldEmptyFrame"));
+	auto AddGrid = [&CellOf, &Rendered](const TArray<TArray<int32>>& ChorR, int32 Frames, TArray<int32>& Grid)
 	{
 		for (const TArray<int32>& R : ChorR)
 		{
@@ -1010,7 +1016,8 @@ TSharedPtr<OutlawsTextures::FSpriteAtlas> OutlawsTextures::BuildSpriteAtlas(cons
 				if (i < R.Num())
 				{
 					const int32* C = CellOf.Find(R[i]);
-					Last = C ? *C : 0;
+					const FRendered* Rd = C ? nullptr : Rendered.Find(R[i]);
+					Last = C ? *C : (!bOldEmpty && Rd && !Rd->bValid ? -1 : 0);
 				}
 				Grid.Add(Last);   // short rows hold their last frame
 			}

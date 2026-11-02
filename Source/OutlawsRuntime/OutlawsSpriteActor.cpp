@@ -140,7 +140,7 @@ void AOutlawsSpriteActor::OnConstruction(const FTransform& Transform)
 	CurrentCell = -1;
 	if (EnsureMID())
 	{
-		ApplyCell(Grid.Num() > 0 ? Grid[0] : 0);
+		ShowCell(Grid.Num() > 0 ? Grid[0] : 0);
 	}
 }
 
@@ -507,6 +507,25 @@ void AOutlawsSpriteActor::ApplyCell(int32 Cell)
 	CurrentCell = C;
 }
 
+void AOutlawsSpriteActor::ShowCell(int32 Cell)
+{
+	// (BUG-DRIPABOVE) -1, a frame with nothing to draw (OutlawsTextures' AddGrid): the quad hidden in game while it is on,
+	// kept hidden through the culling's own show (it shows the whole actor again); shown again with the next drawn cell.
+	// Hidden in game, not the visibility the object LOD and the 3D stand-in switch; the swing mesh's hide is kept
+	if (Quad && Cell < 0)
+	{
+		bEmptyCell = true;
+		if (!Quad->bHiddenInGame) Quad->SetHiddenInGame(true);
+		return;
+	}
+	if (bEmptyCell)
+	{
+		bEmptyCell = false;
+		if (Quad) Quad->SetHiddenInGame(bSwingShown);
+	}
+	ApplyCell(Cell);
+}
+
 float AOutlawsSpriteActor::GetFacingYaw() const
 {
 	// Outlaws yaw: 0 = north (+Z), increasing clockwise seen from above (LawMaker's
@@ -611,7 +630,7 @@ void AOutlawsSpriteActor::UpdateSprite(float DeltaSeconds, const FVector* Viewer
 	}
 	if (ForcedCell >= 0)
 	{
-		ApplyCell(ForcedCell);
+		ShowCell(ForcedCell);
 	}
 	else if (Chors.IsValidIndex(PlayingChor))
 	{
@@ -626,7 +645,7 @@ void AOutlawsSpriteActor::UpdateSprite(float DeltaSeconds, const FVector* Viewer
 		CurrentDirection = bHaveViewer ? DirectionFor(Viewer) : 0;
 		Directions = SavedDirs;
 		const int32 Index = C.GridStart + CurrentDirection * FMath::Max(1, C.Frames) + FMath::Min(Frame, C.Frames - 1);
-		ApplyCell(ChorGrid.IsValidIndex(Index) ? ChorGrid[Index] : 0);
+		ShowCell(ChorGrid.IsValidIndex(Index) ? ChorGrid[Index] : 0);
 	}
 	else
 	{
@@ -649,7 +668,7 @@ void AOutlawsSpriteActor::UpdateSprite(float DeltaSeconds, const FVector* Viewer
 		CurrentDirection = bHaveViewer ? DirectionFor(Viewer) : 0;
 		const int32 Index = CurrentDirection * Frames + Frame;
 		const int32 Cell = Grid.IsValidIndex(Index) ? Grid[Index] : 0;
-		ApplyCell(Cell);
+		ShowCell(Cell);
 	}
 	PlaceQuad(ViewerAt);
 	if (bSwingDrive || bSwingShown) UpdateSwing();         // (REQ-HELDSWAY: OutlawsSpriteSwing.cpp)

@@ -1695,7 +1695,13 @@ void AOutlawsLevelActor::Build()
 			ItmData.FindOrAdd(TEXT("SHOOT_CHOR")) = TEXT("-1");
 			ItmData.FindOrAdd(TEXT("DROP_ITEM")) = TEXT("null");
 		}
-		const bool bEnemyLogic = ItmFunc.Equals(TEXT("BGY_New"), ESearchCase::IgnoreCase) || bChicken;
+		// (BUG-SAMENEMY, user 2 Nov, snapshot #40: shgulch's secret room had "Sam" frozen as a statue) Max (max.itm, FUNC
+		// Max_New in olpatch4; olobj's own has BGY_New) is a plain bad guy in the exe, the BGY handler and, on a kill, an
+		// achievement [EXE 0x14006a500]; it was left a static sprite, which the item3d prop pass then made the MAX.obj
+		// figure (-OLOldMaxStatue: as before)
+		static const bool bOldMaxStatue = OLFlags::Param(TEXT("OLOldMaxStatue"));
+		const bool bMax = !bOldMaxStatue && ItmFunc.Equals(TEXT("Max_New"), ESearchCase::IgnoreCase);
+		const bool bEnemyLogic = ItmFunc.Equals(TEXT("BGY_New"), ESearchCase::IgnoreCase) || bChicken || bMax;
 		if (bEnemyLogic)
 		{
 			RideFor(Sec->Index, O.Pos.Y, false, EnemyRideDz);
@@ -1840,10 +1846,11 @@ void AOutlawsLevelActor::Build()
 			S->SetFolderPath(TEXT("OutlawsRuntime"));
 #endif
 			SpawnedActors.Add(S);
-			if (bGameWorld)
+			if (bGameWorld && !(bEnemyLogic && !bOldMaxStatue))
 			{
 				// a 3D stand-in where one has been made (items, barrels; hanging lamps, the chandelier, stalactites too: user
-				// 2026-10-01; a hanging sprite stands at its foot, Loc.Z lowered by its height, and its model is made that tall)
+				// 2026-10-01; a hanging sprite stands at its foot, Loc.Z lowered by its height, and its model is made that tall).
+				// Never a bad guy's row left a sprite (BUG-SAMENEMY: no enemies spawned, or his spawn failed): no statue of him
 				UseItemModel(S, Anim, WallFacingYaw(Pos, Sec ? Sec->Index : -1, O.Yaw));
 			}
 			if (bProp && bGameWorld)
@@ -3233,6 +3240,26 @@ void AOutlawsLevelActor::UpdateOverlaps(int32 FromSector)
 	OverlapFrom = FromSector;
 }
 
+// (BUG-ENEMYVIS, user 2 Nov, snapshots #32-#34: from civlwar2's covered porch 885, looking in through the broken saloon
+// window, the room's bad guys and bodies were not drawn) the flood's inside side of a sector's walls from the walls' own
+// winding, as BUG-WALLSFLIPPED made FOutlawsSector::IsClockwise (f811752): 885 lists its nine post holes before its outer
+// ring, so the shoelace over the vertex list came out with the wrong sign, every opening of 885 was "seen from behind"
+// and the flood stopped at 4 sectors.  The original's renderer tests each wall by its own ends, never a sector-wide sign
+// (-OLOldFloodWinding: the vertex list's sum as before, both floods, for shots; -OLOldWinding turns IsClockwise back too)
+static bool FloodOldWinding(int32 Debug)
+{
+	static const bool bOldFlag = OLFlags::Param(TEXT("OLOldFloodWinding"));
+	return Debug < 0 ? bOldFlag : Debug != 0;
+}
+
+static double FloodInside(const FOutlawsSector& S, bool bOldWinding)
+{
+	if (!bOldWinding) return S.IsClockwise() ? -1.0 : 1.0;
+	double Area2 = 0.0;
+	for (int32 i = 0; i < S.Verts.Num(); ++i) { const FVector2D& P = S.Verts[i]; const FVector2D& Q = S.Verts[(i + 1) % S.Verts.Num()]; Area2 += P.X * Q.Y - Q.X * P.Y; }
+	return Area2 < 0.0 ? -1.0 : 1.0;
+}
+
 void AOutlawsLevelActor::PortalFlood(const FOutlawsLevel& L, int32 From, const FVector2D& Eye, double EyeZ, TSet<int32>& Out, TMap<int32, int32>* Depth, FFloodBounds* Bounds) const
 {
 	// what the eye sees, as the original's portal renderer finds it: from the eye's sector through its openings, each
@@ -3307,22 +3334,23 @@ void AOutlawsLevelActor::PortalFlood(const FOutlawsLevel& L, int32 From, const F
 		TArray<double> Inside;
 		TArray<FFloodEyeWall> Eye;
 		TArray<FFloodEyeOpen> Open;            // (two an opening: its adjoin and its second one)
+		bool bOldWinding = false;
 	};
 	static FFloodGeo Geo;
-	if (Geo.Level != &L || Geo.NumS != L.Sectors.Num() || Geo.Gen != FloodGeomGen)
+	const bool bOldWinding = FloodOldWinding(DebugFloodWinding);
+	if (Geo.Level != &L || Geo.NumS != L.Sectors.Num() || Geo.Gen != FloodGeomGen || Geo.bOldWinding != bOldWinding)
 	{
 		Geo.Level = &L;
 		Geo.NumS = L.Sectors.Num();
 		Geo.Gen = FloodGeomGen;
+		Geo.bOldWinding = bOldWinding;
 		Geo.Start.Reset();
 		Geo.Portals.Reset();
 		Geo.Inside.Reset();
 		for (const FOutlawsSector& Gs : L.Sectors)
 		{
 			Geo.Start.Add(Geo.Portals.Num());
-			double Area2 = 0.0;
-			for (int32 i = 0; i < Gs.Verts.Num(); ++i) { const FVector2D& P = Gs.Verts[i]; const FVector2D& Q = Gs.Verts[(i + 1) % Gs.Verts.Num()]; Area2 += P.X * Q.Y - Q.X * P.Y; }
-			Geo.Inside.Add(Area2 < 0.0 ? -1.0 : 1.0);
+			Geo.Inside.Add(FloodInside(Gs, bOldWinding));      // (BUG-ENEMYVIS) the walls' winding
 			if (Gs.Verts.Num() < 3) continue;
 			for (int32 w = 0; w < Gs.Walls.Num(); ++w)
 			{
@@ -3710,9 +3738,7 @@ void AOutlawsLevelActor::PortalFloodRef(const FOutlawsLevel& L, int32 From, cons
 		// world above, its bad guys too (only the sector beyond was drawn, nothing past it)
 		if (!bOld && L.Sectors.IsValidIndex(S.VAdjoin)) Stack.Add({ S.VAdjoin, It.Lo, It.Hi, It.Depth + 1, It.bFull, It.VLo, It.VHi });
 		if (S.Verts.Num() < 3) continue;
-		double Area2 = 0.0;             // the winding: which side of each wall is the sector's inside
-		for (int32 i = 0; i < S.Verts.Num(); ++i) { const FVector2D& P = S.Verts[i]; const FVector2D& Q = S.Verts[(i + 1) % S.Verts.Num()]; Area2 += P.X * Q.Y - Q.X * P.Y; }
-		const double Inside = Area2 < 0.0 ? -1.0 : 1.0;
+		const double Inside = FloodInside(S, FloodOldWinding(DebugFloodWinding));     // the winding: which side of each wall is the sector's inside (BUG-ENEMYVIS)
 		for (int32 w = 0; w < S.Walls.Num(); ++w)
 		{
 			const FOutlawsWall& W = S.Walls[w];

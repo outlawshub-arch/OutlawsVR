@@ -96,6 +96,7 @@ namespace
 		float WorldScale = 1.f;  // the json's world_scale: the sprite's size over the real thing's
 		bool bAnyYaw = false;    // "any_yaw": turned by where it stands, not by a wall (trees, shrubs: no two alike)
 		bool bKeepOrigin = false; // "keep_origin": stood on the model's own origin (a tree's trunk), not its box's middle
+		int32 TracedCell = -1;    // (BUG-CANNONYAW) the _tex.json base's atlas_cell: the sprite cell its picture was traced from
 		// the sprite's animation as keyframes (anim_catalogue, 2026-10-01): a swing played for a chor; a waving cloth
 		TMap<int32, AOutlawsLevelActor::FOutlawsKeyAnim> Anims;     // by chor
 		bool bFlicker = false;
@@ -163,6 +164,17 @@ namespace
 				bool B = false;
 				if (J->TryGetBoolField(TEXT("any_yaw"), B)) D->bAnyYaw = B;
 				if (J->TryGetBoolField(TEXT("keep_origin"), B)) D->bKeepOrigin = B;
+				// (BUG-CANNONYAW) the picture traced: the texture recipe's "atlas_cell" when it is not the first view's (the
+				// shipped recipe, whichever folder the model comes from: the dev placeholders are the same models, painted)
+				FString TexText;
+				TSharedPtr<FJsonObject> Tj;
+				const TSharedPtr<FJsonObject>* TexBase = nullptr;
+				double Cell = 0.0;
+				if (FFileHelper::LoadFileToString(TexText, *FPaths::Combine(OutlawsItem3d::ShippedDir(), Stem + TEXT("_tex.json"))) && FJsonSerializer::Deserialize(TJsonReaderFactory<>::Create(TexText), Tj)
+					&& Tj.IsValid() && Tj->TryGetObjectField(TEXT("base"), TexBase) && TexBase && (*TexBase)->TryGetNumberField(TEXT("atlas_cell"), Cell))
+				{
+					D->TracedCell = int32(Cell);
+				}
 				if (J->TryGetBoolField(TEXT("flames"), B)) D->bFlames = B;
 				if (J->TryGetBoolField(TEXT("hang"), B)) D->bHang = B;
 				if (J->TryGetBoolField(TEXT("bulbs"), B)) D->bBulbs = B;
@@ -357,6 +369,36 @@ bool AOutlawsLevelActor::UseItemModel(AOutlawsSpriteActor* S, const FString& Ani
 			const FVector Axis = FVector(Rs.FRandRange(-1.f, 1.f), Rs.FRandRange(-1.f, 1.f), 0.0).GetSafeNormal();
 			if (!Axis.IsNearlyZero()) Tip = FQuat(Axis, FMath::DegreesToRadians(Rs.FRandRange(3.f, 14.f)));
 			Shape = FVector(Rs.FRandRange(0.85f, 1.18f), Rs.FRandRange(0.85f, 1.18f), Rs.FRandRange(0.82f, 1.15f));
+		}
+	}
+	// (BUG-CANNONYAW, user 2 Nov, snapshot #35: civlwar2's cannon pointed its muzzle back at the player, away from the way
+	// the original has it) a model traced from one of a many-view sprite's pictures (its recipe's atlas_cell; the cannon's
+	// left profile, seen in the original from 101-112 degrees round from its front) is that picture, not view 0: its face
+	// (+Y) turned to the bearing that view is seen from, the OB's YAW less the view's angle A (WAX views run counter-
+	// clockwise from the front).  A is the mean of the views that show the cell, to the nearest quarter turn (the models are
+	// built square to the picture), so model yaw = YAW - 90 - A, not the pickups' wall-facing rule.  -OLOldCannonYaw: as before
+	static const bool bOldCannonYaw = OLFlags::Param(TEXT("OLOldCannonYaw"));
+	if (!bOldCannonYaw && D->TracedCell >= 0 && !D->bAnyYaw && S->Directions > 1)
+	{
+		const int32 Frames = FMath::Max(1, S->FrameCount);
+		FVector2D Sum = FVector2D::ZeroVector;
+		int32 Views = 0;
+		for (int32 d = 0; d < S->Directions; ++d)
+		{
+			if (!S->Grid.IsValidIndex(d * Frames) || S->Grid[d * Frames] != D->TracedCell) continue;
+			const double Ang = FMath::DegreesToRadians(360.0 * d / S->Directions);
+			Sum += FVector2D(FMath::Cos(Ang), FMath::Sin(Ang));
+			++Views;
+		}
+		if (Views > 0 && !Sum.IsNearlyZero())
+		{
+			const float Mean = FMath::RadiansToDegrees(FMath::Atan2(Sum.Y, Sum.X));
+			const float A = FRotator::NormalizeAxis(90.f * FMath::RoundToFloat(Mean / 90.f));
+			const float Was = Yaw;
+			Yaw = FRotator::NormalizeAxis(S->OutlawsYaw - 90.f - A);
+			DebugTracedTurns.Add(FString::Printf(TEXT("%s %.0f,%.0f %.2f -> %.2f"), *ModelName, S->GetActorLocation().X, S->GetActorLocation().Y, Was, Yaw));
+			UE_LOG(LogOutlaws, Log, TEXT("OLRT item model %s: traced from cell %d, seen from %d views (mean %.1f deg, A %.0f): yaw %.2f -> %.2f (YAW %.2f)"),
+				*ModelName, D->TracedCell, Views, Mean, A, Was, Yaw, S->OutlawsYaw);
 		}
 	}
 	S->ModelYaw = Yaw;
