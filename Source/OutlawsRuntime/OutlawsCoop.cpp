@@ -244,7 +244,8 @@ void AOutlawsCoopGameMode::PreLogin(const FString& Options, const FString& Addre
 			UE_LOG(LogOutlawsCoop, Log, TEXT("OLCOOP lobby: a player from %s turned away (%s)"), *Address, *ErrorMessage);
 			return;
 		}
-		// (REQ-NATIVEMAPS: the join guard, another build or the host's community map missing there; -OLOldJoinGuard none)
+		// (REQ-NATIVEMAPS: the join guard, the host's community map missing there or another copy; another build is let in;
+		// -OLOldJoinGuard none)
 		ErrorMessage = C->CheckJoinBuildAndMap(Options);
 		if (!ErrorMessage.IsEmpty())
 		{

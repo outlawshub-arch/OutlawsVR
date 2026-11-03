@@ -132,7 +132,9 @@ FString UOutlawsCoop::CheckJoinPassword(const FString& Options) const
 // A joiner without the host's native map (an older build, -OLNoNativeMaps, a broken or other copy) used to get an empty level:
 // nothing caught "ERROR: <level>.lvt not found", and the build compare was only the LAN beacon's.  Now the joiner's URL carries
 // its build and its native maps (each LAB's stamp), the host's PreLogin turns it away with the reason, and a joiner told to
-// build a level it cannot (a later match's map) goes to its main menu saying so, never into an empty level.
+// build a level it cannot (a later match's map) goes to its main menu saying so, never into an empty level.  The build is
+// sent and logged, never refused (the user 3 Nov: "your PC and Quest can always play together", they are often on different
+// nightlies): only a missing map or another copy of it turns a joiner away.
 // -OLOldJoinGuard: none of it (the password and the player count only).
 
 namespace
@@ -169,20 +171,22 @@ FString UOutlawsCoop::NativeStampsHere()
 FString UOutlawsCoop::JoinGuardOptions()
 {
 	if (OldJoinGuard()) return FString();
-	return FString::Printf(TEXT("?OLBuild=%s?OLMaps=%s"), OutlawsBuildInfo::Commit(), *NativeStampsHere());
+	FString Build = OutlawsBuildInfo::Commit();
+#if WITH_OUTLAWS_TESTS
+	OLFlags::Value(TEXT("OLJoinGuardFakeBuild"), Build);      // (tests: a joiner on another build)
+#endif
+	return FString::Printf(TEXT("?OLBuild=%s?OLMaps=%s"), *Build, *NativeStampsHere());
 }
 
 FString UOutlawsCoop::CheckJoinBuildAndMap(const FString& Options) const
 {
 	if (OldJoinGuard()) return FString();
+	// (another build is let in, the user 3 Nov: said once a join, never refused)
 	const FString Build = UGameplayStatics::ParseOption(Options, TEXT("OLBuild"));
-	if (Build.IsEmpty())
-	{
-		return FString::Printf(TEXT("This game plays a newer build of Outlaws VR (build %s): update to join"), OutlawsBuildInfo::Commit());
-	}
 	if (Build != OutlawsBuildInfo::Commit())
 	{
-		return FString::Printf(TEXT("This game plays another build of Outlaws VR (the host's %s, yours %s)"), OutlawsBuildInfo::Commit(), *Build);
+		UE_LOG(LogOutlawsCoop, Log, TEXT("OLCOOP join guard: joiner on build %s, host %s (let in: builds may differ)"),
+			Build.IsEmpty() ? TEXT("(none on its URL: from before the guard)") : *Build, OutlawsBuildInfo::Commit());
 	}
 	// (the level the host's game is on, or starts with: a native map's is checked against the joiner's copy)
 	const TSharedPtr<FOutlawsAssets> A = GuardAssets(FindLevel());

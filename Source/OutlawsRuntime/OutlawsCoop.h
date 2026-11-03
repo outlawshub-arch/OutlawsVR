@@ -1189,9 +1189,9 @@ public:
 	/** PreLogin: a joiner's password checked (empty: let in). */
 	FString CheckJoinPassword(const FString& Options) const;
 	/** REQ-NATIVEMAPS (user 3 Nov), the join guard (OutlawsCoopConnect.cpp).  JoinGuardOptions: the joiner's URL options, its
-	 *  build (the beacon's compare, now on a typed or Internet join too) and its native maps ("?OLBuild=..?OLMaps=.."), empty
-	 *  with -OLOldJoinGuard.  CheckJoinBuildAndMap: PreLogin's refusal (empty: let in): another build, or the host's match on a
-	 *  native map the joiner lacks or holds another copy of.  ClientCannotBuild: a joiner told to build a level it cannot (no
+	 *  build (logged by the host, never refused: the user 3 Nov) and its native maps ("?OLBuild=..?OLMaps=.."), empty with
+	 *  -OLOldJoinGuard.  CheckJoinBuildAndMap: PreLogin's refusal (empty: let in): the host's match on a native map the joiner
+	 *  lacks or holds another copy of.  ClientCannotBuild: a joiner told to build a level it cannot (no
 	 *  .lvt for it, another copy of a native map's LAB than the host's): the reason, empty when it can. */
 	static bool OldJoinGuard();
 	static FString NativeStampsHere();

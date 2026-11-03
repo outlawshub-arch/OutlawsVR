@@ -232,10 +232,9 @@ void AOutlawsJoinBubble::DrawCanvas(UCanvas* C, int32 Width, int32 Height)
 		const float Bw = b == 0 ? YesW : NoW;
 		if (Bw <= 0.f) continue;
 		const bool bHot = Hover[0] == b || Hover[1] == b;
-		const bool bDead = b == 0 && Yes == TEXT("different version");
 		Fill(X - 3.f, By - 3.f, Bw + 6.f, Bh + 6.f, bHot ? Hot : Gold);
-		Fill(X, By, Bw, Bh, bDead ? Col(0x30, 0x2a, 0x24) : Col(0x14, 0x0c, 0x06));
-		Txt(ButtonFont, b == 0 ? Yes : No, X + Bw * 0.5f, By + Bh * 0.5f, bDead ? Col(0x90, 0x88, 0x80) : bHot ? Hot : Gold, Bw - 24.f);
+		Fill(X, By, Bw, Bh, Col(0x14, 0x0c, 0x06));
+		Txt(ButtonFont, b == 0 ? Yes : No, X + Bw * 0.5f, By + Bh * 0.5f, bHot ? Hot : Gold, Bw - 24.f);
 		Buttons[b] = FBox2D(FVector2D(X, By), FVector2D(X + Bw, By + Bh));
 		X += Bw + Gap;
 	}
@@ -638,10 +637,11 @@ void UOutlawsBeacon::OnPick(int32 Button)
 			HideBubble();
 			return;
 		}
+		// (REQ-NATIVEMAPS, the user 3 Nov: "your PC and Quest can always play together", they are often on different nightlies:
+		// another build joins too, said here; the host's join guard turns away only a missing map or another copy of it)
 		if (G->Build != OutlawsBuildInfo::Commit())
 		{
-			UE_LOG(LogOutlawsCoop, Log, TEXT("OLBEACON %s plays a different version (%s, this %s): no join"), *G->Name, *G->Build, OutlawsBuildInfo::Commit());
-			return;
+			UE_LOG(LogOutlawsCoop, Log, TEXT("OLBEACON %s plays a different version (%s, this %s): joining all the same"), *G->Name, *G->Build, OutlawsBuildInfo::Commit());
 		}
 		if (Kind == EOutlawsBubbleKind::Offer && FindLevel() && !FindLevel()->IsFrontEnd())
 		{
@@ -793,8 +793,9 @@ void UOutlawsBeacon::UpdateBubble(double Now)
 	if (Offered != Best->Key || Kind != EOutlawsBubbleKind::Offer || Bubble->GetText() != Text)
 	{
 		Offered = Best->Key;
-		ShowBubble(EOutlawsBubbleKind::Offer, Text, bSame ? FString(TEXT("Join")) : FString(TEXT("different version")), TEXT("X"));
-		UE_LOG(LogOutlawsCoop, Log, TEXT("OLBEACON offered %s %.1f s after first hearing it%s"), *Best->Name, Now - Best->FirstAt, bInPlay ? TEXT(" (in play, after a quiet second)") : TEXT(" (main menu)"));
+		ShowBubble(EOutlawsBubbleKind::Offer, Text, TEXT("Join"), TEXT("X"));       // (another build too: REQ-NATIVEMAPS, user 3 Nov)
+		UE_LOG(LogOutlawsCoop, Log, TEXT("OLBEACON offered %s %.1f s after first hearing it%s%s"), *Best->Name, Now - Best->FirstAt, bInPlay ? TEXT(" (in play, after a quiet second)") : TEXT(" (main menu)"),
+			bSame ? TEXT("") : TEXT(" (a different version)"));
 	}
 }
 
@@ -940,7 +941,7 @@ void UOutlawsBeacon::TickTest(double Now)
 			TestStep = 4;
 		}
 		return;
-	case 4:      // a game of a different version heard: its bubble says so
+	case 4:      // a game of a different version heard: offered with Join as any other (REQ-NATIVEMAPS, user 3 Nov)
 		if (Now - TestAt < 1.5) return;
 		HandleMessage(FString::Printf(TEXT("OLB1\tfake0001\tOld Timer\tsingle\tcanyon\t1\t8\t0\toldbuild\t7777")), TEXT("127.0.0.9"), 7778, Now);
 		TestAt = Now;
@@ -949,15 +950,14 @@ void UOutlawsBeacon::TickTest(double Now)
 	case 5:
 		if (Now - TestAt < 1.0) return;
 		UE_LOG(LogOutlawsCoop, Log, TEXT("OLBEACON test: the other version's bubble: \"%s\" %s"), IsValid(Bubble) ? *Bubble->GetText() : TEXT(""),
-			IsValid(Bubble) && Bubble->GetText().Contains(TEXT("Old Timer")) ? TEXT("(Join reads \"different version\")") : TEXT("NOT SHOWN"));
+			IsValid(Bubble) && Bubble->GetText().Contains(TEXT("Old Timer")) ? TEXT("(offered with Join: builds may differ)") : TEXT("NOT SHOWN"));
 		Shot(TEXT("ol_bubble_version"));
 		TestStep = 6;
 		TestAt = Now;
 		return;
 	case 6:
 		if (Now - TestAt < 1.0) return;
-		Bubble->Pick(0);                 // (a different version: nothing happens)
-		Bubble->Pick(1);
+		Bubble->Pick(1);                 // (X: no join to the fake game, it has no host)
 		Heard.Remove(TEXT("127.0.0.9:7778"));
 		TestStep = 7;
 		TestAt = Now;

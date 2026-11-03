@@ -2,8 +2,9 @@
 //   -OLNativeMaps=<dir> -OLMpHost=3way -OLMpClass=dm -OLMpBots=0 -OLMpStartWhen=0 -OLJoinGuardProbe
 // On a launched host whose match is on a native map, PreLogin's check (CheckJoinBuildAndMap) is given the options joiners
 // would send: this machine's own (let in), a joiner without the native maps (-OLNoNativeMaps: turned away, the reason naming
-// the map), another copy of the map (turned away), an older build with no build on its URL and another build (turned away);
-// then the host's level set to a stock map: the joiner without the maps let in.  The joiner's own check (ClientCannotBuild):
+// the map), another copy of the map (turned away), another build with the maps and a build with no build on its URL but the
+// maps (let in: the user 3 Nov, builds may differ), one with neither (turned away for the map); then the host's level set to
+// a stock map: the joiner without the maps let in, on this build or another.  The joiner's own check (ClientCannotBuild):
 // the host's native level builds here, a level nowhere does not, another copy of the host's LAB does not.  One line a case
 // "OLSHOT joinguard case PASS|FAIL: ...", then "OLSHOT joinguard RESULT".  -OLOldJoinGuard: every refusal case FAILs (the old
 // behaviour: anyone with the password let in).  The two-machine joins themselves: out\mapfull\joinguard.ps1 (the lane's).
@@ -98,19 +99,24 @@ OL_SHOT_TEST(OLJoinGuardProbe, 1780)
 		const FString Why = Ask(Other);
 		Check(!Why.IsEmpty() && Why.Contains(TEXT("not the host's")), FString::Printf(TEXT("a joiner with another copy of %s is turned away: \"%s\""), *Lv, *Why));
 	}
-	// (4) an older build (no build on its URL) and (5) another build
+	// (4) another build with the maps, (5) no build on its URL (from before the guard): let in on the build (the user 3 Nov),
+	// the map decides
 	{
-		const FString Why = Ask(TEXT("?Name=Old"));
-		Check(!Why.IsEmpty() && Why.Contains(TEXT("newer build")), FString::Printf(TEXT("an older build (no OLBuild on its URL) is turned away: \"%s\""), *Why));
-		const FString Why2 = Ask(Own.Replace(*Build, TEXT("?OLBuild=0000000")));
-		Check(!Why2.IsEmpty() && Why2.Contains(TEXT("another build")), FString::Printf(TEXT("another build is turned away: \"%s\""), *Why2));
+		const FString Why = Ask(Own.Replace(*Build, TEXT("?OLBuild=0000000")));
+		Check(Why.IsEmpty(), FString::Printf(TEXT("another build with the maps is let in%s"), Why.IsEmpty() ? TEXT("") : *(TEXT(": ") + Why)));
+		const FString Why2 = Ask(Own.Replace(*Build, TEXT("")));
+		Check(Why2.IsEmpty(), FString::Printf(TEXT("no OLBuild on its URL but the maps: let in%s"), Why2.IsEmpty() ? TEXT("") : *(TEXT(": ") + Why2)));
+		const FString Why3 = Ask(TEXT("?Name=Old"));
+		Check(!Why3.IsEmpty() && Why3.Contains(Title), FString::Printf(TEXT("no OLBuild and no maps on its URL: turned away for the map, not the build: \"%s\""), *Why3));
 	}
-	// (6) the host's game on a stock map: the joiner without the maps let in, as before
+	// (6) the host's game on a stock map: the joiner without the maps let in, as before, on this build or another
 	{
 		TGuardValue<FString> KeepLevel(C->LevelToStart, TEXT("drygulch"));
 		TGuardValue<FString> KeepFile(C->MatchOptions.MapFile, TEXT("drygulch.rcm"));
 		const FString Why = Ask(Build + TEXT("?OLMaps="));
 		Check(Why.IsEmpty(), FString::Printf(TEXT("a stock-map game lets the joiner without the native maps in%s"), Why.IsEmpty() ? TEXT("") : *(TEXT(": ") + Why)));
+		const FString Why2 = Ask(TEXT("?OLBuild=0000000?OLMaps="));
+		Check(Why2.IsEmpty(), FString::Printf(TEXT("a stock-map game lets another build without the native maps in%s"), Why2.IsEmpty() ? TEXT("") : *(TEXT(": ") + Why2)));
 	}
 	// (7) the joiner's own check before it builds the host's level
 	{
