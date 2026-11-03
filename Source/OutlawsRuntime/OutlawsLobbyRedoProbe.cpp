@@ -12,7 +12,9 @@
 // REQ-LOBBYUNDER (user 3 Nov): every case also checks this player's own name is underlined and no other text is: the line under
 // its letters (its descenders too, or where the row step leaves no room for that, under its baseline), as wide as the name's
 // letters, a fifth of the capitals thick (0.15 to 0.3 of them), clear of every text under it and inside the row step; and a
-// team joiner with no side yet, first on the "No side yet" line, underlined there.
+// team joiner with no side yet, first on the "No side yet" line, underlined there.  The follow-up (user 3 Nov): a joiner who came
+// last (Death Match 8 and 16, Team Play and Capture the Flag 16, 11 red to 5 blue) is listed and underlined on its side, a big side
+// counting the rest under it ("and 4 more").
 
 #include "OutlawsPlayer.h"
 #include "OutlawsRuntime.h"
@@ -39,6 +41,7 @@ namespace OutlawsLobbyRedoProbeLocal
 		bool bHostHere = false;
 		bool bShot = false;
 		bool bNoSide = false;            // (a team game: this player has not picked a side yet)
+		bool bMeLast = false;            // (the LOBBYUNDER follow-up: this player joined last; a team game's sides 11 red, 5 blue at 16)
 	};
 	TArray<FCase> RedoCases;
 	int32 Passes = 0, Fails = 0, RedoAt = -1;
@@ -74,7 +77,7 @@ namespace OutlawsLobbyRedoProbeLocal
 		static const TCHAR* Names[] = { TEXT("Marshal"), TEXT("Deputy1"), TEXT("Kate"), TEXT("Slim"), TEXT("Big Bad Barbara Le Fou of New Orleans"), TEXT("Doc"),
 			TEXT("Bob Graham"), TEXT("Matt Morgan"), TEXT("Kid Calico"), TEXT("Ugly Jim"), TEXT("Cactus Pete"), TEXT("Two-Gun Tess"), TEXT("Rattler"), TEXT("Ol' Clem"),
 			TEXT("Spittin' Jack"), TEXT("Gatling Jim") };
-		const int32 Me = C.bHostHere ? 0 : FMath::Min(1, C.Players - 1);
+		const int32 Me = C.bMeLast ? C.Players - 1 : C.bHostHere ? 0 : FMath::Min(1, C.Players - 1);
 		for (int32 i = 0; i < C.Players && i < int32(UE_ARRAY_COUNT(Names)); ++i)
 		{
 			FPlayer& P = V.Players.AddDefaulted_GetRef();
@@ -84,7 +87,7 @@ namespace OutlawsLobbyRedoProbeLocal
 			P.bYou = i == Me;
 			P.bInGame = C.Mode != TEXT("coophost") && i % 3 != 1;
 			// (a team game: red, blue in turn, every fifth with no side yet; 16 players: 7 red, 6 blue, 3 none)
-			P.Team = bTeams ? uint8(i % 5 == 4 ? 0 : 1 + i % 2) : 0;
+			P.Team = bTeams ? uint8(C.bMeLast ? (i % 3 == 2 ? 2 : 1) : i % 5 == 4 ? 0 : 1 + i % 2) : 0;
 			if (C.bNoSide && P.bYou) P.Team = 0;
 			V.InGame += P.bInGame ? 1 : 0;
 			V.Red += P.Team == 1 ? 1 : 0;
@@ -141,6 +144,18 @@ OL_SHOT_TEST(OLLobbyRedoProbe, 1860)
 			C.bNoSide = true;
 			C.bShot = true;
 			C.Name = TEXT("team_8_joiner_no_side");
+		}
+		// (the LOBBYUNDER follow-up, user 3 Nov: this player joined last, its own name listed and underlined on its side; a team
+		// game's side of 11 shows 6 others, this player and "and 4 more"; a Death Match's one or two columns)
+		for (const TPair<const TCHAR*, int32>& M : { TPair<const TCHAR*, int32>(TEXT("dm"), 8), TPair<const TCHAR*, int32>(TEXT("dm"), 16),
+			TPair<const TCHAR*, int32>(TEXT("team"), 16), TPair<const TCHAR*, int32>(TEXT("ctf"), 16) })
+		{
+			FCase& C = RedoCases.AddDefaulted_GetRef();
+			C.Mode = M.Key;
+			C.Players = M.Value;
+			C.bMeLast = true;
+			C.bShot = M.Value == 16;
+			C.Name = FString::Printf(TEXT("%s_%d_joiner_last"), M.Key, M.Value);
 		}
 		if (!bMenuOpen) OpenMenu();
 		RedoAt = 0;
@@ -259,6 +274,21 @@ OL_SHOT_TEST(OLLobbyRedoProbe, 1860)
 		Check(bOk, FString::Printf(TEXT("%s: items [%s]%s; greyed %d, in reach %d; laser boxes %s; panel %d of %d players in %d column%s, step %.0f%s; %d lines cut; %s%s; %s"), *C.Name, *FString::Join(Got, TEXT(" | ")),
 			bOrder ? TEXT("") : *FString::Printf(TEXT(" (wanted [%s])"), *FString::Join(Want, TEXT(" | "))), Greyed, Reach, bApart ? TEXT("apart") : TEXT("OVERLAP"), D.Names, V.Players.Num(), D.Columns,
 			D.Columns == 1 ? TEXT("") : TEXT("s"), D.NameStep, V.bTeams ? (bSides ? TEXT(", red left and blue right") : TEXT(", SIDES WRONG")) : TEXT(""), CutLines, *Under, bUnder ? TEXT("") : TEXT(" (UNDERLINE WRONG)"), *Said));
+		if (C.bMeLast && MeP)
+		{
+			// (the LOBBYUNDER follow-up) this player, joined last, listed on its side (underlined: the check above); a big side's
+			// count under it says the rest ("and N more", N the side's players less the 7 rows listed), a Death Match's none
+			const FInk* MeI = D.Texts.FindByPredicate([MeP](const FInk& X) { return X.bName && X.Text.StartsWith(MeP->Name.Left(FMath::Min(8, MeP->Name.Len()))); });
+			const bool bMeSide = MeI && (!V.bTeams || (MeP->Team == 1 ? MeI->Box.Max.X < Mid : MeI->Box.Min.X > Mid));
+			int32 Side = 0;
+			for (const FPlayer& Pl : V.Players) Side += !V.bTeams || Pl.Team == MeP->Team ? 1 : 0;
+			const FString More = FString::Printf(TEXT("and %d more"), Side - 7);
+			const FInk* MoreI = D.Texts.FindByPredicate([](const FInk& X) { return X.Text.StartsWith(TEXT("and ")) && X.Text.EndsWith(TEXT(" more")); });
+			const bool bMoreOk = V.bTeams && Side > 8 ? MoreI && MeI && MoreI->Text == More && MoreI->Box.Min.Y > MeI->Box.Min.Y : !MoreI;
+			Check(MeI && bMeSide && bMoreOk && bUnder, FString::Printf(TEXT("%s: this player (\"%s\", joined last, %d of %d on its side) listed there and underlined (%s, %s); %s"), *C.Name, *MeP->Name,
+				Side, V.Players.Num(), MeI ? *MeI->Text : TEXT("NOT LISTED"), bUnder ? TEXT("underlined") : TEXT("NOT UNDERLINED"),
+				MoreI ? *FString::Printf(TEXT("\"%s\" under it%s"), *MoreI->Text, bMoreOk ? TEXT("") : *FString::Printf(TEXT(" (WANTED \"%s\")"), *More)) : (bMoreOk ? TEXT("no \"more\" line") : TEXT("NO \"more\" LINE"))));
+		}
 		if (!bSizesSaid && Title > 0.f && Item > 0.f)
 		{
 			bSizesSaid = true;

@@ -3939,6 +3939,15 @@ void AOutlawsPlayer::DrawFrontCanvas(UCanvas* C, int32 Width, int32 Height)
 		float MeX = 0.f, MeY = 0.f;
 		for (int32 c = 0; c < 2; ++c)
 		{
+			// (REQ-LOBBYUNDER follow-up, user 3 Nov: this player's own name always listed on its side: past the 7th of a big team
+			// it takes the 7th row, and the one there goes into "and N more")
+			const int32 MeRow = Cols[c].IndexOfByPredicate([](const FPlayer* X) { return X->bYou; });
+			if (Cols[c].Num() > 8 && MeRow > 6)
+			{
+				const FPlayer* Mine = Cols[c][MeRow];
+				Cols[c].RemoveAt(MeRow);
+				Cols[c].Insert(Mine, 6);
+			}
 			for (int32 r = 0; r < Cols[c].Num() && r < 8; ++r)
 			{
 				// (a ninth on one side: the eighth row says how many more)
