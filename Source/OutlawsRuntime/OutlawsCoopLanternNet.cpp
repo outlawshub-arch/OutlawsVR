@@ -27,8 +27,10 @@ namespace
 {
 	// the lantern's light without its flicker, for its oil (AOutlawsLevelActor::LanternLight's); REQ-LANTERNBOOST's 22 m and
 	// 0.75 written out here (were 11 m and 0.6), so the check holds the level's numbers to the request
-	float LnBaseReach(float Oil) { return 2200.f * FMath::Lerp(0.65f, 1.f, FMath::Clamp(Oil, 0.f, 1.f)); }
-	FLinearColor LnBaseColour(float Oil) { return FLinearColor(1.f, 0.86f, 0.68f) * (0.75f * FMath::Lerp(0.3f, 1.f, FMath::Sqrt(FMath::Clamp(Oil, 0.f, 1.f)))); }
+	// (REQ-LANTERNRANGE: the reach and brightness in use, 9.7 m and 1.26, or the 22 m and 0.75 under -OLOldLantern, on both
+	// machines alike)
+	float LnBaseReach(float Oil) { return AOutlawsLevelActor::LanternReachNow() * FMath::Lerp(0.65f, 1.f, FMath::Clamp(Oil, 0.f, 1.f)); }
+	FLinearColor LnBaseColour(float Oil) { return FLinearColor(1.f, 0.86f, 0.68f) * (AOutlawsLevelActor::LanternBrightNow() * FMath::Lerp(0.3f, 1.f, FMath::Sqrt(FMath::Clamp(Oil, 0.f, 1.f)))); }
 	const TCHAR* LnLampWord(uint8 Lamp) { return Lamp == 2 ? TEXT("lit") : Lamp == 1 ? TEXT("in hand, out") : TEXT("put away"); }
 }
 

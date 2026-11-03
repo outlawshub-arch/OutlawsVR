@@ -2705,9 +2705,28 @@ void AOutlawsLevelActor::LanternLight(const FVector& At, float Oil, float T, FLi
 	const float Flicker = 1.f + 0.06f * FMath::Sin(T * 7.3f) + 0.04f * FMath::Sin(T * 17.9f + 1.7f) + 0.08f * FMath::PerlinNoise1D(T * 5.f);
 	// (REQ-LANTERNBOOST, user 2026-10-11: twice the reach, 22 m (was 11), and 1.25 times as bright, 0.75 (was 0.6); every
 	// lantern, the player's own and the others' in co-op, is lit through here)
-	OutPos = FLinearColor(At.X, At.Y, At.Z, LanternReach * FMath::Lerp(0.65f, 1.f, Oil) * (1.f + 0.3f * (Flicker - 1.f)));
-	OutCol = FLinearColor(1.f, 0.86f, 0.68f) * (LanternBright * Glow * Flicker);
+	// (REQ-LANTERNRANGE, user 2026-11-03: "reaches too far", a narrow spot looked like a lit room: the original's reach,
+	// LanternReachNow)
+	OutPos = FLinearColor(At.X, At.Y, At.Z, LanternReachNow() * FMath::Lerp(0.65f, 1.f, Oil) * (1.f + 0.3f * (Flicker - 1.f)));
+	OutCol = FLinearColor(1.f, 0.86f, 0.68f) * (LanternBrightNow() * Glow * Flicker);
 	if (OutFlicker) *OutFlicker = Flicker;
+}
+
+float AOutlawsLevelActor::LanternReachNow()
+{
+	// REQ-LANTERNRANGE: the original lights by view depth only, the most of its own ramp and the sector's light: 31 - the
+	// depth map at 4 x z units + the flicker's 1..4 [EXE 0x1403012a0], the map 1 + 0.2362 an entry, spent at 9.5 m [EXE
+	// 0x14009581a], less 3 levels every 32 units [EXE 0x140301363]: full bright to half a metre, 0.65 of it at 4 m, 0.2 at
+	// 8 m, black past 9. Our (1 - d / r)^2 in linear light shows as about (1 - d / r)^0.91: 9.7 m and 1.26 fit that within
+	// half a level; 22 m and 0.75 were 0.8 of full bright up close and still 0.4 at 12 m. -OLOldLantern: the 22 m
+	static const bool bOld = OLFlags::Param(TEXT("OLOldLantern"));
+	return bOld ? LanternReach : LanternRangeReach;
+}
+
+float AOutlawsLevelActor::LanternBrightNow()
+{
+	static const bool bOld = OLFlags::Param(TEXT("OLOldLantern"));
+	return bOld ? LanternBright : LanternRangeBright;
 }
 
 bool AOutlawsLevelActor::LanternShining(FVector& OutAt, float& OutOil) const
@@ -2885,8 +2904,9 @@ void AOutlawsLevelActor::TickLampLights(float Dt, bool bMovieOn, UMaterialParame
 	const int32 LampRow = FMath::Min(FMath::Clamp(CVarLampLights.GetValueOnGameThread(), 0, 4), OutlawsDeviceProfile::LampLights());
 	// BUG-LANTERNNET: the other players' lit lanterns within 41 m, the nearest first, up to the cap: the first in L7, the
 	// second in L6; the lamps keep the slots below them, as many as the row less the lanterns (the slots lit stay in the row)
-	// (REQ-LANTERNBOOST: was 30 m for the 11 m reach; the 22 m reach keeps the same 19 m between the cut and the lit ground)
-	const double RemoteFar = 1900.0 + LanternReach;
+	// (REQ-LANTERNBOOST: was 30 m for the 11 m reach; the 22 m reach keeps the same 19 m between the cut and the lit ground;
+	// REQ-LANTERNRANGE's 9.7 m: 28.7 m)
+	const double RemoteFar = 1900.0 + LanternReachNow();
 	struct FRemoteLit { FVector At; float Oil; float Phase; int32 Who; double D; };
 	TArray<FRemoteLit> Remote;
 	if (!bMovieOn && W)

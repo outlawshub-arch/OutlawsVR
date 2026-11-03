@@ -2183,7 +2183,8 @@ bool AOutlawsPlayer::TestShadersReady(float& Quiet, float Hold)
 void AOutlawsPlayer::LanternCostTestTick()
 {
 	// standing still, the lantern out, lit, out, lit (6 s each, the last 5 s of each measured): the GPU's frame time each way,
-	// and the lit lantern's reach and colour in MPC_OLR_Lights L0 / C0 against REQ-LANTERNBOOST's 22 m and 0.75 (full oil)
+	// and the lit lantern's reach and colour in MPC_OLR_Lights L0 / C0 against the numbers in use (full oil; REQ-LANTERNRANGE's
+	// 9.7 m and 1.26, -OLOldLantern REQ-LANTERNBOOST's 22 m and 0.75)
 	AOutlawsLevelActor* L = Level.Get();
 	if (!L) return;
 	constexpr float Win = 6.f, Skip = 1.f;
@@ -2259,10 +2260,13 @@ void AOutlawsPlayer::LanternCostTestTick()
 	UE_LOG(LogOutlaws, Display, TEXT("OLSHOT lanterncost RESULT: GPU unlit %.3f ms, lit %.3f ms, lit - unlit %+.3f ms (%+.1f %%)"), Unlit, Lit, Lit - Unlit, Unlit > 0.0 ? 100.0 * (Lit - Unlit) / Unlit : 0.0);
 	Check(Frames[0] > 30 && Frames[1] > 30 && Frames[2] > 30 && Frames[3] > 30, FString::Printf(TEXT("GPU timing in every window (%d %d %d %d frames)"), Frames[0], Frames[1], Frames[2], Frames[3]));
 	const double Reach = LitN ? ReachSum / LitN : 0.0, R = LitN ? RSum / LitN : 0.0, G = LitN ? GSum / LitN : 0.0, B = LitN ? BSum / LitN : 0.0;
-	UE_LOG(LogOutlaws, Display, TEXT("OLSHOT lanterncost lantern: mean reach %.1f cm, mean colour %.4f %.4f %.4f over %d lit frames (REQ-LANTERNBOOST: 2200, 0.75 0.645 0.51; was 1100, 0.6)"), Reach, R, G, B, LitN);
-	Check(LitN > 30 && FMath::Abs(Reach - 2200.0) <= 2200.0 * 0.03, FString::Printf(TEXT("the lit lantern's reach about 22 m: %.1f cm"), Reach));
-	Check(LitN > 30 && FMath::Abs(R - 0.75) <= 0.75 * 0.06 && FMath::Abs(G / FMath::Max(R, 1e-6) - 0.86) < 0.005 && FMath::Abs(B / FMath::Max(R, 1e-6) - 0.68) < 0.005,
-		FString::Printf(TEXT("the lit lantern 1.25 times as bright: colour %.4f %.4f %.4f"), R, G, B));
+	// (REQ-LANTERNRANGE: held to the numbers in use, 970 and 1.26, or REQ-LANTERNBOOST's 2200 and 0.75 under -OLOldLantern)
+	const double WantReach = AOutlawsLevelActor::LanternReachNow(), WantR = AOutlawsLevelActor::LanternBrightNow();
+	UE_LOG(LogOutlaws, Display, TEXT("OLSHOT lanterncost lantern: mean reach %.1f cm, mean colour %.4f %.4f %.4f over %d lit frames (wanted %.0f, %.2f %.3f %.3f; REQ-LANTERNRANGE 970, 1.26, -OLOldLantern 2200, 0.75)"),
+		Reach, R, G, B, LitN, WantReach, WantR, WantR * 0.86, WantR * 0.68);
+	Check(LitN > 30 && FMath::Abs(Reach - WantReach) <= WantReach * 0.03, FString::Printf(TEXT("the lit lantern's reach about %.1f m: %.1f cm"), WantReach / 100.0, Reach));
+	Check(LitN > 30 && FMath::Abs(R - WantR) <= WantR * 0.06 && FMath::Abs(G / FMath::Max(R, 1e-6) - 0.86) < 0.005 && FMath::Abs(B / FMath::Max(R, 1e-6) - 0.68) < 0.005,
+		FString::Printf(TEXT("the lit lantern %.2f bright: colour %.4f %.4f %.4f"), WantR, R, G, B));
 	Check(DarkN > 30 && DarkMax <= 0.0, FString::Printf(TEXT("dark while out (the brightest C0 sum %.4f over %d frames)"), DarkMax, DarkN));
 	if (L->bLampOn) L->ToggleLamp();
 	UE_LOG(LogOutlaws, Display, TEXT("OLSHOT lanterncost RESULT %s (%d failed)"), Fails == 0 ? TEXT("ALL PASS") : TEXT("FAIL"), Fails);

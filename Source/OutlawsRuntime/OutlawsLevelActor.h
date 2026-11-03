@@ -1400,9 +1400,17 @@ public:
 	/** The lantern's light for its oil (0..1) at flicker time T: the place (xyz) and reach (w, cm), and the colour; the one
 	 *  formula for this player's own lantern and the other players' (OutFlicker: the flicker it used). */
 	static void LanternLight(const FVector& At, float Oil, float T, FLinearColor& OutPos, FLinearColor& OutCol, float* OutFlicker = nullptr);
-	/** REQ-LANTERNBOOST: the full-oil lantern's reach (cm) and brightness before the flicker (were 1100 and 0.6). */
+	/** REQ-LANTERNBOOST: the full-oil lantern's reach (cm) and brightness before the flicker (were 1100 and 0.6); since
+	 *  REQ-LANTERNRANGE only under -OLOldLantern. */
 	static constexpr float LanternReach = 2200.f;
 	static constexpr float LanternBright = 0.75f;
+	/** REQ-LANTERNRANGE (user 2026-11-03): the original's reach, the exe's depth ramp fitted (out\lanternrange\NOTES.md):
+	 *  9.7 m and 1.26, full bright to half a metre and dark from about 9 m in an unlit sector. */
+	static constexpr float LanternRangeReach = 970.f;
+	static constexpr float LanternRangeBright = 1.26f;
+	/** The reach and brightness in use: REQ-LANTERNRANGE's, or REQ-LANTERNBOOST's under -OLOldLantern. */
+	static float LanternReachNow();
+	static float LanternBrightNow();
 	/** The lantern's light shines here now: where (the held flame, else the chest) and its oil (0..1); false: out, dead, a movie. */
 	bool LanternShining(FVector& OutAt, float& OutOil) const;
 	void TickLampLights(float Dt, bool bMovieOn, class UMaterialParameterCollectionInstance* Mpc);
