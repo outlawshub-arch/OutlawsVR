@@ -70,7 +70,7 @@ void UOutlawsCoop::TickReadyFlipHost(double Now, AOutlawsPlayer* P)
 	else if (RFStep == 10 && Now >= RFAt)
 	{
 		ReadyFlipCheck(P->CoopRowLabel(TEXT("coop:ready")).IsEmpty() && P->CoopRowLabel(EnterRow).IsEmpty(), TEXT("the host's page before its start has no Ready row and no Enter row"));
-		ReadyFlipCheck(P->CoopRowLabel(TEXT("coop:start")) == TEXT("Start"), FString::Printf(TEXT("the host's page has its Start row ('%s')"), *P->CoopRowLabel(TEXT("coop:start"))));
+		ReadyFlipCheck(P->CoopRowLabel(TEXT("coop:start")) == TEXT("Start") || P->CoopRowLabel(TEXT("coop:start")) == TEXT("START GAME"), FString::Printf(TEXT("the host's page has its Start row ('%s')"), *P->CoopRowLabel(TEXT("coop:start"))));
 		RFNote.Reset();
 		TestSayTo(1, TEXT("readyflip"), 1);
 		RFAt = Now + 15.0;

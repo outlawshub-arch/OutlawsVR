@@ -2137,6 +2137,11 @@ void UOutlawsCoop::BuildMenuPage(AOutlawsPlayer* P, const FString& File, Outlaws
 	{
 		// REQ-MPLOBBY / REQ-LOBBYTIDY (user 12 Oct): the co-op host before its start: Start, the level (or Continue) on its own
 		// page, the options, Leave.  Start loads the level behind the lobby; the host lands in it and enters from there.
+		if (!OutlawsLobbyPage::Old())
+		{
+			C->BuildCoopHostPage(Page);              // (REQ-LOBBYREDO: in the lobby's layout, OutlawsCoopLobby.cpp)
+			return;
+		}
 		Page.Title = TEXT("CO-OP LOBBY");
 		Act(TEXT("Start"), TEXT("coop:start"));
 		FString Saved;
@@ -2209,7 +2214,18 @@ void UOutlawsCoop::StatusLines(const UObject* Context, const FString& File, TArr
 		Out.Add(C->Mode == EOutlawsCoopMode::Client ? FString::Printf(TEXT("Connecting to %s %s"), *C->ConnectingTo, *FString::ChrN(Dots + 1, '.'))
 			: !C->JoinError.IsEmpty() ? C->JoinError : FString(TEXT("Type the address the host's lobby shows, then Join")));
 	}
-	else if ((File == TEXT("#cooplobby") || File == TEXT("#coopclient")) && !OutlawsLobbyPage::Old())
+	else if (File == TEXT("#coophostopts") && !OutlawsLobbyPage::Old())
+	{
+		// (REQ-LOBBYREDO P3: the internet address and the router's lines, off the lobby page, on the page that shows or hides it)
+		const FString Shown = C->ShownInternetAddress();
+		if (C->bShowInternet && !Shown.IsEmpty() && !(C->UpnpState == EUpnp::Opened && !C->UpnpShared()))
+		{
+			Out.Add(Shown == TEXT("unknown") ? FString(TEXT("Your internet address:  no answer (is this PC online?)"))
+				: FString::Printf(TEXT("Your internet address:  %s%s"), *Shown, Shown.Contains(TEXT(".")) ? *FString::Printf(TEXT(":%d"), C->ListenPort) : TEXT("")));
+		}
+		C->UpnpLines(Out);
+	}
+	else if ((File == TEXT("#coophost") || File == TEXT("#cooplobby") || File == TEXT("#coopclient")) && !OutlawsLobbyPage::Old())
 	{
 		// (REQ-LOBBYREDO: the new page's state lines, then the host's address at its foot, as drawn)
 		OutlawsLobbyPage::FView V;

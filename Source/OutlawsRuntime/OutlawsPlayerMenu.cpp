@@ -3744,7 +3744,7 @@ void AOutlawsPlayer::DrawFrontCanvas(UCanvas* C, int32 Width, int32 Height)
 				565.f, 468.f + 4.f + 39.f + 3.f * 92.f + 10.f, 0, Col(0xc0, 0xc0, 0xc0), true);
 		}
 	}
-	else if ((File == TEXT("#cooplobby") || File == TEXT("#coopclient")) && !OutlawsLobbyPage::Old())
+	else if ((File == TEXT("#cooplobby") || File == TEXT("#coopclient") || File == TEXT("#coophost")) && !OutlawsLobbyPage::Old())
 	{
 		// REQ-LOBBYREDO (user 3 Nov, OutlawsLobbyPage.h): lobby_main.rml's menu_bg.multiplayer (Multiplayer_Base over the 2560 x
 		// 1440 stage), the title between the art's two flourishes, at most two state lines under them, the PLAYERS panel on the
@@ -4931,7 +4931,7 @@ bool AOutlawsPlayer::MenuPageFits(FString& Said) const
 	if (IsFrontPage())
 	{
 		const FBox2D B = FrontInk;
-		if ((File == TEXT("#cooplobby") || File == TEXT("#coopclient")) && !OutlawsLobbyPage::Old())
+		if ((File == TEXT("#cooplobby") || File == TEXT("#coopclient") || File == TEXT("#coophost")) && !OutlawsLobbyPage::Old())
 		{
 			// (REQ-LOBBYREDO) every text on the parchment as last drawn: clear of the pistol and the red cloth (x 280), of the rifle
 			// and the blue cloth (x 1640; 1500 under y 960), above the help line (y 1015), none under the floor

@@ -2078,6 +2078,8 @@ private:
 	/** REQ-LOBBYREDO: the new page's view (its state lines, the foot, the panel, the items' counts); a probe's made-up one instead
 	 *  while -OLLobbyRedoProbe sets it. */
 	void LobbyView(const FString& File, OutlawsLobbyPage::FView& Out) const;
+	/** The co-op host page (#coophost) in the new layout: START GAME, LEVEL, OPTIONS, QUIT GAME. */
+	void BuildCoopHostPage(OutlawsMenu::FPage& Page);
 	/** REQ-LOBBYREDO: the match's "Waiting for players" line last shown here, taken off while the lobby page is up. */
 	FString WaitingSaid;
 	bool bWaitingHidSaid = false;

@@ -160,6 +160,29 @@ void UOutlawsCoop::LobbyView(const FString& File, OutlawsLobbyPage::FView& V) co
 	}
 }
 
+void UOutlawsCoop::BuildCoopHostPage(OutlawsMenu::FPage& Page)
+{
+	// REQ-LOBBYREDO: the co-op host's own page before its start in the lobby's layout (OutlawsLobbyPage.h): the same four rows
+	// as before (Start, the level on its own page, the co-op options, Leave) as the big items, the friends in the panel
+	using namespace OutlawsMenu;
+	OutlawsLobbyPage::FView V;
+	LobbyView(TEXT("#coophost"), V);
+	Page.Title = V.Title;
+	auto Add = [&Page](EItemKind Kind, const FString& Label, const FString& Name, const FString& Target = FString())
+	{
+		FItem I;
+		I.Kind = Kind;
+		I.Label = Label;
+		I.Name = Name;
+		I.Target = Target;
+		Page.Items.Add(I);
+	};
+	Add(EItemKind::Action, TEXT("START GAME"), TEXT("coop:start"));
+	Add(EItemKind::Action, TEXT("LEVEL: ") + V.Level.ToUpper(), TEXT("coop:level"));
+	Add(EItemKind::Link, TEXT("OPTIONS"), FString(), TEXT("#coophostopts"));
+	Add(EItemKind::Action, TEXT("QUIT GAME"), TEXT("coop:leave"));
+}
+
 void AOutlawsCoopLink::ServerMic_Implementation(bool bOn)
 {
 	if (!Admit(EOLGate::Ready, true)) return;
