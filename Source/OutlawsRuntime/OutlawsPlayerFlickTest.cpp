@@ -10,8 +10,9 @@
 //   with the forearm's roll in it (left hand) and a fast open-shut pair under 0.4 s all count; one shell loaded on the sawed-off
 //   opens and shuts topped up; a chop across the barrel and a throw-fast hand still never break it;
 //   (REQ-FLICKRULES) a flick open on a fully loaded gun and any flick held two-handed are refused (each logged with why); the reload
-//   button held two-handed: the front hand lets go for the cycle and takes the gun again when it shuts (grip held, hand at the forend),
-//   else it stays free (moved away, grip let go); the single-barrel Shotgun breaks too: one shell out, one in, the same rules;
+//   button held two-handed: the front hand lets go for the cycle and takes the gun again when it shuts (grip held, BUG-RELOADGRIP: wherever
+//   the hand went), else it stays free (grip let go; -OLOldReloadGrip: moved away too); the single-barrel Shotgun breaks too: one shell out,
+//   one in, the same rules;
 //   (BUG-RELOADCLINK, REQ-RELOADSLICES) each shotgun's flick and button reloads (both barrels, one, an early shut) play the reload
 //   wave's open slice, a shell slice per shell going in and the shut slice, an early shut cutting the shells off, never the
 //   empty-chamber click; a dry fire empty still clicks (the waves heard: "OLSHOT flick sounds"); (BUG-RELOADPACE) the button
@@ -273,7 +274,8 @@ void AOutlawsPlayer::FlickTestTick(float Dt)
 		Check(bBreakOpen[1] && !TestTwoHand(1) && bRegrip[0], FString::Printf(TEXT("B two-handed: open (%d), the front hand let go (%d)"), bBreakOpen[1] ? 1 : 0, TestTwoHand(1) ? 0 : 1));
 		TestHandStill(1, 1.5f);
 		Check(!bBreakOpen[1] && Mag[1] == 2 && TestTwoHand(1) && !bRegrip[0], FString::Printf(TEXT("B two-handed: shut, %d loaded, the front hand holds the gun again (%d)"), Mag[1], TestTwoHand(1) ? 1 : 0));
-		// the hand moved away during the cycle: it stays free
+		// the hand moved away during the cycle, the grip held: on the gun again at the shut (BUG-RELOADGRIP; -OLOldReloadGrip: it stays free)
+		const bool bOldReloadGrip = OLFlags::Param(TEXT("OLOldReloadGrip"));
 		TestBreakArm(1, 3, 0, 10);
 		TestSetTwoHand(1, true);
 		TestFrontHandAt(1, 0.f);
@@ -281,7 +283,8 @@ void AOutlawsPlayer::FlickTestTick(float Dt)
 		TestHandStill(1, 0.05f);
 		TestFrontHandAt(1, 40.f);
 		TestHandStill(1, 1.5f);
-		Check(!bBreakOpen[1] && !TestTwoHand(1) && !bRegrip[0], FString::Printf(TEXT("B two-handed, the front hand moved 40 cm away: shut, the hand stays free (%d)"), TestTwoHand(1) ? 0 : 1));
+		Check(!bBreakOpen[1] && TestTwoHand(1) == !bOldReloadGrip && !bRegrip[0], FString::Printf(TEXT("B two-handed, the front hand moved 40 cm away: shut, the hand %s (%d)"),
+			bOldReloadGrip ? TEXT("stays free") : TEXT("holds the gun again"), TestTwoHand(1) ? 1 : 0));
 		// the grip let go during the cycle: it stays free
 		TestBreakArm(1, 3, 0, 10);
 		TestSetTwoHand(1, true);

@@ -621,7 +621,9 @@ private:
 	FVector ForendSpot(int32 Wi) const;
 	float StockBlend[2] = { 0.f, 0.f };      // 0 the hands alone .. 1 laid along the aiming eye (the virtual stock)
 	FBox GunBounds[2] = { FBox(ForceInit), FBox(ForceInit) };
-	bool NearForegrip(int32 Hand) const;
+	/** This hand may take the other hand's long gun by the forend, and is within a palm's reach of it (bAnyDistance: wherever it is,
+	 *  BUG-RELOADGRIP's hand that never let go of the gun through a reload). */
+	bool NearForegrip(int32 Hand, bool bAnyDistance = false) const;
 	/** This (empty) hand is close enough to the other hand's shovel shaft to take it two-handed. */
 	bool NearToolShaft(int32 Hand) const;
 	FVector SupportAnchor[2] = { FVector::ZeroVector, FVector::ZeroVector };   // where the front hand took this hand's long gun (model space)

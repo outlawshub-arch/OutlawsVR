@@ -4242,7 +4242,7 @@ bool AOutlawsPlayer::NearToolShaft(int32 Hand) const
 	return FMath::PointDistToSegment(GripOf(Hand)->GetComponentLocation(), A, B) < 14.0;
 }
 
-bool AOutlawsPlayer::NearForegrip(int32 Hand) const
+bool AOutlawsPlayer::NearForegrip(int32 Hand, bool bAnyDistance) const
 {
 	// the other hand's long gun: a stretch under the barrel, 30 to 62 percent of the way back from the
 	// muzzle (the forend, the pump, the handguard), within a palm's reach
@@ -4255,6 +4255,7 @@ bool AOutlawsPlayer::NearForegrip(int32 Hand) const
 	{
 		return false;
 	}
+	if (bAnyDistance) return true;
 	const FWeaponDef& W = GWeapons[Wi];
 	const FVector Bore = W.BoreFix.Quaternion().Inverse().RotateVector(FVector::ForwardVector);
 	const double Len = FMath::Max(10.0, W.Muzzle.X);
@@ -8484,7 +8485,12 @@ void AOutlawsPlayer::RegripAfterBreak(int32 Hand)
 	const float G = Axis(O == 0 ? TEXT("OLVR_LeftGrip") : TEXT("OLVR_RightGrip"));
 	const TCHAR* Which = O == 0 ? TEXT("left") : TEXT("right");
 	if (bSupport[O]) return;                     // (it took the forend again by itself during the cycle)
-	if (G > 0.6f && NearForegrip(O))
+	// (BUG-RELOADGRIP, user 2026-11-04) a hand whose grip was never let go stays gripped through the reload, wherever it went while the
+	// gun was open: the fist is drawn snapped to the forend and the gun lies through the hand, as in any two-handed hold, which no distance
+	// breaks, and the grip has that hold's slack (under 0.4 is a real let-go, which cleared bRegrip at once).
+	// -OLOldReloadGrip: a full squeeze within reach of the forend at the shut, else free
+	static const bool bOldReloadGrip = OLFlags::Param(TEXT("OLOldReloadGrip"));
+	if (G >= (bOldReloadGrip ? 0.6f : 0.4f) && NearForegrip(O, !bOldReloadGrip))
 	{
 		bSupport[O] = true;
 		bGripArmed[O] = false;
