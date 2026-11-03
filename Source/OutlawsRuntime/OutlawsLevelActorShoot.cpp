@@ -1241,8 +1241,9 @@ void AOutlawsLevelActor::Explode(const FVector& Where)
 		}
 		// BUG-BLASTWALLS (CWWALL2 lane, 1 Nov: civlwar1's three cannons and the mill's six sewer gates never took a stick):
 		// the walls in reach are told too, as the original's two passes do [EXE 0x1400cf177..0x1400cf1bf]: 0x40 within
-		// WALL_RADIUS, then 0x8000 within RADIUS, each wall whose two ends lie in reach (BlastWallEvents).  A co-op client's
-		// go to the host, as the sectors' do.  -OLOldBlastWalls: the sectors alone
+		// WALL_RADIUS, then 0x8000 within RADIUS, each wall whose two ends lie in reach (BlastWallEvents): the gates open to
+		// a stick; the cannons' one long sector is never in reach, in the original as here.  A co-op client's go to the
+		// host, as the sectors' do.  -OLOldBlastWalls: the sectors alone
 		if (Own && !OLFlags::Param(TEXT("OLOldBlastWalls")))
 		{
 			const FVector At = FOutlawsGeometry::ToOutlaws(Where);

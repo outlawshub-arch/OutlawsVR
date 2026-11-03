@@ -167,7 +167,7 @@ void FOutlawsInfRuntime::Init(const FOutlawsLevel& Level, const FString& InfText
 					T.Mask &= ~OutlawsInf::EvShoot;
 					// (BUG-BLASTWALLS) nor is a blast (the exe's area event names no one, [EXE 0x1402de317]): a blast's wall
 					// events (BlastWallEvents: 64 and 0x8000, a mirror's 128 and 0x10000) reach only the lines that list
-					// them (civlwar1's cannons 64, the mill's sewer gates 368), never every switch in reach
+					// them (the mill's sewer gates and civlwar1's cannons, 368), never every switch in reach
 					if (It.bLine) T.Mask &= ~(OutlawsInf::EvExplosion | 0x80u | 0x8000u | 0x10000u);
 				}
 				T.bOneShot = C.Class == EOutlawsInfClass::TriggerSingle || C.RawClass.ToUpper().Contains(TEXT("SWITCH1"));
