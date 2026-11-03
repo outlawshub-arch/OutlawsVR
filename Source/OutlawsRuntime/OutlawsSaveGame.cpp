@@ -421,8 +421,10 @@ bool AOutlawsLevelActor::BuildSaveText(AOutlawsPlayer* P, FString& OutText, int3
 		const AActor* A = Pk.Actor.Get();
 		if (!A) continue;
 		// the level's own sticks of dynamite (no serial): the build makes them again and the dynamite list below keeps the
-		// ones gone; saved as dropped they came back twice, a second stick that was no pickup (10 Oct: 15 at a rejoin)
-		if (Pk.Serial < 0 && IsDynamitePickup(A)) continue;
+		// ones gone; saved as dropped they came back twice, a second stick that was no pickup (10 Oct: 15 at a rejoin).
+		// (BUG-MPTNTPICK) a match's stick, numbered from 100000 as a thing made in play, is no build's: it goes as dropped, or a
+		// client joining after the first wave never has it
+		if (Pk.Serial < 0 && Pk.CoopId < 100000 && IsDynamitePickup(A)) continue;
 		const TSharedRef<FJsonObject> J = MakeShared<FJsonObject>();
 		J->SetNumberField(TEXT("serial"), Pk.Serial);
 		J->SetStringField(TEXT("ground"), Pk.Ground);
@@ -801,7 +803,7 @@ void AOutlawsLevelActor::ApplyLoad(const FJsonObject& O, bool bWorldOnly)
 			bSeen &= !bWorldOnly;
 			if (Serial >= 0 && bSeen) SeenSerials.Add(Serial);
 			if (Serial >= 0) Keep.Add(Serial, GetVec(*J));
-			else if (IsStickGround(J->GetStringField(TEXT("ground"))))
+			else if (double StickId = -1.0; IsStickGround(J->GetStringField(TEXT("ground"))) && !(J->TryGetNumberField(TEXT("coop_id"), StickId) && StickId >= 100000.0))     // (BUG-MPTNTPICK: not a match's)
 			{
 				++LevelSticks;      // (an older save's copy of the level's own stick: the build has made it already)
 			}
@@ -836,6 +838,7 @@ void AOutlawsLevelActor::ApplyLoad(const FJsonObject& O, bool bWorldOnly)
 		Pickups.RemoveAt(i);
 	}
 	if (NotInSave > 0) UE_LOG(LogOutlaws, Log, TEXT("OLRT save put back: %d of the level's own pickups (serials from %d) are not in this older save: left as built"), NotInSave, int32(SavedSerials));
+	const int32 BuiltSticks = Dynamite.Num();       // (BUG-MPTNTPICK: the dynamite list below numbers the host's, its match sticks after these in its own order)
 	for (int32 d = 0; d < Dropped.Num(); ++d)
 	{
 		if (bDeferDrops)
@@ -884,7 +887,7 @@ void AOutlawsLevelActor::ApplyLoad(const FJsonObject& O, bool bWorldOnly)
 		for (const TSharedPtr<FJsonValue>& V : *A)
 		{
 			const int32 i = int32(V->AsNumber());
-			if (!Dynamite.IsValidIndex(i)) continue;
+			if (!Dynamite.IsValidIndex(i) || i >= BuiltSticks) continue;
 			Dynamite[i].bGone = true;
 			if (UProceduralMeshComponent* M = Dynamite[i].Mesh.Get())
 			{

@@ -292,9 +292,27 @@ AActor* AOutlawsLevelActor::MakeDynamiteActor(UProceduralMeshComponent* From, UP
 	return A;
 }
 
+void AOutlawsLevelActor::AddStickPickup(AActor* A, const FString& Ground, const TMap<FString, FString>& ItmData)
+{
+	FPickup P;
+	P.Actor = A;
+	P.Ground = Ground.ToLower();
+	FPickup::FEntry E;
+	E.Item = FPaths::GetBaseFilename(ItmData.FindRef(TEXT("PICKUP"))).ToLower();
+	if (E.Item.IsEmpty()) E.Item = TEXT("idynam");
+	E.Count = ItmData.Contains(TEXT("COUNT")) ? FMath::Max(1, FCString::Atoi(*ItmData[TEXT("COUNT")])) : 1;
+	E.Message = ItmData.Contains(TEXT("PICKUP_MSG")) ? FCString::Atoi(*ItmData[TEXT("PICKUP_MSG")]) : -1;
+	E.Class = ItmData.FindRef(TEXT("ITEM_CLASS")).ToLower();
+	P.Item = E.Item;
+	P.Message = E.Message;
+	P.Entries.Add(E);
+	P.Serial = -1;                   // (a save keeps it by the dynamite list)
+	Pickups.Add(P);
+}
+
 void AOutlawsLevelActor::AddLooseDynamite(AActor* A)
 {
-	if (!A) return;
+	if (!A || IsDynamitePickup(A)) return;      // (BUG-MPTNTPICK: a match's stick is one from the start, SpawnGroundItem)
 	UProceduralMeshComponent* M = Cast<UProceduralMeshComponent>(A->GetRootComponent());
 	if (M)
 	{
@@ -1990,20 +2008,7 @@ void AOutlawsLevelActor::Build()
 					D.Mesh = DM;
 					D.Where = DM->GetComponentLocation();
 					Dynamite.Add(D);
-					FPickup P;
-					P.Actor = DA;
-					P.Ground = O.Name.ToLower();
-					FPickup::FEntry E;
-					E.Item = FPaths::GetBaseFilename(ItmData.FindRef(TEXT("PICKUP"))).ToLower();
-					if (E.Item.IsEmpty()) E.Item = TEXT("idynam");
-					E.Count = ItmData.Contains(TEXT("COUNT")) ? FMath::Max(1, FCString::Atoi(*ItmData[TEXT("COUNT")])) : 1;
-					E.Message = ItmData.Contains(TEXT("PICKUP_MSG")) ? FCString::Atoi(*ItmData[TEXT("PICKUP_MSG")]) : -1;
-					E.Class = ItmData.FindRef(TEXT("ITEM_CLASS")).ToLower();
-					P.Item = E.Item;
-					P.Message = E.Message;
-					P.Entries.Add(E);
-					P.Serial = -1;                   // (a save keeps it by the dynamite list)
-					Pickups.Add(P);
+					AddStickPickup(DA, O.Name, ItmData);
 					++NumPickups;
 				}
 			}

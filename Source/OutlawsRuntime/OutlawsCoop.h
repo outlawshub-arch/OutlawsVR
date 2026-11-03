@@ -1731,6 +1731,9 @@ private:
 	// ---- REQ-MPLETHAL's probe (-OLMpLethalProbe on a host and its client; OutlawsMpLethalProbe.cpp) ----
 	void TickHostLethalTest(double Now, AOutlawsLevelActor* L, AOutlawsPlayer* P);
 	void OnLethalTestStep(const FString& Step, int32 Arg, AOutlawsLevelActor* L, AOutlawsPlayer* P);
+	// ---- BUG-MPTNTPICK's probe (-OLMpTntPickProbe on a host and its client; OutlawsMpTntPickProbe.cpp) ----
+	void TickHostTntPickTest(double Now, AOutlawsLevelActor* L, AOutlawsPlayer* P);
+	void OnTntPickTestStep(const FString& Step, int32 Arg, AOutlawsLevelActor* L, AOutlawsPlayer* P);
 	// ---- REQ-KILLFEED (OutlawsCoopKillFeed.cpp) ----
 	/** The host: a death's kill line to every machine (and this one). */
 	void SayKill(int32 Killer, int32 Victim, EOutlawsObit Kind);

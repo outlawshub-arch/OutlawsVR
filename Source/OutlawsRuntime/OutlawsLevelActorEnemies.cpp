@@ -2858,7 +2858,27 @@ AActor* AOutlawsLevelActor::SpawnGroundItem(const FString& Name, const FVector& 
 		AddSections(M, Sections, false, WorldMaterial, WorldMaskedMaterial, Tris);
 		A->SetActorLocationAndRotation(FeetPos + FVector(0.0, 0.0, 2.0), FRotator(0.0, FMath::FRandRange(0.f, 360.f), 0.0));
 		SpawnedActors.Add(A);
-		if (!RegisterPickup(A, Name, Itm) && !IsStickGround(Name))       // (a stick is no ground pickup: its callers make it loose dynamite)
+		bool bPickup = RegisterPickup(A, Name, Itm);
+		if (!bPickup && IsStickGround(Name) && UOutlawsCoop::IsMatchActive(this))
+		{
+			// (BUG-MPTNTPICK, the user's stream, 3 Nov: in a match the TNT boxes are picked up, the single sticks never, and nothing
+			// refused in the log) a match's sticks are its NDYNAM1 generators' (GENERATE GDYNAM.ITM), made here, and gdynam's FUNC is
+			// shot_ProjectileDispatch: RegisterPickup turns it down, so the stick lay on the host alone, a pickup for nobody, told
+			// to no client, its generator never timing.  In a match it is what the level build makes of a stick: a pickup of its own
+			// and loose dynamite, listed before the hook below so every machine numbers and makes it.  Outside a match, as ever.
+			// -OLOldMpTntPick: as it was
+			static const bool bOldMpTntPick = OLFlags::Param(TEXT("OLOldMpTntPick"));
+			if (!bOldMpTntPick)
+			{
+				FString StickFunc;
+				TMap<FString, FString> StickData;
+				OutlawsFormats::ParseItm(Itm, StickFunc, StickData);
+				AddStickPickup(A, Name, StickData);
+				AddLooseDynamite(A);
+				bPickup = true;
+			}
+		}
+		if (!bPickup && !IsStickGround(Name))       // (a stick is no ground pickup: its callers make it loose dynamite)
 		{
 			UE_LOG(LogOutlaws, Log, TEXT("OLRT drop %s is not a pickup"), *Name);
 		}

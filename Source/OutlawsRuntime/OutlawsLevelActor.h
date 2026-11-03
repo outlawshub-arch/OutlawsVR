@@ -1268,6 +1268,9 @@ public:
 	/** A stick come to rest on the ground (the player's, thrown or dropped unlit): one of the level's sticks from now on,
 	 *  set off by a blast near it or a shot (user 2026-10-01: a lit one thrown into a pile of them set none off). */
 	void AddLooseDynamite(AActor* A);
+	/** A stick on the ground as a pickup of its own, what its ITM gives (gdynam.itm is no Inv_GroundObject: RegisterPickup turns
+	 *  it down): the level build's sticks, and a match's (BUG-MPTNTPICK, SpawnGroundItem). */
+	void AddStickPickup(AActor* A, const FString& Ground, const TMap<FString, FString>& ItmData);
 	void UseUpItem(int32 UseId);                                     // an INF lock spent one item with that USE_ID
 
 	UFUNCTION(BlueprintCallable, Category = "Outlaws|Player")

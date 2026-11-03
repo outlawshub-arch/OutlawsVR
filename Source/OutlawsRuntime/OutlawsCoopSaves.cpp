@@ -491,9 +491,11 @@ void UOutlawsCoop::TickSaves(double Now)
 			{
 				const TSharedPtr<FJsonObject> J = V->AsObject();
 				if (!J.IsValid() || int32(J->GetNumberField(TEXT("serial"))) >= 0) continue;
-				if (AOutlawsLevelActor::IsStickGround(J->GetStringField(TEXT("ground")))) continue;     // (not made again: ApplyLoad)
 				double Id = -1.0;
-				HostIds.Add(J->TryGetNumberField(TEXT("coop_id"), Id) ? int32(Id) : -1);
+				const bool bNumbered = J->TryGetNumberField(TEXT("coop_id"), Id);
+				// (not made again: ApplyLoad; BUG-MPTNTPICK: a match's stick, from 100000, is, and keeps its place in the order)
+				if (AOutlawsLevelActor::IsStickGround(J->GetStringField(TEXT("ground"))) && Id < 100000.0) continue;
+				HostIds.Add(bNumbered ? int32(Id) : -1);
 			}
 		}
 		int32 Renumbered = 0;
