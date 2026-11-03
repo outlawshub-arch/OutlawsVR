@@ -63,6 +63,38 @@ by Alexei Novikov and David Lovejoy
 
 
 
+# (REQ-NATIVEMAPS, user 3 Nov) the community maps that ship with the game (Tools\NativeMaps), one line a map (a long one goes
+# on in the lines under it); the same lines are in the planner's nativemaps\CREDIT_LINES.md for the player's manual.
+~Community maps
+Beer for my Horses: The 4 Musketeers
+(Outlaw_DR, OGB_Hooter, WAW_Molycoat, Dog_Holliday),
+idea by Palerider_DR
+Dool: OGB_Hooter
+Dookes: T4H_Dingle
+Armadillo: T4H_Dingle
+Barranca: WAW_Molycoat
+Longhorn Palace: Dog_Holliday
+ColdWar: T4H_WaRRioR
+Nuketown: SlyFrawst
+Budville: WAW_Last1Stndin,
+with help from WAW_Molycoat
+Arizona Jim's Desert Oasis: Runaway_Jim,
+textures by TJG_Cutter
+Abandoned2s: Slaters_dog
+Civil War Plantation: CaptainPicky,
+map skeleton by WAW_Last1Stndin
+3 Ways to Cross: SBD_Truffle
+Frostbite Acres: The Lawmaker Posse
+(WAW_Molycoat, T4H_WaRRioR, T4H_Dingle, SlySticky,
+OGB_Hooter), with Dog_Holliday and Jordan French
+Dead By Dawn: ZZZ-Sleepy
+Zeke's Cabins: WAW_Molycoat
+Doc Brian's TNT Warehouse: WAW_Molycoat
+Bankrupt: Dog_Holliday
+Isla Pinar: T4H_Dingle
+
+
+
 ~Played from your own copy of
 Outlaws Remastered
 
