@@ -248,6 +248,16 @@ namespace
 	TMap<int32, FTrapWatch> GTrapWatch;                      // each bot's stucks within 6 m of one place: shut in
 	TMap<int32, double> GNoWaySince;                         // since when each bot has had no way through the sectors
 	int32 GBotsFreed = 0;
+	// ---- BUG-BOTVANISH: no bot put at a spawn point before a person's eyes, nor for the seconds a fight had it ----
+	// (user 3 Nov: on the Quest a bot vanished mid-fight, no death, no frag; on a level with no INF the way-finding found no
+	// way anywhere, RouteLevel.)  The clocks of the shut-in rescue count its own drive only: a fight's seconds between drive
+	// ticks (the bad guys' combat has it) are no stall and no "8 s together" with no way.  A rescue due while someone has the
+	// bot in clear sight waits until nobody does.  -OLOldBotVanish: as before.
+	bool OldVanish() { static const bool b = OLFlags::Param(TEXT("OLOldBotVanish")); return b; }
+	constexpr double VanishSightCm = 6000.0;                 // (60 m: past that a bot's sprite is a few pixels in the headset)
+	TMap<int32, double> GBotDriveAt;                         // each bot's last drive tick on its way (BotDrive's route part)
+	int32 GBotsFreeHeld = 0;                                 // (the probe: rescues held while someone saw the bot)
+	TMap<int32, double> GFreeHeldLogAt;                      // (the log: once every 5 s a bot)
 
 	int32 GBotTeamRefused = 0, GBotTeamHits = 0;             // (the test, a team class: a bot's shot at a teammate turned away; a teammate's hit on a bot)
 	int32 GWalkFail[4] = {};                                 // (the way points' log: a step too high, a drop, something in the way, no ground)
@@ -440,6 +450,15 @@ bool UOutlawsCoop::IsBot(int32 Who) const
 {
 	return Bots.ContainsByPredicate([Who](const FBot& B) { return B.Who == Who; });
 }
+
+void UOutlawsCoop::DebugBotViews(TArray<FBotProbeView>& Out) const
+{
+	Out.Reset();
+	for (const FBot& B : Bots) Out.Add({ B.Who, B.Name, B.Brain, B.bDead, B.Routes, B.RouteFails, B.Stucks });
+}
+
+int32 UOutlawsCoop::DebugBotsFreed() { return GBotsFreed; }
+int32 UOutlawsCoop::DebugBotsFreeHeld() { return GBotsFreeHeld; }
 
 int32 UOutlawsCoop::HumanCount() const
 {
@@ -1495,10 +1514,16 @@ void UOutlawsCoop::BotDrive(FBot& B, AOutlawsLevelActor* L, double Now)
 		}
 		Step = *Wp;
 	}
+	// (BUG-BOTVANISH) over a second since its last drive tick here: a fight had it (the bad guys' combat), or the level is new
+	double& DriveAt = GBotDriveAt.FindOrAdd(B.Who);
+	const double DriveGap = DriveAt > 0.0 ? Now - DriveAt : 0.0;
+	DriveAt = Now;
+	const bool bAfterGap = !OldVanish() && DriveGap > 1.0;
 	// no way through the sectors for 8 s together (fallen into a pit it cannot climb out of, shut in a room): freed below
 	bool bFree = false;
 	{
 		double& NoWay = GNoWaySince.FindOrAdd(B.Who);
+		if (bAfterGap) NoWay = 0.0;                    // (BUG-BOTVANISH: together, on its own drive; before, a fight's seconds counted)
 		if (bRouted) NoWay = 0.0;
 		else if (NoWay == 0.0) NoWay = Now;
 		else if (Now - NoWay > 8.0)
@@ -1526,6 +1551,9 @@ void UOutlawsCoop::BotDrive(FBot& B, AOutlawsLevelActor* L, double Now)
 		}
 	}
 	// stuck: no nearer by the way and hardly moved for 4 s: a step aside, the way made afresh; three in a row, a far place
+	// (BUG-BOTVANISH: the clock held over a fight's seconds, as BOTSTUCK holds a hurt bot's: the first drive tick after a fight
+	// counted a stuck, and five of those in 30 s put it at a spawn point)
+	if (bAfterGap && !Hr.bActive) B.ProgressAt = FMath::Min(Now, B.ProgressAt + (DriveGap - 0.25));
 	const double Left = bRouted ? B.RouteLen : FVector::Dist(Feet, B.Dest);
 	if (Left < B.ProgressDist - 150.0 || FVector::Dist2D(Feet, B.ProgressFeet) > 400.0)
 	{
@@ -1615,6 +1643,40 @@ void UOutlawsCoop::BotDrive(FBot& B, AOutlawsLevelActor* L, double Now)
 		FTrapWatch& T = GTrapWatch.FindOrAdd(B.Who);
 		if (T.Since == 0.0 || Now - T.Since > 30.0 || FVector::Dist2D(T.Feet, Feet) > 600.0) { T.Since = Now; T.Feet = Feet; T.Stucks = 0; }
 		if (++T.Stucks >= 5) bFree = true;
+	}
+	if (bFree && !OldVanish())
+	{
+		// (BUG-BOTVANISH) never before a person's eyes: a human within 60 m with a clear line from the eyes to its body (one
+		// fighting it in a pit it cannot climb out of) holds it where it is; tried again in a second, freed once nobody sees it
+		const FVector Body = Feet + FVector(0.0, 0.0, Half);
+		FCollisionQueryParams SightQ(SCENE_QUERY_STAT(OutlawsBotFreeSight), false, E);
+		if (AActor* Pup = PuppetOf(B.Who)) SightQ.AddIgnoredActor(Pup);
+		if (const APlayerController* PC = W->GetFirstPlayerController()) SightQ.AddIgnoredActor(PC->GetPawn());
+		int32 Seer = -1;
+		double SeerCm = 0.0;
+		for (int32 k = 0; k < MaxPlayers && Seer < 0; ++k)
+		{
+			FVector HF;
+			if (k == B.Who || IsBot(k) || !PlayerFeetOf(k, HF)) continue;
+			const FVector Eye = HF + FVector(0.0, 0.0, 160.0);
+			if (FVector::Dist(Eye, Body) > VanishSightCm) continue;
+			FCollisionQueryParams Q = SightQ;
+			if (AActor* Own = PuppetOf(k)) Q.AddIgnoredActor(Own);
+			FHitResult Hit;
+			if (!W->LineTraceSingleByChannel(Hit, Eye, Body, ECC_Visibility, Q)) { Seer = k; SeerCm = FVector::Dist(Eye, Body); }
+		}
+		if (Seer >= 0)
+		{
+			bFree = false;
+			++GBotsFreeHeld;
+			GNoWaySince.FindOrAdd(B.Who) = Now - 7.0;
+			double& LogAt = GFreeHeldLogAt.FindOrAdd(B.Who);
+			if (Now - LogAt > 5.0)
+			{
+				LogAt = Now;
+				UE_LOG(LogOutlawsAI, Log, TEXT("OLBOT %s is shut in at %s: held there while the %s sees it (%.0f m)"), *B.Name, *Feet.ToCompactString(), WhoWord(Seer), SeerCm / 100.0);
+			}
+		}
 	}
 	if (bFree)
 	{
@@ -2448,8 +2510,8 @@ void UOutlawsCoop::TickBotTest(double Now, AOutlawsLevelActor* L, AOutlawsPlayer
 		{
 			int32 Stucks = 0;
 			for (const FBot& Bt : Bots) Stucks += Bt.Stucks;
-			UE_LOG(LogOutlawsAI, Log, TEXT("OLBOT test stuck: %d stucks, %d shut in and put at a spawn point; hurt: %d health passed by (no body way), %d places given up, %d break-offs ended%s"),
-				Stucks, GBotsFreed, GHurtBlocked, GHurtGiveUps, GHurtEnded, OldStuck() ? TEXT(" (-OLBotOldStuck)") : TEXT(""));
+			UE_LOG(LogOutlawsAI, Log, TEXT("OLBOT test stuck: %d stucks, %d shut in and put at a spawn point (%d held while seen); hurt: %d health passed by (no body way), %d places given up, %d break-offs ended%s"),
+				Stucks, GBotsFreed, GBotsFreeHeld, GHurtBlocked, GHurtGiveUps, GHurtEnded, OldStuck() ? TEXT(" (-OLBotOldStuck)") : TEXT(""));
 		}
 		// (20 runs: 97 % headed, 48 % healed within 15 s; 9 % and 3 % with -OLBotOldHurt)
 		if (!OldHurt() && GHurtReach >= 3) Check(GHurtHeaded >= GHurtReach * 0.6, FString::Printf(TEXT("the hurt bots headed for health in reach %d of %d times (%.0f %%, want 60 %%)"), GHurtHeaded, GHurtReach, 100.0 * GHurtHeaded / GHurtReach));

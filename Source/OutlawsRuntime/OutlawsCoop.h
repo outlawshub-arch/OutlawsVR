@@ -1842,6 +1842,12 @@ public:
 	static uint32 BlastStruckMask;
 	/** Another player is this bot's opponent: not itself, and in a team class not on its team. */
 	bool BotFoe(int32 Bot, int32 Other) const;
+	/** (tests, BUG-BOTVANISH) the bots as -OLBotVanishProbe watches them: player number, name, brain (unseen), dead or not;
+	 *  and the shut-in rescues so far: put at a spawn point alive, and held while someone saw the bot. */
+	struct FBotProbeView { int32 Who = -1; FString Name; TWeakObjectPtr<AOutlawsEnemy> Brain; bool bDead = false; int32 Routes = 0, RouteFails = 0, Stucks = 0; };
+	void DebugBotViews(TArray<FBotProbeView>& Out) const;
+	static int32 DebugBotsFreed();
+	static int32 DebugBotsFreeHeld();
 private:
 	// -OLCoopTest=bots (OutlawsCoopBots.cpp): the host with bots for two minutes; a client joining sees and fights them
 	void TickBotTest(double Now, AOutlawsLevelActor* L, AOutlawsPlayer* P);

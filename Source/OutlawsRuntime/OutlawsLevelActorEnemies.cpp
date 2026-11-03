@@ -3615,6 +3615,18 @@ namespace
 	}
 }
 
+const FOutlawsLevel* AOutlawsLevelActor::RouteLevel() const
+{
+	// BUG-BOTVANISH (user 3 Nov, on the Quest: "a bot vanishes into thin air mid-fight", every match with bots; Orleans the
+	// most): a level with no INF (orleans, wilderns, hargrove, thudtowr, mltsimms, lilbatl: six of the stock DM maps) has no
+	// live copy, so its way-finding said "no level", no bot had a way anywhere, and 8 s into each hunt BotDrive took it for
+	// shut in and put it at a spawn point, alive (the Quest's log of 2 Nov: 116 of its 121 such moves on wilderns and
+	// hargrove).  There the level as authored: nothing in it moves.  -OLOldBotVanish: as before.
+	if (Inf) return &Inf->Live;
+	static const bool bOld = OLFlags::Param(TEXT("OLOldBotVanish"));
+	return bOld ? nullptr : LevelData.Get();
+}
+
 bool AOutlawsLevelActor::PathRoute(const FVector& FromFeet, const FVector& ToFeet, double MaxStepU, double HeightU, double MarginU, TArray<FVector>& OutPoints, double& OutLenCm, double MaxDropU) const
 {
 	// REQ-MPBOTS: the whole way through the level's sectors, shortest first (Dijkstra over their openings: an adjoin or a
@@ -3624,8 +3636,9 @@ bool AOutlawsLevelActor::PathRoute(const FVector& FromFeet, const FVector& ToFee
 	// The points are those crossings, then ToFeet.
 	OutPoints.Reset();
 	OutLenCm = 0.0;
-	if (!Inf) return false;
-	const FOutlawsLevel& Lv = Inf->Live;
+	const FOutlawsLevel* RouteLv = RouteLevel();
+	if (!RouteLv) return false;
+	const FOutlawsLevel& Lv = *RouteLv;
 	const double U = FOutlawsGeometry::UnitsToCm;
 	auto At = [&](const FVector& P) { return Lv.SectorAt(FOutlawsGeometry::ToOutlaws(P, 0.2)); };
 	const FOutlawsSector* A = At(FromFeet);
@@ -3749,8 +3762,9 @@ bool AOutlawsLevelActor::PathRoute(const FVector& FromFeet, const FVector& ToFee
 
 bool AOutlawsLevelActor::PathReachPoint(const FVector& Thing, double ReachCm, double ReachUpCm, double HeightU, FVector& OutFeet) const
 {
-	if (!Inf) return false;
-	const FOutlawsLevel& Lv = Inf->Live;
+	const FOutlawsLevel* RouteLv = RouteLevel();     // (BUG-BOTVANISH: a level with no INF too)
+	if (!RouteLv) return false;
+	const FOutlawsLevel& Lv = *RouteLv;
 	const double U = FOutlawsGeometry::UnitsToCm;
 	const FOutlawsSector* B = Lv.SectorAt(FOutlawsGeometry::ToOutlaws(Thing, 0.2));
 	if (!B) return false;
@@ -3793,8 +3807,9 @@ bool AOutlawsLevelActor::PathReachPoint(const FVector& Thing, double ReachCm, do
 
 FString AOutlawsLevelActor::PathRouteWhy(const FVector& FromFeet, const FVector& ToFeet, double MaxStepU, double HeightU, double MaxDropU) const
 {
-	if (!Inf) return TEXT("no level");
-	const FOutlawsLevel& Lv = Inf->Live;
+	const FOutlawsLevel* RouteLv = RouteLevel();     // (BUG-BOTVANISH: a level with no INF too)
+	if (!RouteLv) return TEXT("no level");
+	const FOutlawsLevel& Lv = *RouteLv;
 	const double U = FOutlawsGeometry::UnitsToCm;
 	auto At = [&](const FVector& P) { return Lv.SectorAt(FOutlawsGeometry::ToOutlaws(P, 0.2)); };
 	const FOutlawsSector* A = At(FromFeet);

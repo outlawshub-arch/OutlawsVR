@@ -1206,6 +1206,9 @@ public:
 	 *  MarginU in from its opening's ends) then ToFeet, and the way's length.  False: no way (or off the map).
 	 *  BUG-BOTPICKUP: MaxDropU (above 0) the deepest drop the body walks off; a glass pane (SHATTER) shut like no-pass. */
 	bool PathRoute(const FVector& FromFeet, const FVector& ToFeet, double MaxStepU, double HeightU, double MarginU, TArray<FVector>& OutPoints, double& OutLenCm, double MaxDropU = 0.0) const;
+	/** BUG-BOTVANISH: the level PathRoute, PathReachPoint and PathRouteWhy find their way through: the INF's live copy, or on a
+	 *  level with no INF the level as authored (nothing in it moves); null with -OLOldBotVanish there (no way anywhere, as before). */
+	const class FOutlawsLevel* RouteLevel() const;
 	/** BUG-BOTPICKUP: where a body stands to reach a thing in a sector it cannot walk into (under town_2p's bar, on a ledge
 	 *  a step too high): just over an opening of the thing's sector, on a floor a body stands on, the thing within ReachCm
 	 *  across and ReachUpCm up or down from there.  The nearest such place; false when there is none. */
