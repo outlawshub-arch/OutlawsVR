@@ -15,6 +15,8 @@
 #include "OutlawsSpriteActor.h"
 #include "OutlawsBoxHand.h"
 #include "OutlawsGeometry.h"
+#include "OutlawsEnemy.h"
+#include "OutlawsThrowArc.h"
 #include "ProceduralMeshComponent.h"
 #include "Components/CapsuleComponent.h"
 #include "Camera/CameraComponent.h"
@@ -210,6 +212,22 @@ void UOutlawsCoop::NoteThrow(AOutlawsLevelActor* L, int32 Kind, const FVector& P
 	}
 }
 
+void UOutlawsCoop::NoteEnemyThrow(const AOutlawsEnemy* E, int32 Kind, const FVector& Pos, const FVector& Vel, float Fuse)
+{
+	// (BUG-DYNTHROW phase 2, user 3 Nov: the client saw the blast and heard it, never the stick) the host's bad guy's throw goes
+	// out by the players' own message, From -1 - his number: no player's, so it is never passed on as one's (OnThrow)
+	UOutlawsCoop* C = E ? E->Coop.Get() : nullptr;
+	if (!C || !C->IsHost() || !C->bLevelBuilt || E->CoopIndex < 0) return;
+	++C->VerbThrowsSent;
+	if (C->VerbLogLines++ < MaxVerbLogLines)
+	{
+		UE_LOG(LogOutlawsCoop, Log, TEXT("OLCOOP throw: enemy %d (%s) throws %s from %s at %.0f cm/s, told the clients"), E->CoopIndex, *E->GetOutlawsName(), ThrowName(Kind), *Pos.ToCompactString(), Vel.Size());
+	}
+	const int32 Epoch = C->LevelEpoch();
+	const int32 From = -1 - E->CoopIndex;
+	C->ForClients([&](AOutlawsCoopLink& CL) { CL.ClientThrow(From, Epoch, uint8(Kind), Pos, Vel, OutlawsThrowArc::Grav, Fuse); });
+}
+
 void UOutlawsCoop::NoteBreak(AOutlawsLevelActor* L, int32 Hand, bool bOpen, int32 Shells, const FVector& Breech, const FVector& Vel, int32 Loads)
 {
 	UOutlawsCoop* C = Get(L);
@@ -314,6 +332,11 @@ void UOutlawsCoop::OnBlast(int32 Who, int32 Epoch, const FVector& Where, int32 S
 				A->Destroy();
 			}
 			StickNote = FString::Printf(TEXT(", stick %d gone here too"), Stick);
+		}
+		else if (Stick == -2 && IsClient())
+		{
+			// (BUG-DYNTHROW phase 2) a bad guy's stick went off on the host: its copy lying here is put out (it never goes off here)
+			if (L->EndEnemyThrownCopyNear(Where, 300.0)) StickNote = TEXT(", a bad guy's stick: its copy here put out");
 		}
 		for (int32 i = 0; i < MaxPlayers; ++i)
 		{
@@ -427,6 +450,29 @@ void UOutlawsCoop::OnShotFx(int32 Who, const FVector& Muzzle, const FString& Sou
 
 void UOutlawsCoop::OnThrow(int32 Who, int32 Epoch, uint8 Kind, const FVector& Pos, const FVector& Vel, float Grav, float Fuse)
 {
+	if (Who < 0)
+	{
+		// (BUG-DYNTHROW phase 2) the host's bad guy -1 - Who threw: his copy here flies its own copy of the stick or the knife
+		// (AOutlawsLevelActor::AddEnemyThrown's copy: drawn, flown, put out by the host's blast; no hurt, no blast, no drop).
+		// Its throw's sound came with his shot count; none here.  Only the host says this (a client's ServerThrow is its own)
+		if (!IsClient() || (Kind != 1 && Kind != 2)) return;
+		const int32 Index = -1 - Who;
+		RunFor(Epoch, [this, Index, Kind, Pos, Vel, Fuse]()
+		{
+			AOutlawsLevelActor* L = FindLevel();
+			const TArray<TWeakObjectPtr<AOutlawsEnemy>>* List = L ? &L->GetEnemies() : nullptr;
+			AOutlawsEnemy* E = List && List->IsValidIndex(Index) ? (*List)[Index].Get() : nullptr;
+			if (!L || !bLevelBuilt) return;
+			++VerbThrowsShown;
+			if (VerbLogLines++ < MaxVerbLogLines)
+			{
+				UE_LOG(LogOutlawsCoop, Log, TEXT("OLCOOP throw seen: %s from %s at %.0f cm/s (client), enemy %d's (%s)"), ThrowName(Kind), *Pos.ToCompactString(), Vel.Size(), Index,
+					E ? *E->GetOutlawsName() : TEXT("not here"));
+			}
+			L->AddEnemyThrown(E, Kind, Pos, Vel, Fuse, 0.f, true);
+		});
+		return;
+	}
 	if (IsHost()) ForClients([&](AOutlawsCoopLink& CL) { CL.ClientThrow(Who, Epoch, Kind, Pos, Vel, Grav, Fuse); }, Who);     // (N1: passed on)
 	RunFor(Epoch, [this, Who, Kind, Pos, Vel, Grav, Fuse]()
 	{

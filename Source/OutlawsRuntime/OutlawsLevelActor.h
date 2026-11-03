@@ -1428,10 +1428,19 @@ public:
 	/** BUG-DYNTHROW (OutlawsEnemyThrow.cpp): a bad guy's stick (Kind 1: it flies, lies lit and goes off Fuse seconds after it
 	 *  left his hand, the level's own blast) or knife (2: Damage to the player it strikes, spent on the level), let go at From
 	 *  at Vel; flown, drawn (the player's own look of it) and set off here, on the host or the single player's machine. */
-	void AddEnemyThrown(class AOutlawsEnemy* By, int32 Kind, const FVector& From, const FVector& Vel, float Fuse, float Damage);
+	void AddEnemyThrown(class AOutlawsEnemy* By, int32 Kind, const FVector& From, const FVector& Vel, float Fuse, float Damage, bool bCoopCopy = false);
 	void TickEnemyThrown(float Dt);
 	void ClearEnemyThrown();
 	int32 EnemyThrownCount() const;
+	/** (BUG-DYNTHROW phase 2) a co-op client: the host's blast at At puts out the copy of the bad guy's stick nearest it within
+	 *  Radius (the copy goes off nowhere: the blast is the host's); false: none there. */
+	bool EndEnemyThrownCopyNear(const FVector& At, double Radius);
+	// (the tests': on a co-op client, the copies of the host's bad guys' throws made, sticks put out by the host's blast,
+	// knives come down or met; where the last copy was let go and where it lay or came down, and the gap from the host's
+	// blast to the copy it put out)
+	int32 EnemyCopiesMade = 0, EnemyCopiesPutOut = 0, EnemyCopiesSpent = 0;
+	FVector LastEnemyCopyFrom = FVector::ZeroVector, LastEnemyCopyAt = FVector::ZeroVector;
+	float LastEnemyCopyGap = -1.f;
 	/** Set while a bad guy's stick goes off (Explode): its harm is no one's doing (no kill, stat or achievement of the
 	 *  player's; the player's own hurt is a bad guy's, not "your own stick"), and the badge does not double it. */
 	bool bEnemyBlast = false;

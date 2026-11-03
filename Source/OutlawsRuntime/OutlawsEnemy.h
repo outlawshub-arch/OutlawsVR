@@ -260,6 +260,10 @@ public:
 	 *  Farmer's hunt walked right up and then could not); a knife that misses leaves its DEAD_ITEM (gknife) where it comes
 	 *  down [EXE 0x1400d084b..0x1400d087e].  -OLOldDynThrow2: both as f0bb31d left them. */
 	static bool OldDynThrow2();
+	/** (BUG-DYNTHROW phase 2, co-op) the host's bad guy's stick or knife is told to the clients (UOutlawsCoop::NoteEnemyThrow),
+	 *  whose copy flies, lies lit and is put out by the host's blast, which alone goes off and hurts.  -OLOldDynCoop: not told
+	 *  (the client hears the throw and the blast, sees no stick), as before. */
+	static bool OldDynCoop();
 	/** A reachable place MinU..MaxU units (octagonal) from Centre, any way round it (the original's 0x140088000). */
 	bool PickPointNear(const FVector& Centre, float MinU, float MaxU, int32 Tries, FVector& Out, bool bAvoidCrowd = false) const;
 	/** The original's close advance applies: a thrower (not a match bot), the new rule. */

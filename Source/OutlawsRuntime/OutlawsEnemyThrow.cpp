@@ -13,7 +13,12 @@
 // - both drawn as the player's own (AOutlawsPlayer::BuildThrownLook), the stick's wick burning down under its flame, its
 //   fuse heard.
 // Co-op: the host's bad guys throw (the client's copies think nothing); the blast reaches the client as every blast does, the
-// throw's sound with the shot count; the flight is not drawn there (no message for a bad guy's throw yet).
+// throw's sound with the shot count.  (BUG-DYNTHROW phase 2, user 3 Nov) the throw is told to the clients by the players' own
+// throw message (UOutlawsCoop::NoteEnemyThrow): each client flies a copy here from the same hand at the same speed, so it takes
+// the host's path, falls off the same walls and lies lit with its fuse heard; the copy hurts no one, leaves nothing and never
+// goes off: the host's blast (its Stick -2, "a bad guy's") puts it out where it lies (EndEnemyThrownCopyNear), the one blast
+// and its one sound; a missed knife's gknife is the host's ground item, made on the clients as every one is, and taken as
+// every pickup is (the host says who has it).  -OLOldDynCoop: not told, as before.
 
 #include "OutlawsEnemy.h"
 #include "OutlawsLevelActor.h"
@@ -49,6 +54,7 @@ namespace OLDynThrow
 		FString DeadItem;                    // (the thrown ITM's DEAD_ITEM: what a knife leaves where it comes down)
 		float Spin = 0.f, Yaw = 0.f;
 		bool bRest = false;
+		bool bCopy = false;                  // (co-op: a client's copy of the host's: drawn and flown only)
 		FOutlawsThrownLook Look;
 		TWeakObjectPtr<UAudioComponent> Sound;
 	};
@@ -74,6 +80,12 @@ namespace OLDynThrow
 bool AOutlawsEnemy::OldDynThrow()
 {
 	static const bool bOld = OLFlags::Param(TEXT("OLOldDynThrow"));
+	return bOld;
+}
+
+bool AOutlawsEnemy::OldDynCoop()
+{
+	static const bool bOld = OLFlags::Param(TEXT("OLOldDynCoop"));
 	return bOld;
 }
 
@@ -158,6 +170,7 @@ void AOutlawsEnemy::ThrowAtPlayer()
 	L->PlaySoundAt(Def.ShootSound, Hand);         // (THROW.wav)
 	if (CoopRole == 1) ++CoopShots;               // (co-op: the client's copy plays the throw's sound too)
 	L->AddEnemyThrown(this, bStick ? 1 : 2, Hand, Vel, bStick ? Def.ThrowLife : 3.f, Def.Damage);
+	if (CoopRole == 1 && !OldDynCoop()) UOutlawsCoop::NoteEnemyThrow(this, bStick ? 1 : 2, Hand, Vel, bStick ? Def.ThrowLife : 3.f);     // (phase 2: the clients' copies)
 	UE_LOG(LogOutlawsAI, Log, TEXT("OLRT %s throws %s at the player %.1f m off: %.1f m/s, %.0f deg up, %.2f s to its mark %.0f cm from the feet%s"), *OutlawsName,
 		bStick ? TEXT("a stick of dynamite") : TEXT("a knife"), Dist / 100.f, Vel.Size() / 100.0, Vel.Rotation().Pitch, T, FVector::Dist2D(Mark, Feet),
 		bStick ? *FString::Printf(TEXT(", fuse %.1f s"), Def.ThrowLife) : TEXT(""));
@@ -165,7 +178,7 @@ void AOutlawsEnemy::ThrowAtPlayer()
 
 // ---- the level's side: the sticks and knives in the air ------------------------------------------------------------------
 
-void AOutlawsLevelActor::AddEnemyThrown(AOutlawsEnemy* By, int32 Kind, const FVector& From, const FVector& Vel, float Fuse, float Damage)
+void AOutlawsLevelActor::AddEnemyThrown(AOutlawsEnemy* By, int32 Kind, const FVector& From, const FVector& Vel, float Fuse, float Damage, bool bCoopCopy)
 {
 	using namespace OLDynThrow;
 	FFlying F;
@@ -176,8 +189,14 @@ void AOutlawsLevelActor::AddEnemyThrown(AOutlawsEnemy* By, int32 Kind, const FVe
 	F.Pos = From;
 	F.Vel = Vel;
 	F.Fuse = Fuse;
-	F.Damage = Damage;
-	if (By) F.DeadItem = By->Def.ThrowDead;
+	F.Damage = bCoopCopy ? 0.f : Damage;
+	F.bCopy = bCoopCopy;
+	if (By && !bCoopCopy) F.DeadItem = By->Def.ThrowDead;      // (a copy's knife leaves nothing: the host's gknife comes as a ground item)
+	if (bCoopCopy)
+	{
+		++EnemyCopiesMade;
+		LastEnemyCopyFrom = From;
+	}
 	F.Yaw = float(Vel.Rotation().Yaw);
 	// the player's own look of it (the held model on the held material, a lit stick's wick and flame)
 	AOutlawsPlayer* Me = LocalThrowViewer(GetWorld());
@@ -200,6 +219,11 @@ void AOutlawsLevelActor::AddEnemyThrown(AOutlawsEnemy* By, int32 Kind, const FVe
 		UE_LOG(LogOutlawsAI, Log, TEXT("OLRT %s's %s: no look of it here (not drawn)"), *F.ByName, Kind == 1 ? TEXT("stick") : TEXT("knife"));
 	}
 	if (Kind == 1) F.Sound = PlayLoopAt(TEXT("fuse"), From);
+	if (bCoopCopy)
+	{
+		UE_LOG(LogOutlawsAI, Log, TEXT("OLRT %s's %s's copy from the host: from %s at %.1f m/s, %s%s"), *F.ByName, Kind == 1 ? TEXT("stick") : TEXT("knife"), *From.ToCompactString(), Vel.Size() / 100.0,
+			F.Look.Mesh.IsValid() ? TEXT("drawn") : TEXT("not drawn"), Kind == 1 ? *FString::Printf(TEXT(", fuse %.1f s heard"), Fuse) : TEXT(""));
+	}
 	GFlying.Add(MoveTemp(F));
 }
 
@@ -250,6 +274,34 @@ void AOutlawsLevelActor::ClearEnemyThrown()
 	}
 }
 
+bool AOutlawsLevelActor::EndEnemyThrownCopyNear(const FVector& At, double Radius)
+{
+	using namespace OLDynThrow;
+	int32 Best = INDEX_NONE;
+	double BestD = Radius * Radius;
+	for (int32 i = 0; i < GFlying.Num(); ++i)
+	{
+		const FFlying& F = GFlying[i];
+		if (F.Level.Get() != this || !F.bCopy || F.Kind != 1) continue;
+		const double D = FVector::DistSquared(F.Pos, At);
+		if (D <= BestD) { BestD = D; Best = i; }
+	}
+	if (Best == INDEX_NONE)
+	{
+		UE_LOG(LogOutlawsAI, Log, TEXT("OLRT the host's bad guy's blast at %s: no copy of his stick lies within %.0f cm here"), *At.ToCompactString(), Radius);
+		return false;
+	}
+	FFlying& F = GFlying[Best];
+	++EnemyCopiesPutOut;
+	LastEnemyCopyGap = float(FMath::Sqrt(BestD));
+	LastEnemyCopyAt = F.Pos;
+	UE_LOG(LogOutlawsAI, Log, TEXT("OLRT %s's stick's copy put out by the host's blast: it lay at %s, %.0f cm from the blast, %.2f s after it came (fuse %.2f s)"), *F.ByName,
+		*F.Pos.ToCompactString(), LastEnemyCopyGap, F.Age, F.Fuse);
+	DropFlying(F);
+	GFlying.RemoveAt(Best);
+	return true;
+}
+
 void AOutlawsLevelActor::TickEnemyThrown(float Dt)
 {
 	using namespace OLDynThrow;
@@ -257,6 +309,13 @@ void AOutlawsLevelActor::TickEnemyThrown(float Dt)
 	if (GFlying.Num() == 0 || !W) return;
 	AOutlawsPlayer* Me = LocalThrowViewer(W);
 	const double G = 980.0 * OutlawsThrowArc::Grav;
+	// a knife's step A..B into a standing body (its feet, its eye, its radius)
+	auto MeetsBody = [](const FVector& Feet, const FVector& Eye, float R, const FVector& A, const FVector& B)
+	{
+		const FVector Mid(Feet.X, Feet.Y, (Feet.Z + Eye.Z) * 0.5);
+		const FVector C = FMath::ClosestPointOnSegment(Mid, A, B);
+		return FVector::Dist2D(C, Mid) < R + 10.0 && C.Z > Feet.Z && C.Z < Eye.Z + 15.0;
+	};
 	for (int32 i = GFlying.Num() - 1; i >= 0; --i)
 	{
 		if (i >= GFlying.Num()) continue;          // (a blast's aftermath cleared the list: a level end, a restart)
@@ -270,7 +329,31 @@ void AOutlawsLevelActor::TickEnemyThrown(float Dt)
 			F.Vel.Z -= G * Dt;
 			const FVector To = F.Pos + F.Vel * Dt;
 			bool bStruck = false;
-			if (F.Kind == 2)
+			if (F.Kind == 2 && F.bCopy)
+			{
+				// (phase 2) a client's copy of a knife: gone into the body it meets here, this player's or another's as drawn here;
+				// the hurt is the host's to deal (HurtFromEnemy), so none here
+				AOutlawsEnemy* E = F.By.Get();
+				FVector Eye, Feet;
+				float R = 0.f, H = 0.f;
+				const TCHAR* Whose = nullptr;
+				if (E && E->PlayerView(Eye, Feet, R, H) && MeetsBody(Feet, Eye, R, F.Pos, To)) Whose = TEXT("this player");
+				const UOutlawsCoop* Cp = Whose ? nullptr : UOutlawsCoop::Get(this);
+				for (int32 k = 0; Cp && !Whose && k < UOutlawsCoop::MaxPlayers; ++k)
+				{
+					const AOutlawsRemotePlayer* Rp = Cp->PuppetOf(k);
+					const FVector Mid = Rp ? Rp->GetActorLocation() : FVector::ZeroVector;      // (the puppet's place: its body's middle)
+					if (Rp && MeetsBody(Mid - FVector(0.0, 0.0, 88.0), Mid + FVector(0.0, 0.0, 70.0), 34.f, F.Pos, To)) Whose = UOutlawsCoop::WhoWord(k);
+				}
+				if (Whose)
+				{
+					bStruck = true;
+					bGone = true;
+					++EnemyCopiesSpent;
+					UE_LOG(LogOutlawsAI, Log, TEXT("OLRT %s's knife's copy meets %s here, %.2f s after it came (the host deals the hurt)"), *F.ByName, Whose, F.Age);
+				}
+			}
+			else if (F.Kind == 2)
 			{
 				// a knife: into the body of the player he threw it at (the host's own here, or the client's as the host sees it)
 				AOutlawsEnemy* E = F.By.Get();
@@ -278,9 +361,7 @@ void AOutlawsLevelActor::TickEnemyThrown(float Dt)
 				float R = 0.f, H = 0.f;
 				if (E && E->PlayerView(Eye, Feet, R, H))
 				{
-					const FVector Mid(Feet.X, Feet.Y, (Feet.Z + Eye.Z) * 0.5);
-					const FVector C = FMath::ClosestPointOnSegment(Mid, F.Pos, To);
-					if (FVector::Dist2D(C, Mid) < R + 10.0 && C.Z > Feet.Z && C.Z < Eye.Z + 15.0)
+					if (MeetsBody(Feet, Eye, R, F.Pos, To))
 					{
 						bStruck = true;
 						if (E->CoopTarget != 0)
@@ -324,7 +405,16 @@ void AOutlawsLevelActor::TickEnemyThrown(float Dt)
 							M->SetWorldLocation(F.Pos);
 						}
 					}
-					if (F.Kind == 2)
+					if (F.Kind == 2 && F.bCopy)
+					{
+						// (phase 2) the copy comes down where the host's did; the gknife it leaves there is the host's ground item,
+						// made here by its own word (UOutlawsCoop::NoteGroundItem)
+						++EnemyCopiesSpent;
+						LastEnemyCopyAt = F.Pos;
+						UE_LOG(LogOutlawsAI, Log, TEXT("OLRT %s's knife's copy comes down at %s, %.2f s after it came"), *F.ByName, *F.Pos.ToCompactString(), F.Age);
+						bGone = true;
+					}
+					else if (F.Kind == 2)
 					{
 						++EnemyKnivesSpent;
 						UE_LOG(LogOutlawsAI, Log, TEXT("OLRT %s's knife misses: spent on the level at %s"), *F.ByName, *F.Pos.ToCompactString());
@@ -360,7 +450,17 @@ void AOutlawsLevelActor::TickEnemyThrown(float Dt)
 		{
 			if (Me && F.Look.Flame.IsValid()) Me->PlaceThrownFuse(F.Look, FMath::Max(0.f, F.Fuse - F.Age));
 			if (UAudioComponent* S = F.Sound.Get()) S->SetWorldLocation(F.Pos);
-			if (F.Age >= F.Fuse)
+			if (F.bCopy)
+			{
+				// (phase 2) a copy goes off nowhere: it lies, its wick burnt down, till the host's blast puts it out
+				// (EndEnemyThrownCopyNear); one whose blast never came (a level changed under it) is put out quietly 2 s on
+				if (F.Age >= F.Fuse + 2.f)
+				{
+					UE_LOG(LogOutlawsAI, Log, TEXT("OLRT %s's stick's copy: no blast from the host %.2f s after it came, put out here"), *F.ByName, F.Age);
+					bGone = true;
+				}
+			}
+			else if (F.Age >= F.Fuse)
 			{
 				// the fuse out: the level's own blast where it lies, no one's doing (bEnemyBlast)
 				const FVector At = F.Pos;
@@ -374,6 +474,7 @@ void AOutlawsLevelActor::TickEnemyThrown(float Dt)
 				LastEnemyBlastBy = By;
 				UE_LOG(LogOutlawsAI, Log, TEXT("OLRT %s's stick goes off at %s, %.2f s after it left his hand"), *By, *At.ToCompactString(), Age);
 				TGuardValue<bool> ByEnemy(bEnemyBlast, true);
+				if (UOutlawsCoop::IsActive(this) && !AOutlawsEnemy::OldDynCoop()) CoopBlastStick = -2;     // (phase 2: told as a bad guy's, it puts out the clients' copies)
 				Explode(At);
 				continue;
 			}

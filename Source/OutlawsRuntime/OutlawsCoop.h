@@ -1033,6 +1033,9 @@ public:
 	static void NoteShot(AOutlawsLevelActor* L, const FVector& Muzzle, const TCHAR* Sound);
 	/** This player threw something (AOutlawsPlayer::FThrown's type, its start, speed, gravity scale and fuse). */
 	static void NoteThrow(AOutlawsLevelActor* L, int32 Kind, const FVector& Pos, const FVector& Vel, float Grav, float Fuse);
+	/** (BUG-DYNTHROW phase 2) the host's bad guy E threw a stick (Kind 1) or a knife (2): told to every client by the players'
+	 *  own ClientThrow, From -1 - E's number (no player's), where his copy's flies (AOutlawsLevelActor::AddEnemyThrown's copy). */
+	static void NoteEnemyThrow(const AOutlawsEnemy* E, int32 Kind, const FVector& Pos, const FVector& Vel, float Fuse);
 	/** REQ-FLICKRELOAD: this machine's double gun broke open (Shells out) or shut: told to the others (OutlawsCoopVerbs.cpp).
 	 *  REQ-RELOADSLICES: Loads, the shells going in (the shell slices the others hear), rides in the Shells byte's high nibble. */
 	static void NoteBreak(AOutlawsLevelActor* L, int32 Hand, bool bOpen, int32 Shells, const FVector& Breech, const FVector& Vel, int32 Loads = 0);
@@ -1917,6 +1920,11 @@ private:
 	// -OLCoopTest=bosswall (BUG-BOSSWALL, OutlawsBossWallProbe.cpp) in the town: the host puts the boss in the boardwalk
 	// doorway where snapshot 5 had him pressed on the frame; the host's copy and the client's each get off it
 	void TickBossWallTest(double Now, AOutlawsLevelActor* L, AOutlawsPlayer* P);
+	// -OLCoopTest=dyncoop (BUG-DYNTHROW phase 2, OutlawsDynCoopProbe.cpp) on shgulch or cliff: the host's thrower throws at the
+	// client, whose copy of the stick or knife flies the host's path, lies lit and is put out by the host's one blast; a missed
+	// knife's gknife is on both and the client takes it
+	void TickDynCoopTest(double Now, AOutlawsLevelActor* L, AOutlawsPlayer* P);
+	void OnDynCoopTestStep(const FString& Step, int32 Arg);
 	int32 EfStep = 0, EfFails = 0, EfPasses = 0;
 	double EfAt = 0.0;
 	int32 BeStep = 0, BeFails = 0, BePasses = 0, BeDoor = -1, BeVisibleMoves = 0;

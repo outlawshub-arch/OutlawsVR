@@ -897,6 +897,7 @@ void UOutlawsCoop::TickTest(double Now)
 	else if (TestOnly == TEXT("piano")) TickPianoTest(Now, L, P);                   // (REQ-PIANO: OutlawsPianoTest.cpp; the host and its client each)
 	else if (TestOnly == TEXT("float")) TickFloatTest(Now, L, P);                   // (REQ-ENEMYFLOAT: OutlawsEnemyFloatTest.cpp; the host and its client each)
 	else if (TestOnly == TEXT("bosswall")) TickBossWallTest(Now, L, P);             // (BUG-BOSSWALL: OutlawsBossWallProbe.cpp; the host and its client each)
+	else if (TestOnly == TEXT("dyncoop")) TickDynCoopTest(Now, L, P);               // (BUG-DYNTHROW phase 2: OutlawsDynCoopProbe.cpp; the host and its client each)
 	else if (TestOnly == TEXT("dm") || TestOnly == TEXT("dmstrike") || TestOnly == TEXT("lobbyrule") || TestOnly == TEXT("readyflip")) return;      // (REQ-MPLOBBY's lobby run: the script watches)                                         // (its clients only follow the host's steps)
 	else if (IsHost() && TestOnly.StartsWith(TEXT("latejoin"))) TickHostLateJoinTest(Now, L, P);     // (R7: alone first: OutlawsCoopJoin.cpp)
 	else if (IsHost()) TickHostTest(Now, L, P);
@@ -1156,6 +1157,7 @@ void UOutlawsCoop::OnTestStep(const FString& Step, int32 Arg)
 	UE_LOG(LogOutlawsCoop, Log, TEXT("OLCOOP test step for the client: %s (%d)"), *Step, Arg);
 	if (OnReadyFlipStep(Step, Arg)) return;          // (BUG-READYFLIP's check: in the lobby, no level needed)
 	if (!L || !P) return;
+	if (TestOnly == TEXT("dyncoop") && Step != TEXT("quit")) { OnDynCoopTestStep(Step, Arg); return; }     // (BUG-DYNTHROW phase 2's steps)
 	const double Now = FPlatformTime::Seconds();
 	const UCameraComponent* Cam = P->Camera.Get();
 	const FVector Eye = Cam ? Cam->GetComponentLocation() : P->GetActorLocation();
