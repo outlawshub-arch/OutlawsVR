@@ -1476,60 +1476,84 @@ void AOutlawsPlayer::OnJumped_Implementation()
 	const AOutlawsLevelActor* L = Level.Get();
 	UCharacterMovementComponent* M = GetCharacterMovement();
 	JumpAirSpeed = 0.f;
-	if (M && !OldJumpSpeed())
-	{
-		// BUG-JUMPSPEED (user 3 Nov: icecaves' jump from 182 over the death pit 211 to 203, 662 cm at its narrowest, fell short
-		// at a low movement speed; "ease it").  The original's jump (OutlawsAHOM.exe 0x1400b7cf6..0x1400b7d8f, DEFAULT.PHY: run
-		// 45 units/s, walk 30, JUMP_VEL 20 under gravity 60) is 0.667 s in the air: 900 cm running, 600 walking, whatever the
-		// speed.  Ours took the dial's paced run (192 / 432 / 696 cm/s at 40 / 100 / 150 %) across and stretched the air time
-		// only part way: 487 / 638 / 806 cm.  Now the speed across is the original's reach over our own air time (as high and
-		// as long as ever, gravity untouched), times the stick's push (the stick's own, no more than the body's speed over its
-		// top speed), halved crouched, the run's reach by the stamina as the run is; eased in over the first JumpEaseSeconds
-		// from the take-off's speed (its loss made up after, so the reach is the instant step's) and held in the air.  A body
-		// already faster (a slide) keeps its own.  -OLOldJumpSpeed: the stretch, as before
-		const FVector Vh(M->Velocity.X, M->Velocity.Y, 0.0);
-		const bool bCrouched = bVR ? GetCapsuleComponent()->GetUnscaledCapsuleHalfHeight() < 60.f : bIsCrouched;
-		const float Top = FMath::Max(1.f, !bVR && bCrouched ? M->MaxWalkSpeedCrouched : M->MaxWalkSpeed);
-		const float Push = FMath::Min(FMath::Clamp(M->GetAnalogInputModifier(), 0.f, 1.f), FMath::Clamp(float(Vh.Size()) / Top, 0.f, 1.f));
-		constexpr float OrigWalkReach = 600.f, OrigRunReach = 900.f;
-		float Reach = bRunning ? FMath::Lerp(OrigWalkReach, OrigRunReach, StaminaFrac()) : OrigWalkReach;
-		if (bCrouched) Reach *= 0.5f;                  // (the original halves the speed crouched: 0x1400b7d5d)
-		if (CarryingMan()) Reach *= CarrySpeedScale;
-		const float T = DebugJumpAirTime();
-		const float Want = T > 0.05f ? Reach / T * Push : 0.f;
-		JumpEaseFrom = float(Vh.Size());
-		JumpDir = Vh.GetSafeNormal();
-		JumpAge = 0.f;
-		if (Want > JumpEaseFrom && !JumpDir.IsNearlyZero())
-		{
-			// the speed held after the ease so the eased reach is the instant one's: V T - (V - V0) e / 2 = Want T
-			const float Ez = FMath::Min(JumpEaseSeconds, T * 0.5f);
-			JumpAirSpeed = (Want * T - JumpEaseFrom * Ez * 0.5f) / FMath::Max(0.05f, T - Ez * 0.5f);
-			JumpOffZ = float(GetActorLocation().Z - GetCapsuleComponent()->GetScaledCapsuleHalfHeight());
-			bJumpBoost = true;
-		}
-		UE_LOG(LogOutlaws, Log, TEXT("OLRT jump: %s at %.0f cm/s (push %.2f), %.2f s in the air: %.0f cm/s across (the original's %.0f cm reach)"),
-			bRunning ? TEXT("running") : TEXT("walking"), JumpEaseFrom, Push, T, FMath::Max(JumpAirSpeed, JumpEaseFrom), Reach * Push);
-		return;
-	}
+	if (!M) return;
+	// BUG-JUMPHYBRID (user 3 Nov, after BUG-JUMPSPEED: the small icecaves gap, pit 211, now clears at 40 %, but the big one a
+	// little further on, the ice slide 215's jump over the void 232 to 228, no longer does; they prefer the old feel, "the
+	// low-gravity, slow, floaty jump").  The stretch below is the base again, as before BUG-JUMPSPEED, at every setting; only a
+	// share of BUG-JUMPSPEED's forward boost goes on top of it (after it).  (The big gap was lost on the slide, not here: see
+	// Locomotion's slide floor.  A slide comes off 215's lip far faster than any boost, so its jump is the stretch alone)
+	const float T = DebugJumpAirTime();          // (up and back down to the take-off's height, unstretched)
 	const float S = FMath::Clamp((L ? L->Pace() : 0.5f) / 0.5f, 0.2f, 1.f);      // the movement speed setting, 0.2..1
-	if (!M || S >= 0.999f) return;
-	// the share of the full setting's reach: a half at 20 %, linear to all of it at 100 %; at the walk's own speed that takes
-	// a jump Reach / S times as long
-	const float Reach = 0.5f + 0.5f * (S - 0.2f) / 0.8f;
-	const float K = FMath::Max(1.f, Reach / S);
-	M->Velocity.Z /= K;
-	M->GravityScale /= K * K;                 // (now; UpdateGravity keeps it so)
-	JumpStretch = K;
-	JumpOffZ = float(GetActorLocation().Z - GetCapsuleComponent()->GetScaledCapsuleHalfHeight());
-	bJumpBoost = true;
-	UE_LOG(LogOutlaws, Log, TEXT("OLRT jump at speed %.0f %%: %.2f times as long (reach %.0f %% of the full speed's)"), S * 100.f, K, Reach * 100.f);
+	float K = 1.f;
+	if (S < 0.999f)
+	{
+		// the share of the full setting's reach: a half at 20 %, linear to all of it at 100 %; at the walk's own speed that
+		// takes a jump Reach / S times as long
+		const float Reach = 0.5f + 0.5f * (S - 0.2f) / 0.8f;
+		K = FMath::Max(1.f, Reach / S);
+		M->Velocity.Z /= K;
+		M->GravityScale /= K * K;                 // (now; UpdateGravity keeps it so)
+		JumpStretch = K;
+		JumpOffZ = float(GetActorLocation().Z - GetCapsuleComponent()->GetScaledCapsuleHalfHeight());
+		bJumpBoost = true;
+		UE_LOG(LogOutlaws, Log, TEXT("OLRT jump at speed %.0f %%: %.2f times as long (reach %.0f %% of the full speed's)"), S * 100.f, K, Reach * 100.f);
+	}
+	if (OldJumpSpeed()) return;
+	// BUG-JUMPSPEED (user 3 Nov: icecaves' jump from 182 over the death pit 211 to 203, 662 cm at its narrowest, fell short
+	// at a low movement speed; "ease it").  The original's jump (OutlawsAHOM.exe 0x1400b7cf6..0x1400b7d8f, DEFAULT.PHY: run
+	// 45 units/s, walk 30, JUMP_VEL 20 under gravity 60) is 0.667 s in the air: 900 cm running, 600 walking, whatever the
+	// speed.  The stretch alone takes the dial's paced run (192 / 432 / 696 cm/s at 40 / 100 / 150 %) 487 / 639 / 806 cm in
+	// the headset (279 / 366 / 461 on the desktop).  The speed across that reaches the original's is its reach over the air
+	// time now (the stretched one), times the stick's push (the stick's own, no more than the body's speed over its top speed),
+	// halved crouched, the run's reach by the stamina as the run is; (BUG-JUMPHYBRID) the take-off's speed goes only
+	// JumpBoostShare of the way to it, so the reach is never over the original's: at 0.8, 815 / 845 / 882 cm in the headset
+	// (773 / 794 / 813 on the desktop), the first share that lands 211's narrowest line 90 cm or more over 203's lip at 40 % on
+	// both (the headset 144 cm; 0.5 lands it with 20 cm).  Eased in over the first JumpEaseSeconds from the take-off's speed (its
+	// loss made up after, so the reach is the instant step's) and held in the air.  A body already faster (a slide) keeps its
+	// own.  -OLOldJumpSpeed: the stretch alone, as before
+	const FVector Vh(M->Velocity.X, M->Velocity.Y, 0.0);
+	const bool bCrouched = bVR ? GetCapsuleComponent()->GetUnscaledCapsuleHalfHeight() < 60.f : bIsCrouched;
+	const float Top = FMath::Max(1.f, !bVR && bCrouched ? M->MaxWalkSpeedCrouched : M->MaxWalkSpeed);
+	const float Push = FMath::Min(FMath::Clamp(M->GetAnalogInputModifier(), 0.f, 1.f), FMath::Clamp(float(Vh.Size()) / Top, 0.f, 1.f));
+	constexpr float OrigWalkReach = 600.f, OrigRunReach = 900.f;
+	float Reach = bRunning ? FMath::Lerp(OrigWalkReach, OrigRunReach, StaminaFrac()) : OrigWalkReach;
+	if (bCrouched) Reach *= 0.5f;                  // (the original halves the speed crouched: 0x1400b7d5d)
+	if (CarryingMan()) Reach *= CarrySpeedScale;
+	const float Tk = T * K;
+	const float Full = Tk > 0.05f ? Reach / Tk * Push : 0.f;
+	const float Share = JumpBoostShareNow();
+	JumpEaseFrom = float(Vh.Size());
+	JumpDir = Vh.GetSafeNormal();
+	JumpAge = 0.f;
+	if (Full > JumpEaseFrom && Share > 0.f && !JumpDir.IsNearlyZero())
+	{
+		// the speed held after the ease so the eased reach is the instant one's: V T - (V - V0) e / 2 = Want T
+		const float Want = FMath::Lerp(JumpEaseFrom, Full, Share);
+		const float Ez = FMath::Min(JumpEaseSeconds, Tk * 0.5f);
+		JumpAirSpeed = (Want * Tk - JumpEaseFrom * Ez * 0.5f) / FMath::Max(0.05f, Tk - Ez * 0.5f);
+		JumpOffZ = float(GetActorLocation().Z - GetCapsuleComponent()->GetScaledCapsuleHalfHeight());
+		bJumpBoost = true;
+	}
+	UE_LOG(LogOutlaws, Log, TEXT("OLRT jump: %s at %.0f cm/s (push %.2f), %.2f s in the air (%.2f times): %.0f cm/s across, %.2f of the way to the original's %.0f cm reach"),
+		bRunning ? TEXT("running") : TEXT("walking"), JumpEaseFrom, Push, Tk, K, FMath::Max(JumpAirSpeed, JumpEaseFrom), Share, Reach * Push);
 }
 
 bool AOutlawsPlayer::OldJumpSpeed()
 {
 	static const bool bOld = OLFlags::Param(TEXT("OLOldJumpSpeed"));
 	return bOld;
+}
+
+float AOutlawsPlayer::JumpBoostShareNow()
+{
+	// (BUG-JUMPHYBRID) -OLJumpBoostShare=<0..1> for the sweep, else JumpBoostShareDefault; the jump reach probe sets it per case
+	if (JumpBoostShare < 0.f)
+	{
+		float V = JumpBoostShareDefault;
+		OLFlags::Value(TEXT("OLJumpBoostShare"), V);
+		JumpBoostShare = FMath::Clamp(V, 0.f, 1.f);
+	}
+	return JumpBoostShare;
 }
 
 float AOutlawsPlayer::DebugJumpAirTime() const
@@ -2195,8 +2219,8 @@ void AOutlawsPlayer::Locomotion(float Dt, bool& bOutMoving)
 		M->MaxWalkSpeed *= Pace;
 		M->MaxFlySpeed *= Pace;
 		if (!bVR && !bOldCrouch) M->MaxWalkSpeedCrouched *= Pace;
-		// the long jump (OnJumped: BUG-JUMPSPEED's speed across, or the old stretch) is over at the landing, or once it falls
-		// past where it took off (a drop beyond that is a fall like any other)
+		// the long jump (OnJumped: the stretch, and BUG-JUMPHYBRID's share of BUG-JUMPSPEED's speed across) is over at the
+		// landing, or once it falls past where it took off (a drop beyond that is a fall like any other)
 		if (bJumpBoost && (!M->IsFalling() || (M->Velocity.Z < 0.0 && GetActorLocation().Z - GetCapsuleComponent()->GetScaledCapsuleHalfHeight() < JumpOffZ - 10.0)))
 		{
 			bJumpBoost = false;
@@ -2216,8 +2240,9 @@ void AOutlawsPlayer::Locomotion(float Dt, bool& bOutMoving)
 		SmoothSpeed = SmoothSpeed > 0.f ? FMath::Lerp(SmoothSpeed, M->MaxWalkSpeed, Ease) : M->MaxWalkSpeed;
 		M->MaxWalkSpeed = SmoothSpeed;
 	}
-	// (BUG-JUMPSPEED) a jump's speed across (OnJumped): eased in from the take-off's speed, then held while in the air, the air
-	// control's top speed with it (the stick neither adds to it nor brakes it), until the landing or the fall past the take-off
+	// (BUG-JUMPSPEED) a jump's speed across (OnJumped, BUG-JUMPHYBRID's share of it): eased in from the take-off's speed, then
+	// held while in the air, the air control's top speed with it (the stick neither adds to it nor brakes it), until the landing
+	// or the fall past the take-off
 	if (bJumpBoost && JumpAirSpeed > 0.f && M->IsFalling())
 	{
 		JumpAge += Dt;
@@ -2267,17 +2292,11 @@ void AOutlawsPlayer::Locomotion(float Dt, bool& bOutMoving)
 		M->MaxAcceleration = bInstant ? VRInstantAcceleration : (bVR ? VRAcceleration : Acceleration) * Grip;   // no traction to push off on ice or mud
 		// (the desktop's crouch is the engine's, which holds a crouched body at a ledge: a crouched slide stopped dead at 78's lip)
 		M->bCanWalkOffLedgesWhenCrouching = bSlideFloor;
-		// (BUG-JUMPSPEED) on a slide floor the drag brakes only what is over the original's own top speed (45 units/s, 1350
-		// cm/s) or the dial's, the higher: the engine brakes over MaxWalkSpeed, the dial's paced one, so at a low setting the
-		// drag took a slide (or a long jump's landing) down to the walk.  The stick adds no more than the dial's.
-		// -OLOldJumpSpeed: the paced one
-		if (bSlideFloor && !OldJumpSpeed())
-		{
-			constexpr float OrigTopSpeed = 1350.f;
-			const float Keep = FMath::Min(float(FVector(M->Velocity.X, M->Velocity.Y, 0.0).Size()), OrigTopSpeed);
-			M->MaxWalkSpeed = FMath::Max(M->MaxWalkSpeed, Keep);
-			if (!bVR) M->MaxWalkSpeedCrouched = FMath::Max(M->MaxWalkSpeedCrouched, Keep);    // (the desktop's crouch, the engine's)
-		}
+		// (BUG-JUMPHYBRID: BUG-JUMPSPEED's floor under the slide's drag, the top speed raised to the body's own up to 1350 cm/s,
+		// is gone.  It was what lost icecaves' big gap, the ice slide 215's jump over 232 to 228: with the top speed at the body's
+		// own, the engine cut each frame's push back off whenever it was under half a per cent of the speed (below), so a slide
+		// with the stick held stuck at 400 to 700 cm/s and came off the lip far too slow at every setting (1650 to 1880 cm/s at
+		// 40 % before it).  The drag again takes off what is over the dial's walk or run, as BUG-ICEJUMP made it)
 		const double Tan = Down.Size();
 		if (bSlides && Friction < 0.999f && Tan > 1e-3)
 		{
@@ -2291,6 +2310,14 @@ void AOutlawsPlayer::Locomotion(float Dt, bool& bOutMoving)
 			{
 				Slide -= Drag;
 				M->BrakingDecelerationWalking = 0.f;
+				// (BUG-JUMPHYBRID) the engine keeps a speed over the top speed only once it is a per cent over in the square
+				// (IsExceedingMaxSpeed); short of that, the stick held, it cuts the speed back to the top speed, this frame's push
+				// with it, so a stick-held slide stuck at the dial's run (696 cm/s at 150 %) wherever a frame's push was under
+				// half a per cent of it.  Near the top speed the top speed is taken just under the body's own: the push carries
+				// it through and the stick adds nothing there.  -OLOldJumpSpeed: as before
+				float& TopNow = !bVR && bIsCrouched ? M->MaxWalkSpeedCrouched : M->MaxWalkSpeed;
+				const float Across = float(M->Velocity.Size2D());
+				if (!OldJumpSpeed() && Across > TopNow * 0.98f && Across < TopNow * 1.02f) TopNow = Across / 1.02f;
 			}
 			M->AddImpulse(Down / Tan * Slide * Dt, true);
 		}

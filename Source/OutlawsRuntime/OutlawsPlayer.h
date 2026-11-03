@@ -2598,11 +2598,18 @@ private:
 	 *  (user 2026-10-02: a first version scaled the speed across up and launched the player forward; "keep this slow", half
 	 *  the full reach at 20 %, linear to all of it at 100 %): the speed across stays the walk's own, and the jump lasts
 	 *  longer, as high as ever (launch / K, gravity / K^2), until the landing or the fall past the take-off's height.
-	 *  BUG-JUMPSPEED (user 3 Nov, "ease it"): that is now -OLOldJumpSpeed only; the speed across is the original's reach (900
-	 *  cm running, 600 walking) over our air time, eased in over JumpEaseSeconds and held in the air (Locomotion). */
+	 *  BUG-JUMPSPEED (user 3 Nov, "ease it"): the speed across raised toward the original's reach (900 cm running, 600
+	 *  walking) over the air time, eased in over JumpEaseSeconds and held in the air (Locomotion).  BUG-JUMPHYBRID (user 3 Nov,
+	 *  "keep the old floaty jump"): the stretch stays, and the speed goes only JumpBoostShare of the way there. */
 	virtual void OnJumped_Implementation() override;
-	/** -OLOldJumpSpeed (BUG-JUMPSPEED): the jump's old stretch and the slide floor's brake down to the dial's speed. */
+	/** -OLOldJumpSpeed (BUG-JUMPSPEED, BUG-JUMPHYBRID): as before BUG-JUMPSPEED, the jump's stretch alone (no forward boost),
+	 *  and a stick-held slide's push cut off at the dial's top speed where a frame's push is under half a per cent of it. */
 	static bool OldJumpSpeed();
+	/** (BUG-JUMPHYBRID) how much of the way from the take-off's speed to the one that reaches the original's a jump goes (0:
+	 *  the stretch alone, 1: the original's reach): -OLJumpBoostShare=<x>, else JumpBoostShareDefault. */
+	float JumpBoostShareNow();
+	float JumpBoostShare = -1.f;               // (-1: not read yet; the jump reach probe sets it per case)
+	static constexpr float JumpBoostShareDefault = 0.8f;
 	bool bJumpBoost = false;
 	bool bLanternLow[2] = { false, false };    // the lantern hung lower: its fist holds the other hand's long gun
 	float JumpStretch = 1.f;                   // K: how many times longer the jump lasts
