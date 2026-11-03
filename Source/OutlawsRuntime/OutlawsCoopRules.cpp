@@ -350,7 +350,7 @@ void UOutlawsCoop::OnLocalDeath(AOutlawsLevelActor* L, AOutlawsPlayer* P)
 		UE_LOG(LogOutlawsCoop, Log, TEXT("OLCOOP death drops hidden here: %d things (%d parts) kept out of the %s player's own view till it is up"), Made + GunNames.Num(),
 			DeathDropParts.Num(), RuleWho(MyIndex()));
 	}
-	if (Made > 0 || GunNames.Num() > 0) L->Notify(GunNames.Num() > 0 ? TEXT("Your guns and keys lie where you fell") : TEXT("Your keys lie where you fell"), 3.f);
+	// (REQ-NODROPTOAST, user 4 Nov: no notice of the drops, co-op and matches alike; the OLCOOP lines above stay)
 }
 
 void UOutlawsCoop::HideDeathDrop(AActor* A)
