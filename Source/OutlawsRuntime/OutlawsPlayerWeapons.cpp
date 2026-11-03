@@ -7309,6 +7309,25 @@ void AOutlawsPlayer::PutOutHeldFuse(int32 Hand)
 	if (FuseCore[Hand]) FuseCore[Hand]->SetVisibility(false);
 }
 
+void AOutlawsPlayer::DropLitSticksAtDeath()
+{
+	// (BUG-DEATHFUSE, the user's play notes of 3 Nov: "TNT doesn't drop if I light one and I die before I throw it. It should
+	// fall with my body.") a lit stick in either hand leaves it at the death as a dropped one does (ThrowHeld's drop: the
+	// hand's own speed, no throw's boost), its fuse burning on from what was left, and goes off as a thrown one does: its blast
+	// this player's (the kills credited to it), the bad guys flee it lying lit (LitDynamite).  In co-op and a match it is told
+	// to the others as every throw is (NoteThrow: drawn falling on every machine), its blast as every blast.  OnDied puts the
+	// hands' fuses out after it (BUG-FUSEAFTERDEATH).  -OLOldDeathFuse: none, put out with the player as before
+	static const bool bOld = OLFlags::Param(TEXT("OLOldDeathFuse"));
+	if (bOld) return;
+	for (int32 H = 0; H < 2; ++H)
+	{
+		if (!bFuseLit[H] || Mag[H] <= 0 || Equipped[H] < 0 || GWeapons[Equipped[H]].Throw != 1 || !WeaponMesh[H]) continue;
+		const float Left = Fuse[H];
+		ThrowHeld(H, false, true);
+		UE_LOG(LogOutlaws, Log, TEXT("OLRT death: the %s hand's lit stick falls with the body, %.2f s of its fuse left"), H == 0 ? TEXT("left") : TEXT("right"), Left);
+	}
+}
+
 bool AOutlawsPlayer::OldThrowCount()
 {
 	static const bool bOld = OLFlags::Param(TEXT("OLOldThrowCount"));

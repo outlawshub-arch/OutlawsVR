@@ -538,6 +538,9 @@ private:
 	void UpdateFuseLook(int32 Hand);
 	/** (BUG-FUSEAFTERDEATH) the hand's fuse out: not lit, its sound stopped, its flame (a child of the hand's reused gun mesh) hidden. */
 	void PutOutHeldFuse(int32 Hand);
+	/** (BUG-DEATHFUSE) at the death: a lit stick in either hand let go as a live one that falls with the body (OnDied, before
+	 *  the hands' fuses are put out); -OLOldDeathFuse: none, put out as before. */
+	void DropLitSticksAtDeath();
 	/** (BUG-LASTTHROWABLE) a stick (knife) for this hand of throwable Wi: the count, the ones in hand among them, is more than the
 	 *  other hand holds (always with unlimited ammunition). */
 	bool ThrowableForHand(int32 Hand, int32 Wi) const;

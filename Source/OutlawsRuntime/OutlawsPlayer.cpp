@@ -4779,8 +4779,10 @@ void AOutlawsPlayer::OnDied()
 	}
 	// (BUG-FUSEAFTERDEATH) a lit stick in hand goes out with the player: no flame or hiss through the death view, and the bad
 	// guys no longer flee from it (LitDynamite); -OLOldFuseReset: it burned on
+	// (BUG-DEATHFUSE, user 3 Nov) first a lit stick leaves the hand and falls with the body, live (DropLitSticksAtDeath)
 	if (!OLFlags::Param(TEXT("OLOldFuseReset")))
 	{
+		DropLitSticksAtDeath();
 		for (int32 H = 0; H < 2; ++H) PutOutHeldFuse(H);
 	}
 	GetCharacterMovement()->StopMovementImmediately();
