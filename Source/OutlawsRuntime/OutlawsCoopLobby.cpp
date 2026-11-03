@@ -135,7 +135,7 @@ void UOutlawsCoop::LobbyView(const FString& File, OutlawsLobbyPage::FView& V) co
 		case FOutlawsMatchFlow::EState::WarmUp:
 			V.State.Add(S->LobbyLeft >= 0.f ? FString::Printf(TEXT("Starts in %d s (sooner as players enter)"), FMath::CeilToInt(S->LobbyLeft))
 				: S->LobbyLeft < -1.5f ? FString(TEXT("Waiting for a second player"))
-				: FString(TEXT("The countdown starts when the first player enters")));
+				: FString(TEXT("The countdown starts when a player enters")));
 			break;
 		case FOutlawsMatchFlow::EState::Countdown: V.State.Add(TEXT("The match is starting")); break;
 		case FOutlawsMatchFlow::EState::Playing: V.State.Add(TEXT("The match is under way: enter to join it")); break;
@@ -145,7 +145,7 @@ void UOutlawsCoop::LobbyView(const FString& File, OutlawsLobbyPage::FView& V) co
 	}
 	else
 	{
-		if (S->StartSerial == 0) V.State.Add(bEnterPressed ? TEXT("Waiting for the host to start") : TEXT("Enter when you are ready: the host's Start takes you in"));
+		if (S->StartSerial == 0) V.State.Add(bEnterPressed ? TEXT("Waiting for the host to start") : TEXT("Enter now: you go in with the host's Start"));
 		else V.State.Add(FString::Printf(TEXT("The host is playing %s"), *CampaignLevelTitle(S->Level)));
 		V.State.Add(FString::Printf(TEXT("Bad guys x%.2f (the host's choice)"), S->Multiplier));        // (R14; co-op only)
 	}
@@ -153,7 +153,7 @@ void UOutlawsCoop::LobbyView(const FString& File, OutlawsLobbyPage::FView& V) co
 	if (Mine && Mine->bLateJoin && bEnterPressed && S->StartSerial > 0)
 	{
 		// (R7: the host's game on its way, in the second line's place)
-		const FString Join = Mine->JoinState == JoinHostBusy ? TEXT("The host is between levels: you join at the next one")
+		const FString Join = Mine->JoinState == JoinHostBusy ? TEXT("Between levels: you join at the next one")
 			: Mine->JoinState == JoinSent ? TEXT("Joining the host's game ...") : TEXT("Asking the host for its game ...");
 		if (V.State.Num() >= 2) V.State[1] = Join;
 		else V.State.Add(Join);

@@ -100,12 +100,34 @@ struct OUTLAWSRUNTIME_API FFragTableArt
 	bool IsLoaded() const { return Cell != nullptr; }
 };
 
+/** (REQ-WHEELSCORE) A text the card drew, for its probe: the words as drawn, the font, the scale it was drawn at, and its line's
+ *  box on the canvas (the line height TextSize gives, its middle on the line's). */
+struct FFragTableText
+{
+	FString Str;
+	const UFont* Font = nullptr;
+	float Scale = 1.f;
+	FVector2D Min = FVector2D::ZeroVector;
+	FVector2D Max = FVector2D::ZeroVector;
+};
+
 /** The drawing: Draw on a canvas 1920 wide (Measure tall); returns where the last box ends (the measurer's check). */
 struct OUTLAWSRUNTIME_API FOutlawsFragTable
 {
 	static constexpr int32 CanvasW = 1920;
 	static int32 Measure(const FFragTableData& Data);
 	static float Draw(UCanvas* C, const FFragTableData& Data, const FFragTableArt& Art, int32 Width, int32 Height);
+	/** (REQ-WHEELSCORE) the scorecard under the weapon wheel: every word in the cells' font at its own size (none shrunk, a long
+	 *  name cut short with an ellipsis), the title and the clock over the column heads, then a row a player: the name, the mode's
+	 *  column, K and D.  One column of players up to 8, two past it (1 to 8 left, 9 on right); a team game red's column then
+	 *  blue's, each headed by its team's score.  The canvas's size for these rows (it is as wide as its columns). */
+	static FIntPoint MeasureCard(const FFragTableData& Data, const FFragTableArt& Art);
+	static float DrawCard(UCanvas* C, const FFragTableData& Data, const FFragTableArt& Art, int32 Width, int32 Height, TArray<FFragTableText>* OutTexts);
+	/** The cells' font's cap height on the card's canvas, px (the H's ink at 26 pt: 23 px as -OLWheelScoreProbe measured it,
+	 *  3 Nov; the probe measures it again each run). */
+	static constexpr float CardCapPx = 23.f;
+	/** The card's text rows' pitch, px. */
+	static constexpr float CardRowPx = 42.f;
 };
 
 /** (BUG-SCOREOCCLUDE) the panel's plane: its bounds a cube as wide as its sphere, not the flat plane's paper-thin box, so the
@@ -148,6 +170,15 @@ public:
 	/** (BUG-SCOREBOARD) drawn over the world in the overlay material (no depth test) as the wheel and the menu are; set
 	 *  before the first SetData.  Off: the picture's material, cut by walls (the level's end over the cinema). */
 	bool bOnTop = false;
+	/** (REQ-WHEELSCORE) the wheel's scorecard (FOutlawsFragTable::DrawCard), its canvas as wide as its columns; set before the
+	 *  first SetData. */
+	bool bCard = false;
+	/** The canvas's width, px (1920 for the table, the card's own). */
+	int32 GetCanvasW() const { return CanvasW; }
+	/** (REQ-WHEELSCORE) the card's last drawing's texts (the probe's floor and fit checks). */
+	TArray<FFragTableText> LastTexts;
+	/** The plane's size now, cm (width, height). */
+	FVector2D GetSizeCm() const;
 	/** The material the plane is drawn in and its sort priority, for the logs. */
 	FString DescribeMaterial() const;
 	/** (BUG-SCOREOCCLUDE) the plane's bounds scale now (an on-top panel's reach past the eyes, so no wall culls it). */
@@ -173,6 +204,7 @@ private:
 	float LookIn = 0.f;
 	float WidthCm = 320.f;
 	int32 CanvasH = 0;
+	int32 CanvasW = FOutlawsFragTable::CanvasW;
 	void Redraw();
 	void Fit();
 	/** (BUG-SCOREOCCLUDE) an on-top panel's bounds reach past Eye, so occlusion culling never drops it behind a near wall. */

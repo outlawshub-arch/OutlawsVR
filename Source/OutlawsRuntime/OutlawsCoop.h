@@ -1244,6 +1244,13 @@ public:
 	/** REQ-SCORESIDE: whether the menu shows the table beside it now (a match with a game class); the menu makes room for it. */
 	static bool WantsPauseScoreboard(const AOutlawsPlayer* P);
 	static void HidePauseScoreboard(AOutlawsPlayer* P);
+	/** REQ-WHEELSCORE (user 3 Nov): in a match the live scorecard hangs under the weapon wheel instead of beside the pause menu
+	 *  (the score screen at a match's end keeps its table).  -OLOldWheelScore: the pause menu's table as before, none under the
+	 *  wheel. */
+	static bool OldWheelScore();
+	/** REQ-WHEELSCORE: the wheel's card (made the first time, then kept), shown with the wheel and its rows looked at twice a
+	 *  second, or hidden (bShow false); null with no match (or -OLOldWheelScore). The wheel places it (AOutlawsPlayer::PlaceWheelScore). */
+	static class AOutlawsFragTablePanel* WheelScoreCard(AOutlawsPlayer* P, bool bShow);
 	/** Closes the table if it is up (the Menu button while it shows); false when nothing was up. */
 	static bool CloseScoreboard(AOutlawsPlayer* P, const TCHAR* Why);
 	/** The words on the table for closing it: the Menu button in a headset, Tab on the PC. */
@@ -1620,6 +1627,8 @@ private:
 	TSharedPtr<class FOutlawsMatchTableSource> MatchTable;
 	TWeakObjectPtr<class AOutlawsFragTablePanel> MatchPanel;
 	TWeakObjectPtr<class AOutlawsFragTablePanel> PausePanel;     // (REQ-SCOREABOVE) the table above the pause panel
+	TWeakObjectPtr<class AOutlawsFragTablePanel> WheelPanel;     // (REQ-WHEELSCORE) the card under the weapon wheel
+	bool bScoreStandIns = false;                 // (-OLWheelScoreProbe) the stand-ins (-OLFakePlayers) in the match's table too
 	// -OLScoreAboveTest (a bots match, any machine): the pause menu opened and closed with the panel above it checked
 	void TickScoreAboveTest(double Now);
 	int32 SaTestStep = 0;

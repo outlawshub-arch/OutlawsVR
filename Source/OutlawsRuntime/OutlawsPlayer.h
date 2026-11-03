@@ -767,6 +767,18 @@ private:
 	uint32 WheelLiveSet = 0;
 	double WheelLiveNext = 0.0;
 	int32 WheelLiveRefreshes = 0, WheelLiveRebuilds = 0;     // (the probe reads them)
+	/** (REQ-WHEELSCORE) in a match, the scorecard hung under the open wheel: its top a little under the wheel's lowest part, as
+	 *  far out as the wheel, tipped up to face the eyes, sized so its farthest words keep the menu floor (UOutlawsCoop::WheelScoreCard
+	 *  makes it). Placed each frame the wheel is. */
+	void PlaceWheelScore();
+	/** (REQ-WHEELSCORE) how far under the wheel's middle its lowest part reaches, degrees from the eyes: a slot's pick circle or
+	 *  its count plate, the arrows. */
+	float WheelLowestDeg() const;
+	/** (REQ-WHEELSCORE) the head's line of sight on the card (its rows and a few degrees round them): the wheel does not set off
+	 *  after the head then, or the card would run from the eyes reading it. */
+	bool HeadOnWheelScore() const;
+	TWeakObjectPtr<class AOutlawsFragTablePanel> WheelScore;
+	float WheelScoreTilt = 0.f, WheelScoreLowDeg = 0.f, WheelScoreCmPerPx = 0.f;     // (the probe reads them)
 	/** A picture from Common.kpf as a texture (cached; null when missing). */
 	class UTexture2D* KpfTexture(const FString& Path);
 	/** A flat picture facing the wheel's viewer, in the wheel art's unlit see-through material. */

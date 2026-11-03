@@ -774,6 +774,8 @@ void UOutlawsCoop::ResetSession()
 	MatchPanel.Reset();
 	if (AOutlawsFragTablePanel* Panel = PausePanel.Get()) Panel->Destroy();      // (REQ-SCOREABOVE)
 	PausePanel.Reset();
+	if (AOutlawsFragTablePanel* Panel = WheelPanel.Get()) Panel->Destroy();      // (REQ-WHEELSCORE)
+	WheelPanel.Reset();
 	LoggedMatchState = 255;
 	LastMatchTickAt = 0.0;
 	FMemory::Memzero(MatchInRules);

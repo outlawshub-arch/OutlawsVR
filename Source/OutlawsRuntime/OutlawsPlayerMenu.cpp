@@ -2722,8 +2722,10 @@ void AOutlawsPlayer::UpdateMenu(float Dt)
 	};
 	// REQ-SCORESIDE (user, Quest build 47): in a match the live frag table stands to the left of the pause panel (and of the score
 	// screen at the match's end), the pause panel to the right, the pair centred on where the menu faces and turning with it.
-	// Each panel's middle is a head turn of about 25 degrees off, so the pair only sets off after a wider turn (50)
-	const bool bScorePair = UOutlawsCoop::WantsPauseScoreboard(this) && (!bFrontMenu || MenuPage->File == TEXT("#coopscore"));
+	// Each panel's middle is a head turn of about 25 degrees off, so the pair only sets off after a wider turn (50).
+	// REQ-WHEELSCORE (user 3 Nov): the live table moved under the weapon wheel; the pause panel stands alone in the middle as in
+	// single player, and only the score screen at the match's end keeps the pair (-OLOldWheelScore: the pause menu's too)
+	const bool bScorePair = UOutlawsCoop::WantsPauseScoreboard(this) && ((!bFrontMenu && UOutlawsCoop::OldWheelScore()) || MenuPage->File == TEXT("#coopscore"));
 	constexpr float ScoreSideW = 200.f;                 // the table's width, cm (the pause panel is 250, 320 for a wide page)
 	// (on a flat screen the view is narrower than a headset's: the pair stands further out, smaller, so both fit in it; the menu
 	// draws over the world, so only its size changes)
@@ -3784,6 +3786,48 @@ void AOutlawsPlayer::DrawFrontCanvas(UCanvas* C, int32 Width, int32 Height)
 			}
 			return S + TEXT("...");
 		};
+		// (REQ-LOBBYUNDER) a centred text's letters as FCanvasTextItem lays them down (Txt, Align 1): each glyph's box from the
+		// font cache under the line's top (half the font's height over Y) and its baseline (the font's height and descender under
+		// that top), characters From on (Count of them, -1: to the end); Base the baseline, PenX where character From starts
+		auto Letters = [&](UFont* F, const FString& Str, float X, float Y, int32 From, int32 Count, float& Base, float& PenX) -> FBox2D
+		{
+			FBox2D Box(ForceInit);
+			Base = Y;
+			PenX = X;
+			if (!F || Str.IsEmpty() || !FEngineFontServices::IsInitialized()) return Box;
+			const TSharedPtr<FSlateFontCache> Cache = FEngineFontServices::Get().GetFontCache();
+			if (!Cache.IsValid()) return Box;
+			const FSlateFontInfo Info = F->GetLegacySlateFontInfo();
+			FCharacterList& List = Cache->GetCharacterList(Info, 1.f);
+			float XL = 0.f, YL = 0.f;
+			C->TextSize(F, Str, XL, YL);
+			const float Height = List.GetMaxHeight();
+			const float Top = Y * K - float(int32(Height * 0.5f));
+			const int32 End = Count < 0 ? Str.Len() : FMath::Min(Str.Len(), From + Count);
+			float Pen = X * K - XL * 0.5f;
+			FCharacterEntry Prev;
+			for (int32 i = 0; i < End; ++i)
+			{
+				const FCharacterEntry E = List.GetCharacter(Str[i], Info.FontFallback);
+				const bool bBlank = !E.Valid || FChar::IsWhitespace(Str[i]);
+				if (!bBlank && i > 0) Pen += List.GetKerning(Prev, E);
+				const float R = E.BitmapRenderScale > 0.f ? E.BitmapRenderScale : 1.f;
+				const float Line = Top + (Height + E.GlobalDescender) / R;
+				if (i == From)
+				{
+					Base = Line / K;
+					PenX = Pen / K;
+				}
+				if (!bBlank && i >= From)
+				{
+					const FVector2D G(Pen + E.HorizontalOffset, Line - E.VerticalOffset);
+					Box += FBox2D(G / K, (G + FVector2D(E.USize * R, E.VSize * R)) / K);
+				}
+				Pen += E.XAdvance;
+				Prev = E;
+			}
+			return Box;
+		};
 		auto Note = [&](const FString& Str, const FBox2D& Box, UFont* F, float Scale, int32 Item, bool bName)
 		{
 			if (Str.IsEmpty()) return;
@@ -3799,7 +3843,10 @@ void AOutlawsPlayer::DrawFrontCanvas(UCanvas* C, int32 Width, int32 Height)
 		{
 			UFont* F = SaveFont(Kind);
 			const FString Shown = Cut(F, Str, MaxW);
+			const int32 At = D.Texts.Num();
 			Note(Shown, Txt(F, Shown, X, Y, 1, Colour, bShadow), F, 1.f, -1, bName);
+			float PenX = 0.f;
+			if (D.Texts.Num() > At) D.Texts[At].Ink = Letters(F, Shown, X, Y, 0, -1, D.Texts[At].Base, PenX);
 		};
 		auto Tile = [&](UTexture2D* T, float X, float Y, float W, float H, FVector2D UV0, FVector2D UV1, ESimpleElementBlendMode Blend)
 		{
@@ -3868,7 +3915,8 @@ void AOutlawsPlayer::DrawFrontCanvas(UCanvas* C, int32 Width, int32 Height)
 		for (int32 i = 0; i < NP; ++i)
 		{
 			const FPlayer& Pl = V.Players[i];
-			if (V.bTeams) (Pl.Team == 1 ? Cols[0] : Pl.Team == 2 ? Cols[1] : NoSide).Add(&Pl);
+			if (V.bTeams && Pl.Team == 0 && Pl.bYou) NoSide.Insert(&Pl, 0);         // (REQ-LOBBYUNDER: this player first, never in the count)
+			else if (V.bTeams) (Pl.Team == 1 ? Cols[0] : Pl.Team == 2 ? Cols[1] : NoSide).Add(&Pl);
 			else Cols[NP > 8 && i >= (NP + 1) / 2 ? 1 : 0].Add(&Pl);
 		}
 		const int32 NumCols = V.bTeams || Cols[1].Num() > 0 ? 2 : 1;
@@ -3886,6 +3934,9 @@ void AOutlawsPlayer::DrawFrontCanvas(UCanvas* C, int32 Width, int32 Height)
 		else Say(17, TEXT("PLAYERS"), CX, HeadY, Gold, true, Inner);
 		if (UTexture2D* Rule = KpfArt(TEXT("Embellish2@2x"))) Tile(Rule, CX - FMath::Min(400.f, Inner) * 0.5f, RuleY - 8.f, FMath::Min(400.f, Inner), 16.f, FVector2D(0.f, 0.f), FVector2D(1.f, 1.f), SE_BLEND_Translucent);
 		int32 Names = 0;
+		// (REQ-LOBBYUNDER: this player's own name as drawn: its text, the characters of the name in it, where it was drawn)
+		int32 MeAt = -1, MeFrom = 0, MeLen = 0;
+		float MeX = 0.f, MeY = 0.f;
 		for (int32 c = 0; c < 2; ++c)
 		{
 			for (int32 r = 0; r < Cols[c].Num() && r < 8; ++r)
@@ -3899,7 +3950,15 @@ void AOutlawsPlayer::DrawFrontCanvas(UCanvas* C, int32 Width, int32 Height)
 				}
 				const FPlayer& Pl = *Cols[c][r];
 				const FString Star = Pl.bHost ? TEXT(" *") : TEXT("");
+				const int32 At = D.Texts.Num();
 				Say(17, Cut(NameFont, Pl.Name, ColW - Wide(NameFont, Star)) + Star, ColX[c], FirstY + r * Step, Pl.bYou ? You : Pl.bInGame ? InGame : Lobby, true, ColW, true);
+				if (Pl.bYou && D.Texts.Num() > At)
+				{
+					MeAt = At;
+					MeLen = D.Texts[At].Text.Len() - (D.Texts[At].Text.EndsWith(Star) ? Star.Len() : 0);
+					MeX = ColX[c];
+					MeY = FirstY + r * Step;
+				}
 				++Names;
 			}
 		}
@@ -3907,26 +3966,81 @@ void AOutlawsPlayer::DrawFrontCanvas(UCanvas* C, int32 Width, int32 Height)
 		if (NoSide.Num() > 0)
 		{
 			FString Line = TEXT("No side yet:");
+			const int32 FirstAt = Line.Len() + 2;
 			int32 k = 0;
 			for (; k < NoSide.Num(); ++k)
 			{
 				const FString Next = Line + (k > 0 ? TEXT(", ") : TEXT("  ")) + NoSide[k]->Name;
 				const int32 Left = NoSide.Num() - k - 1;
-				if (Wide(NameFont, Left > 0 ? Next + FString::Printf(TEXT(" and %d more"), Left) : Next) > Inner) break;
+				if (Wide(NameFont, Left > 0 ? Next + FString::Printf(TEXT(" + %d"), Left) : Next) > Inner) break;
 				Line = Next;
 			}
+			int32 FirstLen = k > 0 ? NoSide[0]->Name.Len() : 0;
 			if (k == 0)
 			{
 				// (the first name too long for the line: cut short, the rest counted)
-				const FString More = NoSide.Num() > 1 ? FString::Printf(TEXT(" and %d more"), NoSide.Num() - 1) : FString();
-				Line += TEXT("  ") + Cut(NameFont, NoSide[0]->Name, Inner - Wide(NameFont, Line + TEXT("  ") + More)) + More;
+				const FString More = NoSide.Num() > 1 ? FString::Printf(TEXT(" + %d"), NoSide.Num() - 1) : FString();
+				const FString First = Cut(NameFont, NoSide[0]->Name, Inner - Wide(NameFont, Line + TEXT("  ") + More) - 8.f);
+				Line += TEXT("  ") + First + More;
+				FirstLen = First.Len();
 			}
-			else if (k < NoSide.Num()) Line += FString::Printf(TEXT(" and %d more"), NoSide.Num() - k);
+			else if (k < NoSide.Num()) Line += FString::Printf(TEXT(" + %d"), NoSide.Num() - k);
+			const int32 At = D.Texts.Num();
 			Say(17, Line, CX, PY, Lobby, true, Inner);
+			if (NoSide[0]->bYou && D.Texts.Num() > At && D.Texts[At].Text == Line)
+			{
+				// (REQ-LOBBYUNDER: this player with no side yet, first on the line: its name in its own pale yellow over the gold)
+				float Base = 0.f, PenX = 0.f;
+				Letters(NameFont, Line, CX, PY, FirstAt, FirstLen, Base, PenX);
+				Txt(NameFont, Line.Mid(FirstAt, FirstLen), PenX, PY, 0, You, false);
+				MeAt = At;
+				MeFrom = FirstAt;
+				MeLen = FirstLen;
+				MeX = CX;
+				MeY = PY;
+			}
 			Names += NoSide.Num();
 			PY += Step;
 		}
 		if (V.Bots > 0) Say(17, FString::Printf(TEXT("+ %d bot%s"), V.Bots, V.Bots == 1 ? TEXT("") : TEXT("s")), CX, PY, Lobby, true, Inner);
+		if (MeAt >= 0)
+		{
+			// REQ-LOBBYUNDER (user 3 Nov: "underline your own name in the Players panel, keeping the pale yellow"): a line in the
+			// name's pale yellow under its letters, its descenders too where the row step leaves room (else as low as it does,
+			// never up into the letters), a fifth of the capitals thick (the font's strokes: its bars 0.15 of them, its stems
+			// 0.28; read in VR), with the letters' black shadow, clear of whatever is under it: the next row, "No side yet", the
+			// bots, the frame's wood, and inside the row step (the next row's capitals).  The host's star is not underlined
+			FInk& Me = D.Texts[MeAt];
+			float Base = 0.f, PenX = 0.f;
+			const FBox2D Of = Letters(NameFont, Me.Text, MeX, MeY, MeFrom, MeLen, Base, PenX);
+			const float Cap = CapOf(NameFont);
+			if (Of.bIsValid && Cap > 0.f)
+			{
+				const float Thick = Cap * 0.2f, Above = Cap * 0.1f, Below = Cap * 0.06f;
+				float Room = FMath::Min(Base + Step - Cap, PY1 - 16.f);
+				for (const FInk& I : D.Texts)
+				{
+					if (&I == &Me || !I.Ink.bIsValid || I.Ink.Min.Y <= Base || I.Ink.Max.X < Of.Min.X || I.Ink.Min.X > Of.Max.X + ShadeX) continue;
+					Room = FMath::Min(Room, I.Ink.Min.Y);
+				}
+				const float Lowest = Room - Below - ShadeY;
+				const float Top = FMath::Max(FMath::Min(FMath::Max(Of.Max.Y, Base) + Above, Lowest - Thick), Base + Above * 0.5f);
+				const float Bottom = FMath::Min(Top + Thick, Lowest);
+				if (Bottom > Top)
+				{
+					FCanvasTileItem Shade(FVector2D((Of.Min.X + ShadeX) * K, (Top + ShadeY) * K), FVector2D(Of.GetSize().X * K, (Bottom - Top) * K), Black);
+					Shade.BlendMode = SE_BLEND_Translucent;
+					C->DrawItem(Shade);
+					FCanvasTileItem Stroke(FVector2D(Of.Min.X * K, Top * K), FVector2D(Of.GetSize().X * K, (Bottom - Top) * K), You);
+					Stroke.BlendMode = SE_BLEND_Translucent;
+					C->DrawItem(Stroke);
+					Me.Under = FBox2D(FVector2D(Of.Min.X, Top), FVector2D(Of.Max.X, Bottom));
+					Me.UnderOf = Of;
+					FrontInk += Me.Under;
+					FrontInk += Me.Under.ShiftBy(FVector2D(ShadeX, ShadeY));
+				}
+			}
+		}
 		D.Columns = NumCols;
 		D.Names = Names;
 		D.NameStep = Step;
@@ -5180,10 +5294,12 @@ void UOutlawsCoop::PauseTidyTestTick(AOutlawsPlayer* P, float Dt)
 	{
 		Rows(TEXT("pause page"));
 		{
-			// REQ-SCOREABOVE: the live table above the pause panel in a match, nothing new in single player or the story co-op
+			// REQ-SCOREABOVE: the live table above the pause panel in a match, nothing new in single player or the story co-op;
+			// REQ-WHEELSCORE: it went under the weapon wheel, so none in a match either (-OLOldWheelScore: up in a match, as before)
 			const UOutlawsCoop* Cm = UOutlawsCoop::Get(P);
-			const bool bMatchNow = Cm && Cm->IsMatch(), bUp = Cm && Cm->PausePanel.IsValid();
-			UE_LOG(LogOutlaws, Log, TEXT("OLPAUSE check %s: %s the scoreboard panel above the pause panel is %s (%s)"), bUp == bMatchNow ? TEXT("PASS") : TEXT("FAIL"), *Mode, bUp ? TEXT("up") : TEXT("absent"), bMatchNow ? TEXT("a match: wanted up") : TEXT("no match: wanted absent"));
+			const bool bMatchNow = Cm && Cm->IsMatch() && UOutlawsCoop::OldWheelScore(), bUp = Cm && Cm->PausePanel.IsValid();
+			UE_LOG(LogOutlaws, Log, TEXT("OLPAUSE check %s: %s the scoreboard panel above the pause panel is %s (%s)"), bUp == bMatchNow ? TEXT("PASS") : TEXT("FAIL"), *Mode, bUp ? TEXT("up") : TEXT("absent"),
+				bMatchNow ? TEXT("a match, -OLOldWheelScore: wanted up") : Cm && Cm->IsMatch() ? TEXT("a match: wanted absent, the table is under the wheel") : TEXT("no match: wanted absent"));
 		}
 		Shot(FString::Printf(TEXT("ol_pause_%s"), *Mode));
 		// Save, Load and Restart Level: single player and the co-op host have them, a co-op joiner and a match not

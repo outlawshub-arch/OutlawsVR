@@ -10,8 +10,8 @@
 
 namespace OutlawsLobbyPage
 {
-	/** A player in the PLAYERS panel: marked by colour, not words (white in the game, gold still in the lobby, yellow you), a
-	 *  star by the host; a team game's side (1 red, 2 blue, 0 none picked yet). */
+	/** A player in the PLAYERS panel: marked by colour, not words (white in the game, gold still in the lobby, yellow you, and
+	 *  you underlined: REQ-LOBBYUNDER), a star by the host; a team game's side (1 red, 2 blue, 0 none picked yet). */
 	struct FPlayer
 	{
 		FString Name;
@@ -42,7 +42,9 @@ namespace OutlawsLobbyPage
 	};
 
 	/** A text as last drawn (view units, 1920 x 1080): its box, its letters' cap height (the font's H as rasterised, times any
-	 *  scale), and the page item it is (-1: a line, a heading or a name). */
+	 *  scale), and the page item it is (-1: a line, a heading or a name).  The lines and names also keep their letters' own ink
+	 *  (each glyph as the font cache placed it) and their baseline; this player's own name keeps its underline (REQ-LOBBYUNDER:
+	 *  the line itself, its shadow ShadeX / ShadeY off it) and the letters it is under (the name, not the host's star). */
 	struct FInk
 	{
 		FString Text;
@@ -50,7 +52,15 @@ namespace OutlawsLobbyPage
 		float CapPx = 0.f;
 		int32 Item = -1;
 		bool bName = false;
+		FBox2D Ink = FBox2D(ForceInit);
+		float Base = 0.f;
+		FBox2D Under = FBox2D(ForceInit);
+		FBox2D UnderOf = FBox2D(ForceInit);
 	};
+
+	/** The black shadow under the panel's texts and the underline (DrawFrontCanvas's Txt: 4 right, 2 down, view units). */
+	constexpr float ShadeX = 4.f;
+	constexpr float ShadeY = 2.f;
 
 	/** The page as last drawn, for the probe and the lobby shot's fit checks. */
 	struct FDrawn

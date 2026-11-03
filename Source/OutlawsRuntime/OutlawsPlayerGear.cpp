@@ -1815,6 +1815,8 @@ void AOutlawsPlayer::UpdatePlayWarm(AOutlawsLevelActor* L)
 	if (!OldFirstUse()) WarmFirstUse(L);      // (FIRSTHITCH: the guns' held models and sounds, under the same dark)
 	// (BUG-WHEELHITCH) the weapon wheel made whole, hidden, under the same dark: its first open made it all in one frame
 	if (!OldWheelOpen() && !bWheelPrebuilt) BuildWheelParts(true);
+	// (REQ-WHEELSCORE) and in a match its scorecard (fonts, art, canvas), hidden
+	if (!OldWheelOpen() && !bWheelOpen) UOutlawsCoop::WheelScoreCard(this, false);
 }
 
 bool AOutlawsPlayer::OldFirstUse()

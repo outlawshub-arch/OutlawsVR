@@ -728,6 +728,28 @@ bool UOutlawsCoop::FillMatchTable(FFragTableData& Out) const
 	}
 	Out.SortRows();
 	FillModeColumns(Out);                        // (M2: the class's title, column and team scores)
+#if WITH_OUTLAWS_TESTS
+	if (bScoreStandIns)
+	{
+		// (-OLWheelScoreProbe) the stand-ins as players with scores (a team each in turn in a team game; the mode's column too)
+		static const TCHAR* Names[] = { TEXT("Marshal Anderson"), TEXT("Big Bad Barbara Le Fou of New Orleans"), TEXT("Slim Sanchez"), TEXT("Mad Dog"),
+			TEXT("Spittin' Jack"), TEXT("Gatling Jim"), TEXT("Bob Graham"), TEXT("Matt Morgan"), TEXT("Kid Calico"), TEXT("Doc Holliday"), TEXT("Ugly Jim"),
+			TEXT("Cactus Pete"), TEXT("Two-Gun Tess"), TEXT("Rattler"), TEXT("Ol' Clem") };
+		const bool bMode = Out.Columns.Num() > 1 && (Out.Columns[1].Header == TEXT("CAPTURES") || Out.Columns[1].Header == TEXT("TIME"));
+		for (int32 k = 0; k < FakePlayers; ++k)
+		{
+			FFragTableRow& Row = Out.Rows.AddDefaulted_GetRef();
+			Row.Name = Names[k % UE_ARRAY_COUNT(Names)];
+			Row.Team = S->bTeams ? (k % 2 == 0 ? 2 : 1) : 0;
+			const int32 Frags = (k * 7 + 3) % 23, Deaths = (k * 5 + 1) % 17;
+			Row.Values = { FString::FromInt(Frags), FString::FromInt(Deaths), FString::FromInt(Frags * 6 + 9), FString::Printf(TEXT("%d%%"), 20 + k * 3), FString::Printf(TEXT("%d m"), 4 + k) };
+			if (bMode) Row.Values.Insert(Out.Columns[1].Header == TEXT("TIME") ? FString::Printf(TEXT("%d:%02d"), k, (k * 13) % 60) : FString::FromInt(k % 4), 0);
+			Row.SortA = Frags;
+			Row.SortB = Deaths;
+		}
+		Out.SortRows();
+	}
+#endif
 	if (bMatchPanelHeld) Out.HeaderRows.Add({ ScoreboardCloseHint(LocalPlayer()), FString(), 0 });      // (BUG-SCOREBOARD)
 	return Out.Rows.Num() > 0;
 }
@@ -820,6 +842,56 @@ void UOutlawsCoop::HidePauseScoreboard(AOutlawsPlayer* P)
 		UE_LOG(LogOutlawsCoop, Log, TEXT("OLMATCH pause scoreboard closed"));
 	}
 	C->PausePanel.Reset();
+}
+
+bool UOutlawsCoop::OldWheelScore()
+{
+	static const bool bOld = OLFlags::Param(TEXT("OLOldWheelScore"));
+	return bOld;
+}
+
+AOutlawsFragTablePanel* UOutlawsCoop::WheelScoreCard(AOutlawsPlayer* P, bool bShow)
+{
+	// REQ-WHEELSCORE (user 3 Nov: "move the game stats out of the pause menu and show them below the weapon wheel"): the live
+	// table as the wheel's card, made once (its fonts, art and canvas: the first open's cost, so the level start makes it under
+	// the fade) and kept, hidden while the wheel is shut and its source let go (no looks at the rows then)
+	UOutlawsCoop* C = Get(P);
+	AOutlawsFragTablePanel* Panel = C ? C->WheelPanel.Get() : nullptr;
+	if (!C || OldWheelScore() || !WantsPauseScoreboard(P))
+	{
+		if (Panel) Panel->SetActorHiddenInGame(true);
+		return nullptr;
+	}
+	UWorld* W = C->CurrentWorld();
+	if (!W) return nullptr;
+	if (!C->MatchTable.IsValid()) C->MatchTable = MakeShared<FOutlawsMatchTableSource>(C);
+	if (!Panel)
+	{
+		const double T0 = FPlatformTime::Seconds();
+		FActorSpawnParameters SP;
+		SP.ObjectFlags |= RF_Transient;
+		Panel = W->SpawnActor<AOutlawsFragTablePanel>(AOutlawsFragTablePanel::StaticClass(), FTransform::Identity, SP);
+		if (!Panel) return nullptr;
+		Panel->bOnTop = true;                      // (over the world as the wheel is: the headset's 18 cm copy, behind the hands)
+		Panel->bCard = true;
+		FFragTableData Now;
+		if (C->FillMatchTable(Now)) Panel->SetData(Now);
+		C->WheelPanel = Panel;
+		UE_LOG(LogOutlawsCoop, Log, TEXT("OLMATCH wheel scorecard made (%s, %.1f ms): %s; drawn in %s"), C->IsHost() ? TEXT("host") : WhoWord(C->MyIndex()),
+			(FPlatformTime::Seconds() - T0) * 1000.0, *Now.Describe(), *Panel->DescribeMaterial());
+	}
+	if (bShow)
+	{
+		Panel->SetSource(C->MatchTable.Get());
+		FFragTableData Now;
+		if (C->FillMatchTable(Now)) Panel->SetData(Now);
+	}
+	else
+	{
+		Panel->SetSource(nullptr);
+	}
+	Panel->SetActorHiddenInGame(!bShow || Panel->GetCanvas() == nullptr);
+	return Panel;
 }
 
 void UOutlawsCoop::ToggleScoreboard(AOutlawsPlayer* P, const TCHAR* Why)

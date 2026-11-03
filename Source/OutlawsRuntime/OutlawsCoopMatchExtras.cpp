@@ -357,6 +357,13 @@ void UOutlawsCoop::TickScoreAboveTest(double Now)
 	{
 	case 0:
 		if (S->MatchState != uint8(FOutlawsMatchFlow::EState::Playing) || L->bDead) return;
+		if (!OldWheelScore())
+		{
+			// (REQ-WHEELSCORE: the pause menu's table is under the weapon wheel now; -OLWheelScoreProbe checks it there)
+			UE_LOG(LogOutlawsCoop, Log, TEXT("OLSCOREABOVE (%s) done: the pause menu has no table now (REQ-WHEELSCORE); run with -OLOldWheelScore to check the old one"), Who);
+			SaTestStep = 20;
+			return;
+		}
 		if (GEngine) GEngine->Exec(P->GetWorld(), TEXT("r.MotionBlurQuality 0"));      // (sharp pictures, as the other shot tests)
 		// (GATE-FLAKES: out of harm, as the other match tests are: a bot's stick killed the host with its menu open, which
 		// closed the menu before the table's checks; the bots still fight each other, so the table's rows still change)

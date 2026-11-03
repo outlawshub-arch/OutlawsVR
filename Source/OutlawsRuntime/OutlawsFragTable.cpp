@@ -73,6 +73,106 @@ namespace
 		const float Title = D.HeaderRows.Num() > 0 ? 0.f : TitleH + RuleGap + RuleH + RuleGap;
 		return PadT + BoxInY + Title + HeadH + RowH * FMath::Max(1, D.Rows.Num()) + BoxInY + PadB;
 	}
+
+	// (REQ-WHEELSCORE) the wheel's scorecard in canvas px: every word in the cells' 26 pt (the size the card is scaled to keep
+	// at the menu floor), rows FOutlawsFragTable::CardRowPx apart (about 1.75 cap heights, every other one banded), the frame at
+	// half the table's size
+	constexpr float CdFrame = 0.5f;
+	constexpr float CdPadL = PadL * CdFrame, CdPadT = PadT * CdFrame, CdPadR = PadR * CdFrame, CdPadB = PadB * CdFrame;
+	constexpr float CdInX = 16.f, CdInY = 10.f;
+	constexpr float CdTitleH = 46.f, CdHeadH = 44.f;
+	constexpr float CdNameW = 250.f, CdModeW = 110.f, CdNumW = 70.f, CdGutter = 36.f, CdCellPad = 8.f;
+	constexpr int32 CdOneColumn = 8;            // players in one column; past it two
+	// (a team game's blocks one above the other up to 4 players, side by side past it: stacked, 8 players' two heads and rows
+	// reached 52 degrees under the wheel's middle, into the view of the hands at rest)
+	constexpr int32 CdTeamStacked = 4;
+
+	/** What the card shows and where: its columns, each a list of blocks (a head line, then rows: the rows' indices), the clock. */
+	struct FCardBlock
+	{
+		int32 Team = 0;
+		FString Head;
+		TArray<int32> Rows;
+	};
+	struct FCardPlan
+	{
+		bool bTeams = false;
+		int32 ModeVal = INDEX_NONE, KillVal = INDEX_NONE, DeathVal = INDEX_NONE;     // into a row's Values
+		FString ModeHead;
+		TArray<TArray<FCardBlock>> Cols;
+		FString Clock;
+		bool bClockLine = false;
+		float ColW = 0.f, W = 0.f, H = 0.f;
+		float BodyH = 0.f;                       // (the tallest column's heads and rows)
+	};
+
+	float CardColumnH(const TArray<FCardBlock>& Col)
+	{
+		float H = 0.f;
+		for (const FCardBlock& B : Col) H += CdHeadH + FOutlawsFragTable::CardRowPx * B.Rows.Num();
+		return H;
+	}
+
+	FCardPlan PlanCard(const FFragTableData& D, const FFragTableArt& Art)
+	{
+		FCardPlan P;
+		for (const FFragTableRow& R : D.Rows) P.bTeams |= R.Team != 0;
+		for (const FFragTableHeaderRow& H : D.HeaderRows) P.bTeams |= H.Team != 0;
+		for (int32 c = 1; c < D.Columns.Num(); ++c)
+		{
+			const FString& Hd = D.Columns[c].Header;
+			if (Hd == TEXT("KILLS")) P.KillVal = c - 1;
+			else if (Hd == TEXT("DEATHS")) P.DeathVal = c - 1;
+			else if (Hd == TEXT("CAPTURES") || Hd == TEXT("TIME")) { P.ModeVal = c - 1; P.ModeHead = Hd == TEXT("TIME") ? TEXT("TIME") : TEXT("CAPS"); }
+		}
+		const int32 N = D.Rows.Num();
+		if (P.bTeams)
+		{
+			// red's block then blue's, each under its team's name and score: one above the other up to 4 players, side by side
+			// past it; a player with no team in the smaller one
+			FCardBlock Red, Blue;
+			Red.Team = 1;
+			Blue.Team = 2;
+			for (FCardBlock* B : { &Red, &Blue })
+			{
+				const FFragTableHeaderRow* H = D.HeaderRows.FindByPredicate([B](const FFragTableHeaderRow& X) { return X.Team == B->Team; });
+				B->Head = H ? H->Label + TEXT("  ") + H->Value : (B->Team == 1 ? FString(TEXT("Red Team")) : FString(TEXT("Blue Team")));
+			}
+			for (int32 r = 0; r < N; ++r)
+			{
+				const int32 Team = D.Rows[r].Team;
+				(Team == 2 ? Blue : Team == 1 ? Red : (Red.Rows.Num() <= Blue.Rows.Num() ? Red : Blue)).Rows.Add(r);
+			}
+			if (N > CdTeamStacked) P.Cols = { { Red }, { Blue } };
+			else P.Cols = { { Red, Blue } };
+		}
+		else
+		{
+			const int32 Left = N > CdOneColumn ? (N + 1) / 2 : N;
+			P.Cols.SetNum(N > CdOneColumn ? 2 : 1);
+			for (TArray<FCardBlock>& Col : P.Cols) Col.AddDefaulted_GetRef().Head = TEXT("NAME");
+			for (int32 r = 0; r < N; ++r) P.Cols[r < Left ? 0 : 1][0].Rows.Add(r);
+		}
+		for (const TArray<FCardBlock>& Col : P.Cols) P.BodyH = FMath::Max(P.BodyH, CardColumnH(Col));
+		P.BodyH = FMath::Max(P.BodyH, CdHeadH + FOutlawsFragTable::CardRowPx);
+		// the clock: the time left and the kill limit, after the title (on a line of its own when both do not fit on one)
+		for (const FFragTableHeaderRow& H : D.HeaderRows)
+		{
+			if (H.Value.IsEmpty() || H.Value == TEXT("None") || H.Team != 0) continue;
+			if (H.Label == TEXT("Time Limit")) P.Clock = H.Value + (P.Clock.IsEmpty() ? FString() : TEXT("   ") + P.Clock);
+			else if (H.Label == TEXT("Kill Limit")) P.Clock += (P.Clock.IsEmpty() ? FString() : FString(TEXT("   "))) + TEXT("first to ") + H.Value;
+		}
+		P.ColW = CdNameW + (P.ModeVal != INDEX_NONE ? CdModeW : 0.f) + 2.f * CdNumW;
+		const float Inner = P.Cols.Num() * P.ColW + (P.Cols.Num() - 1) * CdGutter;
+		P.W = CdPadL + CdInX + Inner + CdInX + CdPadR;
+		if (Art.Cell && !P.Clock.IsEmpty())
+		{
+			const float Need = float(Art.Cell->GetStringSize(*D.Title)) + float(Art.Cell->GetStringSize(*P.Clock)) + 40.f;
+			P.bClockLine = Need > Inner;
+		}
+		P.H = CdPadT + CdInY + CdTitleH * (P.bClockLine ? 2.f : 1.f) + P.BodyH + CdInY + CdPadB;
+		return P;
+	}
 }
 
 // ---- the data ----------------------------------------------------------------------------------------------------------
@@ -313,6 +413,166 @@ float FOutlawsFragTable::Draw(UCanvas* C, const FFragTableData& Data, const FFra
 	return Y + Ht;
 }
 
+// ---- the wheel's scorecard (REQ-WHEELSCORE) ------------------------------------------------------------------------------
+
+FIntPoint FOutlawsFragTable::MeasureCard(const FFragTableData& Data, const FFragTableArt& Art)
+{
+	const FCardPlan P = PlanCard(Data, Art);
+	return FIntPoint(FMath::CeilToInt(P.W), FMath::CeilToInt(P.H));
+}
+
+float FOutlawsFragTable::DrawCard(UCanvas* C, const FFragTableData& Data, const FFragTableArt& Art, int32 Width, int32 Height, TArray<FFragTableText>* OutTexts)
+{
+	if (OutTexts) OutTexts->Reset();
+	if (!C || !Art.Cell) return 0.f;
+	const FCardPlan P = PlanCard(Data, Art);
+	const float W = float(Width), H = float(Height);
+	UFont* F = Art.Cell;
+	auto Fill = [C](float X, float Y, float Wd, float Ht, const FLinearColor& Colour)
+	{
+		FCanvasTileItem T(FVector2D(X, Y), FVector2D(Wd, Ht), Colour);
+		T.BlendMode = SE_BLEND_Translucent;
+		C->DrawItem(T);
+	};
+	// the words at their own size, never shrunk: a longer one cut short with an ellipsis to MaxW. Align 0 from X, 2 ending at X
+	auto Txt = [&](const FString& In, float X, float Y, int32 Align, const FLinearColor& Ink, float MaxW, bool bBold)
+	{
+		if (In.IsEmpty()) return;
+		FString Str = In;
+		float XL = 0.f, YL = 0.f;
+		C->TextSize(F, Str, XL, YL);
+		if (MaxW > 0.f && XL > MaxW)
+		{
+			const FString Dots = FString::Chr(TCHAR(0x2026));      // (the ellipsis, from the cells' fallback font)
+			int32 Lo = 0, Hi = In.Len();
+			while (Lo < Hi)
+			{
+				const int32 Mid = (Lo + Hi + 1) / 2;
+				float Wm = 0.f, Hm = 0.f;
+				C->TextSize(F, In.Left(Mid).TrimEnd() + Dots, Wm, Hm);
+				if (Wm <= MaxW) Lo = Mid; else Hi = Mid - 1;
+			}
+			Str = In.Left(Lo).TrimEnd() + Dots;
+			C->TextSize(F, Str, XL, YL);
+		}
+		const float X0 = Align == 2 ? X - XL : X;
+		FCanvasTextItem T(FVector2D(X0, Y), FText::FromString(Str), F, Ink);
+		T.bCentreY = true;
+		T.BlendMode = SE_BLEND_Translucent;
+		T.EnableShadow(FLinearColor::Black, FVector2D(2.f, 1.5f));
+		C->DrawItem(T);
+		if (bBold)
+		{
+			FCanvasTextItem B(FVector2D(X0 + 1.2f, Y), FText::FromString(Str), F, Ink);
+			B.bCentreY = true;
+			B.BlendMode = SE_BLEND_Translucent;
+			C->DrawItem(B);
+		}
+		if (OutTexts)
+		{
+			FFragTableText& Rec = OutTexts->AddDefaulted_GetRef();
+			Rec.Str = Str;
+			Rec.Font = F;
+			Rec.Scale = 1.f;
+			Rec.Min = FVector2D(X0, Y - YL * 0.5f);
+			Rec.Max = FVector2D(X0 + XL + (bBold ? 1.2f : 0.f), Y + YL * 0.5f);
+		}
+	};
+	// the box: the wood inside the frame's padding, the DialogBox ninepatch over it at half the table's size
+	{
+		const float WX = CdPadL, WY = CdPadT, WW = W - CdPadL - CdPadR, WH = H - CdPadT - CdPadB;
+		if (Art.Wood && Art.Wood->GetResource())
+		{
+			const float TW = Art.Wood->GetSizeX() * 0.5f * Dp, TH = Art.Wood->GetSizeY() * 0.5f * Dp;
+			for (float ty = 0.f; ty < WH; ty += TH)
+			{
+				for (float tx = 0.f; tx < WW; tx += TW)
+				{
+					const float CW = FMath::Min(TW, WW - tx), CH = FMath::Min(TH, WH - ty);
+					FCanvasTileItem I(FVector2D(WX + tx, WY + ty), Art.Wood->GetResource(), FVector2D(CW, CH), FVector2D(0.f, 0.f), FVector2D(CW / TW, CH / TH), FLinearColor::White);
+					I.BlendMode = SE_BLEND_Opaque;
+					C->DrawItem(I);
+				}
+			}
+		}
+		else
+		{
+			FCanvasTileItem T(FVector2D(WX, WY), FVector2D(WW, WH), FtCol(0x2a, 0x1a, 0x0e));
+			T.BlendMode = SE_BLEND_Opaque;
+			C->DrawItem(T);
+		}
+		if (Art.Box && Art.Box->GetResource())
+		{
+			const float S = float(Art.Box->GetSizeX());
+			const float U0 = 116.f / S, U1 = (S - 116.f) / S, K = Corner * CdFrame;
+			const float Xs[4] = { 0.f, K, W - K, W };
+			const float Ys[4] = { 0.f, K, H - K, H };
+			const float Us[4] = { 0.f, U0, U1, 1.f };
+			for (int32 j = 0; j < 3; ++j)
+			{
+				for (int32 i = 0; i < 3; ++i)
+				{
+					if (i == 1 && j == 1) continue;
+					FCanvasTileItem I(FVector2D(Xs[i], Ys[j]), Art.Box->GetResource(), FVector2D(Xs[i + 1] - Xs[i], Ys[j + 1] - Ys[j]), FVector2D(Us[i], Us[j]), FVector2D(Us[i + 1], Us[j + 1]), FLinearColor::White);
+					I.BlendMode = SE_BLEND_Translucent;
+					C->DrawItem(I);
+				}
+			}
+		}
+	}
+	const float L = CdPadL + CdInX, R = W - CdPadR - CdInX;
+	float Y = CdPadT + CdInY;
+	// the title and the clock (the time left, the kill limit), gold
+	if (P.bClockLine)
+	{
+		Txt(Data.Title, L, Y + CdTitleH * 0.5f, 0, FtGold(), R - L, true);
+		Y += CdTitleH;
+		Txt(P.Clock, L, Y + CdTitleH * 0.5f, 0, FLinearColor::White, R - L, false);
+	}
+	else
+	{
+		float CW = 0.f, CH = 0.f;
+		if (!P.Clock.IsEmpty()) C->TextSize(F, P.Clock, CW, CH);
+		Txt(Data.Title, L, Y + CdTitleH * 0.5f, 0, FtGold(), R - L - (CW > 0.f ? CW + 30.f : 0.f), true);
+		Txt(P.Clock, R, Y + CdTitleH * 0.5f, 2, FLinearColor::White, 0.f, false);
+	}
+	Y += CdTitleH;
+	// the columns of blocks: a block's head (NAME, or the team's name and score in its colour), the mode's, K and D; its rows
+	for (int32 c = 0; c < P.Cols.Num(); ++c)
+	{
+		const float X = L + c * (P.ColW + CdGutter);
+		const float NameR = X + CdNameW, ModeR = NameR + (P.ModeVal != INDEX_NONE ? CdModeW : 0.f), KR = ModeR + CdNumW, DR = KR + CdNumW;
+		float Ry = Y;
+		for (const FCardBlock& Block : P.Cols[c])
+		{
+			const FLinearColor HeadInk = Block.Team ? FtTeam(Block.Team) : FtGold();
+			Txt(Block.Head, X + CdCellPad, Ry + CdHeadH * 0.5f, 0, HeadInk, CdNameW - 2.f * CdCellPad, true);
+			if (P.ModeVal != INDEX_NONE) Txt(P.ModeHead, ModeR - CdCellPad, Ry + CdHeadH * 0.5f, 2, FtGold(), 0.f, true);
+			Txt(TEXT("K"), KR - CdCellPad, Ry + CdHeadH * 0.5f, 2, FtGold(), 0.f, true);
+			Txt(TEXT("D"), DR - CdCellPad, Ry + CdHeadH * 0.5f, 2, FtGold(), 0.f, true);
+			Ry += CdHeadH;
+			Fill(X, Ry - 3.f, DR - X, 2.f, FtGold() * FLinearColor(1.f, 1.f, 1.f, 0.6f));
+			for (int32 k = 0; k < Block.Rows.Num(); ++k)
+			{
+				const FFragTableRow& Row = Data.Rows[Block.Rows[k]];
+				if (k % 2 == 1) Fill(X, Ry, DR - X, CardRowPx, FLinearColor(0.f, 0.f, 0.f, 0.28f));
+				const FLinearColor NameInk = Row.bLocal ? FtHot() : Row.Team ? FtTeam(Row.Team) : FLinearColor::White;
+				const FLinearColor NumInk = Row.bLocal ? FtHot() : FLinearColor::White;
+				const float Mid = Ry + CardRowPx * 0.5f;
+				Txt(Row.Name, X + CdCellPad, Mid, 0, NameInk, CdNameW - 2.f * CdCellPad, false);
+				auto Val = [&Row](int32 v) { return Row.Values.IsValidIndex(v) ? Row.Values[v] : FString(); };
+				if (P.ModeVal != INDEX_NONE) Txt(Val(P.ModeVal), ModeR - CdCellPad, Mid, 2, NumInk, CdModeW - 2.f * CdCellPad, false);
+				Txt(Val(P.KillVal), KR - CdCellPad, Mid, 2, NumInk, 0.f, false);      // (a number whole: three figures reach into the pad)
+				Txt(Val(P.DeathVal), DR - CdCellPad, Mid, 2, NumInk, 0.f, false);
+				// (a local player on a team: a mark of the team's colour before the name, as the table has it)
+				if (Row.bLocal && Row.Team) Fill(X - 2.f, Ry + 7.f, 4.f, CardRowPx - 14.f, FtTeam(Row.Team));
+				Ry += CardRowPx;
+			}
+		}
+	}
+	return Y + P.BodyH + CdInY + CdPadB;
+}
+
 // ---- a panel in the world ----------------------------------------------------------------------------------------------
 
 FBoxSphereBounds UOutlawsOnTopPlaneComponent::CalcBounds(const FTransform& LocalToWorld) const
@@ -382,8 +642,13 @@ void AOutlawsFragTablePanel::Tick(float DeltaSeconds)
 
 void AOutlawsFragTablePanel::Fit()
 {
-	const float HCm = CanvasH > 0 ? WidthCm * float(CanvasH) / float(FOutlawsFragTable::CanvasW) : WidthCm * 0.25f;
+	const float HCm = CanvasH > 0 ? WidthCm * float(CanvasH) / float(CanvasW) : WidthCm * 0.25f;
 	Plane->SetRelativeScale3D(FVector(WidthCm / 100.f, HCm / 100.f, 1.f));
+}
+
+FVector2D AOutlawsFragTablePanel::GetSizeCm() const
+{
+	return FVector2D(WidthCm, CanvasH > 0 ? WidthCm * float(CanvasH) / float(CanvasW) : WidthCm * 0.25f);
 }
 
 void AOutlawsFragTablePanel::Redraw()
@@ -392,14 +657,17 @@ void AOutlawsFragTablePanel::Redraw()
 	{
 		for (UObject* O : { (UObject*)Art.Box, (UObject*)Art.Wood, (UObject*)Art.Rule, (UObject*)Art.Title, (UObject*)Art.Header, (UObject*)Art.Cell }) if (O) ArtKept.Add(O);
 	}
-	const int32 H = FMath::Max(64, FOutlawsFragTable::Measure(Shown));
+	// (REQ-WHEELSCORE) the card's canvas as wide as its columns of players; the table's 1920 across
+	const FIntPoint CardSize = bCard ? FOutlawsFragTable::MeasureCard(Shown, Art) : FIntPoint::ZeroValue;
+	const int32 H = bCard ? FMath::Max(64, CardSize.Y) : FMath::Max(64, FOutlawsFragTable::Measure(Shown));
+	const int32 W = bCard ? FMath::Max(64, CardSize.X) : FOutlawsFragTable::CanvasW;
 	if (!Canvas)
 	{
 		Canvas = NewObject<UCanvasRenderTarget2D>(this);
 		Canvas->RenderTargetFormat = RTF_RGBA8_SRGB;
 		Canvas->TargetGamma = 1.f;                 // the sRGB target encodes on write (as the menu's)
 		Canvas->ClearColor = FLinearColor::Black;
-		Canvas->InitAutoFormat(FOutlawsFragTable::CanvasW, H);
+		Canvas->InitAutoFormat(W, H);
 		Canvas->OnCanvasRenderTargetUpdate.AddDynamic(this, &AOutlawsFragTablePanel::DrawCanvas);
 		UMaterialInterface* Base = nullptr;
 		if (bOnTop)
@@ -424,11 +692,13 @@ void AOutlawsFragTablePanel::Redraw()
 			Plane->SetMaterial(0, Mid);
 		}
 	}
-	else if (H != CanvasH)
+	else if (H != CanvasH || W != CanvasW)
 	{
-		Canvas->ResizeTarget(FOutlawsFragTable::CanvasW, H);
+		Canvas->ResizeTarget(W, H);
 	}
 	CanvasH = H;
+	if (bCard && CanvasW != W) WidthCm *= float(W) / float(FMath::Max(1, CanvasW));      // (the same cm a px: its placer sets it again)
+	CanvasW = W;
 	Fit();
 	Canvas->UpdateResource();
 }
@@ -482,7 +752,7 @@ FString AOutlawsFragTablePanel::DescribeMaterial() const
 
 void AOutlawsFragTablePanel::DrawCanvas(UCanvas* C, int32 Width, int32 Height)
 {
-	LastDrawnBottom = FOutlawsFragTable::Draw(C, Shown, Art, Width, Height);
+	LastDrawnBottom = bCard ? FOutlawsFragTable::DrawCard(C, Shown, Art, Width, Height, &LastTexts) : FOutlawsFragTable::Draw(C, Shown, Art, Width, Height);
 }
 
 // ---- -OLFragTableTest ----------------------------------------------------------------------------------------------------

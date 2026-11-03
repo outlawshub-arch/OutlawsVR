@@ -34,6 +34,7 @@
 #include "OutlawsLevelActor.h"
 #include "OutlawsEnemy.h"
 #include "OutlawsCoop.h"
+#include "OutlawsFragTable.h"
 #include "OutlawsSpriteActor.h"
 #include "GameFramework/CharacterMovementComponent.h"
 #include "Materials/MaterialParameterCollection.h"
@@ -1143,6 +1144,9 @@ void AOutlawsPlayer::OpenWheel(int32 Hand)
 	WheelRoot->SetVisibility(true, false);
 	ShowWheelMap();                      // (REQ-WHEELMAP: the map in the horseshoe's middle)
 	KeepWheelOverWorld();
+	// (REQ-WHEELSCORE) in a match the scorecard hangs under it (none in single player or the story co-op)
+	WheelScore = UOutlawsCoop::WheelScoreCard(this, true);
+	PlaceWheelScore();
 	// the world slows to half speed and dims behind the wheel (R8, decided 2026-10-03: not in a co-op session, where the
 	// host's clock is both players' bad guys and doors; single player as before)
 	if (!UOutlawsCoop::IsActive(this)) UGameplayStatics::SetGlobalTimeDilation(this, 0.5f);
@@ -1716,9 +1720,13 @@ void AOutlawsPlayer::UpdateWheel()
 			const FRotator Head = Camera->GetComponentRotation();
 			const FRotator Hung = WheelDir.Rotation();
 			const float Step = FMath::Min(float(FApp::GetDeltaTime()), 0.05f);
-			auto WheelFollow = [Step](float Angle, float& Vel, bool& bFollow, float Err)
+			// (REQ-WHEELSCORE) the head reading the scorecard under it (20 to 45 degrees down) never sets it off, or the card
+			// would run from the eyes; past the card, or anywhere else, it follows as before
+			const bool bOnCard = HeadOnWheelScore();
+			if (bOnCard) bWheelYawFollow = bWheelPitchFollow = false;
+			auto WheelFollow = [Step, bOnCard](float Angle, float& Vel, bool& bFollow, float Err)
 			{
-				if (FMath::Abs(Err) > 20.f) bFollow = true;
+				if (FMath::Abs(Err) > 20.f && !bOnCard) bFollow = true;
 				if (bFollow && FMath::Abs(Err) < 1.5f && FMath::Abs(Vel) < 6.f) bFollow = false;
 				constexpr float Spring = 4.5f;                       // (critically damped: no overshoot)
 				Vel += ((bFollow ? Spring * Spring * Err : 0.f) - 2.f * Spring * Vel) * Step;
@@ -1730,6 +1738,7 @@ void AOutlawsPlayer::UpdateWheel()
 		}
 		const FVector Centre = Eye + WheelDir * 240.0;
 		WheelRoot->SetWorldLocationAndRotation(Centre, (Eye - Centre).Rotation());
+		PlaceWheelScore();                   // (REQ-WHEELSCORE: the card with it)
 	}
 	const FVector C = WheelRoot->GetComponentLocation();
 	const FVector N = WheelRoot->GetForwardVector();
@@ -1973,7 +1982,83 @@ void AOutlawsPlayer::CloseWheel()
 	bWheelMapHover = false;
 	WheelMapPointHand = -1;
 	if (WheelRoot) WheelRoot->SetVisibility(false, true);
+	if (AOutlawsFragTablePanel* Card = WheelScore.Get())
+	{
+		// (REQ-WHEELSCORE) the card goes with it (kept for the next open, its rows no longer looked at)
+		Card->SetSource(nullptr);
+		Card->SetActorHiddenInGame(true);
+	}
+	WheelScore.Reset();
 	UGameplayStatics::SetGlobalTimeDilation(this, 1.f);
+}
+
+float AOutlawsPlayer::WheelLowestDeg() const
+{
+	// the slots' local places (cm at scale 1, Z up the wheel): a slot reaches down to its pick circle (4.5, UpdateWheel's) or
+	// its count plate under the icon (half the icon, the plate's 1.3 gap and its own height), whichever is lower
+	float Low = -18.f;                       // (the horseshoe's own foot)
+	for (int32 i = 0; i < WheelSlots.Num(); ++i)
+	{
+		const UStaticMeshComponent* S = WheelSlots[i];
+		if (!S || !S->IsVisible()) continue;
+		const float Size = float(S->GetRelativeScale3D().X) * 100.f;
+		Low = FMath::Min(Low, float(S->GetRelativeLocation().Z) - FMath::Max(4.5f, Size * 0.5f + 1.3f + 1.2f));
+	}
+	for (const UStaticMeshComponent* A : { WheelPrev.Get(), WheelNext.Get() })
+	{
+		if (A && A->IsVisible()) Low = FMath::Min(Low, float(A->GetRelativeLocation().Z) - 3.f);
+	}
+	return FMath::RadiansToDegrees(FMath::Atan(-Low * WheelScale / 240.f));
+}
+
+void AOutlawsPlayer::PlaceWheelScore()
+{
+	// REQ-WHEELSCORE (user 3 Nov: "show it below the weapon wheel ... tilted up toward the eyes for easier reading"): the wheel
+	// stays as it is; the card's top 1.5 degrees under the wheel's lowest part, its middle as far out as the wheel's (2.4 m),
+	// turned to face the eyes (so it tips up by as much as it hangs below the wheel's middle), as wide as its columns
+	AOutlawsFragTablePanel* Card = WheelScore.Get();
+	if (!Card || !WheelRoot || !Camera || !Card->GetCanvas()) return;
+	constexpr double Dist = 240.0;
+	constexpr double FloorDeg = 1.32;        // (the menu floor, MenuSmallFont's 1.28 degree cap height, and a little over)
+	const FVector Eye = Camera->GetComponentLocation();
+	const FVector Fwd = WheelDir.GetSafeNormal();
+	const FVector Up = WheelRoot->GetUpVector();
+	const FVector Right = -WheelRoot->GetRightVector();          // (the wheel faces the eyes: its own right is the viewer's left)
+	// cm a canvas px: the farthest words (a corner's, seen at a slant from further off) at the floor; on the card's face a cap
+	// h at (x, y) off its middle subtends h * sqrt(D^2 + x^2) / (D^2 + x^2 + y^2)
+	const double Wpx = Card->GetCanvasW(), Hpx = FMath::Max(1, Card->GetCanvasH());
+	const double Want = FMath::DegreesToRadians(FloorDeg), Cap = FOutlawsFragTable::CardCapPx;
+	double S = Dist * FMath::Tan(Want) / Cap;
+	for (int32 k = 0; k < 8; ++k)
+	{
+		const double X = S * FMath::Max(0.0, Wpx * 0.5 - 30.0), Y = S * FMath::Max(0.0, Hpx * 0.5 - 30.0);
+		const double Seen = S * Cap * FMath::Sqrt(Dist * Dist + X * X) / (Dist * Dist + X * X + Y * Y);
+		S *= Want / FMath::Max(Seen, 1e-6);
+	}
+	const double HalfDeg = FMath::RadiansToDegrees(FMath::Atan(S * Hpx * 0.5 / Dist));
+	WheelScoreLowDeg = WheelLowestDeg();
+	WheelScoreTilt = float(WheelScoreLowDeg + 1.5 + HalfDeg);
+	WheelScoreCmPerPx = float(S);
+	const double T = FMath::DegreesToRadians(double(WheelScoreTilt));
+	const FVector Dir = (Fwd * FMath::Cos(T) - Up * FMath::Sin(T)).GetSafeNormal();
+	Card->PlaceFacing(Eye + Dir * Dist, Eye, Right, float(S * Wpx));
+}
+
+bool AOutlawsPlayer::HeadOnWheelScore() const
+{
+	const AOutlawsFragTablePanel* Card = WheelScore.Get();
+	if (!Card || Card->IsHidden() || !Camera) return false;
+	const FVector Eye = Camera->GetComponentLocation(), Look = Camera->GetForwardVector();
+	const FVector Mid = Card->GetActorLocation(), N = Card->GetActorUpVector();
+	const double Den = FVector::DotProduct(Look, N);
+	if (FMath::Abs(Den) < 1e-3) return false;
+	const double T = FVector::DotProduct(Mid - Eye, N) / Den;
+	if (T <= 0.0) return false;
+	const FVector Off = Eye + Look * T - Mid;
+	const FVector2D Size = Card->GetSizeCm();
+	const double Margin = T * FMath::Tan(FMath::DegreesToRadians(4.0));      // (4 degrees round it)
+	return FMath::Abs(FVector::DotProduct(Off, Card->GetActorForwardVector())) < Size.X * 0.5 + Margin
+		&& FMath::Abs(FVector::DotProduct(Off, Card->GetActorRightVector())) < Size.Y * 0.5 + Margin;
 }
 
 void AOutlawsPlayer::DrawStartPistol()
