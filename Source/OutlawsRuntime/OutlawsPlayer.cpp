@@ -90,10 +90,10 @@ namespace
 	constexpr float OldCrouchEye = 70.f;        // (-OLOldCrouchFit)
 	constexpr float SwimSqueezeAhead = 50.f;    // (REQ-CROUCHFIT) how far on a swimmer looks for something lower than it
 	constexpr float SwimUpDownEase = 0.25f;     // (REQ-SWIMUPDOWN) seconds a held swim up or down takes to reach its speed
-	// (REQ-SWIMUPDOWN's stacking, user 3 Nov: "a small bonus for both, just much less") the share of the slower of the stick's
-	// swim and the arms' that goes on top of the faster when both swim at once
+	// (REQ-SWIMUPDOWN's stacking, user 3 Nov: "a small bonus for both, just much less"; REQ-SWIMUPDOWN2, 3 Nov: "measured
+	// against the stick's speed") the share of the stick's swim that both at once may go over it
 	TAutoConsoleVariable<float> CVarSwimStackShare(TEXT("ol.SwimStackShare"), 0.3f,
-		TEXT("Swimming with the stick and the arms at once: max(stick, arms) + this x min(stick, arms) (0.3; -OLOldSwimStack adds them as before)."));
+		TEXT("Swimming with the stick and the arms at once: at most max(arms, (1 + this) x stick) (0.3; -OLSwimStackMaxMin: max(stick, arms) + this x min(stick, arms); -OLOldSwimStack adds them as before)."));
 	FString* GNarrowWhy = nullptr;              // (REQ-CROUCHFIT, the log) what NarrowAt found round the middle, when set
 }
 
@@ -992,6 +992,38 @@ bool AOutlawsPlayer::OldSwimStack()
 	return bOld;
 }
 
+bool AOutlawsPlayer::SwimStackMaxMin()
+{
+	static const bool bOn = OLFlags::Param(TEXT("OLSwimStackMaxMin"));  // (REQ-SWIMUPDOWN's first stacking: max + share x min)
+	return bOn;
+}
+
+bool AOutlawsPlayer::OldSwimClimb()
+{
+	static const bool bOld = OLFlags::Param(TEXT("OLOldSwimClimb"));    // (REQ-SWIMUPDOWN2's before: a fresh press climbs out)
+	return bOld;
+}
+
+bool AOutlawsPlayer::JumpHeldNow() const
+{
+	// the jump held as it jumps: the desktop's Space, the jump face button, the turn stick pushed up past the jump's 0.7
+	if (bMenuOpen || bWheelOpen || bDeadView) return false;
+	if (bJumpKeyDown || JumpButtonHeld()) return true;
+	if (!bVR && HeldTurnLeft <= 0.f) return false;
+	const FVector2D T = TurnStick();
+	return T.Y > 0.7f && FMath::Abs(T.X) < 0.5f;
+}
+
+void AOutlawsPlayer::SwimClimbHeld()
+{
+	// REQ-SWIMUPDOWN2 (user 3 Nov): a held jump climbs out by itself on reaching an edge at the surface, as a fresh press does
+	// (DoJump's); under the surface a held jump still swims up at the swim speed first (SwimUpDown).  -OLOldSwimClimb: a
+	// fresh press needed, as before
+	if (!bSwimming || OldSwimClimb() || IsMountedGun() || IsClimbing() || MantleLeft > 0.f || !JumpHeldNow()) return;
+	bool bAtSurface = false;
+	if (ClimbOutOfWater(bAtSurface)) SwimLog(TEXT("a held jump climbs out"));
+}
+
 float AOutlawsPlayer::SwimStackShare()
 {
 	return FMath::Clamp(CVarSwimStackShare.GetValueOnGameThread(), 0.f, 1.f);
@@ -1517,6 +1549,44 @@ void AOutlawsPlayer::CheckHeight(float Dt)
 	}
 }
 
+bool AOutlawsPlayer::ClimbOutOfWater(bool& bAtSurface)
+{
+	AOutlawsLevelActor* L = Level.Get();
+	float Surface = 0.f;
+	bAtSurface = false;
+	// at the surface (swimming, or bobbing just out of the swim at the waterline): jump out. Against a wall
+	// (a bank, a pool's edge) the jump goes higher and over it (user 2026-09-27)
+	const float FeetZ = float(GetActorLocation().Z - GetCapsuleComponent()->GetScaledCapsuleHalfHeight());
+	const FVector Middle(GetActorLocation().X, GetActorLocation().Y, FeetZ + StandHalfHeight);
+	if (L && L->WaterAt(Middle - FVector(0.0, 0.0, 40.0), Surface) && Middle.Z > Surface - 80.f && (bSwimming || GetVelocity().Z < 200.f))
+	{
+		bAtSurface = true;
+		// only over an edge (a bank, a pool's side) ahead within reach: a wall in front, and ground on top of it no higher
+		// than a jump climbs (user 2026-09-29: jumping again and again out in the open stood the body on the water)
+		const FVector Forward = FRotator(0.0, Camera->GetComponentRotation().Yaw, 0.0).Vector();
+		FCollisionQueryParams Q(SCENE_QUERY_STAT(OutlawsWaterExit), false, this);
+		FHitResult Hit, Top;
+		bool bEdge = GetWorld()->SweepSingleByChannel(Hit, Middle, Middle + Forward * 70.0, FQuat::Identity, ECC_Pawn, FCollisionShape::MakeSphere(20.f), Q);
+		if (bEdge)
+		{
+			const FVector Over = FVector(Hit.ImpactPoint) + Forward * 30.0;
+			bEdge = GetWorld()->LineTraceSingleByChannel(Top, FVector(Over.X, Over.Y, Surface + 170.0), FVector(Over.X, Over.Y, Surface - 30.0), ECC_Pawn, Q)
+				&& Top.ImpactNormal.Z > 0.6 && !Top.bStartPenetrating;
+		}
+		if (!bEdge)
+		{
+			return false;                                // treading water at the surface: nothing to climb out onto
+		}
+		bSwimming = false;
+		GetCharacterMovement()->SetMovementMode(MOVE_Falling);
+		LaunchCharacter(Forward * 220.0 + FVector(0.0, 0.0, 640.0), true, true);
+		SwimExitUntil = GetWorld()->GetTimeSeconds() + 0.6;     // no falling back into the swim on the way up
+		UE_LOG(LogOutlaws, Log, TEXT("OLRT out of the water over the edge"));
+		return true;
+	}
+	return false;
+}
+
 void AOutlawsPlayer::DoJump()
 {
 	if (bDeadView)
@@ -1533,36 +1603,8 @@ void AOutlawsPlayer::DoJump()
 		return;
 	}
 	AOutlawsLevelActor* L = Level.Get();
-	float Surface = 0.f;
-	// at the surface (swimming, or bobbing just out of the swim at the waterline): jump out. Against a wall
-	// (a bank, a pool's edge) the jump goes higher and over it (user 2026-09-27)
-	const float FeetZ = float(GetActorLocation().Z - GetCapsuleComponent()->GetScaledCapsuleHalfHeight());
-	const FVector Middle(GetActorLocation().X, GetActorLocation().Y, FeetZ + StandHalfHeight);
-	if (L && L->WaterAt(Middle - FVector(0.0, 0.0, 40.0), Surface) && Middle.Z > Surface - 80.f && (bSwimming || GetVelocity().Z < 200.f))
-	{
-		// only over an edge (a bank, a pool's side) ahead within reach: a wall in front, and ground on top of it no higher
-		// than a jump climbs (user 2026-09-29: jumping again and again out in the open stood the body on the water)
-		const FVector Forward = FRotator(0.0, Camera->GetComponentRotation().Yaw, 0.0).Vector();
-		FCollisionQueryParams Q(SCENE_QUERY_STAT(OutlawsWaterExit), false, this);
-		FHitResult Hit, Top;
-		bool bEdge = GetWorld()->SweepSingleByChannel(Hit, Middle, Middle + Forward * 70.0, FQuat::Identity, ECC_Pawn, FCollisionShape::MakeSphere(20.f), Q);
-		if (bEdge)
-		{
-			const FVector Over = FVector(Hit.ImpactPoint) + Forward * 30.0;
-			bEdge = GetWorld()->LineTraceSingleByChannel(Top, FVector(Over.X, Over.Y, Surface + 170.0), FVector(Over.X, Over.Y, Surface - 30.0), ECC_Pawn, Q)
-				&& Top.ImpactNormal.Z > 0.6 && !Top.bStartPenetrating;
-		}
-		if (!bEdge)
-		{
-			return;                                      // treading water at the surface: nothing to climb out onto
-		}
-		bSwimming = false;
-		GetCharacterMovement()->SetMovementMode(MOVE_Falling);
-		LaunchCharacter(Forward * 220.0 + FVector(0.0, 0.0, 640.0), true, true);
-		SwimExitUntil = GetWorld()->GetTimeSeconds() + 0.6;     // no falling back into the swim on the way up
-		UE_LOG(LogOutlaws, Log, TEXT("OLRT out of the water over the edge"));
-		return;
-	}
+	bool bAtSurface = false;
+	if (ClimbOutOfWater(bAtSurface) || bAtSurface) return;      // (out over an edge, or treading water at the surface)
 	if (bSwimming)
 	{
 		// deeper down: a kick up; held, it swims up (REQ-SWIMUPDOWN: SwimUpDown), so the press itself does nothing more
@@ -1865,6 +1907,7 @@ void AOutlawsPlayer::Tick(float Dt)
 	Swimming();
 	SwimStrokes(Dt);
 	SwimUpDown(Dt);                     // (REQ-SWIMUPDOWN: before the gravity, which lets go of the surface for a held swim down)
+	SwimClimbHeld();                    // (REQ-SWIMUPDOWN2: a held jump climbs out at an edge)
 	UpdateGravity(Dt);
 	TrackFall(Dt);                      // (BUG-FALLDAMAGE: the drop measured, not read back from the landing speed)
 	// out of the map: a fall that goes on for three seconds (or well under the lowest floor) ends back on the
@@ -2760,17 +2803,20 @@ void AOutlawsPlayer::SwimStrokes(float Dt)
 	auto Stack = [&]()
 	{
 		// REQ-SWIMUPDOWN's stacking (user 3 Nov: "arm swimming STACKS on top of left-stick swimming and nearly doubles the
-		// speed", "a small bonus for both, just much less"): with both swimming, the body no faster than max(stick, arms) +
-		// SwimStackShare() x min(stick, arms), the stick's the fly mode's top speed for what is on it (MaxFlySpeed times the
-		// input, a held swim up or down in it), the arms' their own swim (none at all for strokes too weak to move the body
-		// alone: the fly mode stops a body under 10 cm/s, so on top of the stick they only added).  Each alone is left exactly
-		// as it was: nothing on the stick, no cap; nothing from the arms, nothing added here to cap.  Never under the speed the
-		// frame began with: what is over it the water takes off as it glides
+		// speed", "a small bonus for both, just much less"): with both swimming, the body is capped, the stick's the fly mode's
+		// top speed for what is on it (MaxFlySpeed times the input, a held swim up or down in it), the arms' their own swim
+		// (none at all for strokes too weak to move the body alone: the fly mode stops a body under 10 cm/s, so on top of the
+		// stick they only added).  Each alone is left exactly as it was: nothing on the stick, no cap; nothing from the arms,
+		// nothing added here to cap.  Never under the speed the frame began with: what is over it the water takes off as it
+		// glides.  REQ-SWIMUPDOWN2 (user 3 Nov: the bonus "measured against the stick's speed"): the cap is max(arms, (1 +
+		// share) x stick): adding the stick never slows the arms' swim, and both never pass 1.3 x the stick unless the arms
+		// alone do.  -OLSwimStackMaxMin: the first cap, max(stick, arms) + share x min(stick, arms)
 		if (OldSwimStack()) return;
 		const float Stick = M->MaxFlySpeed * FMath::Min(1.f, float(M->GetLastInputVector().Size()));
 		const float Arms = float(SwimArmVel.Size());
 		if (Stick < 1.f) return;
-		const float Top = FMath::Max(FMath::Max(Stick, Arms) + SwimStackShare() * FMath::Min(Stick, Arms), float(Start.Size()));
+		const float Both = SwimStackMaxMin() ? FMath::Max(Stick, Arms) + SwimStackShare() * FMath::Min(Stick, Arms) : FMath::Max(Arms, (1.f + SwimStackShare()) * Stick);
+		const float Top = FMath::Max(Both, float(Start.Size()));
 		if (M->Velocity.SizeSquared() > FMath::Square(Top)) M->Velocity = M->Velocity.GetSafeNormal() * Top;
 	};
 	// each hand's motion against the body past 70 cm/s is a stroke (a breaststroke's sweep runs 150-250 cm/s): 4.5 cm/s

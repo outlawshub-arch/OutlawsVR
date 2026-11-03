@@ -1663,13 +1663,23 @@ private:
 	int32 JumpFaceButton = 0;            // the face button whose press last jumped (FaceHeld's bit; 0: none)
 	void DesktopJumpPressed();
 	void DesktopJumpReleased();
-	/** REQ-SWIMUPDOWN's stacking (user 3 Nov: arm swimming on top of the stick's nearly doubled the speed): both together go
-	 *  max(stick, arms) + SwimStackShare() x min(stick, arms); each alone as before.  SwimArmVel is the arms' own swim, what
-	 *  the strokes alone would give the body (their push, glided down as the water glides the body).  ol.SwimStackShare
-	 *  (0.3) tunes it; -OLOldSwimStack: the two added, as before. */
+	/** REQ-SWIMUPDOWN's stacking (user 3 Nov: arm swimming on top of the stick's nearly doubled the speed), REQ-SWIMUPDOWN2's
+	 *  reading ("measured against the stick's speed"): both together go at most max(arms, (1 + SwimStackShare()) x stick);
+	 *  each alone as before.  SwimArmVel is the arms' own swim, what the strokes alone would give the body (their push,
+	 *  glided down as the water glides the body).  ol.SwimStackShare (0.3) tunes it; -OLSwimStackMaxMin: the first one's
+	 *  max(stick, arms) + share x min(stick, arms); -OLOldSwimStack: the two added, as before. */
 	FVector SwimArmVel = FVector::ZeroVector;
 	static bool OldSwimStack();
+	static bool SwimStackMaxMin();
 	static float SwimStackShare();
+	/** REQ-SWIMUPDOWN2 (user 3 Nov): a held jump climbs out at the surface on reaching an edge, as a fresh press does; each
+	 *  frame after SwimUpDown.  ClimbOutOfWater is DoJump's climb-out (true: out over the edge; bAtSurface: in the surface's
+	 *  reach, edge or not); JumpHeldNow the jump held (Space, the jump face button, the turn stick up past 0.7).
+	 *  -OLOldSwimClimb: a fresh press needed, as before. */
+	void SwimClimbHeld();
+	bool ClimbOutOfWater(bool& bAtSurface);
+	bool JumpHeldNow() const;
+	static bool OldSwimClimb();
 	float StaminaFrac() const { return FMath::Clamp(Stamina / 100.f, 0.f, 1.f); }
 	void UpdateStamina(float Dt);
 	/** REQ-STAMINA15 (user 2026-10-27, "out of breath in VR"): stamina a second (minus: spent) for what the body does:

@@ -1,7 +1,9 @@
 // REQ-SWIMUPDOWN's probe (user 3 Nov: under water jump and crouch moved the body up and down in pulses and the stance note
 // came up each time; held, they should swim straight up or down at a steady speed with a short ease in and out; and arm
-// swimming on top of the stick's nearly doubled the speed: both together max(stick, arms) + 0.3 x min(stick, arms)):
-// -OLShots -OLNoFrontEnd -OLLevel=hideout -OLSwimUpDownProbe[=vr] [-OLSwimUpDownSector=N] [-OLOldSwimUpDown] [-OLOldSwimStack].
+// swimming on top of the stick's nearly doubled the speed; REQ-SWIMUPDOWN2, the user's answers: both together at most
+// max(arms, 1.3 x stick), and a held jump climbs out at an edge by itself):
+// -OLShots -OLNoFrontEnd -OLLevel=hideout -OLSwimUpDownProbe[=vr] [-OLSwimUpDownSector=N] [-OLOldSwimUpDown] [-OLOldSwimStack]
+// [-OLSwimStackMaxMin] [-OLOldSwimClimb].
 // In the level's deepest water (DebugWaterSector; hideout's shaft 64, 11 m deep), at the Movement Speed dial's 100 %, each
 // case put in place and settled:
 //   up        from near the floor, jump held (the desktop's Space; =vr the turn stick pushed up): the speed up reaches the
@@ -15,13 +17,14 @@
 //   surfdown  held at the surface, crouch held: it lets go and goes under;
 //   bottom    the feet just over the floor, crouch held: on the floor, still swimming;
 //   edgeup    facing the shaft's nearest side, the stick pushed a little at it, from 1.5 m under the float depth: jump held
-//             (-OLOldSwimUpDown: pressed every half second, the user's pulses) up to the surface at the side's lip;
+//             (-OLOldSwimUpDown: pressed every half second, the user's pulses) up to the surface at the side's lip: no
+//             faster than the swim on the way, then out over the side with no second press (-OLOldSwimClimb: still in);
 // each of them: no "Crouch" / "Stand" note, the crouch's state as it was, no crouch to fit (REQ-CROUCHFIT's squeeze) except
 // the old's.  -OLOldSwimUpDown: the held up and down must show the old pulse (a kick at the press, then the sink).  The
 // desktop run then measures the stacking (GSwimStrokeTest: the strokes without a headset; the body held where it is across,
 // so the shaft's sides never stop it, and the swim's own speed read): across, the stick alone, the arms alone (a hard swing;
 // a breaststroke's rhythm), both; up, the stick looking up, the arms looking up, both, the held swim up, the held swim up
-// and the arms.  -OLOldSwimStack: as before.
+// and the arms; then the table's one line.  -OLSwimStackMaxMin: the first one's max + 0.3 x min.  -OLOldSwimStack: as before.
 // Lines "OLSHOT swimupdown <case>: ...", "OLSHOT swimupdown check PASS|FAIL: ..." and "OLSHOT swimupdown RESULT".
 
 #include "OutlawsPlayer.h"
@@ -75,14 +78,16 @@ namespace OutlawsSwimUpDownLocal
 		{ TEXT("up held"), Stack, 2.6f, false, NoArms, 0.f, true, false },
 		{ TEXT("up held and arms looking up"), Stack, 2.6f, false, Stroke, 80.f, true, false } };
 	int32 CaseI = 0, Step = 0, Passes = 0, Fails = 0, Toasts = 0, LetGo = 0, Exits = 0, Squeezes = 0;
-	bool bArmed = false, bVRMode = false, bOldUD = false, bOldStack = false, bWasHeld = false, bWasSwimming = false, bHeldSeen = false;
+	bool bArmed = false, bVRMode = false, bOldUD = false, bOldStack = false, bMaxMin = false, bOldClimb = false, bWasHeld = false, bWasSwimming = false, bHeldSeen = false;
+	float ExitAt = -1.f, ExitMid = 0.f;         // (the first time out of the water: when, and the middle then)
 	bool bCrouch0 = false, bAuto0 = false, bIsCrouched0 = false, bWasSqueezed = false, bSurfEdge = false;
 	float T = 0.f, SurfaceZ = 0.f, FloorZ = 0.f, Speed = 0.f, HoldFor = 0.f, PrevMid = 0.f, StartMid = 0.f, NextPress = 0.f;
 	float Across = 0.f, SurfYaw = 0.f, EdgeYaw = 0.f;    // the longest free way across; a way with no edge at the surface; the nearest side
 	int32 Sector = -1;
 	FVector Plan = FVector::ZeroVector;
 	FString ToastWhere;
-	struct FSample { float T, Vz, Mid, VelZ, VelH; bool bHeld; };
+	struct FSample { float T, Vz, Mid, VelZ, VelH, Arm; bool bHeld, bSwim; };
+	const TCHAR* StackMode() { return bOldStack ? TEXT("-OLOldSwimStack") : bMaxMin ? TEXT("-OLSwimStackMaxMin") : TEXT("new stacking"); }
 	TArray<FSample> Samples;
 	TMap<FString, float> Means;                 // (the stacking's means, for the rule's check)
 	float GameSpeedWas = 0.5f, FpsWas = -1.f;
@@ -109,6 +114,8 @@ OL_SHOT_TEST(OLSwimUpDownProbe, 1920)
 		bVRMode = Mode.Equals(TEXT("vr"), ESearchCase::IgnoreCase);
 		bOldUD = OLFlags::Param(TEXT("OLOldSwimUpDown"));
 		bOldStack = OLFlags::Param(TEXT("OLOldSwimStack"));
+		bMaxMin = SwimStackMaxMin();
+		bOldClimb = OldSwimClimb();
 		GameSpeedWas = L->GameSpeed;
 		// at the headset's frame rate (the Quest's 72; -OLSwimUpDownFps=N, 0 as it comes): the fly mode's stop under 10 cm/s
 		// makes a stroke's push a frame count, so the arms' numbers go with the rate
@@ -119,8 +126,8 @@ OL_SHOT_TEST(OLSwimUpDownProbe, 1920)
 			FpsWas = MaxFps->GetFloat();
 			MaxFps->Set(Fps, ECVF_SetByCode);
 		}
-		UE_LOG(LogOutlaws, Display, TEXT("OLSHOT swimupdown start: %s, %s, %s, %s, stack share %.2f, at %.0f frames a second"), *L->LevelName, bOldUD ? TEXT("-OLOldSwimUpDown") : TEXT("new up/down"),
-			bOldStack ? TEXT("-OLOldSwimStack") : TEXT("new stacking"), bVRMode ? TEXT("vr") : TEXT("flat"), SwimStackShare(), Fps);
+		UE_LOG(LogOutlaws, Display, TEXT("OLSHOT swimupdown start: %s, %s, %s, %s, %s, stack share %.2f, at %.0f frames a second"), *L->LevelName, bOldUD ? TEXT("-OLOldSwimUpDown") : TEXT("new up/down"),
+			StackMode(), bOldClimb ? TEXT("-OLOldSwimClimb") : TEXT("held climb"), bVRMode ? TEXT("vr") : TEXT("flat"), SwimStackShare(), Fps);
 	}
 	if (bVRMode) { bVR = true; BaseGravityScale = 1.5f; }     // (the headset's rules, this run only)
 	auto Release = [&]()
@@ -138,8 +145,16 @@ OL_SHOT_TEST(OLSwimUpDownProbe, 1920)
 		GSwimStrokeTest = false;
 		L->GameSpeed = GameSpeedWas;
 		if (IConsoleVariable* MaxFps = IConsoleManager::Get().FindConsoleVariable(TEXT("t.MaxFPS")); MaxFps && FpsWas >= 0.f) MaxFps->Set(FpsWas, ECVF_SetByCode);
-		UE_LOG(LogOutlaws, Display, TEXT("OLSHOT swimupdown RESULT %s (%d passed, %d failed, %s, %s, %s)"), Fails == 0 && Passes > 0 ? TEXT("ALL PASS") : TEXT("FAIL"), Passes, Fails,
-			bOldUD ? TEXT("-OLOldSwimUpDown") : TEXT("new up/down"), bOldStack ? TEXT("-OLOldSwimStack") : TEXT("new stacking"), bVRMode ? TEXT("vr") : TEXT("flat"));
+		if (Means.Num() > 0)
+		{
+			// the stacking's table in one line (cm/s across): the stick, then the arms alone and both, hard, short and light
+			auto Get = [&](const TCHAR* K) { const float* V = Means.Find(K); return V ? *V : -1.f; };
+			UE_LOG(LogOutlaws, Display, TEXT("OLSHOT swimupdown table (%s): stick %.0f; hard arms %.0f both %.0f; short arms %.0f both %.0f; light arms %.0f both %.0f"), StackMode(),
+				Get(TEXT("across stick")), Get(TEXT("across arms hard")), Get(TEXT("across both hard")), Get(TEXT("across arms short")), Get(TEXT("across both short")),
+				Get(TEXT("across arms light")), Get(TEXT("across both light")));
+		}
+		UE_LOG(LogOutlaws, Display, TEXT("OLSHOT swimupdown RESULT %s (%d passed, %d failed, %s, %s, %s, %s)"), Fails == 0 && Passes > 0 ? TEXT("ALL PASS") : TEXT("FAIL"), Passes, Fails,
+			bOldUD ? TEXT("-OLOldSwimUpDown") : TEXT("new up/down"), StackMode(), bOldClimb ? TEXT("-OLOldSwimClimb") : TEXT("held climb"), bVRMode ? TEXT("vr") : TEXT("flat"));
 		ShotTime = -1.f;
 		CaseI = -1;
 		FGenericPlatformMisc::RequestExit(false);
@@ -231,10 +246,15 @@ OL_SHOT_TEST(OLSwimUpDownProbe, 1920)
 			: C.Kind == ToSurface || C.Kind == EdgeUp ? FMath::Max(Low, FloatZ - 150.f) : C.Kind == SurfUp || C.Kind == SurfDown || C.Kind == EdgeOut ? SurfaceZ - 50.f
 			: C.Kind == Bottom ? FloorZ + StandHalf + 5.f : (SurfaceZ + FloorZ) * 0.5f;
 		Put(Start);
+		// (nothing left of the case before's strokes: the velocity is zeroed by Put, the carry, the arms' own swim and the glide
+		// are not, and strokes that start over the fly mode's 10 cm/s stop go at their full speed, those under it hardly at all)
+		SwimCarry = SwimArmVel = FVector::ZeroVector;
+		StrokeUntil = StrokeGlideUntil = 0.0;
 		StartMid = Start;
 		T = 0.f;
 		Samples.Reset();
 		Toasts = LetGo = Exits = Squeezes = 0;
+		ExitAt = -1.f;
 		ToastWhere.Reset();
 		bHeldSeen = false;
 		Step = 1;
@@ -307,9 +327,13 @@ OL_SHOT_TEST(OLSwimUpDownProbe, 1920)
 			else { DesktopJumpReleased(); Hold(1.f); }
 		}
 	}
-	Samples.Add({ T, Vz, Mid, float(M->Velocity.Z), float(M->Velocity.Size2D()), bHeldNow });
+	Samples.Add({ T, Vz, Mid, float(M->Velocity.Z), float(M->Velocity.Size2D()), float(SwimArmVel.Size()), bHeldNow, bSwimming });
 	if (bWasHeld && !IsSurfaceHeld() && bSwimming) ++LetGo;
-	if (bWasSwimming && !bSwimming) ++Exits;
+	if (bWasSwimming && !bSwimming)
+	{
+		if (Exits == 0) { ExitAt = T; ExitMid = PrevMid; }
+		++Exits;
+	}
 	bWasHeld = IsSurfaceHeld();
 	bWasSwimming = bSwimming;
 	if (IsSurfaceHeld()) bHeldSeen = true;
@@ -381,6 +405,24 @@ OL_SHOT_TEST(OLSwimUpDownProbe, 1920)
 			Check(Exits > 0 && Top > FloatZ + 50.f, FString::Printf(TEXT("%s: held at the surface facing the side, the jump's press climbs out over it as before (out %d, the middle up to %.0f over its float depth)"),
 				C.Name, Exits, Top - FloatZ));
 		}
+		if (C.Kind == EdgeUp)
+		{
+			// (REQ-SWIMUPDOWN2) the held jump: up at the swim speed while in the water, then out over the side by itself at the
+			// surface (one press only, at the start, deep); -OLOldSwimClimb: still in the water, a fresh press needed
+			float FastestIn = 0.f;
+			for (const FSample& S : Samples) if (S.bSwim && (ExitAt < 0.f || S.T < ExitAt)) FastestIn = FMath::Max(FastestIn, S.Vz);
+			UE_LOG(LogOutlaws, Display, TEXT("OLSHOT swimupdown %s, %s: out at %.2f s (the middle %.0f cm off its float depth then); the fastest frame up in the water %.0f cm/s"),
+				C.Name, bOldClimb ? TEXT("-OLOldSwimClimb") : TEXT("held climb"), ExitAt, ExitMid - FloatZ, FastestIn);
+			if (!bOldUD && !bOldClimb)
+			{
+				Check(Exits > 0 && Top > FloatZ + 50.f && ExitMid > SurfaceZ - 80.f && FastestIn <= 1.15f * Speed + 3.f, FString::Printf(TEXT("%s: the held jump swims up at the swim speed (fastest %.0f of %.0f cm/s) and climbs out at the surface by itself, no second press (out %d at %.2f s, the middle %.0f off its float depth then, up to %.0f over it)"),
+					C.Name, FastestIn, Speed, Exits, ExitAt, ExitMid - FloatZ, Top - FloatZ));
+			}
+			else if (!bOldUD)
+			{
+				Check(Exits == 0 && bHeldSeen, FString::Printf(TEXT("%s, -OLOldSwimClimb: the held jump stays in the water at the side (held %d, out %d): a fresh press needed"), C.Name, bHeldSeen ? 1 : 0, Exits));
+			}
+		}
 		if (!bOldUD && C.Kind == ToSurface)
 		{
 			Check(bHeldSeen && Exits == 0 && Top <= FloatZ + 10.f && Fastest <= 1.15f * Speed + 3.f, FString::Printf(TEXT("%s: the surface takes the held swim up at its float depth (held %d, out %d, the middle at most %.0f over it, the fastest %.0f of %.0f cm/s)"),
@@ -411,22 +453,25 @@ OL_SHOT_TEST(OLSwimUpDownProbe, 1920)
 		float MoveMean, MLo, MHi, MPeak;
 		Window(From, HoldFor, true, MoveMean, MLo, MHi, MPeak, false);
 		Means.Add(C.Name, Mean);
-		UE_LOG(LogOutlaws, Display, TEXT("OLSHOT swimupdown stack %s: %.2f..%.2f s, mean %.0f cm/s (min %.0f, max %.0f), peak %.0f; the stick's swim %.0f, the arms' cap %.0f; the body's own rise %.0f cm/s"),
-			C.Name, From, HoldFor, Mean, Lo, Hi, Peak, Speed, Speed / 0.5f, MoveMean);
+		// (the arms' own swim, the stacking's copy of them that the cap goes by, and the frames a second it ran at)
+		float ArmMean = 0.f, ArmPeak = 0.f;
+		int32 ArmN = 0;
+		for (const FSample& S : Samples) if (S.T >= From && S.T <= HoldFor) { ArmMean += S.Arm; ArmPeak = FMath::Max(ArmPeak, S.Arm); ++ArmN; }
+		ArmMean = ArmN ? ArmMean / ArmN : 0.f;
+		UE_LOG(LogOutlaws, Display, TEXT("OLSHOT swimupdown stack %s: %.2f..%.2f s, mean %.0f cm/s (min %.0f, max %.0f), peak %.0f; the stick's swim %.0f, the arms' cap %.0f; the body's own rise %.0f cm/s; the arms' own swim mean %.0f, peak %.0f; %.0f frames a second"),
+			C.Name, From, HoldFor, Mean, Lo, Hi, Peak, Speed, Speed / 0.5f, MoveMean, ArmMean, ArmPeak, ArmN / FMath::Max(HoldFor - From, 0.01f));
 		// the rule, once both and each alone are in: both no more than max + share x min (some slack), no less than the faster
 		auto Rule = [&](const TCHAR* Both, const TCHAR* Stick, const TCHAR* Arms)
 		{
 			if (FCString::Strcmp(C.Name, Both) != 0) return;
 			const float* B = Means.Find(Both); const float* S = Means.Find(Stick); const float* A = Means.Find(Arms);
 			if (!B || !S || !A) return;
-			const float Want = FMath::Max(*S, *A) + SwimStackShare() * FMath::Min(*S, *A);
+			const float MaxMin = FMath::Max(*S, *A) + SwimStackShare() * FMath::Min(*S, *A);
+			const float Against = FMath::Max(*A, (1.f + SwimStackShare()) * *S);     // (REQ-SWIMUPDOWN2: against the stick)
+			const float Want = bMaxMin ? MaxMin : Against;
 			const float Sum = *S + *A;
-			UE_LOG(LogOutlaws, Display, TEXT("OLSHOT swimupdown stack rule %s: both %.0f, stick %.0f, arms %.0f; max + %.2f x min %.0f, the sum %.0f; both / stick %.2f, both / the faster %.2f"),
-				Both, *B, *S, *A, SwimStackShare(), Want, Sum, *B / FMath::Max(*S, 1.f), *B / FMath::Max(FMath::Max(*S, *A), 1.f));
-			// (the weak strokes sit on the fly mode's 10 cm/s stop: alone they move the body 13 to 175 cm/s run to run, and the
-			// stacking's own copy of the arms' swim can get past the stop where the body alone does not, so the rule is only
-			// reported for them)
-			if (FCString::Strcmp(Both, TEXT("across both weak")) == 0) return;
+			UE_LOG(LogOutlaws, Display, TEXT("OLSHOT swimupdown stack rule %s (%s): both %.0f, stick %.0f, arms %.0f; max(arms, %.2f x stick) %.0f, max + %.2f x min %.0f, the sum %.0f; both / stick %.2f, both / the faster %.2f"),
+				Both, StackMode(), *B, *S, *A, 1.f + SwimStackShare(), Against, SwimStackShare(), MaxMin, Sum, *B / FMath::Max(*S, 1.f), *B / FMath::Max(FMath::Max(*S, *A), 1.f));
 			if (!bOldStack) Check(*B <= Want * 1.08f + 5.f && *B >= FMath::Max(*S, *A) * 0.92f - 5.f, FString::Printf(TEXT("%s: both %.0f cm/s, the rule's %.0f (between the faster alone, %.0f, and it)"), Both, *B, Want, FMath::Max(*S, *A)));
 		};
 		Rule(TEXT("across both hard"), TEXT("across stick"), TEXT("across arms hard"));
