@@ -1853,6 +1853,13 @@ private:
 	/** The rules' respawn for a bot: a fresh brain at the spawn point, the character's start kit. */
 	void BotSpawn(int32 Who, const FVector& At, float Yaw);
 	void BotHurt(int32 Who, float Damage, const FVector& At, const FVector& From, int32 Shooter);
+	/** (REQ-BOTAMMO) A dead bot's drop round its feet (host): what a dead player leaves for its kit, every count random. */
+	void BotDeathDrop(const FBot& B, const AOutlawsEnemy* E);
+	int32 BotDropsMade = 0;
+#if WITH_OUTLAWS_TESTS
+	struct FBotDropNote { int32 Who; FVector Feet; TWeakObjectPtr<AActor> Actor; int32 Id; FString Ground, Contents; };
+	TArray<FBotDropNote> BotDropNotes;           // (the probe's: each bot drop made, -OLBotAmmoProbe)
+#endif
 	void BotPublish(FBot& B, double Now);
 	void BotApplyWeapon(FBot& B);
 	void BotChooseWeapon(FBot& B, const TCHAR* Why);

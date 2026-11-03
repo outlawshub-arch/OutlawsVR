@@ -871,11 +871,110 @@ void UOutlawsCoop::BotHurt(int32 Who, float Damage, const FVector& At, const FVe
 	B->bDead = true;
 	B->DiedAt = Now;
 	B->RespawnAt = Now + 3.0 + FMath::FRandRange(0.0, 2.0);
+	if (E) BotDeathDrop(*B, E);                  // (REQ-BOTAMMO: what it carried, round its feet, before the body goes)
 	if (E) E->Destroy();
 	B->Brain.Reset();
 	BotPublish(*B, Now);
 	UE_LOG(LogOutlawsAI, Log, TEXT("OLBOT %s dies (struck by the %s%s)"), *B->Name, Shooter >= 0 ? WhoWord(Shooter) : TEXT("world"),
 		IsBot(Shooter) ? *FString::Printf(TEXT(", %s"), *FindBot(Shooter)->Name) : TEXT(""));
+}
+
+void UOutlawsCoop::BotDeathDrop(const FBot& B, const AOutlawsEnemy* E)
+{
+	// (REQ-BOTAMMO, the user's play notes of 3 Nov: "bots aren't dropping ammo as they die. They should drop a random amount,
+	// kind of like how other players will... just make it a random number") a dead bot leaves round its feet what a dead player
+	// leaves for its kit (OnLocalDeath, GunDrops: OutlawsCoopRules.cpp): each gun beyond its character's start kit as that
+	// gun's ground item with its ammunition, the ammunition of the kit's own guns as the ammunition's own ground item (a
+	// player keeps it with the gun it keeps; a bot's body keeps nothing, and the ask is ammunition at every death), its sticks
+	// as a box of them (gamboxt, as the death drop's) and its knives.  Every count is random, 1 to that item's carry max (its
+	// ITM's MAX_COUNT), never what the bot spawned with or fired: it picks ammunition up as it goes.  The host makes them as
+	// the death drop makes a gun (GroundNameSuffix with the contents, then ApplyGroundContents), so every client is told by
+	// NoteGroundItem and its copy gives the same.  -OLOldBotDrop: nothing, as before
+	static const bool bOld = OLFlags::Param(TEXT("OLOldBotDrop"));
+	AOutlawsLevelActor* L = FindLevel();
+	UWorld* W = E ? E->GetWorld() : nullptr;
+	if (bOld || !L || !W || !IsHost() || !IsMatch()) return;
+	const FVector Body = E->GetActorLocation();
+	const float Half = E->GetCapsuleComponent()->GetScaledCapsuleHalfHeight();
+	FHitResult Hit;
+	FCollisionQueryParams Q(SCENE_QUERY_STAT(OutlawsBotDropFloor), false, E);
+	if (!W->LineTraceSingleByChannel(Hit, Body, Body - FVector(0.0, 0.0, Half + 2000.0), ECC_Visibility, Q))
+	{
+		UE_LOG(LogOutlawsAI, Log, TEXT("OLBOT %s drops nothing: no floor under its body at %s"), *B.Name, *Body.ToCompactString());
+		return;
+	}
+	const FVector Feet = Hit.ImpactPoint;
+	auto Roll = [L](const FString& Item)
+	{
+		const AOutlawsLevelActor::FItemDef* D = L->ItemDefs.Find(Item);
+		return FMath::RandRange(1, FMath::Max(1, D && D->MaxCount > 1 ? D->MaxCount : MaxAmmo));
+	};
+	// its start kit (BotSpawn's: the character ITM's START items, the revolver always)
+	const FOutlawsMpCharacter* Ch = FOutlawsMpCharacter::Find(B.Short);
+	const FBotChar& St = ReadBotChar(L, Ch);
+	bool bKitGun[5] = { true, false, false, false, false };
+	for (const TPair<FString, int32>& S : St.Start) { const int32 G = GunOfItem(S.Key); if (G >= 0) bKitGun[G] = true; }
+	bool bKitAmmo[3] = {};
+	for (int32 g = 0; g < 5; ++g) if (B.bHas[g] && bKitGun[g]) bKitAmmo[BotGun(g).AmmoType] = true;
+	TArray<FDrop> Drops;
+	auto Add = [&](const FString& Ground, const TArray<TPair<FString, int32>>& Give)
+	{
+		if (Ground.IsEmpty() || Give.Num() == 0) return;
+		FDrop D;
+		D.Ground = Ground;
+		D.Give = Give;
+		TArray<FString> Parts;
+		for (const TPair<FString, int32>& Kv : Give) Parts.Add(FString::Printf(TEXT("%s=%d"), *Kv.Key, Kv.Value));
+		D.Contents = FString::Join(Parts, TEXT(","));
+		Drops.Add(MoveTemp(D));
+	};
+	bool bAmmoGone[3] = {};
+	for (int32 g = 1; g < 5; ++g)
+	{
+		if (!B.bHas[g] || bKitGun[g]) continue;
+		const FBotGun G = BotGun(g);
+		TArray<TPair<FString, int32>> Give = { TPair<FString, int32>(G.Item, 1) };
+		if (!bKitAmmo[G.AmmoType] && !bAmmoGone[G.AmmoType])
+		{
+			Give.Emplace(GAmmoItems[G.AmmoType], Roll(GAmmoItems[G.AmmoType]));
+			bAmmoGone[G.AmmoType] = true;
+		}
+		Add(GroundItemFor(L, G.Item), Give);
+	}
+	for (int32 a = 0; a < 3; ++a)
+	{
+		if (bKitAmmo[a] && !bAmmoGone[a]) Add(GroundItemFor(L, GAmmoItems[a]), { TPair<FString, int32>(GAmmoItems[a], Roll(GAmmoItems[a])) });
+	}
+	if (B.Sticks > 0) Add(TEXT("gamboxt"), { TPair<FString, int32>(TEXT("idynam"), Roll(TEXT("idynam"))) });
+	if (B.Knives > 0) Add(GroundItemFor(L, TEXT("iknife")), { TPair<FString, int32>(TEXT("iknife"), Roll(TEXT("iknife"))) });
+	TArray<FString> Names;
+	for (int32 i = 0; i < Drops.Num(); ++i)
+	{
+		const FDrop& D = Drops[i];
+		// in a ring round the feet, as a dead player's (DropRing 35 cm); a ring spot past a ledge's edge or behind a wall (its
+		// floor not the body's) takes the feet's own spot instead, so nothing falls to a floor below
+		FVector At = Feet + FRotator(0.0, 360.0 * double(i) / double(Drops.Num()) + 30.0, 0.0).Vector() * 35.0;
+		{
+			FHitResult Ring;
+			const FVector Up(0.0, 0.0, 40.0);
+			const bool bWall = W->LineTraceSingleByChannel(Ring, Feet + Up, At + Up, ECC_Visibility, Q);
+			const bool bFloor = !bWall && W->LineTraceSingleByChannel(Ring, At + Up, At - FVector(0.0, 0.0, 60.0), ECC_Visibility, Q);
+			At = bFloor ? FVector(Ring.ImpactPoint) : Feet;
+		}
+		GroundNameSuffix = TEXT("#") + D.Contents;
+		AActor* A = L->SpawnGroundItem(D.Ground, At);
+		GroundNameSuffix.Reset();
+		if (!A) continue;
+		ApplyGroundContents(L, A, D.Contents);
+		++BotDropsMade;
+		const int32 Pi = PickupIndexOf(L, A);
+		const int32 Id = Pi >= 0 ? L->Pickups[Pi].CoopId : -1;
+#if WITH_OUTLAWS_TESTS
+		BotDropNotes.Add({ B.Who, Feet, A, Id, D.Ground, D.Contents });
+#endif
+		Names.Add(FString::Printf(TEXT("%s#%s (id %d)"), *D.Ground, *D.Contents, Id));
+	}
+	UE_LOG(LogOutlawsAI, Log, TEXT("OLBOT %s drops at %s: %s"), *B.Name, *Feet.ToCompactString(), Names.Num() ? *FString::Join(Names, TEXT(", ")) : TEXT("nothing"));
 }
 
 // ---- pickups ------------------------------------------------------------------------------------------------------------
