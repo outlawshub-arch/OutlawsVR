@@ -503,11 +503,12 @@ void UOutlawsCoop::OnMatchMessage(const FString& Text, float Seconds)
 {
 	UE_LOG(LogOutlawsCoop, Log, TEXT("OLMATCH message here (%s): %s"), IsHost() ? TEXT("host") : WhoWord(MyIndex()), *Text);
 	// (REQ-LOBBYREDO: the warm-up's "Waiting for players (n/8)" is not shown over the lobby page, whose state line says it; the
-	// last one shown is kept so the lobby can take it off when its page comes up)
+	// last one shown is kept so the lobby can take it off when its page comes up; nor, the WHEELSCORE follow-up, over the pause
+	// menu or the wheel's scorecard)
 	if (Text.StartsWith(TEXT("Waiting for players")))
 	{
 		WaitingSaid = Text;
-		if (bLobbyPageUp) return;
+		if (bWaitingOff) return;
 	}
 	if (AOutlawsLevelActor* L = FindLevel()) L->Notify(Text, Seconds);
 }

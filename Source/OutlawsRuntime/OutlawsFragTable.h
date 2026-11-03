@@ -119,8 +119,9 @@ struct OUTLAWSRUNTIME_API FOutlawsFragTable
 	static float Draw(UCanvas* C, const FFragTableData& Data, const FFragTableArt& Art, int32 Width, int32 Height);
 	/** (REQ-WHEELSCORE) the scorecard under the weapon wheel: every word in the cells' font at its own size (none shrunk, a long
 	 *  name cut short with an ellipsis), the title and the clock over the column heads, then a row a player: the name, the mode's
-	 *  column, K and D.  One column of players up to 8, two past it (1 to 8 left, 9 on right); a team game red's column then
-	 *  blue's, each headed by its team's score.  The canvas's size for these rows (it is as wide as its columns). */
+	 *  column, K and D.  One column of players up to 4, two from 5 (the first half, rounded up, on the left); a team game red's
+	 *  block then blue's (side by side from 5 too), each headed by its team's score.  The canvas's size for these rows (it is as
+	 *  wide as its columns). */
 	static FIntPoint MeasureCard(const FFragTableData& Data, const FFragTableArt& Art);
 	static float DrawCard(UCanvas* C, const FFragTableData& Data, const FFragTableArt& Art, int32 Width, int32 Height, TArray<FFragTableText>* OutTexts);
 	/** The cells' font's cap height on the card's canvas, px (the H's ink at 26 pt: 23 px as -OLWheelScoreProbe measured it,

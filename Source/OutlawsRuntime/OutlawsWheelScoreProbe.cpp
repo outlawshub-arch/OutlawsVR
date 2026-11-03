@@ -3,8 +3,10 @@
 //   a launched match host on its own: -OLShots -OLMpHost=drygulch -OLMpClass=dm|team -OLMpBots=0 -OLMpStartWhen=0
 //   -OLLobbyEnterAfter=4 -OLWheelScoreProbe [-OLOldWheelScore] [-ResX=1832 -ResY=1920 -ForceRes (Q2) | -ResX=2064 -ResY=2208 (Q3)]
 //   single player: -OLShots -OLNoFrontEnd -OLLevel=hideout -OLWheelScoreProbe
-// In the match, for 1, 8 and 16 players (stand-ins with scores in the table, -OLFakePlayers's): the wheel opened with the head
-// level and checked: the card up with every player's row, under the wheel (its top below the wheel's lowest part, its middle
+// In the match, for 1, 8 and 16 players (a Death Match 5 too; stand-ins with scores in the table, -OLFakePlayers's): the wheel
+// opened with the head level and checked: the card up with every player's row in one column up to 4 players and two from 5
+// (the WHEELSCORE follow-up, user 3 Nov: a Death Match's as a team game's), no "Waiting for players" HUD line over it (nor over
+// the pause menu below; back once the menu is closed, in the warm-up), under the wheel (its top below the wheel's lowest part, its middle
 // straight under the wheel's), its face toward the eyes within 2 degrees, every word's cap height at or above the menu floor
 // (1.28 degrees, MenuSmallFont's; the cap measured from the cells' font's ink), no wheel pick circle seen on it, no point of the
 // hand rest volume (10 to 40 cm out, 10 to 35 to each side, 50 to 80 down from the eyes) seen on it, every word inside the
@@ -46,8 +48,7 @@ namespace OutlawsWheelScoreProbeLocal
 	float At = 0.f, CapPx = 0.f;
 	FVector ReadDirWas = FVector::ZeroVector;
 	FRotator ReadRot = FRotator::ZeroRotator;
-	const int32 Players[] = { 1, 8, 16 };
-	constexpr int32 NumCases = 3;
+	TArray<int32> Players;                   // (a Death Match's 1, 5, 8 and 16 players, a team game's 1, 8 and 16)
 	constexpr double FloorDeg = 1.28;
 
 	void Check(bool bOk, const FString& What)
@@ -102,7 +103,7 @@ OL_SHOT_TEST(OLWheelScoreProbe, 1880)
 	// a using-directive left the two side by side)
 	namespace Ws = OutlawsWheelScoreProbeLocal;
 	using Ws::Passes; using Ws::Fails; using Ws::Case; using Ws::At; using Ws::CapPx; using Ws::ReadDirWas; using Ws::ReadRot;
-	using Ws::Players; using Ws::NumCases; using Ws::FloorDeg; using Ws::Check; using Ws::Shoot; using Ws::InkCapPx;
+	using Ws::Players; using Ws::FloorDeg; using Ws::Check; using Ws::Shoot; using Ws::InkCapPx;
 	if (!L || ShotStep < 0) return;
 	L->StartSaveDelay = -1.f;            // (no autosaves: the probe writes nothing)
 	L->AutosaveWait = 0.f;
@@ -148,6 +149,7 @@ OL_SHOT_TEST(OLWheelScoreProbe, 1880)
 		UE_LOG(LogOutlaws, Display, TEXT("OLSHOT wheelscore start: %s, %s, %d players in the match (%s), fov %.0f%s"), *ModeTag, *Q, S ? S->Scores.Num() : 0,
 			S ? FOutlawsMatchFlow::StateName(FOutlawsMatchFlow::EState(S->MatchState)) : TEXT("no session"), Camera->FieldOfView, bOld ? TEXT(", -OLOldWheelScore") : TEXT(""));
 		if (bMatch) C->bScoreStandIns = true;
+		Players = bMatch && !S->bTeams ? TArray<int32>{ 1, 5, 8, 16 } : TArray<int32>{ 1, 8, 16 };
 		Case = 0;
 		At = ShotTime;
 		ShotStep = bMatch ? 1 : 10;
@@ -185,7 +187,7 @@ OL_SHOT_TEST(OLWheelScoreProbe, 1880)
 			Shoot(FString::Printf(TEXT("ol_wheelscore_%s_%d_%s"), *ModeTag, Want, *Q));
 			CloseWheel();
 			At = ShotTime;
-			ShotStep = ++Case < NumCases ? 1 : 6;
+			ShotStep = ++Case < Players.Num() ? 1 : 6;
 			return;
 		}
 		const FVector Mid = Card->GetActorLocation(), N = Card->GetActorUpVector(), Ax = Card->GetActorForwardVector(), Ay = Card->GetActorRightVector();
@@ -247,6 +249,20 @@ OL_SHOT_TEST(OLWheelScoreProbe, 1880)
 		}
 		for (const FFragTableText& T : Card->LastTexts) Outside += T.Min.X < 10.f || T.Max.X > Wpx - 10.0 || T.Min.Y < 5.f || T.Max.Y > Hpx - 5.0 ? 1 : 0;
 		Check(Found == Want && Outside == 0, FString::Printf(TEXT("(%s) all %d rows drawn inside the card (%d names found, %d words past its frame)"), *Tag, Want, Found, Outside));
+		// (the WHEELSCORE follow-up, user 3 Nov) one column up to 4 players, two from 5: a Death Match's as a team game's
+		TArray<float> ColXs;
+		for (const FFragTableRow& R : Card->GetData().Rows)
+		{
+			const FFragTableText* T = Card->LastTexts.FindByPredicate([&R, &Dots](const FFragTableText& X)
+				{ return X.Str == R.Name || (X.Str.EndsWith(Dots) && R.Name.StartsWith(X.Str.LeftChop(1).TrimEnd())); });
+			if (T && !ColXs.ContainsByPredicate([T](float X) { return FMath::Abs(X - T->Min.X) < 100.f; })) ColXs.Add(T->Min.X);
+		}
+		const int32 WantCols = Want > 4 ? 2 : 1;
+		Check(ColXs.Num() == WantCols, FString::Printf(TEXT("(%s) the players in %d column%s (wanted %d: one up to 4 players, two from 5)"), *Tag, ColXs.Num(), ColXs.Num() == 1 ? TEXT("") : TEXT("s"), WantCols));
+		// (the WHEELSCORE follow-up) the warm-up's "Waiting for players" HUD line off while the card is up (it crossed the title row)
+		const bool bWarm = S->MatchState == uint8(FOutlawsMatchFlow::EState::WarmUp);
+		const bool bWaitLine = HudLines.ContainsByPredicate([](const FString& H) { return H.StartsWith(TEXT("Waiting for players")); });
+		Check(!bWaitLine, FString::Printf(TEXT("(%s) no \"Waiting for players\" HUD line over the card (%s; the last said \"%s\")"), *Tag, bWarm ? TEXT("the warm-up") : TEXT("in play"), *C->WaitingSaid));
 		// the wheel's pick circles: none seen on the card
 		int32 SlotsOn = 0, Slots = 0;
 		const double PickR = 4.5 * WheelRoot->GetComponentScale().X;
@@ -323,7 +339,7 @@ OL_SHOT_TEST(OLWheelScoreProbe, 1880)
 		HeadTo(0.f, GetActorRotation().Yaw);
 		Check(!WheelScore.IsValid() && (!C->WheelPanel.IsValid() || C->WheelPanel->IsHidden()), TEXT("the card goes with the wheel"));
 		At = ShotTime;
-		ShotStep = ++Case < NumCases ? 1 : 6;
+		ShotStep = ++Case < Players.Num() ? 1 : 6;
 		return;
 	}
 	case 6:
@@ -340,6 +356,8 @@ OL_SHOT_TEST(OLWheelScoreProbe, 1880)
 		const double MenuOff = MenuRoot ? FMath::Abs(FRotator::NormalizeAxis((MenuRoot->GetComponentLocation() - Eye).Rotation().Yaw - Camera->GetComponentRotation().Yaw)) : 999.0;
 		Check(bMenuOpen && !C->PausePanel.IsValid() && MenuOff < 3.0, FString::Printf(TEXT("(%s, %s) the pause menu has no table beside it (%s) and its panel stands in the middle (%.1f deg off the head)"), *ModeTag, *Q,
 			C->PausePanel.IsValid() ? TEXT("a table is up") : TEXT("none"), MenuOff));
+		const bool bWaitLine = HudLines.ContainsByPredicate([](const FString& H) { return H.StartsWith(TEXT("Waiting for players")); });
+		Check(!bWaitLine, FString::Printf(TEXT("(%s, %s) no \"Waiting for players\" HUD line over the pause menu (it crossed Resume; the last said \"%s\")"), *ModeTag, *Q, *C->WaitingSaid));
 		Shoot(FString::Printf(TEXT("ol_wheelscore_%s_pause_%s"), *ModeTag, *Q));
 		At = ShotTime;
 		ShotStep = 8;
@@ -350,8 +368,19 @@ OL_SHOT_TEST(OLWheelScoreProbe, 1880)
 		CloseMenu();
 		C->bScoreStandIns = false;
 		C->FakePlayers = 0;
+		At = ShotTime;
+		ShotStep = 9;
+		return;
+	case 9:
+	{
+		// the warm-up's line back once the menu is closed (the next one said: 5 s apart)
+		const bool bWarm = S && S->MatchState == uint8(FOutlawsMatchFlow::EState::WarmUp);
+		const bool bWaitLine = HudLines.ContainsByPredicate([](const FString& H) { return H.StartsWith(TEXT("Waiting for players")); });
+		if (bWarm && !bWaitLine && ShotTime < At + 6.5f) return;
+		if (bWarm) Check(bWaitLine, FString::Printf(TEXT("(%s, %s) the warm-up's \"Waiting for players\" line back %.1f s after the menu closed"), *ModeTag, *Q, ShotTime - At));
 		Finish();
 		return;
+	}
 	// ---- single player: none of it ----
 	case 10:
 		if (ShotTime < At + 0.5f) return;

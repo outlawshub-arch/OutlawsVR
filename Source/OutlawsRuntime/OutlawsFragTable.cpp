@@ -82,7 +82,9 @@ namespace
 	constexpr float CdInX = 16.f, CdInY = 10.f;
 	constexpr float CdTitleH = 46.f, CdHeadH = 44.f;
 	constexpr float CdNameW = 250.f, CdModeW = 110.f, CdNumW = 70.f, CdGutter = 36.f, CdCellPad = 8.f;
-	constexpr int32 CdOneColumn = 8;            // players in one column; past it two
+	// players in one column; past it two (user 3 Nov, the WHEELSCORE follow-up: a Death Match's two columns from 5 players, as a
+	// team game's blocks go side by side, so its 8 players' card reaches about 37 degrees under the wheel's middle, not 49)
+	constexpr int32 CdOneColumn = 4;
 	// (a team game's blocks one above the other up to 4 players, side by side past it: stacked, 8 players' two heads and rows
 	// reached 52 degrees under the wheel's middle, into the view of the hands at rest)
 	constexpr int32 CdTeamStacked = 4;

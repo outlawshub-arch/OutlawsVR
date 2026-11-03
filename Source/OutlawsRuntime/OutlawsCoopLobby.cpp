@@ -22,6 +22,7 @@
 #include "OutlawsDeathmatch.h"
 #include "OutlawsFlags.h"
 #include "OutlawsLobbyPage.h"
+#include "OutlawsFragTable.h"
 
 namespace OutlawsLobbyPage
 {
@@ -409,13 +410,21 @@ void UOutlawsCoop::TickLobby(double Now, AOutlawsCoopSession* S, AOutlawsPlayer*
 	TickLobbyBody(P);
 	// (REQ-LOBBYREDO: the HUD's "Waiting for players" line off while the lobby page is up: its state line says the same)
 	const bool bPageUp = !OutlawsLobbyPage::Old() && P && P->CoopMenuPage() == TEXT("#cooplobby");
-	if (bPageUp && !bLobbyPageUp && !WaitingSaid.IsEmpty())
+	// (REQ-WHEELSCORE follow-up, user 3 Nov: and while the pause menu or the wheel's scorecard is up: the line, fixed 10 degrees
+	// over the view's middle, crossed the menu's Resume and the card's title row; it comes back with the next one said, 5 s at most)
+	const bool bMenuUp = P && !bPageUp && P->IsMenuOpen();
+	const bool bCardUp = P && P->WheelScore.IsValid() && !P->WheelScore->IsHidden();
+	const bool bOff = bPageUp || bMenuUp || bCardUp;
+	if (bOff && !bWaitingOff && !WaitingSaid.IsEmpty())
 	{
-		P->DropMessage(WaitingSaid);
-		if (!bWaitingHidSaid) UE_LOG(LogOutlawsCoop, Log, TEXT("OLCOOP lobby: the HUD's \"%s\" is taken off while the lobby page is up"), *WaitingSaid);
-		bWaitingHidSaid = true;
+		TArray<FString> Up;
+		for (const FString& H : P->HudLines) if (H.StartsWith(TEXT("Waiting for players"))) Up.AddUnique(H);
+		for (const FString& H : Up) P->DropMessage(H);
+		if (bPageUp && !bWaitingHidSaid) UE_LOG(LogOutlawsCoop, Log, TEXT("OLCOOP lobby: the HUD's \"%s\" is taken off while the lobby page is up"), *WaitingSaid);
+		if (!bPageUp && Up.Num() > 0) UE_LOG(LogOutlawsCoop, Log, TEXT("OLCOOP the HUD's \"%s\" is taken off while the %s is up"), *WaitingSaid, bCardUp ? TEXT("wheel's scorecard") : TEXT("pause menu"));
+		bWaitingHidSaid |= bPageUp;
 	}
-	bLobbyPageUp = bPageUp;
+	bWaitingOff = bOff;
 	// (every machine) this player's microphone setting, for the others' mute rows
 	if (AOutlawsCoopLink* Mine = (IsHost() || MyIndex() > 0) ? GetLink(MyIndex()) : nullptr)
 	{

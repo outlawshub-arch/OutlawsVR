@@ -2095,10 +2095,11 @@ private:
 	void LobbyView(const FString& File, OutlawsLobbyPage::FView& Out) const;
 	/** The co-op host page (#coophost) in the new layout: START GAME, LEVEL, OPTIONS, QUIT GAME. */
 	void BuildCoopHostPage(OutlawsMenu::FPage& Page);
-	/** REQ-LOBBYREDO: the match's "Waiting for players" line last shown here, taken off while the lobby page is up. */
+	/** REQ-LOBBYREDO: the match's "Waiting for players" line last shown here, taken off while the lobby page is up (and, the
+	 *  WHEELSCORE follow-up, while the pause menu or the wheel's scorecard is). */
 	FString WaitingSaid;
 	bool bWaitingHidSaid = false;
-	bool bLobbyPageUp = false;                   // (this machine's lobby page is open, as of its last lobby tick)
+	bool bWaitingOff = false;                    // (this machine's lobby page, a menu or the wheel's card is up, as of its last lobby tick)
 	void EnterGame(AOutlawsPlayer* P, int32 Team);
 	/** Whether this player is still in the lobby (not entered). */
 	bool InLobbyHere() const;
