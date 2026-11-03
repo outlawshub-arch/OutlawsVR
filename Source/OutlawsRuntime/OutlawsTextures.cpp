@@ -895,6 +895,18 @@ bool OutlawsTextures::LevelPcxPixels(const FOutlawsAssets& A, const FString& Nam
 	return true;
 }
 
+// the scale a sprite set's HD atlas draws the remaster's frames at: 4x the NWX cell down to 2x, as large as the 4096 px side
+// and the 48 MB caps allow; under 2 the set has no HD atlas (BuildSpriteAtlasHD; BuildSpriteAtlas lays its grid by it)
+static int32 HdAtlasScale(int32 AW, int32 AH)
+{
+	int32 S = 4;
+	while (S > 1 && (FMath::Max(AW, AH) * S > 4096 || int64(AW) * AH * S * S * 4 > (48ll << 20)))
+	{
+		--S;
+	}
+	return S;
+}
+
 TSharedPtr<OutlawsTextures::FSpriteAtlas> OutlawsTextures::BuildSpriteAtlas(const FOutlawsAssets& A, const FString& NwxName, const TArray<FColor>& Palette, bool bCreateTexture, bool bAllChors)
 {
 	TArray<uint8> Bytes;
@@ -1027,6 +1039,34 @@ TSharedPtr<OutlawsTextures::FSpriteAtlas> OutlawsTextures::BuildSpriteAtlas(cons
 	Out->Cells = Used.Num();
 	Out->Cols = FMath::CeilToInt(FMath::Sqrt(float(Used.Num())));
 	Out->Rows = FMath::CeilToInt(float(Used.Num()) / Out->Cols);
+	// (BUG-TWOFEATHERSHD, user 3 Nov: with Remastered graphics on, Two-Feathers the only one of the six characters drawn with
+	// his old sprite) his 126 frames in 173 x 137 px cells made a square grid 2076 px wide, 4152 px at 2x: over the HD atlas's
+	// 4096 px cap, so BuildSpriteAtlasHD gave up on him with his TWOFEATH.SPX there all along (olremaster1.lab, by his NWX's
+	// name, an HD frame for every cell he draws).  A grid whose HD atlas would not fit at 2x now takes the column count nearest
+	// the square one that does (his: 11 x 12, 3806 x 3288 at 2x); a grid that fits stays as it was, so every set that had its
+	// HD look keeps its atlas as before.  -OLOldTwoFeathersHd: the square grid always
+	static const bool bOldTwoFeathersHd = OLFlags::Param(TEXT("OLOldTwoFeathersHd"));
+	if (!bOldTwoFeathersHd && HdAtlasScale(Out->Cols * Out->CellW, Out->Rows * Out->CellH) < 2)
+	{
+		const int32 SquareCols = Out->Cols, SquareRows = Out->Rows;
+		int32 BestS = 1;
+		for (int32 c = 1; c <= Used.Num(); ++c)
+		{
+			const int32 r = FMath::DivideAndRoundUp(Used.Num(), c);
+			const int32 S = HdAtlasScale(c * Out->CellW, r * Out->CellH);
+			if (S > BestS || (S >= 2 && S == BestS && FMath::Abs(c - SquareCols) < FMath::Abs(Out->Cols - SquareCols)))
+			{
+				BestS = S;
+				Out->Cols = c;
+				Out->Rows = r;
+			}
+		}
+		if (Out->Cols != SquareCols)
+		{
+			UE_LOG(LogOutlaws, Log, TEXT("OLRT sprite %s: %d frames in %dx%d px cells laid %d x %d, not the square %d x %d (%dx%d px, no HD atlas at 2x under 4096 px): HD at %dx"),
+				*NwxName, Used.Num(), Out->CellW, Out->CellH, Out->Cols, Out->Rows, SquareCols, SquareRows, SquareCols * Out->CellW, SquareRows * Out->CellH, BestS);
+		}
+	}
 	const int32 AW = Out->Cols * Out->CellW, AH = Out->Rows * Out->CellH;
 	TMap<int32, int32> CellOf;
 	TArray<FColor> Atlas;
@@ -1192,11 +1232,7 @@ UTexture* OutlawsTextures::BuildSpriteAtlasHD(UObject* Outer, const FOutlawsAsse
 		if (!Frames.IsValidIndex(N.Cell) || Frames[N.Cell].W <= 0 || Frames[N.Cell].H <= 0 || Frames[N.Cell].Format != SprxBC7) return nullptr;
 	}
 	const int32 AW = Atlas.Cols * Atlas.CellW, AH = Atlas.Rows * Atlas.CellH;
-	int32 S = 4;
-	while (S > 1 && (FMath::Max(AW, AH) * S > 4096 || int64(AW) * AH * S * S * 4 > (48ll << 20)))
-	{
-		--S;
-	}
+	const int32 S = HdAtlasScale(AW, AH);
 	if (S < 2)
 	{
 		return nullptr;
