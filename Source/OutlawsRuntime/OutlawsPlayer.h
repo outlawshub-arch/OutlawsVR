@@ -379,7 +379,9 @@ private:
 	float CameraEye = 160.f;           // desktop eye height above the feet, eased on crouch
 	FVector2D HeldStick = FVector2D::ZeroVector;
 	float HeldStickLeft = 0.f;
-	FString WristLast;                 // what the wrist last showed (health and armour)
+	FVector2D HeldTurn = FVector2D::ZeroVector;    // (REQ-SWIMUPDOWN's probe) the turn stick held as if the player did
+	float HeldTurnLeft = 0.f;
+	FString WristLast;                // what the wrist last showed (health and armour)
 	FString WristShownKeys;            // (tests) its cards as laid out last ("nwx:intheart nwx:ibplate")
 	int32 WristIconsUsed = 0;          // the cards the last layout placed; the rest stay hidden (BUG-WRISTPLATE)
 	FString WristRowsLog;              // (tests) each row's cards and where they sit, as laid out last
@@ -1639,6 +1641,30 @@ private:
 	/** -OLOldTiredVolume (REQ-TIREDVOL's A/B switch): tired.wav at its level before 27 Oct. */
 	static bool OldTiredVolume();
 	void SwimKick(float Dir);
+	/** REQ-SWIMUPDOWN (user 3 Nov: under water jump and crouch moved the body up and down in pulses, a kick a press): held,
+	 *  they swim straight up or down (the world's up, never the view's) at the stick's swim speed, eased in and out over
+	 *  SwimUpDownEase; the stick's swim and the strokes go on as before.  The desktop's Space and C / Ctrl, the turn stick
+	 *  pushed up or down (as far as it is pushed), the jump face button.  Each frame, before UpdateGravity: SwimVertWant
+	 *  is what is held (-1 down .. 1 up), SwimVert the eased amount put in as the stick's input.  -OLOldSwimUpDown: a kick
+	 *  a press, as before. */
+	void SwimUpDown(float Dt);
+	float SwimUpDownWant() const;
+	bool JumpButtonHeld() const;
+	static bool OldSwimUpDown();
+	float SwimVertWant = 0.f;
+	float SwimVert = 0.f;
+	bool bJumpKeyDown = false;           // the desktop's Space, held now
+	bool bCrouchKeyDown = false;         // the desktop's C / Ctrl, held now
+	int32 JumpFaceButton = 0;            // the face button whose press last jumped (FaceHeld's bit; 0: none)
+	void DesktopJumpPressed();
+	void DesktopJumpReleased();
+	/** REQ-SWIMUPDOWN's stacking (user 3 Nov: arm swimming on top of the stick's nearly doubled the speed): both together go
+	 *  max(stick, arms) + SwimStackShare() x min(stick, arms); each alone as before.  SwimArmVel is the arms' own swim, what
+	 *  the strokes alone would give the body (their push, glided down as the water glides the body).  ol.SwimStackShare
+	 *  (0.3) tunes it; -OLOldSwimStack: the two added, as before. */
+	FVector SwimArmVel = FVector::ZeroVector;
+	static bool OldSwimStack();
+	static float SwimStackShare();
 	float StaminaFrac() const { return FMath::Clamp(Stamina / 100.f, 0.f, 1.f); }
 	void UpdateStamina(float Dt);
 	/** REQ-STAMINA15 (user 2026-10-27, "out of breath in VR"): stamina a second (minus: spent) for what the body does:

@@ -23,6 +23,7 @@
 #include "Materials/MaterialParameterCollectionInstance.h"
 #include "Kismet/GameplayStatics.h"
 #include "GameFramework/WorldSettings.h"
+#include "GameFramework/PhysicsVolume.h"
 #include "Components/SceneCaptureComponent2D.h"
 #include "Camera/PlayerCameraManager.h"
 #include "OutlawsEnemy.h"
@@ -88,6 +89,11 @@ namespace
 	constexpr float CrouchEye = 62.f;           // (REQ-CROUCHFIT) 14 cm under the crouched body's top, as standing
 	constexpr float OldCrouchEye = 70.f;        // (-OLOldCrouchFit)
 	constexpr float SwimSqueezeAhead = 50.f;    // (REQ-CROUCHFIT) how far on a swimmer looks for something lower than it
+	constexpr float SwimUpDownEase = 0.25f;     // (REQ-SWIMUPDOWN) seconds a held swim up or down takes to reach its speed
+	// (REQ-SWIMUPDOWN's stacking, user 3 Nov: "a small bonus for both, just much less") the share of the slower of the stick's
+	// swim and the arms' that goes on top of the faster when both swim at once
+	TAutoConsoleVariable<float> CVarSwimStackShare(TEXT("ol.SwimStackShare"), 0.3f,
+		TEXT("Swimming with the stick and the arms at once: max(stick, arms) + this x min(stick, arms) (0.3; -OLOldSwimStack adds them as before)."));
 	FString* GNarrowWhy = nullptr;              // (REQ-CROUCHFIT, the log) what NarrowAt found round the middle, when set
 }
 
@@ -844,7 +850,8 @@ void AOutlawsPlayer::SetupPlayerInputComponent(UInputComponent* PIC)
 	PIC->BindAxis(TEXT("OLD_Right"), this, &AOutlawsPlayer::DesktopRight);
 	PIC->BindAxis(TEXT("OLD_Turn"), this, &AOutlawsPlayer::DesktopTurn);
 	PIC->BindAxis(TEXT("OLD_LookUp"), this, &AOutlawsPlayer::DesktopLookUp);
-	PIC->BindAction(TEXT("OLD_Jump"), IE_Pressed, this, &AOutlawsPlayer::DoJump);
+	PIC->BindAction(TEXT("OLD_Jump"), IE_Pressed, this, &AOutlawsPlayer::DesktopJumpPressed);
+	PIC->BindAction(TEXT("OLD_Jump"), IE_Released, this, &AOutlawsPlayer::DesktopJumpReleased);    // (REQ-SWIMUPDOWN: held, it swims up)
 	PIC->BindAction(TEXT("OLD_Crouch"), IE_Pressed, this, &AOutlawsPlayer::CrouchPressed);
 	PIC->BindAction(TEXT("OLD_Crouch"), IE_Released, this, &AOutlawsPlayer::CrouchReleased);
 	PIC->BindAction(TEXT("OLD_Run"), IE_Pressed, this, &AOutlawsPlayer::RunPressed);
@@ -900,6 +907,10 @@ bool AOutlawsPlayer::OneStickTurning(const FVector2D& S)
 
 FVector2D AOutlawsPlayer::TurnStick() const
 {
+	if (HeldTurnLeft > 0.f)
+	{
+		return HeldTurn;                     // (REQ-SWIMUPDOWN's probe: the stick held as a player would)
+	}
 	if (OneHand() >= 0)
 	{
 		// one controller: only the hard sideways push turns; no crouch or jump on the stick (the face button jumps, the
@@ -951,9 +962,106 @@ void AOutlawsPlayer::DesktopLookUp(float V)
 
 void AOutlawsPlayer::CrouchPressed()
 {
-	if (bSwimming) { SwimKick(-1.f); return; }      // under water crouch dives
+	bCrouchKeyDown = true;
+	// under water crouch dives: held, it swims down (REQ-SWIMUPDOWN, SwimUpDown); the crouch itself is left as it was
+	if (bSwimming) { if (OldSwimUpDown()) SwimKick(-1.f); return; }
 	bCrouchHeld = true;
 	CrouchAmount = 1.f;
+}
+
+void AOutlawsPlayer::DesktopJumpPressed()
+{
+	bJumpKeyDown = true;
+	DoJump();
+}
+
+void AOutlawsPlayer::DesktopJumpReleased()
+{
+	bJumpKeyDown = false;
+}
+
+bool AOutlawsPlayer::OldSwimUpDown()
+{
+	static const bool bOld = OLFlags::Param(TEXT("OLOldSwimUpDown"));   // (REQ-SWIMUPDOWN's before: a kick a press)
+	return bOld;
+}
+
+bool AOutlawsPlayer::OldSwimStack()
+{
+	static const bool bOld = OLFlags::Param(TEXT("OLOldSwimStack"));    // (REQ-SWIMUPDOWN's stacking before: the arms on top of the stick)
+	return bOld;
+}
+
+float AOutlawsPlayer::SwimStackShare()
+{
+	return FMath::Clamp(CVarSwimStackShare.GetValueOnGameThread(), 0.f, 1.f);
+}
+
+bool AOutlawsPlayer::JumpButtonHeld() const
+{
+	// the face button that jumped is still down (the Classic layout's top button, the one controller's upper one)
+	return JumpFaceButton != 0 && (FaceHeld & JumpFaceButton) != 0;
+}
+
+float AOutlawsPlayer::SwimUpDownWant() const
+{
+	if (bMenuOpen || bWheelOpen || bDeadView) return 0.f;
+	float Want = 0.f;
+	if (bJumpKeyDown || JumpButtonHeld()) Want += 1.f;
+	if (bCrouchKeyDown) Want -= 1.f;
+	// the turn stick pushed more up or down than sideways: from 0.3 out to 0.85 is none to all of it, as the stick swims
+	// (the one controller has no jump or crouch on its stick: TurnStick).  Down not within a quarter second of a push up
+	// (BUG-SURFACEJOLT: a stick let go springs back past the middle)
+	if (bVR || HeldTurnLeft > 0.f)
+	{
+		const FVector2D T = TurnStick();
+		if (FMath::Abs(T.Y) > FMath::Abs(T.X))
+		{
+			const float A = FMath::Clamp((FMath::Abs(float(T.Y)) - 0.3f) / 0.55f, 0.f, 1.f);
+			const double Now = GetWorld() ? GetWorld()->GetTimeSeconds() : 0.0;
+			if (T.Y > 0.0) Want += A;
+			else if (Now - StickUpAt > 0.25) Want -= A;
+		}
+	}
+	return FMath::Clamp(Want, -1.f, 1.f);
+}
+
+void AOutlawsPlayer::SwimUpDown(float Dt)
+{
+	// REQ-SWIMUPDOWN (user 3 Nov: under water jump and crouch moved the body "in PULSES" and the stance note came up each
+	// time; wanted: held, a steady swim up or down "as the left stick moves you", a short ease in and out, the world's up and
+	// down only).  The press was a kick (SwimKick: 380 cm/s at once, bled off by the water's cap and the fly mode's braking
+	// in about half a second), one a press, so a held key or stick went up in one surge and then sank.  Now what is held is
+	// the stick's own input straight up or down (the fly mode's speed, MaxFlySpeed, at the dial and the run, its
+	// acceleration and its braking), eased in over SwimUpDownEase, out as the stick's own swim stops.  The original
+	// (OutlawsAHOM.exe) moves the body a frame at a time while the key is held, no impulse: the crouch held with the feet
+	// over 2 units up swims down at WATER.PHY's JUMP_VEL [EXE 0x1400b9172..0x1400b91af]; the jump held at the surface rises
+	// at a third of it [EXE 0x1400b8d47..0x1400b8dbc]
+	UCharacterMovementComponent* M = GetCharacterMovement();
+	const bool bIn = bSwimming && M && M->MovementMode == MOVE_Flying && !IsClimbing() && MantleLeft <= 0.f && !OldSwimUpDown();
+	const float WasWant = SwimVertWant;
+	SwimVertWant = bIn ? SwimUpDownWant() : 0.f;
+	if (!bIn)
+	{
+		SwimVert = 0.f;
+		return;
+	}
+	if ((WasWant != 0.f) != (SwimVertWant != 0.f) || (WasWant > 0.f) != (SwimVertWant > 0.f))
+	{
+		SwimLog(SwimVertWant > 0.f ? TEXT("swim up held") : SwimVertWant < 0.f ? TEXT("swim down held") : TEXT("swim up / down let go"));
+	}
+	float Want = SwimVertWant;
+	if (Want > 0.f && bSwimSurfaceAir)
+	{
+		// up: held at the surface it is the hold's (the body at its float depth, no bob out of the water and back in); on the
+		// way up the last of it eases out over the ease's own distance, so the hold takes the body at a crawl (UpdateGravity)
+		const float Middle = float(GetActorLocation().Z - GetCapsuleComponent()->GetScaledCapsuleHalfHeight()) + SwimMiddleUp();
+		const float Room = SwimSurface - SwimFloatDepth - Middle;
+		const float Near = FMath::Max(20.f, M->MaxFlySpeed * SwimUpDownEase);
+		Want = bSurfaceLocked ? 0.f : FMath::Min(Want, FMath::Clamp(Room / Near, 0.f, 1.f));
+	}
+	SwimVert = FMath::Clamp(Want, SwimVert - Dt / SwimUpDownEase, SwimVert + Dt / SwimUpDownEase);
+	if (FMath::Abs(SwimVert) > 1e-3f) AddMovementInput(FVector::UpVector, SwimVert);
 }
 
 void AOutlawsPlayer::SwimKick(float Dir)
@@ -965,7 +1073,11 @@ void AOutlawsPlayer::SwimKick(float Dir)
 	if (Dir < 0.f) DiveUntil = GetWorld()->GetTimeSeconds() + 1.0;     // a kick down from the surface: it lets go (UpdateGravity)
 	SwimLog(Dir > 0.f ? TEXT("a kick up") : TEXT("a kick down"));
 }
-void AOutlawsPlayer::CrouchReleased() { bCrouchHeld = false; }
+void AOutlawsPlayer::CrouchReleased()
+{
+	bCrouchKeyDown = false;
+	if (!bSwimming || OldSwimUpDown()) bCrouchHeld = false;     // (REQ-SWIMUPDOWN: under water the key swam, the crouch is left be)
+}
 void AOutlawsPlayer::RunPressed() { bRunning = true; }
 void AOutlawsPlayer::RunReleased() { bRunning = false; }
 
@@ -1067,9 +1179,9 @@ void AOutlawsPlayer::PressB()
 	FaceHeld |= 2;
 	if (bDeadView) { RequestRespawn(true); return; }
 	if (bMenuOpen) { MenuBack(); return; }
-	if (OneHand() == 1) { DoJump(); return; }    // one controller: its upper button jumps (REQ-ONECTRL)
+	if (OneHand() == 1) { JumpFaceButton = 2; DoJump(); return; }    // one controller: its upper button jumps (REQ-ONECTRL)
 	if (bFaceReload) { if (Equipped[1] >= 0) bButtonReload[1] = true; return; }
-	if (!LeftDominant()) DoJump();       // dominant top button
+	if (!LeftDominant()) { JumpFaceButton = 2; DoJump(); }       // dominant top button (held: REQ-SWIMUPDOWN's swim up)
 	else UseMedicalBag();
 }
 
@@ -1078,9 +1190,9 @@ void AOutlawsPlayer::PressY()
 	FaceHeld |= 8;
 	if (bDeadView) { RequestRespawn(true); return; }
 	if (bMenuOpen) { MenuBack(); return; }
-	if (OneHand() == 0) { DoJump(); return; }
+	if (OneHand() == 0) { JumpFaceButton = 8; DoJump(); return; }
 	if (bFaceReload) { if (Equipped[0] >= 0) bButtonReload[0] = true; return; }
-	if (LeftDominant()) DoJump();
+	if (LeftDominant()) { JumpFaceButton = 8; DoJump(); }
 	else UseMedicalBag();                // off-hand top button
 }
 
@@ -1453,7 +1565,8 @@ void AOutlawsPlayer::DoJump()
 	}
 	if (bSwimming)
 	{
-		SwimKick(1.f);                                   // deeper down: a kick up
+		// deeper down: a kick up; held, it swims up (REQ-SWIMUPDOWN: SwimUpDown), so the press itself does nothing more
+		if (OldSwimUpDown()) SwimKick(1.f);
 		return;
 	}
 	// a spent body jumps half as high (height goes with the square of the launch speed)
@@ -1647,6 +1760,7 @@ void AOutlawsPlayer::Tick(float Dt)
 		FindLevel();
 	}
 	HeldStickLeft = FMath::Max(0.f, HeldStickLeft - Dt);
+	HeldTurnLeft = FMath::Max(0.f, HeldTurnLeft - Dt);
 	UpdateHud(Dt);
 	UpdateHudGlyph(Dt);                    // (REQ-BUTTONGLYPHS: the tutorial card's control under the notices)
 	UpdateRefuse(Dt);
@@ -1750,6 +1864,7 @@ void AOutlawsPlayer::Tick(float Dt)
 	FollowHead();
 	Swimming();
 	SwimStrokes(Dt);
+	SwimUpDown(Dt);                     // (REQ-SWIMUPDOWN: before the gravity, which lets go of the surface for a held swim down)
 	UpdateGravity(Dt);
 	TrackFall(Dt);                      // (BUG-FALLDAMAGE: the drop measured, not read back from the landing speed)
 	// out of the map: a fall that goes on for three seconds (or well under the lowest floor) ends back on the
@@ -1891,7 +2006,7 @@ void AOutlawsPlayer::UpdateCrouch()
 		if (bSwimSqueeze && SwimRoomToStand(StandHalfHeight))
 		{
 			bSwimSqueeze = false;
-			ShowMessage(TEXT("Stand"), 1.5f);
+			if (OldSwimUpDown()) ShowMessage(TEXT("Stand"), 1.5f);     // (REQ-SWIMUPDOWN: no stance note in the water)
 		}
 		ResizeBody(bSwimSqueeze ? CrouchFitHalf() : StandHalfHeight);
 		return;
@@ -2032,7 +2147,9 @@ void AOutlawsPlayer::SwimSqueeze()
 		{
 			CameraEye -= Rise;
 		}
-		ShowMessage(TEXT("Crouch"), 1.5f);
+		// (REQ-SWIMUPDOWN, user 3 Nov: the "Crouching" / "Standing" note came up under water each time) no stance note in
+		// the water: the body fits itself through and stands again on its own
+		if (OldSwimUpDown()) ShowMessage(TEXT("Crouch"), 1.5f);
 		UE_LOG(LogOutlaws, Log, TEXT("OLRT swim: %s ahead is lower than the body (half %.0f): crouched to fit, the feet %.0f cm up"),
 			Hit.GetComponent() ? *Hit.GetComponent()->GetName() : TEXT("something"), Half, Rise);
 		return;
@@ -2402,7 +2519,13 @@ void AOutlawsPlayer::Turning(float Dt, bool& bOutTurning)
 	const float Down = float(-T.Y);
 	const double StickNow = GetWorld()->GetTimeSeconds();
 	if (T.Y > 0.5f) StickUpAt = StickNow;
-	if (bSwimming)
+	if (bSwimming && !OldSwimUpDown())
+	{
+		// (REQ-SWIMUPDOWN) under water held down it swims down, as far as it is pushed (SwimUpDown); the crouch is left as it
+		// was, and the latch let go, so the stick still held down out of the water is the crouch again
+		bBarrelLatched = false;
+	}
+	else if (bSwimming)
 	{
 		// (BUG-SURFACEJOLT) not within a quarter second of a push up (a swim up): a stick let go springs back past the middle
 		const bool bDive = bBarrelLatched ? Down > 0.3f : (Down > 0.7f && FMath::Abs(T.X) < 0.5f && !bMenuOpen && !bWheelOpen && StickNow - StickUpAt > 0.25);
@@ -2588,6 +2711,7 @@ void AOutlawsPlayer::SwimStrokes(float Dt)
 	if ((!bVR && !GSwimStrokeTest) || !bSwimming || !M || M->MovementMode != MOVE_Flying)
 	{
 		SwimCarry = FVector::ZeroVector;          // (out of the water: nothing left owed)
+		SwimArmVel = FVector::ZeroVector;
 		StrokeDiveCharge = 0.f;
 		if (M) M->BrakingDecelerationFlying = 600.f;
 		return;
@@ -2597,6 +2721,22 @@ void AOutlawsPlayer::SwimStrokes(float Dt)
 	// (user 2026-10-03: the push "ends too quick"): the water slows a gliding body less than one at rest, and what is
 	// left of the last strokes' push keeps coming over the next half second or so
 	M->BrakingDecelerationFlying = Now < StrokeGlideUntil ? 250.f : 600.f;
+	// (REQ-SWIMUPDOWN's stacking) the arms' own swim glides down as the fly mode glides a body with nothing on the stick: its
+	// braking (BrakingDecelerationFlying, and twice the fluid friction), then the fluid friction; and, as the engine's braking
+	// does, under 10 cm/s (BRAKE_TO_STOP_VELOCITY) it stops dead: a gentle stroke's few cm/s a frame on its own never builds
+	{
+		const float Fr = 0.5f * (GetPhysicsVolume() ? GetPhysicsVolume()->FluidFriction : 0.3f);
+		const float Was = float(SwimArmVel.Size());
+		if (Was > 0.f)
+		{
+			float Left = FMath::Max(0.f, Was - (2.f * Fr * Was + M->BrakingDecelerationFlying) * Dt);
+			if (Left < 10.f) Left = 0.f;
+			Left *= 1.f - FMath::Min(Fr * Dt, 1.f);
+			SwimArmVel *= Left / Was;
+		}
+		if (bSurfaceLocked) SwimArmVel.Z = 0.0;
+	}
+	const FVector Start = M->Velocity;
 	const FVector Due = SwimCarry * (1.0 - FMath::Exp(-Dt / 0.4));
 	SwimCarry -= Due;
 	// (user 2026-10-05, BUG-SWIMSPEED: arm swimming "far too fast") the strokes reach the land speed and no more: the
@@ -2611,7 +2751,28 @@ void AOutlawsPlayer::SwimStrokes(float Dt)
 		const float Before = float(M->Velocity.Size());
 		if (Room > 0.0) M->Velocity += Dn * FMath::Min(D.Size(), Room);
 		M->Velocity = M->Velocity.GetClampedToMaxSize(FMath::Max(Cap, Before));
+		// (and the arms' own swim, the same)
+		const double ArmRoom = Cap - FVector::DotProduct(SwimArmVel, Dn);
+		const float ArmBefore = float(SwimArmVel.Size());
+		if (ArmRoom > 0.0) SwimArmVel += Dn * FMath::Min(D.Size(), ArmRoom);
+		SwimArmVel = SwimArmVel.GetClampedToMaxSize(FMath::Max(Cap, ArmBefore));
 	}
+	auto Stack = [&]()
+	{
+		// REQ-SWIMUPDOWN's stacking (user 3 Nov: "arm swimming STACKS on top of left-stick swimming and nearly doubles the
+		// speed", "a small bonus for both, just much less"): with both swimming, the body no faster than max(stick, arms) +
+		// SwimStackShare() x min(stick, arms), the stick's the fly mode's top speed for what is on it (MaxFlySpeed times the
+		// input, a held swim up or down in it), the arms' their own swim (none at all for strokes too weak to move the body
+		// alone: the fly mode stops a body under 10 cm/s, so on top of the stick they only added).  Each alone is left exactly
+		// as it was: nothing on the stick, no cap; nothing from the arms, nothing added here to cap.  Never under the speed the
+		// frame began with: what is over it the water takes off as it glides
+		if (OldSwimStack()) return;
+		const float Stick = M->MaxFlySpeed * FMath::Min(1.f, float(M->GetLastInputVector().Size()));
+		const float Arms = float(SwimArmVel.Size());
+		if (Stick < 1.f) return;
+		const float Top = FMath::Max(FMath::Max(Stick, Arms) + SwimStackShare() * FMath::Min(Stick, Arms), float(Start.Size()));
+		if (M->Velocity.SizeSquared() > FMath::Square(Top)) M->Velocity = M->Velocity.GetSafeNormal() * Top;
+	};
 	// each hand's motion against the body past 70 cm/s is a stroke (a breaststroke's sweep runs 150-250 cm/s): 4.5 cm/s
 	// of speed per cm/s over that, each second, per hand; a full two-handed stroke (about 0.4 s at 200 cm/s) reaches
 	// about 5 m/s, glided down over a couple of metres
@@ -2644,7 +2805,11 @@ void AOutlawsPlayer::SwimStrokes(float Dt)
 	}
 	// (the surface holds the body, UpdateGravity: the stroke runs along it)
 	if (bSurfaceLocked) Push.Z = 0.0;
-	if (Push.IsNearlyZero()) return;
+	if (Push.IsNearlyZero())
+	{
+		Stack();
+		return;
+	}
 	const FVector Way = Push.GetSafeNormal();
 	StrokeUntil = Now + 0.3;
 	StrokeGlideUntil = Now + 1.5;                 // (the glide after it: UpdateGravity's cap on a fast rise leaves it be)
@@ -2660,6 +2825,12 @@ void AOutlawsPlayer::SwimStrokes(float Dt)
 	// (and no faster overall: a stroke across the stick's swim, or a current, adds nothing past it)
 	V = V.GetClampedToMaxSize(FMath::Max(Cap, float(M->Velocity.Size())));
 	M->Velocity = V;
+	// (REQ-SWIMUPDOWN's stacking) the same push to the arms' own swim
+	FVector A = SwimArmVel + Push * (0.5 * Dt);
+	const float ArmAlong = static_cast<float>(FVector::DotProduct(A, Way));
+	if (ArmAlong > Cap) A -= Way * (ArmAlong - Cap);
+	SwimArmVel = A.GetClampedToMaxSize(FMath::Max(Cap, float(SwimArmVel.Size())));
+	Stack();
 }
 
 void AOutlawsPlayer::UpdateGravity(float Dt)
@@ -2690,6 +2861,7 @@ void AOutlawsPlayer::UpdateGravity(float Dt)
 		// the sink keeps pace with the swim: the teleport pace (and the speed slider) halve the swim speed, and a full
 		// sink against it made surfacing a struggle (the smoke test's swim up failed with teleport moves saved)
 		const float SinkCap = SwimSinkSpeed * (L ? L->Pace() : 1.f);
+		const float SwimDown = -FMath::Min(0.f, SwimVert) * M->MaxFlySpeed;     // (REQ-SWIMUPDOWN) a held swim down's speed now
 		const double Now = GetWorld()->GetTimeSeconds();
 		float Middle = float(Feet.Z) + SwimMiddleUp();                 // a standing body's middle, as Swimming() measures it
 		const float FloatZ = SwimSurface - SwimFloatDepth;
@@ -2707,7 +2879,9 @@ void AOutlawsPlayer::UpdateGravity(float Dt)
 		const bool bKick = Now < DiveUntil;
 		// (BUG-SUBMERGE) and a forward stroke with the head down (SwimStrokes: the hands pulled back past the body)
 		const bool bStrokeDive = Now < StrokeDiveUntil;
-		const bool bDiving = bKick || (bHeadDown && (bSurfaceLocked ? (bStick || bStrokeDive) : bMoving));
+		// (REQ-SWIMUPDOWN) a held swim down lets go as a kick down did; a held swim up never dives, whatever the head does
+		const bool bHeldDown = SwimVertWant < 0.f, bHeldUp = SwimVertWant > 0.f;
+		const bool bDiving = bKick || bHeldDown || (!bHeldUp && bHeadDown && (bSurfaceLocked ? (bStick || bStrokeDive) : bMoving));
 		const bool bWasLocked = bSurfaceLocked;
 		// (BUG-SURFACEJOLT, the cliff's sector 350: water 90 cm deep on a sloped floor beside the deep LIFT2) a body held at
 		// the surface found well under its float depth with no dive and no plunge was moved there by something else
@@ -2725,11 +2899,13 @@ void AOutlawsPlayer::UpdateGravity(float Dt)
 		// (BUG-SURFACEJOLT, the town's flooded passages 580 and 524: water under a roof, no air over it) only a real surface
 		// (air over the water) holds the body; a passage's roof is no surface. It was taken for one: the body was held with
 		// its head in the rock at the roof of one passage and let go a metre on where the next passage's roof stood 6 m higher
-		bSurfaceLocked = bSwimSurfaceAir && !bDiving && M->Velocity.Z >= -SinkCap && (bDived ? Middle >= FloatZ - 5.f : Middle > FloatZ - 40.f);
+		// (REQ-SWIMUPDOWN) a held swim up is taken at its float depth too, as a dive's way back up is: it eases its own last
+		// part out on the way (SwimUpDown), and the hold's ease from 40 cm under would have lurched it up at 200 cm/s
+		bSurfaceLocked = bSwimSurfaceAir && !bDiving && M->Velocity.Z >= -SinkCap && (bDived || bHeldUp ? Middle >= FloatZ - 5.f : Middle > FloatZ - 40.f);
 		if (bWasLocked != bSurfaceLocked)
 		{
 			SwimLog(bSurfaceLocked ? TEXT("the surface holds the body") : FString::Printf(TEXT("the surface lets go: %s"),
-				!bSwimSurfaceAir ? TEXT("no surface here (a flooded passage's roof)") : bKick ? TEXT("a kick down") : bDiving && bStrokeDive && !bStick ? TEXT("a forward stroke with the head down (a dive)") : bDiving ? TEXT("the stick with the head down (a dive)") : M->Velocity.Z < -SinkCap ? TEXT("sinking faster than the water lets a body sink")
+				!bSwimSurfaceAir ? TEXT("no surface here (a flooded passage's roof)") : bKick ? TEXT("a kick down") : bHeldDown ? TEXT("a held swim down") : bDiving && bStrokeDive && !bStick ? TEXT("a forward stroke with the head down (a dive)") : bDiving ? TEXT("the stick with the head down (a dive)") : M->Velocity.Z < -SinkCap ? TEXT("sinking faster than the water lets a body sink")
 				: TEXT("too far under the float depth")));
 		}
 		if (bSurfaceLocked)
@@ -2742,12 +2918,20 @@ void AOutlawsPlayer::UpdateGravity(float Dt)
 			if (Ease < -3.f) SwimLog(FString::Printf(TEXT("the hold eases the body down %.1f cm this frame (%.0f cm over its float depth)"), -Ease, Middle - FloatZ));
 			AddActorWorldOffset(FVector(0.0, 0.0, Ease), true);
 		}
-		else if (M->Velocity.Z < -SinkCap)
+		else if (M->Velocity.Z < -FMath::Max(SinkCap, SwimDown))
 		{
 			// still plunging from a fall: the water's drag bleeds the speed off (stopping distance ~ speed / 8:
-			// about 1.2 m from a 5 m jump, several metres at terminal velocity; user 2026-09-27)
-			M->Velocity.Z = -SinkCap + (M->Velocity.Z + SinkCap) * FMath::Exp(-8.f * Dt);
+			// about 1.2 m from a 5 m jump, several metres at terminal velocity; user 2026-09-27); (REQ-SWIMUPDOWN) down to a
+			// held swim down's own speed, which is the swimmer's, no plunge
+			const float Floor = FMath::Max(SinkCap, SwimDown);
+			M->Velocity.Z = -Floor + (M->Velocity.Z + Floor) * FMath::Exp(-8.f * Dt);
 			SinkVel = SinkCap;
+		}
+		else if (SwimVert != 0.f)
+		{
+			// (REQ-SWIMUPDOWN) swimming up or down: the swimmer holds its own speed, no sink on top of it (the drift starts from
+			// nothing again once it is let go, eased in by the pull)
+			SinkVel = 0.f;
 		}
 		else
 		{
@@ -3788,7 +3972,7 @@ void AOutlawsPlayer::UpdateBodyHeight()
 			bAutoCrouched = false;
 			bSwimSqueeze = false;
 			bStandPending = true;
-			ShowMessage(TEXT("Stand"), 1.5f);
+			if (OldSwimUpDown()) ShowMessage(TEXT("Stand"), 1.5f);     // (REQ-SWIMUPDOWN: no stance note in the water)
 		}
 	}
 	else if (bAutoCrouched && MantleLeft <= 0.f && GetCharacterMovement()->IsMovingOnGround())
