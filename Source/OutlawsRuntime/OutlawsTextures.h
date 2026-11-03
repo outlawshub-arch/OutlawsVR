@@ -82,8 +82,17 @@ namespace OutlawsTextures
 		FLinearColor Top = FLinearColor(0.07f, 0.12f, 0.31f);
 		FColor TopRow = FColor(0, 0, 0, 0);      // (BUG-TRAINSKY8BIT) the mean of its top row of pixels alone, as drawn (sRGB); A 0 when not read
 		float Band = 0.f, Seam = 0.f, Adj = 0.f;
+		int32 W = 0, H = 0;                      // (REQ-SKYDOME) the picture's size
+		// (REQ-SKYDOME) a horizon INSIDE the picture (its land or cloud bank part way up, sky-coloured rows under it): LandRow
+		// the first row under the land's foot; LandHow "plain band" or "edge"; LandCover the share of its columns that agree
+		bool bLand = false;
+		int32 LandRow = -1;
+		float LandCover = 0.f;
+		const TCHAR* LandHow = TEXT("none");
 	};
 	OUTLAWSRUNTIME_API bool SkyLook(const FOutlawsAssets& A, const FString& Name, const TArray<FColor>& Palette, FOutlawsSkyLook& Out);
+	/** (REQ-SKYDOME, the census) the same from a PCX's bytes. */
+	OUTLAWSRUNTIME_API bool SkyLookPcx(const TArray<uint8>& Bytes, const TArray<FColor>& Palette, FOutlawsSkyLook& Out);
 
 	struct FSpriteAtlas
 	{

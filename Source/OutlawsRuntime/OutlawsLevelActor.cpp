@@ -1302,7 +1302,8 @@ void AOutlawsLevelActor::Build()
 		WaterMesh = NewMeshComponent(TEXT("OutlawsWater"), false);
 		AddSections(WaterMesh, G.Water, false, WaterMaterial, WaterMaterial, WaterTris);
 	}
-	UE_LOG(LogOutlaws, Log, TEXT("OLRT sky: %s (%s)"), *SkyStem, Textures.Contains(SkyStem) ? *Textures[SkyStem]->GetName() : TEXT("not loaded"));
+	SkyDome = FSkyDomeInfo();
+	UE_LOG(LogOutlaws, Log, TEXT("OLRT sky: %s (%s)"), *SkyStem,Textures.Contains(SkyStem) ? *Textures[SkyStem]->GetName() : TEXT("not loaded"));
 	if (!SkyStem.IsEmpty() && Textures.Contains(SkyStem))
 	{
 		TMap<FString, FOutlawsMeshSection> Sky;
@@ -1325,7 +1326,8 @@ void AOutlawsLevelActor::Build()
 			SkySurfaceMid = MaterialFor(SurfBase, SkyStem);
 			const FOutlawsTexInfo SkyInfo = TexInfo.FindRef(SkyStem);
 			// round the dome: twice the original's texels a turn (once stretched it too far)
-			SkySurfaceMid->SetScalarParameterValue(TEXT("Repeats"), 2.0f * FMath::Max(1.f, float(L.Parallax.X) / FMath::Max(1, SkyInfo.W)));
+			const float Repeats = 2.0f * FMath::Max(1.f, float(L.Parallax.X) / FMath::Max(1, SkyInfo.W));
+			SkySurfaceMid->SetScalarParameterValue(TEXT("Repeats"), Repeats);
 			// up the dome, by what the picture is (user 2026-09-27): a tiling sky (clouds all over) goes round
 			// twice from horizon to zenith; a horizon sky (a horizon along its bottom, plain above) shows once,
 			// stretched to the zenith when tall, or over the lower half with its top colour above, so no second
@@ -1334,15 +1336,44 @@ void AOutlawsLevelActor::Build()
 			FString SkyName;
 			for (const FString& N : L.Textures) if (FPaths::GetBaseFilename(N).ToUpper() == SkyStem) { SkyName = N; break; }
 			const bool bLooked = !SkyName.IsEmpty() && OutlawsTextures::SkyLook(A, SkyName, Palette, Look);
-			const float RepV = Look.bTiles || SkyInfo.H < 512 ? 2.f : 1.f;
+			// REQ-SKYDOME (user 3 Nov): a picture the test above calls tiling but with its land part way up it (SkyLookPcx: armad,
+			// frostbi, isla) is a horizon sky whose horizon is not its bottom row: its land's foot sits just under the horizon
+			// (LandDrop, 1 degree: the level's own edge is a little below the eye), its rows above it once up the dome at the same
+			// texel size as round it, the rows under it below, and above its top one plain colour, its top rows' (FadeColour), to
+			// the zenith, without the cloud layer (it would hang the picture's top band overhead).  -OLOldSkyDome: tiling as before
+			static const bool bOldSkyDome = OLFlags::Param(TEXT("OLOldSkyDome"));
+			const bool bLand = bLooked && Look.bTiles && Look.bLand && Look.H > 0 && !bOldSkyDome;
+			const bool bTiles = Look.bTiles && !bLand;
+			const float RepV = bTiles || SkyInfo.H < 512 ? 2.f : 1.f;
+			const float LandV = bLand ? float(Look.LandRow) / float(Look.H) : 0.f, LandDrop = bLand ? 1.f / 90.f : 0.f;
 			SkySurfaceMid->SetScalarParameterValue(TEXT("RepV"), RepV);
-			SkySurfaceMid->SetScalarParameterValue(TEXT("Wrap"), Look.bTiles ? 1.f : 0.f);
+			SkySurfaceMid->SetScalarParameterValue(TEXT("Wrap"), bTiles ? 1.f : 0.f);
+			SkySurfaceMid->SetScalarParameterValue(TEXT("LandV"), LandV);
+			SkySurfaceMid->SetScalarParameterValue(TEXT("LandDrop"), LandDrop);
 			SkySurfaceMid->SetVectorParameterValue(TEXT("FadeColour"), Look.Top);
 			// the dome shows the same picture the same way, so it and the sky surfaces meet seamlessly
 			if (SkyMesh) SkyMesh->SetMaterial(0, SkySurfaceMid);
 			UE_LOG(LogOutlaws, Log, TEXT("OLRT sky %s %dx%d: %s (band %.1f, seam %.1f, rows %.1f), %.0f up the dome"), *SkyStem, SkyInfo.W, SkyInfo.H,
-				!bLooked ? TEXT("not read, taken as tiling") : Look.bTiles ? TEXT("tiling") : RepV < 1.5f ? TEXT("a horizon sky, stretched to the zenith") : TEXT("a horizon sky, its top colour above"),
+				!bLooked ? TEXT("not read, taken as tiling") : bLand ? TEXT("a horizon sky with its land part way up (REQ-SKYDOME)") : bTiles ? TEXT("tiling")
+					: RepV < 1.5f ? TEXT("a horizon sky, stretched to the zenith") : TEXT("a horizon sky, its top colour above"),
 				Look.Band, Look.Seam, Look.Adj, RepV);
+			if (bLooked && Look.bTiles && Look.bLand)
+			{
+				UE_LOG(LogOutlaws, Log, TEXT("OLRT sky %s: its land's foot at row %d of %d (%s, %.0f%% of its columns)%s"), *SkyStem, Look.LandRow, Look.H, Look.LandHow,
+					100.f * Look.LandCover, bOldSkyDome ? TEXT(", taken as tiling (-OLOldSkyDome)") : TEXT(": 1 degree under the horizon, its top colour above, no cloud layer"));
+			}
+			SkyDome.Stem = SkyStem;
+			SkyDome.W = SkyInfo.W;
+			SkyDome.H = SkyInfo.H;
+			SkyDome.Old = !bLooked || Look.bTiles ? TEXT("tiling") : TEXT("horizon");
+			SkyDome.Now = bLand ? TEXT("land") : bTiles || !bLooked ? TEXT("tiling") : TEXT("horizon");
+			SkyDome.LandRow = bLand ? Look.LandRow : -1;
+			SkyDome.Repeats = Repeats;
+			SkyDome.RepV = RepV;
+			SkyDome.LandV = LandV;
+			SkyDome.LandDrop = LandDrop;
+			SkyDome.bWrap = bTiles;
+			SkyDome.Fade = Look.Top;
 			// (BUG-TRAINSKY, user 2026-10-12) the train's sky picture looks broken through the dome and cloud layer: this level alone
 			// gets a plain gradient dome, sky blue from the top to halfway down, then to a lighter, whiter blue at the horizon
 			bGradientSky = LevelName.Equals(TEXT("train"), ESearchCase::IgnoreCase);
@@ -1404,9 +1435,10 @@ void AOutlawsLevelActor::Build()
 				}
 				ApplyGradientSkyLook();
 			}
-			if (GetWorld() && GetWorld()->IsGameWorld() && bCloudLayer && !bGradientSky && !OLFlags::Param(TEXT("OLNoCloudLayer")))
+			if (GetWorld() && GetWorld()->IsGameWorld() && bCloudLayer && !bGradientSky && !bLand && !OLFlags::Param(TEXT("OLNoCloudLayer")))
 			{
 				SetUpCloudLayer(!bLooked || Look.bTiles, SkyInfo.H > 0 ? float(SkyInfo.W) / float(SkyInfo.H) : 1.f);
+				SkyDome.bCloudLayer = true;
 			}
 			if (G.SkyFaces.Triangles.Num() > 0)
 			{

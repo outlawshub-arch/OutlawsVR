@@ -1600,6 +1600,17 @@ public:
 	bool HasGradientSky() const { return bGradientSky; }      // (BUG-TRAINSKY, -OLVb2Test=sky)
 	/** (tests, BUG-TRAINSKY8BIT) what the gradient dome shows now: "gradient", or "flat <r> <g> <b> (<the picture read>)"; "none". */
 	FString DebugSkyLook() const;
+	/** (REQ-SKYDOME, tests) how the dome maps the level's sky picture: the old test's judgement and the one used, the land's
+	 *  foot (the first row under it, -1 when none) and the material's values as set. */
+	struct FSkyDomeInfo
+	{
+		FString Stem, Old, Now;            // Old: "tiling" or "horizon" (the old test); Now: "tiling", "horizon" or "land"
+		int32 W = 0, H = 0, LandRow = -1;
+		float Repeats = 0.f, RepV = 0.f, LandV = 0.f, LandDrop = 0.f;
+		bool bWrap = false, bCloudLayer = false;
+		FLinearColor Fade = FLinearColor::Black;
+	};
+	const FSkyDomeInfo& GetSkyDome() const { return SkyDome; }
 	bool IsBetweenLevels() const { return !bFrontEnd && !bDead && !NextLevelName.IsEmpty() && (LevelEndTimer >= 0.f || (Movie != nullptr && !Inf)); }
 	bool SaveLevelOpening();
 	bool bPendingOpeningSave = false;
@@ -1743,6 +1754,7 @@ private:
 	FVector2D CloudWindRate = FVector2D(0.012, 0.004);      // picture widths a second
 	bool bCloudLayer = true;           // -OLNoCloudLayer
 	bool bGradientSky = false;         // (BUG-TRAINSKY) this level's sky is the plain gradient dome (the train)
+	FSkyDomeInfo SkyDome;              // (REQ-SKYDOME, tests)
 	// (BUG-TRAINSKY8BIT) with Remastered Graphics off the dome is one flat colour, the top row of the outer walls' 8-bit picture
 	FLinearColor GradSkyTop = FLinearColor::Black, FlatSkyColour = FLinearColor::Black;
 	FColor FlatSkyPx = FColor::Black;

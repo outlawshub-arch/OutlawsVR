@@ -298,8 +298,13 @@ bool OutlawsTextures::SkyLook(const FOutlawsAssets& A, const FString& Name, cons
 {
 	const FString Resolved = ResolveTextureName(A, Name);
 	TArray<uint8> Bytes;
+	return !Resolved.IsEmpty() && A.Get(Resolved, Bytes) && SkyLookPcx(Bytes, Palette, Out);
+}
+
+bool OutlawsTextures::SkyLookPcx(const TArray<uint8>& Bytes, const TArray<FColor>& Palette, FOutlawsSkyLook& Out)
+{
 	FPcxImage Img;
-	if (Resolved.IsEmpty() || !A.Get(Resolved, Bytes) || !DecodePcx(Bytes, Img) || Img.W <= 0 || Img.H < 2)
+	if (!DecodePcx(Bytes, Img) || Img.W <= 0 || Img.H < 2)
 	{
 		return false;
 	}
@@ -339,6 +344,84 @@ bool OutlawsTextures::SkyLook(const FOutlawsAssets& A, const FString& Name, cons
 	Out.Top = FLinearColor(FColor(uint8(Top.X), uint8(Top.Y), uint8(Top.Z)));    // sRGB to linear
 	const FVector Row0 = RowMean(0);
 	Out.TopRow = FColor(uint8(FMath::RoundToInt(Row0.X)), uint8(FMath::RoundToInt(Row0.Y)), uint8(FMath::RoundToInt(Row0.Z)), 255);
+	Out.W = W;
+	Out.H = H;
+	// REQ-SKYDOME (user 2026-11-03: "the sky for armadillo, frostbite acres, and others likely need their UV map adjusted ... it
+	// needs to wrap around the level, a bit like the hideout one.  And the top dome needs to just be a solid color"): the wide
+	// skies drawn for one turn round a level have their land (or a cloud bank) part way UP the picture with sky-coloured rows
+	// under it (frostbi's SKYMNT 158 rows of its top's own blue, isla's ISSKY 10, armad's ARMSKY a blue band fading back to its
+	// top's colour), so their top rows match their bottom rows and the test above calls them tiling: their land went round the
+	// dome twice, up the sky.  A horizon inside the picture, either of two marks: the bottom rows one plain colour, the sky's
+	// own, with most columns' lowest strong step just above it (the land's foot is where the plain band starts); or a straight
+	// edge across the picture, the strongest step of 40 % of the columns on one row (+-3; armad's land meets its lake there)
+	{
+		auto Step = [&](int32 x, int32 y)
+		{
+			const FColor& a = Px[y * W + x];
+			const FColor& b = Px[(y + 1) * W + x];
+			return float(FMath::Abs(int32(a.R) - b.R) + FMath::Abs(int32(a.G) - b.G) + FMath::Abs(int32(a.B) - b.B)) / 3.f;
+		};
+		TArray<int32> Strongest, Lowest;           // per row: the columns whose strongest / lowest strong step ends there
+		Strongest.Init(0, H);
+		Lowest.Init(0, H);
+		for (int32 x = 0; x < W; ++x)
+		{
+			float Best = 0.f;
+			int32 BestY = -1, LowY = -1;
+			for (int32 y = 0; y + 1 < H; ++y)
+			{
+				const float S = Step(x, y);
+				if (S > Best) { Best = S; BestY = y + 1; }
+				if (S > 16.f) LowY = y + 1;
+			}
+			if (Best >= 16.f) ++Strongest[BestY];
+			if (LowY >= 0) ++Lowest[LowY];
+		}
+		auto Peak = [H](const TArray<int32>& Hist, int32& OutY)
+		{
+			int32 BestN = -1;
+			for (int32 y = 0; y < H; ++y)
+			{
+				int32 N = 0;
+				for (int32 k = FMath::Max(0, y - 3); k <= FMath::Min(H - 1, y + 3); ++k) N += Hist[k];
+				if (N > BestN) { BestN = N; OutY = y; }
+			}
+			return BestN;
+		};
+		// the plain band at the bottom: rows every pixel of which is within 8 of the bottom row's mean
+		const FVector Ref = RowMean(H - 1);
+		int32 Plain = 0;
+		for (int32 y = H - 1; y >= 0; --y)
+		{
+			bool bFlat = true;
+			for (int32 x = 0; x < W && bFlat; ++x)
+			{
+				const FColor& C = Px[y * W + x];
+				bFlat = (FMath::Abs(C.R - Ref.X) + FMath::Abs(C.G - Ref.Y) + FMath::Abs(C.B - Ref.Z)) / 3.0 <= 8.0;
+			}
+			if (!bFlat) break;
+			++Plain;
+		}
+		const double RefToTop = (FMath::Abs(Ref.X - Top.X) + FMath::Abs(Ref.Y - Top.Y) + FMath::Abs(Ref.Z - Top.Z)) / 3.0;
+		int32 LowAt = 0, EdgeAt = 0;
+		const int32 LowN = Peak(Lowest, LowAt), EdgeN = Peak(Strongest, EdgeAt);
+		if (Plain >= FMath::Max(4, H / 32) && Plain < H / 2 + H / 4 && RefToTop < 12.0 && LowN >= 0.6 * W && H - Plain - LowAt <= H / 16 + 3)
+		{
+			Out.bLand = true;
+			Out.LandRow = H - Plain;
+			Out.LandCover = float(LowN) / W;
+			Out.LandHow = TEXT("plain band");
+		}
+		else if (EdgeN >= 0.4 * W && EdgeAt >= H / 8 && EdgeAt < H - H / 16)
+		{
+			int32 Row = FMath::Max(0, EdgeAt - 3);
+			for (int32 k = Row; k <= FMath::Min(H - 1, EdgeAt + 3); ++k) if (Strongest[k] > Strongest[Row]) Row = k;
+			Out.bLand = true;
+			Out.LandRow = Row;
+			Out.LandCover = float(EdgeN) / W;
+			Out.LandHow = TEXT("edge");
+		}
+	}
 	return true;
 }
 
