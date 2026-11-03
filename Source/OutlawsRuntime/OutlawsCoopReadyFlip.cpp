@@ -113,7 +113,8 @@ void UOutlawsCoop::TickReadyFlipHost(double Now, AOutlawsPlayer* P)
 	else if (RFStep == 50)
 	{
 		// the host lands in the lobby over its level
-		const bool bThere = bLevelBuilt && P->CoopMenuPage() == TEXT("#cooplobby") && P->CoopRowLabel(EnterRow) == TEXT("Enter Game");
+		const bool bThere = bLevelBuilt && P->CoopMenuPage() == TEXT("#cooplobby")
+			&& (P->CoopRowLabel(EnterRow) == TEXT("Enter Game") || P->CoopRowLabel(EnterRow).StartsWith(TEXT("ENTER GAME (")));       // (REQ-LOBBYREDO: with its count)
 		if (!bThere && Now < RFAt) return;
 		ReadyFlipCheck(bThere, FString::Printf(TEXT("the host's level is built behind the lobby, and the host lands in it (page %s, Enter row '%s')"), *P->CoopMenuPage(), *P->CoopRowLabel(EnterRow)));
 		P->CoopPressRow(EnterRow);

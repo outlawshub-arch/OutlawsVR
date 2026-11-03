@@ -41,6 +41,7 @@
 #include "Misc/Paths.h"
 #include "HAL/PlatformMisc.h"
 #include "UnrealClient.h"
+#include "OutlawsLobbyPage.h"
 
 namespace
 {
@@ -2189,6 +2190,12 @@ void UOutlawsCoop::BuildMenuPage(AOutlawsPlayer* P, const FString& File, Outlaws
 	}
 }
 
+void UOutlawsCoop::UpnpLinesFor(const UObject* Context, TArray<FString>& Out)
+{
+	const UOutlawsCoop* C = Get(Context);
+	if (C && C->IsHost()) C->UpnpLines(Out);
+}
+
 void UOutlawsCoop::StatusLines(const UObject* Context, const FString& File, TArray<FString>& Out)
 {
 	const UOutlawsCoop* C = Get(Context);
@@ -2201,6 +2208,14 @@ void UOutlawsCoop::StatusLines(const UObject* Context, const FString& File, TArr
 		const int32 Dots = int32(FPlatformTime::Seconds() * 2.0) % 4;
 		Out.Add(C->Mode == EOutlawsCoopMode::Client ? FString::Printf(TEXT("Connecting to %s %s"), *C->ConnectingTo, *FString::ChrN(Dots + 1, '.'))
 			: !C->JoinError.IsEmpty() ? C->JoinError : FString(TEXT("Type the address the host's lobby shows, then Join")));
+	}
+	else if ((File == TEXT("#cooplobby") || File == TEXT("#coopclient")) && !OutlawsLobbyPage::Old())
+	{
+		// (REQ-LOBBYREDO: the new page's state lines, then the host's address at its foot, as drawn)
+		OutlawsLobbyPage::FView V;
+		C->LobbyView(File, V);
+		Out.Append(V.State);
+		if (!V.Foot.IsEmpty()) Out.Add(V.Foot);
 	}
 	else if (File == TEXT("#coophost"))
 	{

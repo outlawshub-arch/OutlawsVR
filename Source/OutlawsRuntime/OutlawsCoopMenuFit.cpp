@@ -29,6 +29,10 @@ void UOutlawsCoop::PlayerRows(TArray<FPlayerRow>& Out) const
 		R.Name = K->PlayerName.TrimStartAndEnd().IsEmpty() ? FString::Printf(TEXT("Player %d"), R.Who + 1) : K->PlayerName.TrimStartAndEnd();
 		R.bMic = K->bMic;
 		R.bInGame = R.Who == 0 ? S && S->StartSerial > 0 && S->bHostReady : IsPlayerEntered(K) && K->BuiltSerial > 0;
+		// (REQ-LOBBYREDO: the side, for the lobby's RED | BLUE panel: the match's rules' once they have it, before that the host's
+		// note of a Join Red / Join Blue)
+		if (S) for (const FOutlawsMatchScore& Sc : S->Scores) if (Sc.Who == R.Who) R.Team = Sc.Team;
+		if (R.Team == 0 && IsHost() && R.Who >= 0 && R.Who < int32(UE_ARRAY_COUNT(LobbyTeam))) R.Team = LobbyTeam[R.Who];
 		if (IsHost() && R.Who != 0)
 		{
 			const APlayerController* PC = Cast<APlayerController>(K->GetOwner());
@@ -49,6 +53,8 @@ void UOutlawsCoop::PlayerRows(TArray<FPlayerRow>& Out) const
 		R.bMic = k % 2 == 0;
 		R.bInGame = k % 3 != 0;
 		R.PingMs = 30.f + 7.f * k;
+		R.Team = uint8((k + 1) % 3);              // (REQ-LOBBYREDO: red, blue, none in turn, for the team panel's shots)
+		R.bStandIn = true;
 		Out.Add(R);
 		++k;
 	}

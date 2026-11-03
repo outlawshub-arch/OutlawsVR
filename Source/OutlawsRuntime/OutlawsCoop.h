@@ -21,6 +21,7 @@ class AOutlawsCoopLink;
 class AOutlawsCoopSession;
 class AOutlawsRemotePlayer;
 class AOutlawsSpriteActor;
+namespace OutlawsLobbyPage { struct FView; }
 class UNetDriver;
 class FJsonObject;
 struct FOutlawsElevator;
@@ -882,6 +883,8 @@ public:
 	static void BuildMenuPage(AOutlawsPlayer* P, const FString& File, OutlawsMenu::FPage& Page);
 	static void MenuAction(AOutlawsPlayer* P, const FString& Name);
 	static void StatusLines(const UObject* Context, const FString& File, TArray<FString>& Out);
+	/** REQ-LOBBYREDO: what the lobby page (#cooplobby) or the co-op host's page (#coophost) shows, for its drawing. */
+	static bool LobbyViewFor(const UObject* Context, const FString& File, OutlawsLobbyPage::FView& Out);
 	/** Bumps whenever the lobby changes (the open co-op page is built again). */
 	static uint32 PageVersion(const UObject* Context);
 	/** The session's end from the game's own menu (End Game in a co-op level). */
@@ -1245,6 +1248,8 @@ public:
 	static bool CloseScoreboard(AOutlawsPlayer* P, const TCHAR* Why);
 	/** The words on the table for closing it: the Menu button in a headset, Tab on the PC. */
 	static FString ScoreboardCloseHint(const AOutlawsPlayer* P);
+	/** REQ-LOBBYREDO (P3): the router's "Internet: ..." lines for the Host Game page (the lobby keeps only the address). */
+	static void UpnpLinesFor(const UObject* Context, TArray<FString>& Out);
 	/** REQ-MPLOBBY (b): this machine hosts a match between matches (the Host Game page sets up the next one: End game, no new
 	 *  session); End game pressed there. */
 	static bool IsHostBetweenMatches(const UObject* Context);
@@ -2070,6 +2075,13 @@ private:
 	/** The lobby page (#cooplobby) for host and joiners: its rows, its lines, Enter Game. */
 	void BuildLobbyPage(AOutlawsPlayer* P, OutlawsMenu::FPage& Page);
 	void LobbyLines(TArray<FString>& Out) const;
+	/** REQ-LOBBYREDO: the new page's view (its state lines, the foot, the panel, the items' counts); a probe's made-up one instead
+	 *  while -OLLobbyRedoProbe sets it. */
+	void LobbyView(const FString& File, OutlawsLobbyPage::FView& Out) const;
+	/** REQ-LOBBYREDO: the match's "Waiting for players" line last shown here, taken off while the lobby page is up. */
+	FString WaitingSaid;
+	bool bWaitingHidSaid = false;
+	bool bLobbyPageUp = false;                   // (this machine's lobby page is open, as of its last lobby tick)
 	void EnterGame(AOutlawsPlayer* P, int32 Team);
 	/** Whether this player is still in the lobby (not entered). */
 	bool InLobbyHere() const;
@@ -2104,6 +2116,8 @@ private:
 		bool bMic = false;
 		bool bInGame = false;
 		float PingMs = -1.f;
+		uint8 Team = 0;                          // (REQ-LOBBYREDO: a team game's side, 1 red, 2 blue, 0 none yet)
+		bool bStandIn = false;
 	};
 	void PlayerRows(TArray<FPlayerRow>& Out) const;
 	int32 BotsInSession() const;

@@ -20,6 +20,145 @@
 #include "Misc/Parse.h"
 #include "Misc/Paths.h"
 #include "OutlawsDeathmatch.h"
+#include "OutlawsFlags.h"
+#include "OutlawsLobbyPage.h"
+
+namespace OutlawsLobbyPage
+{
+	FDrawn& Drawn()
+	{
+		static FDrawn D;
+		return D;
+	}
+
+	bool Old()
+	{
+		static const bool bOld = OLFlags::Param(TEXT("OLOldLobby"));
+		return bOld;
+	}
+
+	float SeenDeg(float ViewPx)
+	{
+		// (the wide sheet: 128 cm wide at MenuDistance / MenuScale = 96 cm, its 1920 view units across; at its middle)
+		return FMath::RadiansToDegrees(FMath::Atan(ViewPx * 128.f / 1920.f / 96.f));
+	}
+
+	float FloorPx()
+	{
+		return FMath::Tan(FMath::DegreesToRadians(FloorDeg)) * 96.f * 1920.f / 128.f;
+	}
+
+#if WITH_OUTLAWS_TESTS
+	FTest& Test()
+	{
+		static FTest T;
+		return T;
+	}
+#endif
+}
+
+bool UOutlawsCoop::LobbyViewFor(const UObject* Context, const FString& File, OutlawsLobbyPage::FView& Out)
+{
+	const UOutlawsCoop* C = Get(Context);
+	if (!C) return false;
+	C->LobbyView(File, Out);
+	return true;
+}
+
+void UOutlawsCoop::LobbyView(const FString& File, OutlawsLobbyPage::FView& V) const
+{
+	using namespace OutlawsLobbyPage;
+	V = FView();
+#if WITH_OUTLAWS_TESTS
+	if (Test().bOn)
+	{
+		V = Test().View;
+		return;
+	}
+#endif
+	const AOutlawsCoopSession* S = GetSession();
+	const UWorld* W = CurrentWorld();
+	const bool bMatch = IsMatch();
+	V.bMatch = bMatch;
+	V.bHostPage = File == TEXT("#coophost");
+	V.bTeams = bMatch && S && S->bTeams;
+	V.bCharacter = bMatch || !IsHost();
+	V.bInLobby = InLobbyHere();
+	V.bLocked = bMatch && S && S->bBetweenMatches;
+	V.Title = bMatch ? TEXT("OUTLAWS LOBBY") : TEXT("CO-OP LOBBY");
+	// the panel: everyone in the session but the bots (they are a count at its foot, P5)
+	TArray<FPlayerRow> Rows;
+	PlayerRows(Rows);
+	for (const FPlayerRow& R : Rows)
+	{
+		FPlayer& Pl = V.Players.AddDefaulted_GetRef();
+		Pl.Name = R.Name;
+		Pl.Who = R.Who;
+		Pl.Team = V.bTeams ? R.Team : 0;
+		Pl.bInGame = R.bInGame;
+		Pl.bYou = R.Who == MyIndex();
+		Pl.bHost = R.Who == 0;
+		V.InGame += R.bInGame ? 1 : 0;
+		V.Red += Pl.Team == 1 ? 1 : 0;
+		V.Blue += Pl.Team == 2 ? 1 : 0;
+	}
+	V.Bots = BotsInSession();
+	// the foot: the host's address, the host only (P3: joining is by address; the router's detail is on the Host Game page)
+	if (IsHost()) V.Foot = FString::Printf(TEXT("Your address  %s    port %d"), LanAddress.IsEmpty() ? TEXT("(unknown)") : *LanAddress, ListenPort);
+	// the state, at most two lines (P2): what is played and where, then what the page waits for
+	if (V.bHostPage)
+	{
+		FString Saved;
+		const bool bCont = CampaignAutosave(Saved) && LobbyLoadSlot == -2;
+		V.Level = bCont ? FString::Printf(TEXT("Continue (%s)"), *Saved) : CampaignLevelTitle(LevelToStart);
+		V.State.Add(!S || !S->bClientConnected ? FString(TEXT("Waiting for friends to join"))
+			: FString(TEXT("Start Game takes in everyone who has entered")));
+		V.State.Add(FString::Printf(TEXT("Bad guys x%.2f%s"), BadGuysMultiplier(), IsBadGuysAuto() ? TEXT(" (Auto)") : TEXT("")));
+#if PLATFORM_ANDROID
+		if (BadGuysMultiplier() > 2.5f) V.State[1] = TEXT("Many bad guys: a Quest host may slow down");       // (R14)
+#endif
+		return;
+	}
+	if (IsClient() && !(W && W->GetNetMode() == NM_Client))
+	{
+		V.State.Add(FString::Printf(TEXT("Connecting to %s ..."), *ConnectingTo));
+		return;
+	}
+	if (!S) return;
+	if (bMatch)
+	{
+		V.State.Add(MatchLine());
+		if (V.bLocked) V.State.Add(TEXT("Waiting for the host to start the next match"));        // (REQ-MPLOBBY b: as the old page said it)
+		else if (!V.bInLobby) V.State.Add(TEXT("Entering the game ..."));
+		else switch (static_cast<FOutlawsMatchFlow::EState>(S->MatchState))
+		{
+		case FOutlawsMatchFlow::EState::WarmUp:
+			V.State.Add(S->LobbyLeft >= 0.f ? FString::Printf(TEXT("Starts in %d s (sooner as players enter)"), FMath::CeilToInt(S->LobbyLeft))
+				: S->LobbyLeft < -1.5f ? FString(TEXT("Waiting for a second player"))
+				: FString(TEXT("The countdown starts when the first player enters")));
+			break;
+		case FOutlawsMatchFlow::EState::Countdown: V.State.Add(TEXT("The match is starting")); break;
+		case FOutlawsMatchFlow::EState::Playing: V.State.Add(TEXT("The match is under way: enter to join it")); break;
+		case FOutlawsMatchFlow::EState::Ended: V.State.Add(TEXT("The match has ended")); break;
+		default: break;
+		}
+	}
+	else
+	{
+		if (S->StartSerial == 0) V.State.Add(bEnterPressed ? TEXT("Waiting for the host to start") : TEXT("Enter when you are ready: the host's Start takes you in"));
+		else V.State.Add(FString::Printf(TEXT("The host is playing %s"), *CampaignLevelTitle(S->Level)));
+		V.State.Add(FString::Printf(TEXT("Bad guys x%.2f (the host's choice)"), S->Multiplier));        // (R14; co-op only)
+	}
+	const AOutlawsCoopLink* Mine = IsClient() ? GetLink(MyIndex()) : nullptr;
+	if (Mine && Mine->bLateJoin && bEnterPressed && S->StartSerial > 0)
+	{
+		// (R7: the host's game on its way, in the second line's place)
+		const FString Join = Mine->JoinState == JoinHostBusy ? TEXT("The host is between levels: you join at the next one")
+			: Mine->JoinState == JoinSent ? TEXT("Joining the host's game ...") : TEXT("Asking the host for its game ...");
+		if (V.State.Num() >= 2) V.State[1] = Join;
+		else V.State.Add(Join);
+	}
+}
 
 void AOutlawsCoopLink::ServerMic_Implementation(bool bOn)
 {
@@ -115,6 +254,28 @@ void UOutlawsCoop::BuildLobbyPage(AOutlawsPlayer* P, OutlawsMenu::FPage& Page)
 		I.Target = Target;
 		Page.Items.Add(I);
 	};
+	if (!OutlawsLobbyPage::Old())
+	{
+		// REQ-LOBBYREDO (user 3 Nov): the items only, as the original's lobby_main.rml has them (ENTER GAME, or JOIN RED and JOIN
+		// BLUE in a team game, CHARACTER, QUIT GAME) with OPTIONS as a fourth (P1: a joiner has no pause menu over the lobby, and
+		// turning, height and voice are only reachable from here).  The players are the panel's (DrawFrontCanvas), not rows: no
+		// More players, no mute here (P4: the pause Players page keeps it).  Entered, or between matches, ENTER is greyed out.
+		OutlawsLobbyPage::FView V;
+		LobbyView(TEXT("#cooplobby"), V);
+		Page.Title = V.Title;
+		const int32 First = Page.Items.Num();
+		if (V.bTeams)
+		{
+			Add(EItemKind::Action, FString::Printf(TEXT("JOIN RED (%d)"), V.Red), V.bInLobby ? TEXT("coop:enter:1") : TEXT("coop:entered"));
+			Add(EItemKind::Action, FString::Printf(TEXT("JOIN BLUE (%d)"), V.Blue), V.bInLobby ? TEXT("coop:enter:2") : TEXT("coop:entered:2"));
+		}
+		else Add(EItemKind::Action, FString::Printf(TEXT("ENTER GAME (%d)"), V.InGame), V.bInLobby ? TEXT("coop:enter") : TEXT("coop:entered"));
+		if (!V.bInLobby || V.bLocked) for (int32 i = First; i < Page.Items.Num(); ++i) Page.Items[i].Classes = TEXT("disabled");
+		if (V.bCharacter) Add(EItemKind::Link, TEXT("CHARACTER"), FString(), TEXT("#character"));
+		Add(EItemKind::Link, TEXT("OPTIONS"), FString(), TEXT("options.rml"));
+		Add(EItemKind::Action, TEXT("QUIT GAME"), TEXT("coop:leave"));
+		return;
+	}
 	if (InLobbyHere())
 	{
 		const int32 First = Page.Items.Num();
@@ -223,6 +384,15 @@ void UOutlawsCoop::TickLobby(double Now, AOutlawsCoopSession* S, AOutlawsPlayer*
 {
 	if (!S) return;
 	TickLobbyBody(P);
+	// (REQ-LOBBYREDO: the HUD's "Waiting for players" line off while the lobby page is up: its state line says the same)
+	const bool bPageUp = !OutlawsLobbyPage::Old() && P && P->CoopMenuPage() == TEXT("#cooplobby");
+	if (bPageUp && !bLobbyPageUp && !WaitingSaid.IsEmpty())
+	{
+		P->DropMessage(WaitingSaid);
+		if (!bWaitingHidSaid) UE_LOG(LogOutlawsCoop, Log, TEXT("OLCOOP lobby: the HUD's \"%s\" is taken off while the lobby page is up"), *WaitingSaid);
+		bWaitingHidSaid = true;
+	}
+	bLobbyPageUp = bPageUp;
 	// (every machine) this player's microphone setting, for the others' mute rows
 	if (AOutlawsCoopLink* Mine = (IsHost() || MyIndex() > 0) ? GetLink(MyIndex()) : nullptr)
 	{
@@ -265,9 +435,25 @@ void UOutlawsCoop::TickLobby(double Now, AOutlawsCoopSession* S, AOutlawsPlayer*
 			PlayerRows(Listed);
 			UE_LOG(LogOutlawsCoop, Log, TEXT("OLFIT check %s: the lobby (%s, %d players) fits the panel (%s)"), bFits ? TEXT("PASS") : TEXT("FAIL"), *LobbyShotName, Listed.Num(), *Fit);
 			const bool bMore = Page.Items.ContainsByPredicate([](const OutlawsMenu::FItem& I) { return I.Name == TEXT("coop:moreplayers"); });
-			const int32 Room = FrontRowRoom(Lines.Num());
-			UE_LOG(LogOutlawsCoop, Log, TEXT("OLFIT check %s: the lobby's rows (%d) within the room under its %d lines (%d)%s"), Page.Items.Num() <= Room ? TEXT("PASS") : TEXT("FAIL"),
-				Page.Items.Num(), Lines.Num(), Room, bMore ? TEXT("; More players shown") : TEXT(""));
+			if (!OutlawsLobbyPage::Old())
+			{
+				// (REQ-LOBBYREDO: every player in the panel, no More players; nothing drawn under the floor)
+				const OutlawsLobbyPage::FDrawn& D = OutlawsLobbyPage::Drawn();
+				float Smallest = 1000.f;
+				for (const OutlawsLobbyPage::FInk& I : D.Texts) if (I.CapPx > 0.f) Smallest = FMath::Min(Smallest, I.CapPx);
+				const bool bAll = D.Names == Listed.Num() && !bMore;
+				const bool bFloor = Smallest >= OutlawsLobbyPage::FloorPx() - 0.01f;
+				UE_LOG(LogOutlawsCoop, Log, TEXT("OLFIT check %s: the lobby's panel shows all %d players (%d drawn, %d column%s, %d items, no More players)"), bAll ? TEXT("PASS") : TEXT("FAIL"),
+					Listed.Num(), D.Names, D.Columns, D.Columns == 1 ? TEXT("") : TEXT("s"), Page.Items.Num());
+				UE_LOG(LogOutlawsCoop, Log, TEXT("OLFIT check %s: the lobby's smallest letters %.1f deg, at least the menus' floor %.2f deg (%d texts)"), bFloor ? TEXT("PASS") : TEXT("FAIL"),
+					OutlawsLobbyPage::SeenDeg(Smallest), OutlawsLobbyPage::FloorDeg, D.Texts.Num());
+			}
+			else
+			{
+				const int32 Room = FrontRowRoom(Lines.Num());
+				UE_LOG(LogOutlawsCoop, Log, TEXT("OLFIT check %s: the lobby's rows (%d) within the room under its %d lines (%d)%s"), Page.Items.Num() <= Room ? TEXT("PASS") : TEXT("FAIL"),
+					Page.Items.Num(), Lines.Num(), Room, bMore ? TEXT("; More players shown") : TEXT(""));
+			}
 			if (bMore && P->CoopPressRow(TEXT("coop:moreplayers"))) LobbyMoreAt = Now + 1.0;
 		}
 		else if (LobbyMoreAt > 0.0 && Now >= LobbyMoreAt)

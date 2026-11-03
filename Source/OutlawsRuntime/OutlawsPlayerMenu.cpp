@@ -49,6 +49,9 @@
 #include "Misc/Parse.h"
 #include "Materials/MaterialParameterCollectionInstance.h"
 #include "OutlawsShotTests.h"
+#include "OutlawsLobbyPage.h"
+#include "EngineFontServices.h"
+#include "Fonts/FontCache.h"
 
 namespace
 {
@@ -3140,7 +3143,10 @@ UFont* AOutlawsPlayer::SaveFont(int32 Kind)
 		{ Rye, 72.f },           // 11 menu_link.main (the missions)
 		{ MontaguBold, 72.f },   // 12 ... pointed at
 		{ Rye, 42.f },           // 13 co-op host lobby rows (REQ-COOPLOBBY: smaller than main-small so the rows keep apart)
-		{ MontaguBold, 42.f } }; // 14 ... pointed at
+		{ MontaguBold, 42.f },   // 14 ... pointed at
+		{ Rye, 66.f },           // 15 REQ-LOBBYREDO: the lobby's items (2.0 degrees seen, the remaster's 65 dp)
+		{ MontaguBold, 66.f },   // 16 ... pointed at
+		{ MontaguBold, 48.f } }; // 17 the lobby's lines and names (its cap 1.31 degrees: the menus' floor, MenuSmallFont's 1.28)
 	const int32 Use = FMath::Clamp(Kind, 0, int32(UE_ARRAY_COUNT(Kinds)) - 1);
 	UFont* F = KpfFont(Kinds[Use].Path, FMath::RoundToInt(Kinds[Use].Px * K));
 	SaveFonts.Add(Kind, F);
@@ -3663,18 +3669,18 @@ void AOutlawsPlayer::DrawFrontCanvas(UCanvas* C, int32 Width, int32 Height)
 	const FLinearColor Warm = Col(0xe9, 0x93, 0x1c), White = FLinearColor::White, Black = FLinearColor::Black;
 	// a main-menu link: hollow Rye in black; pointed at, the solid font in warm under it (menu.rcss DUAL-LAYER)
 	// (REQ-MPLOBBY b: a row marked "disabled", the locked lobby's Enter Game, is drawn greyed out and cannot be pointed at)
-	auto Link = [&](int32 Index, const FString& Str, float X, float Y, int32 Align, int32 RyeKind, int32 FillKind, float PadX, float PadY)
+	auto Link = [&](int32 Index, const FString& Str, float X, float Y, int32 Align, int32 RyeKind, int32 FillKind, float PadX, float PadY, float MaxW = 0.f)
 	{
 		const bool bOff = MenuPage->Items.IsValidIndex(Index) && MenuPage->Items[Index].Classes.Contains(TEXT("disabled"));
 		FBox2D Box;
 		if (Index == Hot && !bOff)
 		{
-			Txt(SaveFont(FillKind), Str, X, Y, Align, Warm, false, &White);
-			Box = Txt(SaveFont(RyeKind), Str, X, Y, Align, Black, false);
+			Txt(SaveFont(FillKind), Str, X, Y, Align, Warm, false, &White, MaxW);
+			Box = Txt(SaveFont(RyeKind), Str, X, Y, Align, Black, false, nullptr, MaxW);
 		}
 		else
 		{
-			Box = Txt(SaveFont(RyeKind), Str, X, Y, Align, bOff ? Col(0x80, 0x76, 0x6a) : Black, false);
+			Box = Txt(SaveFont(RyeKind), Str, X, Y, Align, bOff ? Col(0x80, 0x76, 0x6a) : Black, false, nullptr, MaxW);
 		}
 		FrontInk += Box;
 		if (Index >= 0)
@@ -3737,6 +3743,210 @@ void AOutlawsPlayer::DrawFrontCanvas(UCanvas* C, int32 Width, int32 Height)
 			Txt(SaveFont(2), TEXT("The Randomizer is in Options > Gameplay. Find the hidden boxes for more."),
 				565.f, 468.f + 4.f + 39.f + 3.f * 92.f + 10.f, 0, Col(0xc0, 0xc0, 0xc0), true);
 		}
+	}
+	else if ((File == TEXT("#cooplobby") || File == TEXT("#coopclient")) && !OutlawsLobbyPage::Old())
+	{
+		// REQ-LOBBYREDO (user 3 Nov, OutlawsLobbyPage.h): lobby_main.rml's menu_bg.multiplayer (Multiplayer_Base over the 2560 x
+		// 1440 stage), the title between the art's two flourishes, at most two state lines under them, the PLAYERS panel on the
+		// left (the score table's full_box: DialogBox's nine pieces over the DialogBackground wood, Embellish2 under the heading),
+		// the big items on the right, the host's address at the foot.  Each text is noted with its cap height for the floor checks
+		using namespace OutlawsLobbyPage;
+		FView V;
+		UOutlawsCoop::LobbyViewFor(this, File, V);
+		FDrawn& D = Drawn();
+		D = FDrawn();
+		D.File = File;
+		Stage(TEXT("Multiplayer_Base"), -320.f, -180.f, 2560.f, 1440.f);
+		const FLinearColor Ink = Col(0x1d, 0x08, 0x00);
+		// a font's cap height as drawn: its H as the font cache rasterises it (canvas px, back to view units)
+		auto CapOf = [&](UFont* F) -> float
+		{
+			if (!F || !FEngineFontServices::IsInitialized()) return 0.f;
+			const TSharedPtr<FSlateFontCache> Cache = FEngineFontServices::Get().GetFontCache();
+			if (!Cache.IsValid()) return 0.f;
+			return float(Cache->GetCharacterList(F->GetLegacySlateFontInfo(), 1.f).GetCharacter(TEXT('H'), EFontFallback::FF_Max).VSize) / K;
+		};
+		auto Wide = [&](UFont* F, const FString& Str) -> float
+		{
+			float XL = 0.f, YL = 0.f;
+			if (F && !Str.IsEmpty()) C->TextSize(F, Str, XL, YL);
+			return XL / K;
+		};
+		// a text at its size, cut short with "..." when wider than MaxW: never drawn smaller (the floor)
+		auto Cut = [&](UFont* F, const FString& Str, float MaxW) -> FString
+		{
+			if (!F || MaxW <= 0.f || Wide(F, Str) <= MaxW) return Str;
+			FString S = Str;
+			while (S.Len() > 3)
+			{
+				S = S.LeftChop(1).TrimEnd();
+				if (Wide(F, S + TEXT("...")) <= MaxW) break;
+			}
+			return S + TEXT("...");
+		};
+		auto Note = [&](const FString& Str, const FBox2D& Box, UFont* F, float Scale, int32 Item, bool bName)
+		{
+			if (Str.IsEmpty()) return;
+			FInk& I = D.Texts.AddDefaulted_GetRef();
+			I.Text = Str;
+			I.Box = Box;
+			I.CapPx = CapOf(F) * Scale;
+			I.Item = Item;
+			I.bName = bName;
+			FrontInk += Box;
+		};
+		auto Say = [&](int32 Kind, const FString& Str, float X, float Y, const FLinearColor& Colour, bool bShadow, float MaxW, bool bName = false)
+		{
+			UFont* F = SaveFont(Kind);
+			const FString Shown = Cut(F, Str, MaxW);
+			Note(Shown, Txt(F, Shown, X, Y, 1, Colour, bShadow), F, 1.f, -1, bName);
+		};
+		auto Tile = [&](UTexture2D* T, float X, float Y, float W, float H, FVector2D UV0, FVector2D UV1, ESimpleElementBlendMode Blend)
+		{
+			if (!T || !T->GetResource() || W <= 0.f || H <= 0.f) return;
+			FCanvasTileItem I(FVector2D(X * K, Y * K), T->GetResource(), FVector2D(W * K, H * K), UV0, UV1, FLinearColor::White);
+			I.BlendMode = Blend;
+			C->DrawItem(I);
+		};
+		// the title between the flourishes (y 25 and 205); the state lines under the lower one, between the pistol's grip and the
+		// rifle (x 290 to 1610)
+		Say(0, V.Title, 960.f, 115.f, Ink, false, 1100.f);
+		for (int32 k = 0; k < V.State.Num() && k < 2; ++k) Say(17, V.State[k], 950.f, 252.f + k * 50.f, Ink, false, 1320.f);
+		// the PLAYERS panel, clear of the pistol and the red cloth (x 270) and of the items
+		constexpr float PX0 = 285.f, PX1 = 1040.f, PY0 = 345.f, PY1 = 955.f;
+		D.Panel = FBox2D(FVector2D(PX0, PY0), FVector2D(PX1, PY1));
+		{
+			// fragtable.rcss's full_box at 1 view unit a dp: the wood inside the frame's padding (24, 15, 26, 16), repeated at its
+			// native size; the frame's corners 58 whole (116 px at 2x), its edges stretched, its middle left to the wood
+			UTexture2D* Wood = KpfArt(TEXT("DialogBackground@2x"));
+			UTexture2D* Frame = KpfArt(TEXT("DialogBox@2x"));
+			const float WX = PX0 + 24.f, WY = PY0 + 15.f, WW = PX1 - PX0 - 50.f, WH = PY1 - PY0 - 31.f;
+			if (Wood && Wood->GetResource())
+			{
+				const float TW = Wood->GetSizeX() * 0.5f, TH = Wood->GetSizeY() * 0.5f;
+				for (float ty = 0.f; ty < WH; ty += TH)
+				{
+					for (float tx = 0.f; tx < WW; tx += TW)
+					{
+						const float CW = FMath::Min(TW, WW - tx), CH = FMath::Min(TH, WH - ty);
+						Tile(Wood, WX + tx, WY + ty, CW, CH, FVector2D(0.f, 0.f), FVector2D(CW / TW, CH / TH), SE_BLEND_Opaque);
+					}
+				}
+			}
+			else
+			{
+				FCanvasTileItem Fill(FVector2D(WX * K, WY * K), FVector2D(WW * K, WH * K), Col(0x2a, 0x1a, 0x0e));
+				Fill.BlendMode = SE_BLEND_Opaque;
+				C->DrawItem(Fill);
+			}
+			if (Frame)
+			{
+				const float S = float(Frame->GetSizeX()), U0 = 116.f / S, U1 = (S - 116.f) / S, Corner = 58.f;
+				const float Xs[4] = { PX0, PX0 + Corner, PX1 - Corner, PX1 };
+				const float Ys[4] = { PY0, PY0 + Corner, PY1 - Corner, PY1 };
+				const float Us[4] = { 0.f, U0, U1, 1.f };
+				for (int32 j = 0; j < 3; ++j)
+				{
+					for (int32 i = 0; i < 3; ++i)
+					{
+						if (i == 1 && j == 1) continue;
+						Tile(Frame, Xs[i], Ys[j], Xs[i + 1] - Xs[i], Ys[j + 1] - Ys[j], FVector2D(Us[i], Us[j]), FVector2D(Us[i + 1], Us[j + 1]), SE_BLEND_Translucent);
+					}
+				}
+			}
+		}
+		// the names: white in the game, gold still in the lobby, yellow this player, a star by the host (marks by colour, not
+		// words); one column up to 8, two columns of 8 for 9 to 16; a team game's RED | BLUE in the cloths' colours with "No side
+		// yet" under them; "+ N bots" at the foot (P5).  The rows 54 apart, closer (to 46) only when a team panel is full
+		const FLinearColor Gold = Col(0xd1, 0xaf, 0x27), InGame = Col(0xf4, 0xf0, 0xe6), Lobby = Gold, You = Col(0xff, 0xf6, 0x8c);
+		const FLinearColor RedTeam = Col(0xf0, 0x5a, 0x48), BlueTeam = Col(0x78, 0xa4, 0xff);
+		const float CX = (PX0 + PX1) * 0.5f, Inner = PX1 - PX0 - 80.f;
+		const float HeadY = PY0 + 62.f, RuleY = PY0 + 98.f, FirstY = PY0 + 150.f, LastY = PY1 - 50.f;
+		TArray<const FPlayer*> Cols[2];
+		TArray<const FPlayer*> NoSide;
+		const int32 NP = V.Players.Num();
+		for (int32 i = 0; i < NP; ++i)
+		{
+			const FPlayer& Pl = V.Players[i];
+			if (V.bTeams) (Pl.Team == 1 ? Cols[0] : Pl.Team == 2 ? Cols[1] : NoSide).Add(&Pl);
+			else Cols[NP > 8 && i >= (NP + 1) / 2 ? 1 : 0].Add(&Pl);
+		}
+		const int32 NumCols = V.bTeams || Cols[1].Num() > 0 ? 2 : 1;
+		const int32 Rows = FMath::Min(8, FMath::Max(Cols[0].Num(), Cols[1].Num()));
+		const int32 PanelLines = Rows + (NoSide.Num() > 0 ? 1 : 0) + (V.Bots > 0 ? 1 : 0);
+		const float Step = PanelLines > 1 ? FMath::Clamp((LastY - FirstY) / float(PanelLines - 1), 46.f, 54.f) : 54.f;
+		const float ColW = NumCols == 2 ? Inner * 0.5f - 12.f : Inner;
+		const float ColX[2] = { NumCols == 2 ? CX - Inner * 0.25f : CX, CX + Inner * 0.25f };
+		UFont* NameFont = SaveFont(17);
+		if (V.bTeams)
+		{
+			Say(17, TEXT("RED"), ColX[0], HeadY, RedTeam, true, ColW);
+			Say(17, TEXT("BLUE"), ColX[1], HeadY, BlueTeam, true, ColW);
+		}
+		else Say(17, TEXT("PLAYERS"), CX, HeadY, Gold, true, Inner);
+		if (UTexture2D* Rule = KpfArt(TEXT("Embellish2@2x"))) Tile(Rule, CX - FMath::Min(400.f, Inner) * 0.5f, RuleY - 8.f, FMath::Min(400.f, Inner), 16.f, FVector2D(0.f, 0.f), FVector2D(1.f, 1.f), SE_BLEND_Translucent);
+		int32 Names = 0;
+		for (int32 c = 0; c < 2; ++c)
+		{
+			for (int32 r = 0; r < Cols[c].Num() && r < 8; ++r)
+			{
+				// (a ninth on one side: the eighth row says how many more)
+				if (r == 7 && Cols[c].Num() > 8)
+				{
+					Say(17, FString::Printf(TEXT("and %d more"), Cols[c].Num() - 7), ColX[c], FirstY + r * Step, Lobby, true, ColW);
+					Names += Cols[c].Num() - 7;
+					break;
+				}
+				const FPlayer& Pl = *Cols[c][r];
+				const FString Star = Pl.bHost ? TEXT(" *") : TEXT("");
+				Say(17, Cut(NameFont, Pl.Name, ColW - Wide(NameFont, Star)) + Star, ColX[c], FirstY + r * Step, Pl.bYou ? You : Pl.bInGame ? InGame : Lobby, true, ColW, true);
+				++Names;
+			}
+		}
+		float PY = FirstY + Rows * Step;
+		if (NoSide.Num() > 0)
+		{
+			FString Line = TEXT("No side yet:");
+			int32 k = 0;
+			for (; k < NoSide.Num(); ++k)
+			{
+				const FString Next = Line + (k > 0 ? TEXT(", ") : TEXT("  ")) + NoSide[k]->Name;
+				const int32 Left = NoSide.Num() - k - 1;
+				if (Wide(NameFont, Left > 0 ? Next + FString::Printf(TEXT(" and %d more"), Left) : Next) > Inner) break;
+				Line = Next;
+			}
+			if (k == 0)
+			{
+				// (the first name too long for the line: cut short, the rest counted)
+				const FString More = NoSide.Num() > 1 ? FString::Printf(TEXT(" and %d more"), NoSide.Num() - 1) : FString();
+				Line += TEXT("  ") + Cut(NameFont, NoSide[0]->Name, Inner - Wide(NameFont, Line + TEXT("  ") + More)) + More;
+			}
+			else if (k < NoSide.Num()) Line += FString::Printf(TEXT(" and %d more"), NoSide.Num() - k);
+			Say(17, Line, CX, PY, Lobby, true, Inner);
+			Names += NoSide.Num();
+			PY += Step;
+		}
+		if (V.Bots > 0) Say(17, FString::Printf(TEXT("+ %d bot%s"), V.Bots, V.Bots == 1 ? TEXT("") : TEXT("s")), CX, PY, Lobby, true, Inner);
+		D.Columns = NumCols;
+		D.Names = Names;
+		D.NameStep = Step;
+		// the items, 120 apart about the panel's middle, between the panel and the rifle and the blue cloth: Rye 66 hollow,
+		// pointed at the remaster's orange; a long one (the co-op host's level) drawn smaller to fit, never under the floor
+		const int32 N = MenuPage->Items.Num();
+		for (int32 i = 0; i < N; ++i)
+		{
+			const FString& Label = MenuPage->Items[i].Label;
+			const float IY = 650.f + (float(i) - float(N - 1) * 0.5f) * 120.f;
+			constexpr float ItemW = 580.f;
+			const float W = Wide(SaveFont(15), Label);
+			const float Sc = W > ItemW ? ItemW / W : 1.f;
+			const float Floor = CapOf(SaveFont(15)) > 0.f ? FloorPx() / CapOf(SaveFont(15)) : 0.f;
+			const FString Shown = Sc >= Floor ? Label : Cut(SaveFont(15), Label, ItemW / FMath::Max(Floor, 0.01f));
+			Link(i, Shown, 1345.f, IY, 1, 15, 16, 30.f, 18.f, ItemW);
+			if (FrontItemInk.IsValidIndex(i)) Note(Shown, FrontItemInk[i], SaveFont(15), FMath::Min(1.f, ItemW / FMath::Max(Wide(SaveFont(15), Shown), 1.f)), i, false);
+		}
+		// the host's address at the foot (P3), above the help line, clear of the red cloth and the blue cloth's tail
+		if (!V.Foot.IsEmpty()) Say(17, V.Foot, 890.f, 982.f, Ink, false, 1180.f);
 	}
 	else if (File.StartsWith(TEXT("#coop")))
 	{
@@ -4721,6 +4931,30 @@ bool AOutlawsPlayer::MenuPageFits(FString& Said) const
 	if (IsFrontPage())
 	{
 		const FBox2D B = FrontInk;
+		if ((File == TEXT("#cooplobby") || File == TEXT("#coopclient")) && !OutlawsLobbyPage::Old())
+		{
+			// (REQ-LOBBYREDO) every text on the parchment as last drawn: clear of the pistol and the red cloth (x 280), of the rifle
+			// and the blue cloth (x 1640; 1500 under y 960), above the help line (y 1015), none under the floor
+			using namespace OutlawsLobbyPage;
+			const FDrawn& D = Drawn();
+			int32 Out = 0, Small = 0;
+			FString First;
+			for (const FInk& I : D.Texts)
+			{
+				const bool bIn = I.Box.Min.X >= ArtLeft && I.Box.Max.X <= ArtRightAt(I.Box.Max.Y) && I.Box.Min.Y >= 20.f && I.Box.Max.Y <= 1015.f;
+				const bool bBig = I.CapPx >= FloorPx() - 0.01f;
+				Out += bIn ? 0 : 1;
+				Small += bBig ? 0 : 1;
+				if ((!bIn || !bBig) && First.IsEmpty())
+				{
+					First = FString::Printf(TEXT("; first: \"%s\" x %.0f..%.0f y %.0f..%.0f, %.2f deg"), *I.Text, I.Box.Min.X, I.Box.Max.X, I.Box.Min.Y, I.Box.Max.Y, SeenDeg(I.CapPx));
+				}
+			}
+			const bool bOk = D.File == File && D.Texts.Num() > 0 && Out == 0 && Small == 0;
+			Said = FString::Printf(TEXT("%s: %d items, %d texts, all ink x %.0f..%.0f y %.0f..%.0f; %d off the clear parchment, %d under the %.2f deg floor%s"),
+				*File, MenuPage->Items.Num(), D.Texts.Num(), B.Min.X, B.Max.X, B.Min.Y, B.Max.Y, Out, Small, FloorDeg, *First);
+			return bOk;
+		}
 		if (File.StartsWith(TEXT("#coop")))
 		{
 			// (the start pages' parchment: the lines and rows inside it, under the title and above the help line, whose letters

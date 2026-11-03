@@ -9,6 +9,7 @@
 #include "OutlawsLab.h"
 #include "OutlawsLevelActor.h"
 #include "OutlawsCoop.h"
+#include "OutlawsLobbyPage.h"
 #include "Misc/CommandLine.h"
 #include "Misc/Parse.h"
 #include "Misc/Paths.h"
@@ -147,6 +148,11 @@ void AOutlawsPlayer::BuildMpHostPage(const FString& File, OutlawsMenu::FPage& Pa
 		if (O.GameClass == EOutlawsGameClass::SecretDocument || O.bRandomClass) Row(EItemKind::Select, TEXT("Teams"), TEXT("mphost_teams"), O.bTeams ? TEXT("Red against blue") : TEXT("Every man for himself"));     // (M2)
 		Row(EItemKind::Select, Loc(TEXT("$m_local_7105"), TEXT("Allow Cheats")), TEXT("mphost_cheats"), O.bAllowCheats ? TEXT("On") : TEXT("Off"));
 		Row(EItemKind::Action, FString::Printf(TEXT("Password:  %s"), O.Password.IsEmpty() ? TEXT("(none)") : *O.Password), TEXT("mphost_password"), FString());     // (M1: optional)
+		// (REQ-LOBBYREDO P3, user 3 Nov: the router's lines moved here off the lobby page, which keeps only the host's address;
+		// there once this machine hosts, between matches)
+		TArray<FString> Upnp;
+		if (!OutlawsLobbyPage::Old()) UOutlawsCoop::UpnpLinesFor(this, Upnp);
+		for (const FString& U : Upnp) Row(EItemKind::Heading, U, TEXT("mphost_upnp"), FString());
 		return;
 	}
 	// REQ-LOBBYTIDY / REQ-MPLOBBY (user 12 Oct): 14 rows to 8; "Start when" gone (the lobby's countdown starts the match)
