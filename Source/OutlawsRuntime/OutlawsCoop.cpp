@@ -124,6 +124,7 @@ void AOutlawsCoopSession::GetLifetimeReplicatedProps(TArray<FLifetimeProperty>& 
 	DOREPLIFETIME(AOutlawsCoopSession, bTeams);
 	DOREPLIFETIME(AOutlawsCoopSession, RegenRate);
 	DOREPLIFETIME(AOutlawsCoopSession, bCheatsOff);
+	DOREPLIFETIME(AOutlawsCoopSession, bHostEndOnBoss);
 }
 
 // ---- the link (one per player) ----------------------------------------------------------------------------------------
@@ -1664,6 +1665,12 @@ void UOutlawsCoop::Tick(float DeltaTime)
 	TickLoadTimeout(Now, S);
 	TickNextLevelHold(Now);          // (N1: the next level waits for every player's level end, 20 s at most)
 	TickHorses(Now);                 // (REQ-COOPHORSES: the other players' horses beside James's, OutlawsCoopHorses.cpp)
+	if (IsHost())
+	{
+		// (REQ-ENDONBOSS follow-up) the host's "End mission on boss down" for its joiners, as its Gameplay page has it now
+		const AOutlawsLevelActor* Lv = FindLevel();
+		if (Lv && S->bHostEndOnBoss != Lv->bEndOnBoss) S->bHostEndOnBoss = Lv->bEndOnBoss;
+	}
 	// (2026-10-02: the client starts a level once the host's extra bad guys for it are here too: they come with the start
 	// serial, set in the same frame; a start that came without them goes on after 5 s with none, said in the log)
 	// (M1, found with three players) a client's level actor begins play only once the host's game state has come; a level

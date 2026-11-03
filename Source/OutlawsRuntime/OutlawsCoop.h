@@ -433,6 +433,11 @@ public:
 	 *  The host's own answer to a client's cheat is the authority (ServerCheatAsk); this is what the client's menu reads. */
 	UPROPERTY(Replicated)
 	bool bCheatsOff = false;
+	/** REQ-ENDONBOSS follow-up (user 3 Nov): the host's Gameplay row "End mission on boss down", as it is now, for its joiners: on,
+	 *  the host ends a Handful mission as its boss goes down, so a joiner says no "Mission Complete!" of its own (it flashed there
+	 *  just before the host's end came). */
+	UPROPERTY(Replicated)
+	bool bHostEndOnBoss = false;
 	/** REQ-MPLOBBY: the lobby's start countdown on the host, seconds left (-1: not running), for every lobby page to show. */
 	UPROPERTY(Replicated)
 	float LobbyLeft = -1.f;
@@ -1944,6 +1949,9 @@ private:
 	// client, whose copy of the stick or knife flies the host's path, lies lit and is put out by the host's one blast; a missed
 	// knife's gknife is on both and the client takes it
 	void TickDynCoopTest(double Now, AOutlawsLevelActor* L, AOutlawsPlayer* P);
+	// -OLCoopTest=handfulend -OLHandfulEndOn=1|0 (REQ-ENDONBOSS follow-up, OutlawsHandfulEndCoopProbe.cpp) on villa: the host
+	// shoots CROWE down; with its "End mission on boss down" on neither machine says "Mission Complete!", off both do
+	void TickHandfulEndTest(double Now, AOutlawsLevelActor* L, AOutlawsPlayer* P);
 	void OnDynCoopTestStep(const FString& Step, int32 Arg);
 	int32 EfStep = 0, EfFails = 0, EfPasses = 0;
 	double EfAt = 0.0;

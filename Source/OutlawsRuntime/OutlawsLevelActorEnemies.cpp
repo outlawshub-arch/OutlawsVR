@@ -1810,6 +1810,16 @@ void AOutlawsLevelActor::OnBossDefeated()
 		CompleteLevel(TEXT("the Handful mission's boss down (End mission on boss down)"));
 		return;
 	}
+	// (REQ-ENDONBOSS follow-up, user 3 Nov) a co-op joiner whose host has the row on (the session's bHostEndOnBoss) says no
+	// "Mission Complete!": the host ends the level at once and its word ends it here (the line flashed here first, just before
+	// it).  -OLOld899Flash: said here as before
+	static const bool bOld899Flash = OLFlags::Param(TEXT("OLOld899Flash"));
+	const AOutlawsCoopSession* CoS = Co && Co->IsClient() ? Co->GetSession() : nullptr;
+	if (bHandfulBoss && !bInfEndsLevel && CoS && CoS->bHostEndOnBoss && !bOld899Flash)
+	{
+		UE_LOG(LogOutlaws, Log, TEXT("OLRT the Handful mission's boss is down: the host ends the level at once (its End mission on boss down), no \"Mission Complete!\" here"));
+		return;
+	}
 	if (bHandfulBoss)
 	{
 		const FString Line = UserMessageOr(899, TEXT("Mission Complete!"));
