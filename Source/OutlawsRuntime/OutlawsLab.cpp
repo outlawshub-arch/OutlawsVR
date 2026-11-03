@@ -2,6 +2,7 @@
 #include "OutlawsFlags.h"
 #include "OutlawsRuntime.h"
 #include "Misc/Paths.h"
+#include "Misc/Crc.h"
 #include "Misc/ScopeLock.h"
 #include "HAL/ThreadSafeCounter.h"
 #include "HAL/PlatformFileManager.h"
@@ -63,6 +64,7 @@ bool FOutlawsLabFile::Open(const FString& InPath)
 		Handle.Reset();
 		return false;
 	}
+	Stamp = FCrc::MemCrc32(Pool.GetData(), Pool.Num(), FCrc::MemCrc32(Dir.GetData(), Dir.Num(), uint32(Handle->Size())));
 	Entries.Reserve(NFiles);
 	for (uint32 i = 0; i < NFiles; ++i)
 	{
@@ -150,6 +152,7 @@ int32 FOutlawsAssets::Open(const FString& InRoot)
 	NumStockLabs = Labs.Num();
 	NativeRoot.Reset();
 	NativeLabs.Reset();
+	NativeStamps.Reset();
 	NativeLevels.Reset();
 	Overlay.Reset();
 	OverlayOwner = nullptr;
@@ -176,6 +179,7 @@ int32 FOutlawsAssets::Open(const FString& InRoot)
 					{
 						// its levels (the first LAB found wins a level two maps hold); a stock level stays the install's
 						const int32 At = NativeLabs.Add(Natives / D / F);
+						NativeStamps.Add(Lab->GetStamp());
 						for (const TPair<FString, int32>& Kv : Lab->GetIndex())
 						{
 							if (!Kv.Key.EndsWith(TEXT(".lvt"))) continue;
@@ -227,6 +231,23 @@ FString FOutlawsAssets::NativeLabFor(const FString& Level) const
 bool FOutlawsAssets::HasLevel(const FString& Level) const
 {
 	return Index.Contains(Level.ToLower() + TEXT(".lvt")) || NativeLevels.Contains(Level.ToLower());
+}
+
+FString FOutlawsAssets::NativeStampFor(const FString& Level) const
+{
+	if (Index.Contains(Level.ToLower() + TEXT(".lvt"))) return FString();      // (a stock level is the install's)
+	const int32* At = NativeLevels.Find(Level.ToLower());
+	return At && NativeStamps.IsValidIndex(*At) ? FString::Printf(TEXT("%08x"), NativeStamps[*At]) : FString();
+}
+
+FString FOutlawsAssets::NativeStampList() const
+{
+	TArray<FString> Levels;
+	NativeLevels.GetKeys(Levels);
+	Levels.Sort();
+	TArray<FString> Out;
+	for (const FString& Lv : Levels) Out.Add(Lv + TEXT(".") + NativeStampFor(Lv));
+	return FString::Join(Out, TEXT("~"));
 }
 
 FString FOutlawsAssets::GetOverlay() const

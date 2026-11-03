@@ -402,6 +402,10 @@ public:
 	float TimeLeft = -1.f;
 	UPROPERTY(Replicated)
 	FString MapName;
+	/** REQ-NATIVEMAPS (the join guard): the host's native maps, "level.stamp~..." (FOutlawsAssets::NativeStampList):
+	 *  a joiner checks each level it is told to build against its own copy before it builds it. */
+	UPROPERTY(Replicated)
+	FString NativeStamps;
 	/** M1 hardening: a game password is set (the join page asks for it; the check is the host's, in PreLogin). */
 	UPROPERTY(Replicated)
 	bool bPassworded = false;
@@ -1184,7 +1188,19 @@ public:
 	static bool PasswordTyped(AOutlawsPlayer* P, const FString& Purpose, const FString& Text);
 	/** PreLogin: a joiner's password checked (empty: let in). */
 	FString CheckJoinPassword(const FString& Options) const;
-	TMap<FString, FString> RecentPasswords;      // (the join page: the password a Recent host took, by its address)
+	/** REQ-NATIVEMAPS (user 3 Nov), the join guard (OutlawsCoopConnect.cpp).  JoinGuardOptions: the joiner's URL options, its
+	 *  build (the beacon's compare, now on a typed or Internet join too) and its native maps ("?OLBuild=..?OLMaps=.."), empty
+	 *  with -OLOldJoinGuard.  CheckJoinBuildAndMap: PreLogin's refusal (empty: let in): another build, or the host's match on a
+	 *  native map the joiner lacks or holds another copy of.  ClientCannotBuild: a joiner told to build a level it cannot (no
+	 *  .lvt for it, another copy of a native map's LAB than the host's): the reason, empty when it can. */
+	static bool OldJoinGuard();
+	static FString NativeStampsHere();
+	static FString JoinGuardOptions();
+	FString CheckJoinBuildAndMap(const FString& Options) const;
+	FString ClientCannotBuild(const FString& Level) const;
+	/** The joiner leaves for its main menu, saying why (an auto test quits). */
+	void LeaveCannotBuild(const FString& Why);
+	TMap<FString, FString> RecentPasswords;     // (the join page: the password a Recent host took, by its address)
 	void ReadRecentPasswords();
 	void NoteRecentPassword(const FString& Address, const FString& Password);
 	/** The Host Game page's Start: host a match with these options (a listen session straight into the map). */

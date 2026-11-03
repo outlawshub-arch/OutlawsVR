@@ -33,9 +33,13 @@ public:
 	const FString& GetPath() const { return Path; }
 	const TMap<FString, int32>& GetIndex() const { return Index; }   // lower-case name -> entry
 	bool Read(int32 EntryIndex, TArray<uint8>& Out) const;
+	/** (REQ-NATIVEMAPS, the join guard) a hash of this LAB: its directory (every file's name, place and size) and the file's
+	 *  size, read with the directory (free): two copies of a map whose files differ in any way the directory shows differ. */
+	uint32 GetStamp() const { return Stamp; }
 
 private:
 	FString Path;
+	uint32 Stamp = 0;
 	TArray<FEntry> Entries;
 	TMap<FString, int32> Index;
 	mutable TUniquePtr<IFileHandle> Handle;
@@ -77,6 +81,11 @@ public:
 	 *  for a stock level or none.  HasLevel: the level's .lvt is in the install's LABs or a native map's. */
 	FString NativeLabFor(const FString& Level) const;
 	bool HasLevel(const FString& Level) const;
+	/** (REQ-NATIVEMAPS, the join guard) a native map level's LAB stamp (FOutlawsLabFile::GetStamp, 8 hex digits), empty for a
+	 *  stock level or none; NativeStampList: every native level as "level.stamp", joined by "~", by name (the joiner's URL
+	 *  carries it as an option, the host's session too: no '?', '=' or ':' in it). */
+	FString NativeStampFor(const FString& Level) const;
+	FString NativeStampList() const;
 	/** (REQ-NATIVEMAPS, user 2 Nov) the per-map overlay: a native map's level builds with THAT map's LAB in front of the stock
 	 *  order (the original opens the level's LAB first, so its files win for its own level only), no other native LAB open; a
 	 *  stock level with none.  The level build calls it (AOutlawsLevelActor::Build, on the game thread, before it reads a
@@ -132,6 +141,7 @@ private:
 	// (REQ-NATIVEMAPS) the native LABs found (full paths), each level's .lvt to its LAB, and the one open over its level
 	bool bOldNativeMount = false;
 	TArray<FString> NativeLabs;
+	TArray<uint32> NativeStamps;                // NativeLabs' stamps, in step
 	TMap<FString, int32> NativeLevels;          // lower level name -> NativeLabs index
 	TSharedPtr<FOutlawsLabFile> Overlay;
 	const void* OverlayOwner = nullptr;

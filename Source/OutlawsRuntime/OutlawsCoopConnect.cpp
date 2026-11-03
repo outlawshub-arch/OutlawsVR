@@ -11,6 +11,8 @@
 #include "OutlawsPlayer.h"
 #include "OutlawsMenuDoc.h"
 #include "OutlawsBuildInfo.h"
+#include "OutlawsFlags.h"
+#include "OutlawsLab.h"
 #include "OutlawsRemotePlayer.h"
 #include "Engine/World.h"
 #include "Engine/NetDriver.h"
@@ -124,6 +126,108 @@ FString UOutlawsCoop::CheckJoinPassword(const FString& Options) const
 	bool bSame = Given.Len() == HostPassword.Len();
 	for (int32 i = 0; i < FMath::Min(Given.Len(), HostPassword.Len()); ++i) bSame &= Given[i] == HostPassword[i];
 	return bSame ? FString() : FString(TEXT("Wrong password"));
+}
+
+// ---- REQ-NATIVEMAPS (user 3 Nov): the join guard ------------------------------------------------------------------------------
+// A joiner without the host's native map (an older build, -OLNoNativeMaps, a broken or other copy) used to get an empty level:
+// nothing caught "ERROR: <level>.lvt not found", and the build compare was only the LAN beacon's.  Now the joiner's URL carries
+// its build and its native maps (each LAB's stamp), the host's PreLogin turns it away with the reason, and a joiner told to
+// build a level it cannot (a later match's map) goes to its main menu saying so, never into an empty level.
+// -OLOldJoinGuard: none of it (the password and the player count only).
+
+namespace
+{
+	TSharedPtr<FOutlawsAssets> GuardAssets(const AOutlawsLevelActor* L)
+	{
+		const FString Root = FOutlawsAssets::FindInstallRoot(L ? L->InstallPath : FString());
+		return Root.IsEmpty() ? nullptr : FOutlawsAssets::GetShared(Root);
+	}
+
+	/** The stamp a "level.stamp~..." list gives Level (empty: not in it). */
+	FString StampIn(const FString& List, const FString& Level)
+	{
+		TArray<FString> Items;
+		List.ParseIntoArray(Items, TEXT("~"));
+		const FString Want = Level.ToLower() + TEXT(".");
+		for (const FString& It : Items) if (It.StartsWith(Want)) return It.Mid(Want.Len());
+		return FString();
+	}
+}
+
+bool UOutlawsCoop::OldJoinGuard()
+{
+	static const bool bOld = OLFlags::Param(TEXT("OLOldJoinGuard"));
+	return bOld;
+}
+
+FString UOutlawsCoop::NativeStampsHere()
+{
+	const TSharedPtr<FOutlawsAssets> A = OldJoinGuard() ? nullptr : GuardAssets(nullptr);
+	return A ? A->NativeStampList() : FString();
+}
+
+FString UOutlawsCoop::JoinGuardOptions()
+{
+	if (OldJoinGuard()) return FString();
+	return FString::Printf(TEXT("?OLBuild=%s?OLMaps=%s"), OutlawsBuildInfo::Commit(), *NativeStampsHere());
+}
+
+FString UOutlawsCoop::CheckJoinBuildAndMap(const FString& Options) const
+{
+	if (OldJoinGuard()) return FString();
+	const FString Build = UGameplayStatics::ParseOption(Options, TEXT("OLBuild"));
+	if (Build.IsEmpty())
+	{
+		return FString::Printf(TEXT("This game plays a newer build of Outlaws VR (build %s): update to join"), OutlawsBuildInfo::Commit());
+	}
+	if (Build != OutlawsBuildInfo::Commit())
+	{
+		return FString::Printf(TEXT("This game plays another build of Outlaws VR (the host's %s, yours %s)"), OutlawsBuildInfo::Commit(), *Build);
+	}
+	// (the level the host's game is on, or starts with: a native map's is checked against the joiner's copy)
+	const TSharedPtr<FOutlawsAssets> A = GuardAssets(FindLevel());
+	const FString Mine = A ? A->NativeStampFor(LevelToStart) : FString();
+	if (Mine.IsEmpty()) return FString();
+	const FString Title = MatchOptions.MapFile.IsEmpty() ? LevelToStart : OutlawsMpHost::MapTitle(MatchOptions.MapFile);
+	const FString Theirs = StampIn(UGameplayStatics::ParseOption(Options, TEXT("OLMaps")), LevelToStart);
+	if (Theirs.IsEmpty())
+	{
+		return FString::Printf(TEXT("This game is on %s, a community map your Outlaws VR does not have"), *Title);
+	}
+	if (Theirs != Mine)
+	{
+		return FString::Printf(TEXT("This game is on %s, and your copy of that map is not the host's"), *Title);
+	}
+	return FString();
+}
+
+FString UOutlawsCoop::ClientCannotBuild(const FString& Level) const
+{
+	if (OldJoinGuard() || Level.IsEmpty()) return FString();
+	const AOutlawsCoopSession* S = GetSession();
+	const FString Title = S && !S->MapName.IsEmpty() && S->MatchClass != 0 ? OutlawsMpHost::MapTitle(S->MapName) : Level;
+	const TSharedPtr<FOutlawsAssets> A = GuardAssets(FindLevel());
+	if (!A) return FString();
+	if (!A->HasLevel(Level)) return FString::Printf(TEXT("the host's map %s is not on this machine"), *Title);
+	const FString Mine = A->NativeStampFor(Level);
+	const FString Host = S ? StampIn(S->NativeStamps, Level) : FString();
+	if (!Mine.IsEmpty() && !Host.IsEmpty() && Mine != Host) return FString::Printf(TEXT("this machine's copy of the host's map %s is not the host's"), *Title);
+	return FString();
+}
+
+void UOutlawsCoop::LeaveCannotBuild(const FString& Why)
+{
+	UE_LOG(LogOutlawsCoop, Warning, TEXT("OLCOOP join guard: %s: this joiner goes to its main menu"), *Why);
+#if WITH_OUTLAWS_TESTS
+	if (bAuto)
+	{
+		Summary(Why);
+		QuitForTest();
+		return;
+	}
+#endif
+	EndSession(Why, true);
+	JoinError = FString::Printf(TEXT("Left: %s"), *Why);
 }
 
 bool UOutlawsCoop::PasswordTyped(AOutlawsPlayer* P, const FString& Purpose, const FString& Text)

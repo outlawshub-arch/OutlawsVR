@@ -113,6 +113,7 @@ void AOutlawsCoopSession::GetLifetimeReplicatedProps(TArray<FLifetimeProperty>& 
 	DOREPLIFETIME(AOutlawsCoopSession, TimeLimitMinutes);
 	DOREPLIFETIME(AOutlawsCoopSession, TimeLeft);
 	DOREPLIFETIME(AOutlawsCoopSession, MapName);
+	DOREPLIFETIME(AOutlawsCoopSession, NativeStamps);
 	DOREPLIFETIME(AOutlawsCoopSession, bPassworded);
 	DOREPLIFETIME(AOutlawsCoopSession, Scores);
 	DOREPLIFETIME(AOutlawsCoopSession, ModeItems);
@@ -225,6 +226,7 @@ void AOutlawsCoopGameMode::InitGameState()
 	if (AOutlawsCoopSession* S = GetWorld()->SpawnActor<AOutlawsCoopSession>(AOutlawsCoopSession::StaticClass(), FTransform::Identity, SP))
 	{
 		S->RegenRate = OutlawsFeel::RegenPerSecond;   // REQ-REGEN2X: the host's rate, for every player
+		S->NativeStamps = UOutlawsCoop::NativeStampsHere();   // (REQ-NATIVEMAPS: the join guard's copy check, each joiner's own)
 	}
 }
 
@@ -240,6 +242,13 @@ void AOutlawsCoopGameMode::PreLogin(const FString& Options, const FString& Addre
 		if (!ErrorMessage.IsEmpty())
 		{
 			UE_LOG(LogOutlawsCoop, Log, TEXT("OLCOOP lobby: a player from %s turned away (%s)"), *Address, *ErrorMessage);
+			return;
+		}
+		// (REQ-NATIVEMAPS: the join guard, another build or the host's community map missing there; -OLOldJoinGuard none)
+		ErrorMessage = C->CheckJoinBuildAndMap(Options);
+		if (!ErrorMessage.IsEmpty())
+		{
+			UE_LOG(LogOutlawsCoop, Log, TEXT("OLCOOP join guard: a player from %s turned away (%s)"), *Address, *ErrorMessage);
 			return;
 		}
 	}
@@ -838,7 +847,8 @@ void UOutlawsCoop::Join(const FString& Address, bool bFromMenu)
 	UE_LOG(LogOutlawsCoop, Log, TEXT("OLCOOP client connecting to %s port %s"), *Host, *PortText);
 	// (M1: the game's password, if this player has one for it, rides on the address as an option the host's PreLogin reads)
 	if (JoinPassword.IsEmpty()) { ReadRecentPasswords(); JoinPassword = RecentPasswords.FindRef(Host); }
-	const FString Url = FString::Printf(TEXT("%s:%s"), *Host, *PortText) + (JoinPassword.IsEmpty() ? FString() : TEXT("?Password=") + JoinPassword);
+	const FString Url = FString::Printf(TEXT("%s:%s"), *Host, *PortText) + (JoinPassword.IsEmpty() ? FString() : TEXT("?Password=") + JoinPassword)
+		+ JoinGuardOptions();             // (REQ-NATIVEMAPS: this build and its native maps, for the host's join guard)
 	UE_LOG(LogOutlawsCoop, Log, TEXT("OLCOOP joining %s"), JoinPassword.IsEmpty() ? TEXT("without a password") : TEXT("with a password"));
 	GEngine->SetClientTravel(W, *Url, TRAVEL_Absolute);
 }
@@ -1301,6 +1311,17 @@ void UOutlawsCoop::BeginLevel(const FString& Level, int32 Difficulty, int32 Seri
 	static const TCHAR* Kinds[] = { TEXT("from the lobby"), TEXT("the story goes on"), TEXT("the level again"), TEXT("a level skip"), TEXT("from a save") };
 	UE_LOG(LogOutlawsCoop, Log, TEXT("OLCOOP start: level %s, difficulty %d, serial %d (%s) (%s)"), *Level, Difficulty, Serial, ModeName(Mode), Kinds[FMath::Min<int32>(Kind, 4)]);
 	if (!L || Level.IsEmpty()) return;
+	if (IsClient())
+	{
+		// (REQ-NATIVEMAPS: the join guard, a level this machine cannot build, e.g. a later match's community map: never an
+		// empty level)
+		const FString Cannot = ClientCannotBuild(Level);
+		if (!Cannot.IsEmpty())
+		{
+			LeaveCannotBuild(Cannot);
+			return;
+		}
+	}
 	if (AOutlawsPlayer* P = LocalPlayer()) P->CoopCloseMenu();
 	// milestone 7: both dead (said here too on the client), the deaths forgotten
 	if (Kind == uint8(EOutlawsCoopStart::Restart) && IsClient() && L && L->bDead && bOtherDead)
@@ -1410,6 +1431,12 @@ void UOutlawsCoop::OnLevelBuilt(const FString& Level)
 	if (Mode == EOutlawsCoopMode::None) return;
 	AOutlawsLevelActor* L = FindLevel();
 	AOutlawsPlayer* P = LocalPlayer();
+	if (Mode == EOutlawsCoopMode::Client && L && !OldJoinGuard() && L->LastBuildReport.StartsWith(TEXT("ERROR:")))
+	{
+		// (REQ-NATIVEMAPS: the join guard's last net, a level that would not build after all: the joiner leaves, saying so)
+		LeaveCannotBuild(FString::Printf(TEXT("the host's level %s would not build here (%s)"), *Level, *L->LastBuildReport.Mid(7)));
+		return;
+	}
 	if (Mode == EOutlawsCoopMode::Client && L && P)
 	{
 		// the second player stands beside the first, never inside: a free spot a step to the side (or behind, or ahead); N1:
