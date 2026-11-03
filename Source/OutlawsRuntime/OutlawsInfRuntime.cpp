@@ -165,6 +165,10 @@ void FOutlawsInfRuntime::Init(const FOutlawsLevel& Level, const FString& InfText
 				if (!C.bHasEventMask)
 				{
 					T.Mask &= ~OutlawsInf::EvShoot;
+					// (BUG-BLASTWALLS) nor is a blast (the exe's area event names no one, [EXE 0x1402de317]): a blast's wall
+					// events (BlastWallEvents: 64 and 0x8000, a mirror's 128 and 0x10000) reach only the lines that list
+					// them (civlwar1's cannons 64, the mill's sewer gates 368), never every switch in reach
+					if (It.bLine) T.Mask &= ~(OutlawsInf::EvExplosion | 0x80u | 0x8000u | 0x10000u);
 				}
 				T.bOneShot = C.Class == EOutlawsInfClass::TriggerSingle || C.RawClass.ToUpper().Contains(TEXT("SWITCH1"));
 				T.bMaster = C.bMasterOn;
@@ -1101,6 +1105,49 @@ bool FOutlawsInfRuntime::WallEvent(int32 Sector, int32 Wall, uint32 Event)
 	}
 	if (OnEventScope) OnEventScope(Sector, Wall, Event, bTaken ? 2 : 1);
 	return bTaken;
+}
+
+void FOutlawsInfRuntime::BlastWallEvents(int32 Own, double X, double Z, double Radius, uint32 Event, TArray<FIntVector>* OutTold)
+{
+	if (!Live.Sectors.IsValidIndex(Own))
+	{
+		return;
+	}
+	// the exe's flat distance, |dx| + |dz| less half the smaller [EXE 0x1402de1a2..0x1402de1f1]
+	auto Oct = [X, Z](const FVector2D& V) { const double Dx = FMath::Abs(V.X - X), Dz = FMath::Abs(V.Y - Z); return Dx + Dz - 0.5 * FMath::Min(Dx, Dz); };
+	// the sectors round it: Own, then on through the open walls while a sector's plan lies within 100 units of the blast
+	// (the exe's list: 36 rays of 100 units from each of the sector's openings, at most 512 sectors [EXE 0x1402ddb8c..0x1402ddc9a])
+	TArray<int32> Round = { Own };
+	TSet<int32> Seen = { Own };
+	for (int32 k = 0; k < Round.Num() && Round.Num() < 512; ++k)
+	{
+		for (const FOutlawsWall& W : Live.Sectors[Round[k]].Walls)
+		{
+			if (!Live.Sectors.IsValidIndex(W.Adjoin) || Seen.Contains(W.Adjoin)) continue;
+			Seen.Add(W.Adjoin);
+			FBox2D B(ForceInit);
+			for (const FVector2D& V : Live.Sectors[W.Adjoin].Verts) B += V;
+			if (B.bIsValid && B.ComputeSquaredDistanceToPoint(FVector2D(X, Z)) <= 100.0 * 100.0) Round.Add(W.Adjoin);
+		}
+	}
+	// a sector whose corners lie within Radius on average [EXE 0x1402de1fa..0x1402de20e], then each wall of it whose two
+	// ends do [EXE 0x1402de250..0x1402de303]: the wall and its mirror told [EXE 0x1402de31c]
+	for (const int32 s : Round)
+	{
+		const FOutlawsSector& S = Live.Sectors[s];
+		if (!S.Verts.Num()) continue;
+		double Sum = 0.0;
+		for (const FVector2D& V : S.Verts) Sum += Oct(V);
+		if (!(Radius > Sum / S.Verts.Num())) continue;
+		for (int32 w = 0; w < S.Walls.Num(); ++w)
+		{
+			const FOutlawsWall& W = S.Walls[w];
+			if (!S.Verts.IsValidIndex(W.V1) || !S.Verts.IsValidIndex(W.V2) || !(Radius > (Oct(S.Verts[W.V1]) + Oct(S.Verts[W.V2])) * 0.5)) continue;
+			const bool bTaken = WallEvent(s, w, Event);
+			if (Live.Sectors.IsValidIndex(W.Adjoin) && Live.Sectors[W.Adjoin].Walls.IsValidIndex(W.Mirror)) WallEvent(W.Adjoin, W.Mirror, Event * 2);
+			if (OutTold) OutTold->Add(FIntVector(s, w, bTaken ? 1 : 0));
+		}
+	}
 }
 
 bool FOutlawsInfRuntime::ForwardEvent(int32 Sector, int32 Wall, uint32 Event)

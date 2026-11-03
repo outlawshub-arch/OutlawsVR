@@ -1239,6 +1239,16 @@ void AOutlawsLevelActor::Explode(const FVector& Where)
 			}
 			if (B.IsValid && B.ComputeSquaredDistanceToPoint(Where) <= WallR * WallR) Inf->SectorEvent(s, EvBlastNear);
 		}
+		// BUG-BLASTWALLS (CWWALL2 lane, 1 Nov: civlwar1's three cannons and the mill's six sewer gates never took a stick):
+		// the walls in reach are told too, as the original's two passes do [EXE 0x1400cf177..0x1400cf1bf]: 0x40 within
+		// WALL_RADIUS, then 0x8000 within RADIUS, each wall whose two ends lie in reach (BlastWallEvents).  A co-op client's
+		// go to the host, as the sectors' do.  -OLOldBlastWalls: the sectors alone
+		if (Own && !OLFlags::Param(TEXT("OLOldBlastWalls")))
+		{
+			const FVector At = FOutlawsGeometry::ToOutlaws(Where);
+			Inf->BlastWallEvents(Own->Index, At.X, At.Z, BlastWallRadius, EvBlastNear);
+			Inf->BlastWallEvents(Own->Index, At.X, At.Z, BlastRadius, EvBlastFar);
+		}
 		for (FExplodeWall& X : ExplodeWalls)
 		{
 			if (!X.bBlown && X.Box.IsValid && X.Box.ComputeSquaredDistanceToPoint(Where) <= WallR * WallR) BlowExplodeWall(X, false, Where);

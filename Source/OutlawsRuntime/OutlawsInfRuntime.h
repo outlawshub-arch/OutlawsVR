@@ -148,6 +148,12 @@ public:
 	 *  or an elevator took the event (a locked elevator counts: it answers with its rattle). */
 	bool SectorEvent(int32 Sector, uint32 Event);
 	bool WallEvent(int32 Sector, int32 Wall, uint32 Event);
+	/** BUG-BLASTWALLS: a blast's event to the walls in reach, as the original's area event does [EXE 0x1402de0d0]: over the
+	 *  sectors round Own (its neighbours on, while their plan is within 100 units of the blast: the exe's list of what is
+	 *  seen from the sector, [EXE 0x1402ddb10]), each sector whose corners lie within Radius of (X, Z) on average, and in it
+	 *  each wall whose two ends do, by the exe's flat octagon measure (|dx| + |dz| - min / 2): the wall gets Event, its
+	 *  mirror twice it [EXE 0x1402e0130].  The walls told, each (sector, wall, taken) in OutTold when given. */
+	void BlastWallEvents(int32 Own, double X, double Z, double Radius, uint32 Event, TArray<FIntVector>* OutTold = nullptr);
 	bool WallSlides(int32 Sector, int32 Wall) const;   // a bar switch (its client steps through more than two stops): the grip alone works it
 	/** BUG-RANCHDOOR: while a sector event's triggers run (they go before its elevators), the level may ask that the
 	 *  elevators the same event starts wait (the ranch's BOBDOOR: its TRIGGER_MOVIE and its own spin on one use).  Their
