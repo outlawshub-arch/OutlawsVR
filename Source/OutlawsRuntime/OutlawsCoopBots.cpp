@@ -1644,17 +1644,13 @@ void UOutlawsCoop::BotDrive(FBot& B, AOutlawsLevelActor* L, double Now)
 		if (T.Since == 0.0 || Now - T.Since > 30.0 || FVector::Dist2D(T.Feet, Feet) > 600.0) { T.Since = Now; T.Feet = Feet; T.Stucks = 0; }
 		if (++T.Stucks >= 5) bFree = true;
 	}
-	if (bFree && !OldVanish())
+	// (BUG-BOTVANISH) who sees a body there: a human within 60 m with a clear line from the eyes to it; -1 nobody
+	auto SeerOf = [&](const FVector& Body, double& OutCm)
 	{
-		// (BUG-BOTVANISH) never before a person's eyes: a human within 60 m with a clear line from the eyes to its body (one
-		// fighting it in a pit it cannot climb out of) holds it where it is; tried again in a second, freed once nobody sees it
-		const FVector Body = Feet + FVector(0.0, 0.0, Half);
 		FCollisionQueryParams SightQ(SCENE_QUERY_STAT(OutlawsBotFreeSight), false, E);
 		if (AActor* Pup = PuppetOf(B.Who)) SightQ.AddIgnoredActor(Pup);
 		if (const APlayerController* PC = W->GetFirstPlayerController()) SightQ.AddIgnoredActor(PC->GetPawn());
-		int32 Seer = -1;
-		double SeerCm = 0.0;
-		for (int32 k = 0; k < MaxPlayers && Seer < 0; ++k)
+		for (int32 k = 0; k < MaxPlayers; ++k)
 		{
 			FVector HF;
 			if (k == B.Who || IsBot(k) || !PlayerFeetOf(k, HF)) continue;
@@ -1663,32 +1659,58 @@ void UOutlawsCoop::BotDrive(FBot& B, AOutlawsLevelActor* L, double Now)
 			FCollisionQueryParams Q = SightQ;
 			if (AActor* Own = PuppetOf(k)) Q.AddIgnoredActor(Own);
 			FHitResult Hit;
-			if (!W->LineTraceSingleByChannel(Hit, Eye, Body, ECC_Visibility, Q)) { Seer = k; SeerCm = FVector::Dist(Eye, Body); }
+			if (!W->LineTraceSingleByChannel(Hit, Eye, Body, ECC_Visibility, Q)) { OutCm = FVector::Dist(Eye, Body); return k; }
 		}
-		if (Seer >= 0)
+		return -1;
+	};
+	// (BUG-BOTVANISH) a rescue due but held: tried again in a second (the no-way clock a second short of its 8 s)
+	auto HoldFree = [&](const TCHAR* Why)
+	{
+		bFree = false;
+		++GBotsFreeHeld;
+		GNoWaySince.FindOrAdd(B.Who) = Now - 7.0;
+		double& LogAt = GFreeHeldLogAt.FindOrAdd(B.Who);
+		if (Now - LogAt > 5.0)
 		{
-			bFree = false;
-			++GBotsFreeHeld;
-			GNoWaySince.FindOrAdd(B.Who) = Now - 7.0;
-			double& LogAt = GFreeHeldLogAt.FindOrAdd(B.Who);
-			if (Now - LogAt > 5.0)
-			{
-				LogAt = Now;
-				UE_LOG(LogOutlawsAI, Log, TEXT("OLBOT %s is shut in at %s: held there while the %s sees it (%.0f m)"), *B.Name, *Feet.ToCompactString(), WhoWord(Seer), SeerCm / 100.0);
-			}
+			LogAt = Now;
+			UE_LOG(LogOutlawsAI, Log, TEXT("OLBOT %s is shut in at %s: held there %s"), *B.Name, *Feet.ToCompactString(), Why);
 		}
+	};
+	if (bFree && !OldVanish())
+	{
+		// (BUG-BOTVANISH) never before a person's eyes: a human within 60 m with a clear line from the eyes to its body (one
+		// fighting it in a pit it cannot climb out of) holds it where it is; tried again in a second, freed once nobody sees it
+		double SeerCm = 0.0;
+		const int32 Seer = SeerOf(Feet + FVector(0.0, 0.0, Half), SeerCm);
+		if (Seer >= 0) HoldFree(*FString::Printf(TEXT("while the %s sees it (%.0f m)"), WhoWord(Seer), SeerCm / 100.0));
 	}
 	if (bFree)
 	{
-		GTrapWatch.Remove(B.Who);
+		const TArray<FOutlawsDmSpawn>& Sp = Dm.GetSpawns();
+		int32 Pick = -1;
+		if (OldVanish())
 		{
-			const TArray<FOutlawsDmSpawn>& Sp = Dm.GetSpawns();
-			int32 Pick = -1;
 			for (int32 Try = 0; Try < 8 && Sp.Num() > 0; ++Try)
 			{
 				const int32 i = FMath::RandHelper(Sp.Num());
 				if (FVector::Dist2D(Sp[i].Location, Feet) > 1500.0) { Pick = i; break; }
 			}
+		}
+		else
+		{
+			// (BUG-BOTVANISH) nor put where a person sees it come (the granary probe: a bot put at a spawn point 1.7 m before
+			// the host's eyes): the spawn points from a random one on, the first over 15 m off that nobody sees; none, held
+			const int32 From = Sp.Num() > 0 ? FMath::RandHelper(Sp.Num()) : 0;
+			for (int32 n = 0; n < Sp.Num() && Pick < 0; ++n)
+			{
+				const int32 i = (From + n) % Sp.Num();
+				double Cm = 0.0;
+				if (FVector::Dist2D(Sp[i].Location, Feet) > 1500.0 && SeerOf(Sp[i].Location + FVector(0.0, 0.0, Half - 88.0), Cm) < 0) Pick = i;
+			}
+			if (Pick < 0 && Sp.Num() > 0) HoldFree(TEXT("while someone sees every spawn point"));
+		}
+		if (Pick >= 0 || OldVanish()) GTrapWatch.Remove(B.Who);
+		{
 			if (Pick >= 0)
 			{
 				++GBotsFreed;
