@@ -977,7 +977,7 @@ bool UOutlawsCoop::PlayerFeetOf(int32 Who, FVector& OutFeet) const
 bool UOutlawsCoop::BotFoe(int32 Bot, int32 Other) const
 {
 	if (Other == Bot || Other < 0) return false;
-	if (TestOnly == TEXT("killfeed") || TestOnly == TEXT("remotefx") || TestOnly == TEXT("flicknet")) return false;     // (REQ-KILLFEED's test: the bots hold their fire; the test deals every death)
+	if (TestOnly == TEXT("killfeed") || TestOnly == TEXT("remotefx") || TestOnly == TEXT("flicknet") || TestOnly == TEXT("mplethal")) return false;     // (REQ-KILLFEED's test: the bots hold their fire; the test deals every death)
 	if (!Modes.IsTeamClass()) return true;
 	const int32 Mine = Modes.TeamOf(Bot);
 	return Mine == 0 || Modes.TeamOf(Other) != Mine;
@@ -1968,7 +1968,7 @@ void UOutlawsCoop::TickBotThrown(AOutlawsLevelActor* L, double Dt)
 					const FVector C = FMath::ClosestPointOnSegment(Mid, F.Pos, To);
 					if (FVector::Dist2D(C, Mid) < 40.0 && FMath::Abs(C.Z - Mid.Z) < 95.0)
 					{
-						OnMatchHit(F.Who, Epoch, 0, BotKnifeDamage, C, BodyOf(F.Who));
+						OnMatchHit(F.Who, Epoch, 0, BotKnifeDamage, C, BodyOf(F.Who), false, uint8(EOutlawsMatchBlow::ThrownKnife));     // (REQ-MPLETHAL)
 						bHit = true;
 					}
 				}

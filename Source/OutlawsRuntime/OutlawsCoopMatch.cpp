@@ -17,6 +17,7 @@
 #include "OutlawsLevel.h"
 #include "OutlawsPlayer.h"
 #include "OutlawsRemotePlayer.h"
+#include "OutlawsSpriteActor.h"
 #include "OutlawsInfRuntime.h"
 #include "OutlawsFragTable.h"
 #include "OutlawsFormats.h"
@@ -67,10 +68,10 @@ private:
 
 // ---- the links ------------------------------------------------------------------------------------------------------------
 
-void AOutlawsCoopLink::ServerPlayerHit_Implementation(int32 Epoch, int32 Victim, float Damage, FVector_NetQuantize10 At, FVector_NetQuantize10 From, bool bBlast)
+void AOutlawsCoopLink::ServerPlayerHit_Implementation(int32 Epoch, int32 Victim, float Damage, FVector_NetQuantize10 At, FVector_NetQuantize10 From, bool bBlast, uint8 Blow)
 {
 	if (!Admit(EOLGate::PlayerHit, Finite(Damage, 1000.f) && Finite(At) && Finite(From))) return;
-	if (UOutlawsCoop* C = UOutlawsCoop::Get(this)) C->OnMatchHit(PlayerIndex, Epoch, Victim, Damage, At, From, bBlast);
+	if (UOutlawsCoop* C = UOutlawsCoop::Get(this)) C->OnMatchHit(PlayerIndex, Epoch, Victim, Damage, At, From, bBlast, Blow <= uint8(EOutlawsMatchBlow::ScopedHead) ? Blow : 0);
 }
 
 void AOutlawsCoopLink::ServerMatchRespawn_Implementation(int32 Epoch)
@@ -189,6 +190,7 @@ void UOutlawsCoop::SetUpMatchLevel(AOutlawsLevelActor* L)
 	FMemory::Memzero(MatchInRules);
 	FMemory::Memzero(MatchDead);
 	FMemory::Memzero(LastAttackAt);
+	FMemory::Memzero(MatchPunches);              // (REQ-MPLETHAL)
 	Dm = FOutlawsDeathmatch();
 	Dm.bFlowDriven = true;
 	Dm.Config.FragLimit = MatchOptions.ScoreLimit;
@@ -415,6 +417,7 @@ void UOutlawsCoop::TickMatch(double Now)
 			Dm.NoteKill(Killer, Who, float(FVector::Dist(Victim, By)), Now);
 			Modes.NoteKill(Killer, Who, Who == 0 ? Victim - FVector(0.0, 0.0, 88.0) : Victim - FVector(0.0, 0.0, K->Pose.HalfHeight), Now);     // (M2: a carried item falls where it lay)
 			LastAttackAt[Who] = 0.0;
+			MatchPunches[Who] = 0;                   // (REQ-MPLETHAL: a new life, no punch taken)
 			if (MatchOptions.GameClass == EOutlawsGameClass::DeathMatch)
 			{
 				FString Leader;
@@ -515,7 +518,7 @@ void UOutlawsCoop::OnMatchMessage(const FString& Text, float Seconds)
 
 // ---- shots, hits and kills -------------------------------------------------------------------------------------------------
 
-bool UOutlawsCoop::ShotAtPlayers(AOutlawsLevelActor* L, const FVector& From, const FVector& To, float Damage, FVector& OutAt)
+bool UOutlawsCoop::ShotAtPlayers(AOutlawsLevelActor* L, const FVector& From, const FVector& To, float Damage, FVector& OutAt, bool bScoped)
 {
 	UOutlawsCoop* C = Get(L);
 	if (!C || !C->IsMatch() || !C->bLevelBuilt || Damage <= 0.f) return false;
@@ -526,6 +529,7 @@ bool UOutlawsCoop::ShotAtPlayers(AOutlawsLevelActor* L, const FVector& From, con
 	const FVector Dir = Seg / Len;
 	int32 Best = -1;
 	double BestT = Len;
+	FVector BestP = FVector::ZeroVector;
 	for (int32 Who = 0; Who < MaxPlayers; ++Who)
 	{
 		if (Who == C->MyIndex()) continue;
@@ -543,24 +547,43 @@ bool UOutlawsCoop::ShotAtPlayers(AOutlawsLevelActor* L, const FVector& From, con
 		const FVector P = From + Dir * T;
 		const double Along = FMath::Clamp(double(P.Z - Mid.Z), -Half, Half);
 		const FVector OnAxis = Mid + Axis * Along;
-		if (FVector::Dist(P, OnAxis) > Radius || FMath::Abs(P.Z - Mid.Z) > Half) continue;
+		// (REQ-MPLETHAL) a scoped shot also meets the drawn head where the figure stands taller than the body's capsule
+		if ((FVector::Dist(P, OnAxis) > Radius || FMath::Abs(P.Z - Mid.Z) > Half) && !(bScoped && C->InDrawnHead(Who, P))) continue;
 		if (T < BestT)
 		{
 			BestT = T;
 			Best = Who;
+			BestP = P;
 		}
 	}
 	if (Best < 0) return false;
 	OutAt = From + Dir * BestT;
 	++C->MatchHitsSent;
-	UE_LOG(LogOutlawsCoop, Log, TEXT("OLMATCH shot hits the %s at %.0f m for %.1f (%s)"), WhoWord(Best), BestT / 100.0, Damage, C->IsHost() ? TEXT("the host deals it") : TEXT("reported to the host"));
+	// (REQ-MPLETHAL) a scoped shot through the head as drawn here says so; the host decides what it does
+	const uint8 Blow = bScoped && C->InDrawnHead(Best, BestP) ? uint8(EOutlawsMatchBlow::ScopedHead) : uint8(EOutlawsMatchBlow::Plain);
+	UE_LOG(LogOutlawsCoop, Log, TEXT("OLMATCH shot hits the %s at %.0f m for %.1f%s (%s)"), WhoWord(Best), BestT / 100.0, Damage, Blow != 0 ? TEXT(", scoped, in the head") : bScoped ? TEXT(", scoped") : TEXT(""),
+		C->IsHost() ? TEXT("the host deals it") : TEXT("reported to the host"));
 	L->SpawnBlood(OutAt, Dir, 2);
-	if (C->IsHost()) C->OnMatchHit(0, C->LevelEpoch(), Best, Damage, OutAt, From);
-	else if (AOutlawsCoopLink* Mine = C->GetLink(C->MyIndex())) Mine->ServerPlayerHit(C->LevelEpoch(), Best, Damage, OutAt, From, false);
+	if (C->IsHost()) C->OnMatchHit(0, C->LevelEpoch(), Best, Damage, OutAt, From, false, Blow);
+	else if (AOutlawsCoopLink* Mine = C->GetLink(C->MyIndex())) Mine->ServerPlayerHit(C->LevelEpoch(), Best, Damage, OutAt, From, false, Blow);
 	return true;
 }
 
-void UOutlawsCoop::OnMatchHit(int32 Shooter, int32 Epoch, int32 Victim, float Damage, const FVector& At, const FVector& From, bool bBlast)
+bool UOutlawsCoop::InDrawnHead(int32 Who, const FVector& P) const
+{
+	// the figure as drawn at the body's place: its feet, and its height (the sprite's frame; the capsule's where none); the head
+	// is its top eighth, a head's width (18 cm) either side of the middle (REQ-MPLETHAL: "a rifle headshot while scoped")
+	const AOutlawsRemotePlayer* R = PuppetOf(Who);
+	if (!R) return false;
+	const double Half = FMath::Max(40.0, double(R->ShownHalf()));
+	const FVector Feet = R->ShownBody() - FVector(0.0, 0.0, Half);
+	const AOutlawsSpriteActor* Spr = R->ShownSprite();
+	const double Tall = Spr && Spr->DrawnHeightCm() > 50.0 ? Spr->DrawnHeightCm() : 2.0 * Half;
+	const double Up = P.Z - Feet.Z;
+	return Up >= Tall * 0.875 && Up <= Tall + 8.0 && FVector::Dist2D(P, Feet) <= 18.0;
+}
+
+void UOutlawsCoop::OnMatchHit(int32 Shooter, int32 Epoch, int32 Victim, float Damage, const FVector& At, const FVector& From, bool bBlast, uint8 Blow)
 {
 	// (the host) checked, then dealt on the victim's machine (the host's own player here)
 	if (!IsHost() || !IsMatch() || !bMatchSetUp) return;
@@ -586,18 +609,22 @@ void UOutlawsCoop::OnMatchHit(int32 Shooter, int32 Epoch, int32 Victim, float Da
 	if (FVector::Dist(ShooterAt, From) > 600.0 || FVector::Dist(From, At) > MaxShotReachCm) return Refuse(TEXT("not where the shooter is"));
 	if (!Modes.HitAllowed(Shooter, Victim)) return Refuse(TEXT("a teammate (friendly fire off)"));
 	if (!Dm.NoteHit(Shooter, Victim, Now)) return Refuse(TEXT("the rules: protected, or not now"));
-	Damage = MatchDamageFor(Victim, Damage);         // (the victim's character: its DAMAGE_MULTIPLIER; OutlawsCoopMatchStrikes.cpp)
+	// (REQ-MPLETHAL) a fist, a knife or a scoped head shot: the host's own harm, past the plate and the character's multiplier;
+	// anything else, or the rule off: the victim's character's DAMAGE_MULTIPLIER on what was struck (OutlawsCoopMatchStrikes.cpp)
+	const float Lethal = LethalBlowDamage(Shooter, Victim, Blow, At, ShooterAt);
+	const bool bPastPlate = Lethal > 0.f;
+	Damage = bPastPlate ? Lethal : MatchDamageFor(Victim, Damage);
 	LastAttacker[Victim] = Shooter;
 	LastAttackAt[Victim] = Now;
 	LastAttackBlast[Victim] = bBlast;
 	++MatchHitsDealt;
-	UE_LOG(LogOutlawsCoop, Log, TEXT("OLMATCH hit: the %s struck the %s for %.1f%s"), WhoWord(Shooter), WhoWord(Victim), Damage, bBlast ? TEXT(" (dynamite)") : TEXT(""));
+	UE_LOG(LogOutlawsCoop, Log, TEXT("OLMATCH hit: the %s struck the %s for %.1f%s%s"), WhoWord(Shooter), WhoWord(Victim), Damage, bBlast ? TEXT(" (dynamite)") : TEXT(""), bPastPlate ? TEXT(" (past the plate)") : TEXT(""));
 	if (Victim == 0)
 	{
 		if (AOutlawsLevelActor* L = FindLevel())
 		{
 			L->SetHurtSource(From);
-			L->DamagePlayer(Damage, 1.f, false);
+			L->DamagePlayer(Damage, 1.f, bPastPlate);
 		}
 	}
 	else if (IsBot(Victim))
@@ -606,7 +633,7 @@ void UOutlawsCoop::OnMatchHit(int32 Shooter, int32 Epoch, int32 Victim, float Da
 	}
 	else
 	{
-		HurtOther(Damage, 1.f, false, &From, -1, Victim);
+		HurtOther(Damage, 1.f, bPastPlate, &From, -1, Victim);
 	}
 }
 

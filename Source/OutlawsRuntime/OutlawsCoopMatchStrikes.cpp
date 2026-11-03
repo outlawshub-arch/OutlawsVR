@@ -11,7 +11,17 @@
 //   hurts this machine's own player in a match (the host deals it), only throws it.
 // - The characters' DAMAGE_MULTIPLIER (cidsanch 1.15 ... cidmary .80): applied to what a player takes in a match (INFERRED:
 //   the ITMs do not say which way; the heavier hitters' builds take more), on the host as it deals the hit (MatchDamageFor).
+// - REQ-MPLETHAL (user 3 Nov, multiplayer matches only, every character, players and bots, dealing and taking, whatever health
+//   and armour): two punches kill, a knife's stab kills, a rifle's head shot while scoped kills; a thrown knife that strikes
+//   kills too (the default until the user says otherwise); unscoped and body shots as before.  The striking machine says what
+//   the blow was (EOutlawsMatchBlow, ServerPlayerHit's Blow; a scoped shot through the drawn head: InDrawnHead); the host
+//   decides the harm (LethalBlowDamage): a kill (1000, past the plate and the multiplier), the first punch of a life half a
+//   full health (5) past the plate.  A client's word is checked against what the host has of it (its pose's hands: the knife
+//   for a stab, the rifle for the scoped shot; its body within reach for a blow by hand; a knife it threw for a thrown one;
+//   the point struck near the victim's head): not borne out, the blow is dealt as before.  The bots and the host's own player
+//   are the host's.  The Host Game row "Lethal melee and scoped headshots" (on by default) or -OLOldMpLethal: as before.
 #include "OutlawsCoop.h"
+#include "OutlawsFlags.h"
 #include "OutlawsRuntime.h"
 #include "OutlawsDeathmatch.h"
 #include "OutlawsLevelActor.h"
@@ -33,6 +43,13 @@ TAutoConsoleVariable<int32> CVarOLMatchItems(TEXT("ol.MatchItems"), 1, TEXT("Mat
 namespace
 {
 	constexpr double StrikeCoolSeconds = 0.4;
+	// (REQ-MPLETHAL) the kill and the first punch (a full health is 10), and the host's doubts' bounds
+	constexpr float LethalHarm = 1000.f;
+	constexpr float PunchHalfHarm = 5.f;
+	constexpr int32 RifleWeapon = 1, KnifeWeapon = 7;          // (OutlawsPlayerWeapons.cpp GWeapons' order: the pose's hands)
+	constexpr double ReachDoubtCm = 300.0;                     // (an arm's reach, the poses' lag and the drawn body's width)
+	constexpr double HeadDoubtCm = 150.0;
+	constexpr double KnifeFlightSeconds = 6.0;
 	double GStrikeAt[UOutlawsCoop::MaxPlayers] = {};
 	int32 GStrikesSent = 0, GBlastsSent = 0;
 	float GLastStrikeDamage = 0.f;
@@ -70,6 +87,62 @@ float UOutlawsCoop::MatchDamageFor(int32 Victim, float Damage) const
 	return Damage * Mult;
 }
 
+bool UOutlawsCoop::MatchLethalOn() const
+{
+	return IsMatch() && MatchOptions.bLethalBlows && !OLFlags::Param(TEXT("OLOldMpLethal"));
+}
+
+const TCHAR* UOutlawsCoop::LethalBlowDoubt(int32 Shooter, int32 Victim, uint8 Blow, const FVector& At, const FVector& ShooterAt) const
+{
+	const AOutlawsCoopLink* K = GetLink(Shooter);
+	if (!K) return TEXT("no such player");
+	auto Holds = [K](int32 Wi) { return K->Pose.LeftWeapon == Wi || K->Pose.RightWeapon == Wi; };
+	// the victim as the host has it: its own player, else the victim's pose (a bot's too)
+	const AOutlawsPlayer* Me = Victim == 0 ? LocalPlayer() : nullptr;
+	const AOutlawsCoopLink* VK = Victim > 0 ? GetLink(Victim) : nullptr;
+	const FVector VictimAt = Me ? Me->GetActorLocation() : VK ? FVector(VK->Pose.Body) : At;
+	const FVector VictimHead = Me ? (Me->Camera ? Me->Camera->GetComponentLocation() : Me->GetActorLocation()) : VK ? FVector(VK->Pose.Head) : At;
+	switch (EOutlawsMatchBlow(Blow))
+	{
+	case EOutlawsMatchBlow::Fist:
+	case EOutlawsMatchBlow::Stab:
+		if (Blow == uint8(EOutlawsMatchBlow::Stab) && !Holds(KnifeWeapon)) return TEXT("no knife in its hands");
+		return FVector::Dist(ShooterAt, VictimAt) > ReachDoubtCm ? TEXT("not within reach of the victim") : nullptr;
+	case EOutlawsMatchBlow::ThrownKnife:
+		return KnifeThrownAt[Shooter] <= 0.0 || FPlatformTime::Seconds() - KnifeThrownAt[Shooter] > KnifeFlightSeconds ? TEXT("no knife thrown") : nullptr;
+	case EOutlawsMatchBlow::ScopedHead:
+		if (!Holds(RifleWeapon)) return TEXT("no rifle in its hands");
+		return FVector::Dist(At, VictimHead) > HeadDoubtCm ? TEXT("not at the victim's head") : nullptr;
+	default:
+		return TEXT("not a lethal blow");
+	}
+}
+
+float UOutlawsCoop::LethalBlowDamage(int32 Shooter, int32 Victim, uint8 Blow, const FVector& At, const FVector& ShooterAt)
+{
+	if (Blow == uint8(EOutlawsMatchBlow::Plain) || Blow > uint8(EOutlawsMatchBlow::ScopedHead) || !MatchLethalOn()) return -1.f;
+	static const TCHAR* const Names[] = { TEXT("a blow"), TEXT("a punch"), TEXT("a stab"), TEXT("a thrown knife"), TEXT("a scoped head shot") };
+	// a client's word for it, checked; the host's own player and its bots are the host's
+	if (Shooter > 0 && !IsBot(Shooter))
+	{
+		if (const TCHAR* Why = LethalBlowDoubt(Shooter, Victim, Blow, At, ShooterAt))
+		{
+			++MatchLethalDoubted;
+			UE_LOG(LogOutlawsCoop, Log, TEXT("OLMATCH lethal: %s by the %s on the %s not taken (%s): dealt as before"), Names[Blow], WhoWord(Shooter), WhoWord(Victim), Why);
+			return -1.f;
+		}
+	}
+	if (Blow == uint8(EOutlawsMatchBlow::Fist) && ++MatchPunches[Victim] < 2)
+	{
+		++MatchPunchHalves;
+		UE_LOG(LogOutlawsCoop, Log, TEXT("OLMATCH lethal: the %s's first punch on the %s this life: %.0f past the plate"), WhoWord(Shooter), WhoWord(Victim), PunchHalfHarm);
+		return PunchHalfHarm;
+	}
+	++MatchLethalDealt;
+	UE_LOG(LogOutlawsCoop, Log, TEXT("OLMATCH lethal: %s%s by the %s on the %s: a kill"), Names[Blow], Blow == uint8(EOutlawsMatchBlow::Fist) ? TEXT(" (the second)") : TEXT(""), WhoWord(Shooter), WhoWord(Victim));
+	return LethalHarm;
+}
+
 bool UOutlawsCoop::ReportStrike(AOutlawsLevelActor* L, int32 Victim, float Damage, const FVector& At, const TCHAR* Kind)
 {
 	// (the striker's own place as the hit's source: the host's check wants it near where it has the striker)
@@ -85,8 +158,12 @@ bool UOutlawsCoop::ReportStrike(AOutlawsLevelActor* L, int32 Victim, float Damag
 	UE_LOG(LogOutlawsCoop, Log, TEXT("OLMATCH %s hits the %s for %.2f (%s)"), Kind, WhoWord(Victim), Damage, IsHost() ? TEXT("the host deals it") : TEXT("reported to the host"));
 	L->SpawnBlood(At, (At - From).GetSafeNormal(), 2);
 	const bool bBlast = FCString::Strcmp(Kind, TEXT("dynamite")) == 0;      // (REQ-KILLFEED: "blew up")
-	if (IsHost()) OnMatchHit(Striker, LevelEpoch(), Victim, Damage, At, From, bBlast);
-	else if (AOutlawsCoopLink* Mine = GetLink(MyIndex())) Mine->ServerPlayerHit(LevelEpoch(), Victim, Damage, At, From, bBlast);
+	// (REQ-MPLETHAL) what struck, for the host's word on it
+	const EOutlawsMatchBlow Blow = FCString::Strcmp(Kind, TEXT("a fist")) == 0 ? EOutlawsMatchBlow::Fist
+		: FCString::Strcmp(Kind, TEXT("a knife's jab")) == 0 ? EOutlawsMatchBlow::Stab
+		: FCString::Strcmp(Kind, TEXT("a thrown knife")) == 0 || FCString::Strcmp(Kind, TEXT("a bot's knife")) == 0 ? EOutlawsMatchBlow::ThrownKnife : EOutlawsMatchBlow::Plain;
+	if (IsHost()) OnMatchHit(Striker, LevelEpoch(), Victim, Damage, At, From, bBlast, uint8(Blow));
+	else if (AOutlawsCoopLink* Mine = GetLink(MyIndex())) Mine->ServerPlayerHit(LevelEpoch(), Victim, Damage, At, From, bBlast, uint8(Blow));
 	return true;
 }
 

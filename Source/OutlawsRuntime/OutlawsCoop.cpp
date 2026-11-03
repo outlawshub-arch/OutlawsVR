@@ -328,8 +328,15 @@ void UOutlawsCoop::Initialize(FSubsystemCollectionBase& Collection)
 		bAuto = bAutoReady = bWorldTest = true;
 		TestOnly = TEXT("flicknet");
 	}
+	if (OLFlags::Param(TEXT("OLMpLethalProbe")) && !OLFlags::ValueIs(TEXT("OLMpLethalProbe"), TEXT("story")))
+	{
+		// (REQ-MPLETHAL's two-machine probe: OutlawsMpLethalProbe.cpp; the host starts the match itself)
+		bAuto = bAutoReady = bWorldTest = true;
+		TestOnly = TEXT("mplethal");
+	}
 	// REQ-MPLOBBY: the lobby's start rule, off where a test starts the match itself (M1's Death Match test presses Start the game)
-	bLobbyRuleOff = OLFlags::Param(TEXT("OLMpNoLobbyRule")) || TestOnly == TEXT("dm") || TestOnly == TEXT("killfeed") || TestOnly == TEXT("remotefx") || TestOnly == TEXT("flicknet");
+	bLobbyRuleOff = OLFlags::Param(TEXT("OLMpNoLobbyRule")) || TestOnly == TEXT("dm") || TestOnly == TEXT("killfeed") || TestOnly == TEXT("remotefx") || TestOnly == TEXT("flicknet")
+		|| TestOnly == TEXT("mplethal");
 	OLFlags::Value(TEXT("OLLobbyEnterAfter"), LobbyEnterAfter);
 	bLobbyEnterAfterPeer = OLFlags::Param(TEXT("OLLobbyEnterAfterPeer"));
 	OLFlags::Value(TEXT("OLLobbyShot"), LobbyShotName);
@@ -1507,7 +1514,7 @@ void UOutlawsCoop::Tick(float DeltaTime)
 	if (!W || !W->IsGameWorld() || bExitRequested) return;
 	const double Now = FPlatformTime::Seconds();
 #if WITH_OUTLAWS_TESTS
-	if (IsTestRun() && Now - GStartTime > AutoGiveUpAfter)
+	if (IsTestRun() && Now - GStartTime > (TestOnly == TEXT("mplethal") ? AutoGiveUpAfter + 480.0 : AutoGiveUpAfter))     // (REQ-MPLETHAL's probe: its rounds take longer)
 	{
 		Summary(TEXT("gave up: the test did not finish in time"));
 		QuitForTest();
@@ -1812,7 +1819,7 @@ void UOutlawsCoop::Tick(float DeltaTime)
 		Summary(TEXT("done"));
 		QuitForTest();
 	}
-	if (bWorldTest && bLevelBuilt && !bSummaryDone && Now - LevelBuiltAt > AutoWorldTestGiveUp)
+	if (bWorldTest && bLevelBuilt && !bSummaryDone && Now - LevelBuiltAt > (TestOnly == TEXT("mplethal") ? AutoWorldTestGiveUp + 450.0 : AutoWorldTestGiveUp))
 	{
 		Summary(TEXT("the world test did not finish in time"));
 		QuitForTest();

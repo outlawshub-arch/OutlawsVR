@@ -53,6 +53,9 @@ struct OUTLAWSRUNTIME_API FOutlawsMpHostOptions
 	int32 StartWhen = 0;                      // 0: the host starts it ("Start the game"); else when this many have joined
 	bool bFriendlyFire = false;
 	bool bAllowCheats = false;
+	/** REQ-MPLETHAL (user 3 Nov): two punches kill, a knife's stab or throw kills, a scoped rifle head shot kills (the host
+	 *  decides; UOutlawsCoop::LethalBlowDamage).  "Lethal melee and scoped headshots", on by default. */
+	bool bLethalBlows = true;
 	/** M1 (user 2026-10-03: "make passwords optional"): empty, anyone may join; else a joiner must give it. */
 	FString Password;
 	/** M2: Secret Document played red against blue (each team's base its capture point); else free-for-all. */

@@ -31,7 +31,8 @@ FString FOutlawsMpHostOptions::Describe() const
 		ScoreLimit > 0 ? *FString::FromInt(ScoreLimit) : TEXT("unlimited"), MaxPlayers, StartWhen > 0 ? *FString::Printf(TEXT("when %d have joined"), StartWhen) : TEXT("by the host"),
 		bFriendlyFire ? TEXT("on") : TEXT("off"), bAllowCheats ? TEXT("on") : TEXT("off")) + (Password.IsEmpty() ? FString(TEXT(", no password")) : FString(TEXT(", a password")))
 		+ (bBots && OutlawsMpHost::BotsAllowed(GameClass) ? FString::Printf(TEXT(", %d bots (%s)"), BotCount, OutlawsMpHost::BotSkillLabel(BotSkill)) : FString(TEXT(", no bots")))
-		+ (bRandomMap ? FString(TEXT(", random map each match")) : FString()) + (bRandomClass ? FString(TEXT(", random game each match")) : FString());
+		+ (bRandomMap ? FString(TEXT(", random map each match")) : FString()) + (bRandomClass ? FString(TEXT(", random game each match")) : FString())
+		+ (bLethalBlows ? FString() : FString(TEXT(", lethal melee and scoped headshots off")));      // (REQ-MPLETHAL)
 }
 
 void FOutlawsMpHostOptions::Load()
@@ -48,6 +49,7 @@ void FOutlawsMpHostOptions::Load()
 	I(TEXT("MpHostStartWhen"), StartWhen);
 	if (const FString* X = S.Find(TEXT("MpHostFriendlyFire"))) bFriendlyFire = X->ToBool();
 	if (const FString* X = S.Find(TEXT("MpHostCheats"))) bAllowCheats = X->ToBool();
+	if (const FString* X = S.Find(TEXT("MpHostLethal"))) bLethalBlows = X->ToBool();      // (REQ-MPLETHAL)
 	if (const FString* X = S.Find(TEXT("MpHostPassword"))) Password = *X;
 	if (const FString* X = S.Find(TEXT("MpHostTeams"))) bTeams = X->ToBool();
 	if (const FString* X = S.Find(TEXT("MpHostBots"))) bBots = X->ToBool();
@@ -69,6 +71,7 @@ void FOutlawsMpHostOptions::Save() const
 	S.Add(TEXT("MpHostStartWhen"), FString::FromInt(StartWhen));
 	S.Add(TEXT("MpHostFriendlyFire"), bFriendlyFire ? TEXT("true") : TEXT("false"));
 	S.Add(TEXT("MpHostCheats"), bAllowCheats ? TEXT("true") : TEXT("false"));
+	S.Add(TEXT("MpHostLethal"), bLethalBlows ? TEXT("true") : TEXT("false"));      // (REQ-MPLETHAL)
 	S.Add(TEXT("MpHostPassword"), Password);
 	S.Add(TEXT("MpHostTeams"), bTeams ? TEXT("true") : TEXT("false"));
 	S.Add(TEXT("MpHostBots"), bBots ? TEXT("true") : TEXT("false"));

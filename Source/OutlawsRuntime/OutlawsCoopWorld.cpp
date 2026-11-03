@@ -857,6 +857,8 @@ void UOutlawsCoop::TickTest(double Now)
 	else if (TestOnly == TEXT("remotefx")) return;
 	else if (IsHost() && TestOnly == TEXT("flicknet")) TickHostFlickNetTest(Now, L, P);   // (REQ-FLICKRELOAD: OutlawsCoopFlickTest.cpp)
 	else if (TestOnly == TEXT("flicknet")) return;
+	else if (IsHost() && TestOnly == TEXT("mplethal")) TickHostLethalTest(Now, L, P);    // (REQ-MPLETHAL: OutlawsMpLethalProbe.cpp)
+	else if (TestOnly == TEXT("mplethal")) return;
 	else if (IsHost() && TestOnly == TEXT("fuzz")) TickHostFuzzTest(Now, L, P);      // (M1 hardening: OutlawsCoopGuard.cpp)
 	else if (IsHost() && TestOnly == TEXT("password"))
 	{
@@ -1428,6 +1430,10 @@ void UOutlawsCoop::OnTestStep(const FString& Step, int32 Arg)
 	else if (Step.StartsWith(TEXT("ds:")))
 	{
 		OnStrikeTestStep(Step.Mid(3), Arg, L, P);    // (M1's gaps' test: OutlawsCoopMatchStrikes.cpp)
+	}
+	else if (Step.StartsWith(TEXT("ml:")))
+	{
+		OnLethalTestStep(Step.Mid(3), Arg, L, P);    // (REQ-MPLETHAL's probe: OutlawsMpLethalProbe.cpp)
 	}
 	else if (Step.StartsWith(TEXT("dm:")))
 	{

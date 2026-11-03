@@ -474,6 +474,7 @@ void UOutlawsCoop::OnThrow(int32 Who, int32 Epoch, uint8 Kind, const FVector& Po
 		return;
 	}
 	if (IsHost()) ForClients([&](AOutlawsCoopLink& CL) { CL.ClientThrow(Who, Epoch, Kind, Pos, Vel, Grav, Fuse); }, Who);     // (N1: passed on)
+	if (IsHost() && Kind == 2 && Who > 0 && Who < MaxPlayers) KnifeThrownAt[Who] = FPlatformTime::Seconds();      // (REQ-MPLETHAL: its hit's word checked)
 	RunFor(Epoch, [this, Who, Kind, Pos, Vel, Grav, Fuse]()
 	{
 		AOutlawsRemotePlayer* R = PuppetOf(Who);

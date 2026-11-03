@@ -27,6 +27,17 @@ class FJsonObject;
 struct FOutlawsElevator;
 namespace OutlawsMenu { struct FPage; struct FItem; }
 
+/** REQ-MPLETHAL: what struck another player in a match, as the striking machine reports it (ServerPlayerHit's Blow); the host
+ *  decides what each does (UOutlawsCoop::LethalBlowDamage). */
+enum class EOutlawsMatchBlow : uint8
+{
+	Plain = 0,           // a pellet, a tool, a smash, a thrown bottle or pot, dynamite: its damage as before
+	Fist = 1,
+	Stab = 2,            // the knife's jab
+	ThrownKnife = 3,
+	ScopedHead = 4       // the rifle's shot along its scope, through the head as drawn there
+};
+
 /**
  * Story co-op (tools/olue/COOP_DESIGN.md).  Two players, direct IP: the host runs the one map (L_Runtime) as a listen server
  * with AOutlawsCoopGameMode, the client travels to <ip>:7777.  Each machine builds every Outlaws level from its own LABs,
@@ -593,9 +604,10 @@ public:
 	UPROPERTY(Replicated)
 	FString Character;
 	/** The owner's shot struck player Victim (a pellet through its body as the owner's machine draws it): the host checks
-	 *  and deals it.  At: where it struck; From: the muzzle.  bBlast: the owner's dynamite (REQ-KILLFEED: "blew up"). */
+	 *  and deals it.  At: where it struck; From: the muzzle.  bBlast: the owner's dynamite (REQ-KILLFEED: "blew up").
+	 *  Blow: what struck (EOutlawsMatchBlow; REQ-MPLETHAL: the host decides what a fist, a knife or a scoped head shot does). */
 	UFUNCTION(Server, Reliable)
-	void ServerPlayerHit(int32 Epoch, int32 Victim, float Damage, FVector_NetQuantize10 At, FVector_NetQuantize10 From, bool bBlast);
+	void ServerPlayerHit(int32 Epoch, int32 Victim, float Damage, FVector_NetQuantize10 At, FVector_NetQuantize10 From, bool bBlast, uint8 Blow);
 	/** The owner (dead) asks to come back. */
 	UFUNCTION(Server, Reliable)
 	void ServerMatchRespawn(int32 Epoch);
@@ -1217,8 +1229,12 @@ public:
 	/** The Host Game page's Start: host a match with these options (a listen session straight into the map). */
 	bool HostMatch(const FOutlawsMpHostOptions& Options);
 	/** A pellet from From to To (what it struck, or its reach) on this machine: the first other player's body it passes
-	 *  through, reported to the host as a hit (true: OutAt where; the pellet stops there). */
-	static bool ShotAtPlayers(AOutlawsLevelActor* L, const FVector& From, const FVector& To, float Damage, FVector& OutAt);
+	 *  through, reported to the host as a hit (true: OutAt where; the pellet stops there).  bScoped: a rifle's shot along its
+	 *  scope (REQ-MPLETHAL: through the drawn head it is reported as a scoped head shot). */
+	static bool ShotAtPlayers(AOutlawsLevelActor* L, const FVector& From, const FVector& To, float Damage, FVector& OutAt, bool bScoped = false);
+	/** REQ-MPLETHAL: point P on player Who's body as drawn here is in its head (the top of the drawn figure, within a head's
+	 *  width of its middle). */
+	bool InDrawnHead(int32 Who, const FVector& P) const;
 	/** M1's gaps (OutlawsCoopMatchStrikes.cpp): a melee blow at At (Reach round it), a thrown thing's step A..B, a blast's reach on
 	 *  the other players' bodies drawn here, reported to the host as a pellet is; false (0) when no one is struck. */
 	static bool StrikeAtPlayers(AOutlawsLevelActor* L, const FVector& At, float Reach, float Damage, const TCHAR* Kind);
@@ -1653,6 +1669,18 @@ private:
 	bool MatchDead[MaxPlayers] = {};             // host: each player's death as last seen
 	bool MatchInRules[MaxPlayers] = {};          // host: each player added to the rules
 	int32 MatchHitsSent = 0, MatchHitsDealt = 0, MatchHitsRefused = 0, MatchRespawns = 0;
+	// ---- REQ-MPLETHAL (OutlawsCoopMatchStrikes.cpp): the host's word on a fist, a knife and a scoped head shot ----
+	/** The rule on: a match, the Host Game row on, no -OLOldMpLethal. */
+	bool MatchLethalOn() const;
+	/** The harm the host deals for Blow (from Shooter on Victim, struck At; the striker's body at ShooterAt) when the rule
+	 *  makes it a kill or a punch's half, past the plate; -1: dealt as before (not a lethal kind, the rule off, or a client's
+	 *  word for it not borne out). */
+	float LethalBlowDamage(int32 Shooter, int32 Victim, uint8 Blow, const FVector& At, const FVector& ShooterAt);
+	/** Why the host does not take a client's word for its Blow, from what it has of that player (null: taken). */
+	const TCHAR* LethalBlowDoubt(int32 Shooter, int32 Victim, uint8 Blow, const FVector& At, const FVector& ShooterAt) const;
+	int32 MatchPunches[MaxPlayers] = {};         // host: the punches each player has taken this life
+	double KnifeThrownAt[MaxPlayers] = {};       // host: when each player last threw a knife (its ServerThrow)
+	int32 MatchLethalDealt = 0, MatchLethalDoubted = 0, MatchPunchHalves = 0;
 	void TickMatch(double Now);
 	// ---- REQ-MPLOBBY (b): the match's end and the next match (OutlawsCoopNextMatch.cpp) ----
 	/** Whether a match's end goes to the score screen and the host's next match (off where a test runs the old round, -OLCoopTest=dm). */
@@ -1699,7 +1727,10 @@ private:
 	/** A #coop page as drawn (the extent of its lines and rows): within the parchment, above the help line. */
 	static bool PageFits(AOutlawsPlayer* P, FString& Said);
 	void SetUpMatchLevel(AOutlawsLevelActor* L);
-	void OnMatchHit(int32 Shooter, int32 Epoch, int32 Victim, float Damage, const FVector& At, const FVector& From, bool bBlast = false);
+	void OnMatchHit(int32 Shooter, int32 Epoch, int32 Victim, float Damage, const FVector& At, const FVector& From, bool bBlast = false, uint8 Blow = 0);
+	// ---- REQ-MPLETHAL's probe (-OLMpLethalProbe on a host and its client; OutlawsMpLethalProbe.cpp) ----
+	void TickHostLethalTest(double Now, AOutlawsLevelActor* L, AOutlawsPlayer* P);
+	void OnLethalTestStep(const FString& Step, int32 Arg, AOutlawsLevelActor* L, AOutlawsPlayer* P);
 	// ---- REQ-KILLFEED (OutlawsCoopKillFeed.cpp) ----
 	/** The host: a death's kill line to every machine (and this one). */
 	void SayKill(int32 Killer, int32 Victim, EOutlawsObit Kind);

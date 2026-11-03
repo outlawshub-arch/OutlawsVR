@@ -9,6 +9,7 @@
 #include "OutlawsLab.h"
 #include "OutlawsLevelActor.h"
 #include "OutlawsCoop.h"
+#include "OutlawsFlags.h"
 #include "OutlawsLobbyPage.h"
 #include "Misc/CommandLine.h"
 #include "Misc/Parse.h"
@@ -147,6 +148,8 @@ void AOutlawsPlayer::BuildMpHostPage(const FString& File, OutlawsMenu::FPage& Pa
 		Row(EItemKind::Select, Loc(TEXT("$m_local_7101"), TEXT("Friendly Fire")), TEXT("mphost_ff"), O.bFriendlyFire ? TEXT("On") : TEXT("Off"));
 		if (O.GameClass == EOutlawsGameClass::SecretDocument || O.bRandomClass) Row(EItemKind::Select, TEXT("Teams"), TEXT("mphost_teams"), O.bTeams ? TEXT("Red against blue") : TEXT("Every man for himself"));     // (M2)
 		Row(EItemKind::Select, Loc(TEXT("$m_local_7105"), TEXT("Allow Cheats")), TEXT("mphost_cheats"), O.bAllowCheats ? TEXT("On") : TEXT("Off"));
+		// (REQ-MPLETHAL, user 3 Nov: two punches, a stab or a scoped head shot kill; on by default; the host decides)
+		if (!OLFlags::Param(TEXT("OLOldMpLethal"))) Row(EItemKind::Select, TEXT("Lethal melee and scoped headshots"), TEXT("mphost_lethal"), O.bLethalBlows ? TEXT("On") : TEXT("Off"));
 		Row(EItemKind::Action, FString::Printf(TEXT("Password:  %s"), O.Password.IsEmpty() ? TEXT("(none)") : *O.Password), TEXT("mphost_password"), FString());     // (M1: optional)
 		// (REQ-LOBBYREDO P3, user 3 Nov: the router's lines moved here off the lobby page, which keeps only the host's address;
 		// there once this machine hosts, between matches)
@@ -273,6 +276,7 @@ void AOutlawsPlayer::MpHostPress(const FString& Name)
 	else if (Name == TEXT("mphost_ff")) O.bFriendlyFire = !O.bFriendlyFire;
 	else if (Name == TEXT("mphost_teams")) O.bTeams = !O.bTeams;
 	else if (Name == TEXT("mphost_cheats")) O.bAllowCheats = !O.bAllowCheats;
+	else if (Name == TEXT("mphost_lethal")) O.bLethalBlows = !O.bLethalBlows;     // (REQ-MPLETHAL)
 	else if (Name == TEXT("mphost_bots"))
 	{
 		// Off, 1 .. Max Players - 1 (REQ-TRIGGERSTEP: a number row)
