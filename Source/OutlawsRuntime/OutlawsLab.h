@@ -74,6 +74,21 @@ public:
 	 *  NativeMapsPath in OutlawsSettings.ini (editor runs), else Tools\NativeMaps in the PC package, else
 	 *  <files>/Outlaws/NativeMaps on a headset.  Empty with -OLNoNativeMaps or when none of them exists. */
 	static FString NativeMapsRoot();
+	/** (BUG-QUESTNATIVEMAPS) one native map: its folder under the native maps' root and the .lab and .rcm files in it (names
+	 *  only, as the folder or the manifest spells them, by name). */
+	struct FNativeMap
+	{
+		FString Dir;
+		TArray<FString> Labs;
+		TArray<FString> Rcms;
+	};
+	/** (BUG-QUESTNATIVEMAPS, the Quest 3 Nov: the folder found, nothing in it) the native maps under Root, by folder name, as Open,
+	 *  ListMaps and MapTitle read them: a listing that stats every entry (IterateDirectoryStat), else, when it finds no map's
+	 *  LAB, the folder's own MANIFEST.txt ("md5 bytes <map>/<file> source" a line), each file it names found by name.  The
+	 *  line "OLRT native maps: N maps (<folders>) from <root> via <listing|manifest>" (and the listing's own diagnosis line)
+	 *  whenever what it finds changes, so once at the start.  -OLOldNativeList: the old FindFiles listing only.
+	 *  -OLNativeListManifestOnly (tests): the manifest only. */
+	static TArray<FNativeMap> ListNativeMaps(const FString& Root, FString* OutVia = nullptr);
 	/** The native maps' folder Open read (empty when none), and how many of their LABs it found (mounted, -OLOldNativeMount). */
 	const FString& GetNativeRoot() const { return NativeRoot; }
 	int32 NumNativeLabs() const { return bOldNativeMount ? Labs.Num() - NumStockLabs : NativeLabs.Num(); }

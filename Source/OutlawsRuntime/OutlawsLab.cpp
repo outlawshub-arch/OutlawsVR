@@ -13,8 +13,14 @@
 #include "Misc/MessageDialog.h"
 #include "Misc/Parse.h"
 #include "Misc/ConfigCacheIni.h"
+#include "Misc/FileHelper.h"
 #include "OutlawsLevelActor.h"         // the settings file (InstallPath=)
 #include "OutlawsInstallWindows.h"
+#if PLATFORM_ANDROID
+#include <dirent.h>                    // (BUG-QUESTNATIVEMAPS: the native maps listing's diagnosis)
+#include <errno.h>
+#include <string.h>
+#endif
 
 namespace
 {
@@ -163,15 +169,11 @@ int32 FOutlawsAssets::Open(const FString& InRoot)
 		if (!Natives.IsEmpty())
 		{
 			NativeRoot = Natives;
-			TArray<FString> Dirs;
-			IFileManager::Get().FindFiles(Dirs, *(Natives / TEXT("*")), false, true);
-			Dirs.Sort([](const FString& A, const FString& B) { return A.ToLower() < B.ToLower(); });
-			for (const FString& D : Dirs)
+			// (BUG-QUESTNATIVEMAPS) the maps as ListNativeMaps finds them (on the Quest the old FindFiles found none)
+			for (const FNativeMap& Map : ListNativeMaps(Natives))
 			{
-				TArray<FString> Files;
-				IFileManager::Get().FindFiles(Files, *(Natives / D / TEXT("*.lab")), true, false);
-				Files.Sort([](const FString& A, const FString& B) { return A.ToLower() < B.ToLower(); });
-				for (const FString& F : Files)
+				const FString& D = Map.Dir;
+				for (const FString& F : Map.Labs)
 				{
 					TSharedPtr<FOutlawsLabFile> Lab = MakeShared<FOutlawsLabFile>();
 					if (!Lab->Open(Natives / D / F)) continue;
@@ -410,6 +412,161 @@ FString FOutlawsAssets::NativeMapsRoot()
 		if (!T.IsEmpty() && FPaths::DirectoryExists(T)) return T;
 	}
 	return FString();
+}
+
+// (BUG-QUESTNATIVEMAPS) how a listing of the native maps' folder went, the line beside ListNativeMaps' own: the engine's two
+// listings (the entry's type from readdir, the type from stat) and, on Android, the call underneath (opendir's errno, readdir's
+// d_type), so the headset's log says which of the two it was
+static FString OlNativeListDiagnosis(const FString& Root)
+{
+	IPlatformFile& PF = FPlatformFileManager::Get().GetPlatformFile();
+	int32 Entries = 0, Folders = 0, StatEntries = 0, StatFolders = 0;
+	const bool bIter = PF.IterateDirectory(*Root, [&Entries, &Folders](const TCHAR*, bool bDir) { ++Entries; Folders += bDir ? 1 : 0; return true; });
+	const bool bStat = PF.IterateDirectoryStat(*Root, [&StatEntries, &StatFolders](const TCHAR*, const FFileStatData& S) { ++StatEntries; StatFolders += S.bIsDirectory ? 1 : 0; return true; });
+	FString Out = FString::Printf(TEXT("IterateDirectory %s, %d entries, %d of them folders (by the entry's type); IterateDirectoryStat %s, %d entries, %d folders (by stat)"),
+		bIter ? TEXT("true") : TEXT("false"), Entries, Folders, bStat ? TEXT("true") : TEXT("false"), StatEntries, StatFolders);
+#if PLATFORM_ANDROID
+	errno = 0;
+	if (DIR* D = opendir(TCHAR_TO_UTF8(*Root)))
+	{
+		int32 N = 0, DtDir = 0, DtUnknown = 0;
+		while (const dirent* E = readdir(D))
+		{
+			if (!strcmp(E->d_name, ".") || !strcmp(E->d_name, "..")) continue;
+			++N;
+			DtDir += E->d_type == DT_DIR ? 1 : 0;
+			DtUnknown += E->d_type == DT_UNKNOWN ? 1 : 0;
+		}
+		closedir(D);
+		Out += FString::Printf(TEXT("; opendir ok, readdir %d entries: %d DT_DIR, %d DT_UNKNOWN"), N, DtDir, DtUnknown);
+	}
+	else
+	{
+		const int Err = errno;
+		Out += FString::Printf(TEXT("; opendir refused: errno %d (%s)"), Err, UTF8_TO_TCHAR(strerror(Err)));
+	}
+#endif
+	return Out;
+}
+
+TArray<FOutlawsAssets::FNativeMap> FOutlawsAssets::ListNativeMaps(const FString& Root, FString* OutVia)
+{
+	// BUG-QUESTNATIVEMAPS (the Quest, 3 Nov, builds 7a8978b and 3c0e307: "OLRT native maps: 0 LABs in .../files/Outlaws/
+	// NativeMaps" with the 19 maps pushed there; the PC lists them).  That folder was found (DirectoryExists: a stat) and the
+	// install's LABs open (FileExists, a stat, then an open: by name), but FindFiles found no folder in it.  On Android that is
+	// AndroidPlatformFile.cpp's IterateDirectory: an opendir and readdir whose entry is a folder only when readdir's d_type
+	// says DT_DIR (its visitor, line 1784, never stats), and nothing at all when the opendir is refused (line 1967: false).
+	// So the listing here stats each entry (IterateDirectoryStat: the type from stat, as DirectoryExists has it), and when it
+	// finds no map's LAB all the same, the folder's own MANIFEST.txt names every file, each found by name as the install's
+	// LABs are.  OlNativeListDiagnosis' line says which it was on the device.
+	TArray<FNativeMap> Out;
+	if (Root.IsEmpty()) return Out;
+	static const bool bOldList = OLFlags::Param(TEXT("OLOldNativeList"));
+	static const bool bManifestOnly = OLFlags::Param(TEXT("OLNativeListManifestOnly"));
+	auto AddFile = [&Out](const FString& Dir, const FString& File)
+	{
+		const bool bLab = File.EndsWith(TEXT(".lab"), ESearchCase::IgnoreCase);
+		if (!bLab && !File.EndsWith(TEXT(".rcm"), ESearchCase::IgnoreCase)) return;
+		FNativeMap* M = Out.FindByPredicate([&Dir](const FNativeMap& X) { return X.Dir.Equals(Dir, ESearchCase::IgnoreCase); });
+		if (!M)
+		{
+			M = &Out.AddDefaulted_GetRef();
+			M->Dir = Dir;
+		}
+		TArray<FString>& To = bLab ? M->Labs : M->Rcms;
+		if (!To.ContainsByPredicate([&File](const FString& X) { return X.Equals(File, ESearchCase::IgnoreCase); })) To.Add(File);
+	};
+	IPlatformFile& PF = FPlatformFileManager::Get().GetPlatformFile();
+	FString Via;
+	if (bOldList)
+	{
+		// (as before: FindFiles, the folders as IterateDirectory types them, no manifest)
+		TArray<FString> Dirs;
+		IFileManager::Get().FindFiles(Dirs, *(Root / TEXT("*")), false, true);
+		for (const FString& D : Dirs)
+		{
+			TArray<FString> Files;
+			IFileManager::Get().FindFiles(Files, *(Root / D / TEXT("*")), true, false);
+			for (const FString& F : Files) AddFile(D, F);
+		}
+		Via = TEXT("listing (-OLOldNativeList: FindFiles, no manifest)");
+	}
+	else
+	{
+		if (!bManifestOnly)
+		{
+			TArray<FString> Dirs;
+			PF.IterateDirectoryStat(*Root, [&Dirs](const TCHAR* Path, const FFileStatData& S) { if (S.bIsDirectory) Dirs.Add(FPaths::GetCleanFilename(Path)); return true; });
+			for (const FString& D : Dirs)
+			{
+				PF.IterateDirectoryStat(*(Root / D), [&AddFile, &D](const TCHAR* Path, const FFileStatData& S) { if (!S.bIsDirectory) AddFile(D, FPaths::GetCleanFilename(Path)); return true; });
+			}
+			Via = TEXT("listing");
+		}
+		if (!Out.ContainsByPredicate([](const FNativeMap& M) { return M.Labs.Num() > 0; }))
+		{
+			// the manifest: "md5 bytes <map>/<file> source" a line (tools' stage.sh writes it beside the maps)
+			Out.Reset();
+			TArray<FString> Lines;
+			if (FFileHelper::LoadFileToStringArray(Lines, *(Root / TEXT("MANIFEST.txt"))))
+			{
+				int32 Missing = 0, SizeOff = 0;
+				for (const FString& Raw : Lines)
+				{
+					const FString Line = Raw.TrimStartAndEnd();
+					if (Line.IsEmpty() || Line.StartsWith(TEXT("#"))) continue;
+					TArray<FString> T;
+					Line.ParseIntoArrayWS(T);
+					FString Dir, File;
+					if (T.Num() < 3 || !T[2].Replace(TEXT("\\"), TEXT("/")).Split(TEXT("/"), &Dir, &File) || Dir.IsEmpty() || File.IsEmpty() || File.Contains(TEXT("/"))) continue;
+					const FString Path = Root / Dir / File;
+					if (!PF.FileExists(*Path))
+					{
+						++Missing;
+						continue;
+					}
+					SizeOff += FCString::Atoi64(*T[1]) != PF.FileSize(*Path) ? 1 : 0;
+					AddFile(Dir, File);
+				}
+				Via = FString::Printf(TEXT("manifest (%s%s%s)"), bManifestOnly ? TEXT("-OLNativeListManifestOnly") : TEXT("the listing found no map's LAB"),
+					Missing ? *FString::Printf(TEXT("; %d of its files missing"), Missing) : TEXT(""), SizeOff ? *FString::Printf(TEXT("; %d sizes not the manifest's"), SizeOff) : TEXT(""));
+			}
+			else if (Via.IsEmpty())
+			{
+				Via = TEXT("manifest (-OLNativeListManifestOnly; no MANIFEST.txt)");
+			}
+			else
+			{
+				Via += TEXT(" (no MANIFEST.txt)");
+			}
+		}
+	}
+	auto ByName = [](const FString& A, const FString& B) { return A.ToLower() < B.ToLower(); };
+	Out.Sort([&ByName](const FNativeMap& A, const FNativeMap& B) { return ByName(A.Dir, B.Dir); });
+	for (FNativeMap& M : Out)
+	{
+		M.Labs.Sort(ByName);
+		M.Rcms.Sort(ByName);
+	}
+	// the line whenever it changes (Open, ListMaps and MapTitle each ask; once at the start while the folder stays as it is)
+	TArray<FString> Names;
+	for (const FNativeMap& M : Out) Names.Add(M.Dir);
+	const FString Line = FString::Printf(TEXT("OLRT native maps: %d maps (%s) from %s via %s"), Out.Num(), Names.Num() ? *FString::Join(Names, TEXT(", ")) : TEXT("none"), *Root, *Via);
+	static FCriticalSection LoggedLock;
+	static FString Logged;
+	bool bNew = false;
+	{
+		FScopeLock Lock(&LoggedLock);
+		bNew = Line != Logged;
+		if (bNew) Logged = Line;
+	}
+	if (bNew)
+	{
+		UE_LOG(LogOutlaws, Log, TEXT("%s"), *Line);
+		UE_LOG(LogOutlaws, Log, TEXT("OLRT native maps listing of %s: %s"), *Root, *OlNativeListDiagnosis(Root));
+	}
+	if (OutVia) *OutVia = Via;
+	return Out;
 }
 
 bool FOutlawsAssets::LooksLikeInstall(const FString& Dir)

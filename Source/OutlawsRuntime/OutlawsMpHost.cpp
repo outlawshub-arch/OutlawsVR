@@ -229,16 +229,13 @@ void OutlawsMpHost::ListMaps(const FOutlawsAssets* Assets, TArray<FOutlawsMpMap>
 	const FString NativeRoot = Assets->GetNativeRoot();
 	if (!NativeRoot.IsEmpty())
 	{
-		TArray<FString> Dirs;
-		IFileManager::Get().FindFiles(Dirs, *(NativeRoot / TEXT("*")), false, true);
-		Dirs.Sort([](const FString& A, const FString& B) { return A.ToLower() < B.ToLower(); });
-		for (const FString& D : Dirs)
+		// (BUG-QUESTNATIVEMAPS) the folders and their files as FOutlawsAssets::ListNativeMaps finds them (the listing, else the
+		// folder's MANIFEST.txt: on the Quest FindFiles found none)
+		for (const FOutlawsAssets::FNativeMap& Map : FOutlawsAssets::ListNativeMaps(NativeRoot))
 		{
-			const FString Dir = NativeRoot / D;
-			TArray<FString> Rcms, LabFiles;
-			IFileManager::Get().FindFiles(Rcms, *(Dir / TEXT("*.rcm")), true, false);
-			IFileManager::Get().FindFiles(LabFiles, *(Dir / TEXT("*.lab")), true, false);
-			Rcms.Sort([](const FString& A, const FString& B) { return A.ToLower() < B.ToLower(); });
+			const FString Dir = NativeRoot / Map.Dir;
+			const TArray<FString>& Rcms = Map.Rcms;
+			const TArray<FString>& LabFiles = Map.Labs;
 			for (const FString& F : Rcms)
 			{
 				const FString Base = FPaths::GetBaseFilename(F);
@@ -349,13 +346,10 @@ FString OutlawsMpHost::MapTitle(const FString& File)
 	{
 		bNativeRead = true;
 		const FString Root = FOutlawsAssets::NativeMapsRoot();
-		TArray<FString> Dirs;
-		if (!Root.IsEmpty()) IFileManager::Get().FindFiles(Dirs, *(Root / TEXT("*")), false, true);
-		for (const FString& D : Dirs)
+		for (const FOutlawsAssets::FNativeMap& Map : FOutlawsAssets::ListNativeMaps(Root))     // (BUG-QUESTNATIVEMAPS)
 		{
-			TArray<FString> Rcms;
-			IFileManager::Get().FindFiles(Rcms, *(Root / D / TEXT("*.rcm")), true, false);
-			for (const FString& F : Rcms)
+			const FString& D = Map.Dir;
+			for (const FString& F : Map.Rcms)
 			{
 				FString Text, Why;
 				FOutlawsMpMap M;

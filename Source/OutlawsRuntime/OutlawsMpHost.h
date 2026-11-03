@@ -93,6 +93,10 @@ namespace OutlawsMpHost
 	/** The stock maps (every .rcm the LABs hold whose level's .lvt they hold too: BUG-BUNKERS) then the custom ones
 	 *  (Root\NAME.rcm beside a NAME.lab); a map whose RCM does not read is logged and left out, never fatal. */
 	OUTLAWSRUNTIME_API void ListMaps(const FOutlawsAssets* Assets, TArray<FOutlawsMpMap>& Out);
+	/** (BUG-QUESTNATIVEMAPS) -OLNativeMapsListProbe, any build (Shipping too): a second into the run, a line a native map (its
+	 *  LAB's size, its RCM, NAME and modes), a RESULT line, then the game quits (OutlawsNativeMapsListProbe.cpp).  The module's
+	 *  start calls it; nothing without the flag. */
+	OUTLAWSRUNTIME_API void StartNativeListProbe();
 	/** The page's Start: the stub until the session takes it (logs the options; M1's wiring sets it). */
 	OUTLAWSRUNTIME_API TFunction<bool(const FOutlawsMpHostOptions&)>& OnHost();
 	OUTLAWSRUNTIME_API bool Host(const FOutlawsMpHostOptions& Options);

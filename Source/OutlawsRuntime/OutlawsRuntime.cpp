@@ -6,6 +6,7 @@
 #include "Engine/World.h"
 #include "UObject/UObjectHash.h"
 #include "OutlawsShipSmoke.h"
+#include "OutlawsMpHost.h"
 #if PLATFORM_ANDROID && UE_BUILD_SHIPPING
 #include "HAL/PlatformFileManager.h"
 #include "Misc/FileHelper.h"
@@ -87,6 +88,7 @@ void FOutlawsRuntimeModule::StartupModule()
 	OutlawsPerf::Startup();
 	OutlawsDeviceProfile::Startup();       // which headset: "OLRT headset: <model>, profile <Quest2|default>"
 	OutlawsShipSmoke::Startup();           // (REQ-SHIPLOG: -OLShipSmoke only)
+	OutlawsMpHost::StartNativeListProbe(); // (BUG-QUESTNATIVEMAPS: -OLNativeMapsListProbe only)
 }
 
 void FOutlawsRuntimeModule::ShutdownModule()
