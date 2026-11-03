@@ -608,7 +608,7 @@ private:
 	};
 	TArray<FThrown> Thrown;
 	float MountYaw = 0.f;              // the mounted gatling's heading
-	FRotator GatAim = FRotator::ZeroRotator;   // the carried gatling's aim, eased (mostly the head's, a fifth the hand's)
+	FRotator GatAim = FRotator::ZeroRotator;   // the carried gatling's aim: the hand's pointing (REQ-GATLINGHAND; -OLOldGatlingAim: the head's heading, eased)
 	// long guns held two-handed: the front hand's grip on the forend, the stock at the shoulder
 	bool bSupport[2] = { false, false };     // this hand holds the other hand's long gun by the forend
 	bool bShouldered[2] = { false, false };  // this hand's long gun rests on the shoulder

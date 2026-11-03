@@ -586,6 +586,9 @@ namespace
 FString AOutlawsPlayer::HeldGunTestName(int32 Wi) const
 {
 	const TCHAR* Name = SpriteGunName(Wi);
+	// (REQ-GATLINGHAND: the snapshot of 2026-11-03_19-45-51 said "Right hand: weapon_none" with the Gatling held, 25 rounds in)
+	// the weapons past the five sprite guns by their own name (gatling, dynamite, knife): no sprite gun source to say
+	if (!Name && Wi >= 0 && Wi < NumWeapons) return FString(GWeapons[Wi].Label).ToLower();
 	return FString(Name ? Name : TEXT("weapon")).ToLower() + TEXT("_") + HeldGunSourceName(HeldGunSource(Wi));
 }
 
@@ -2879,9 +2882,16 @@ void AOutlawsPlayer::UpdateGuns(float Dt)
 			// shake it; never rolled; in the left hand it is mirrored, its crank on the right, in the right hand on the left
 			const FTransform HandXf = FrameOf(H)->GetComponentTransform();
 			const FVector HandFwd = HandXf.GetRotation().GetForwardVector();
+			// (REQ-GATLINGHAND, the user's play notes of 3 Nov, snapshot 2026-11-03_19-45-51: "detach the Gatling gun from my
+			// head. For the aim... it seems to follow my head and I'd prefer it to follow my hand like any other gun") left and
+			// right as well as up and down by the hand's own pointing, at once, as a one-handed gun goes with its hand; still
+			// never rolled (the tripod hangs level under it); the crank hand winds it as before.  -OLOldGatlingAim: the head's
+			// heading and the hand's pitch, eased, as above
+			static const bool bOldGatAim = OLFlags::Param(TEXT("OLOldGatlingAim"));
 			const FRotator Head = Camera->GetComponentRotation();
-			const FRotator WantAim(FMath::Clamp(float(HandFwd.Rotation().Pitch), -60.f, 60.f), float(Head.Yaw), 0.f);
-			GatAim = GFrameCounter - GatShownFrame > 2 ? WantAim : FMath::RInterpTo(GatAim, WantAim, Dt, 12.f);
+			const FRotator HandAim = HandFwd.Rotation();
+			const FRotator WantAim(FMath::Clamp(float(HandAim.Pitch), -60.f, 60.f), float(bOldGatAim ? Head.Yaw : HandAim.Yaw), 0.f);
+			GatAim = !bOldGatAim || GFrameCounter - GatShownFrame > 2 ? WantAim : FMath::RInterpTo(GatAim, WantAim, Dt, 12.f);
 			const float Yaw = float(GatAim.Yaw);
 			const FQuat R = FRotator(GatAim.Pitch, GatAim.Yaw, 0.f).Quaternion();
 			const FVector Fwd = R.GetForwardVector();
