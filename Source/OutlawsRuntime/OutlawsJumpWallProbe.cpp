@@ -33,10 +33,10 @@
 
 namespace OutlawsJumpWallLocal
 {
-	enum class EKind : uint8 { Wall, Slope, Late, LowWall, Lip, StepDown, StepUp, Ceiling, OpenApex, WallApex, Ledge };
+	enum class EWallKind : uint8 { Wall, Slope, Late, LowWall, Lip, StepDown, StepUp, Ceiling, OpenApex, WallApex, Ledge };
 	struct FCase
 	{
-		EKind Kind = EKind::Wall;
+		EWallKind Kind = EWallKind::Wall;
 		double Angle = 0.0;     // degrees from straight at the wall
 		double Lean = 0.0;      // Slope: the wall's pitch, degrees (+: its top over the body)
 		double High = 0.0;      // LowWall, Lip, StepDown, StepUp: its top over the floor, cm
@@ -125,20 +125,20 @@ namespace OutlawsJumpWallLocal
 		return Best > 0.0;
 	}
 
-	const TCHAR* KindName(EKind K)
+	const TCHAR* KindName(EWallKind K)
 	{
 		switch (K)
 		{
-		case EKind::Wall: return TEXT("wall");
-		case EKind::Slope: return TEXT("sloped wall");
-		case EKind::Late: return TEXT("wall, on the way down");
-		case EKind::LowWall: return TEXT("ledge-high wall, on the way down");
-		case EKind::Lip: return TEXT("low lip at the landing");
-		case EKind::StepDown: return TEXT("step at the landing");
-		case EKind::StepUp: return TEXT("step on the rise");
-		case EKind::Ceiling: return TEXT("ceiling");
-		case EKind::OpenApex: return TEXT("open air");
-		case EKind::WallApex: return TEXT("wall early in the rise");
+		case EWallKind::Wall: return TEXT("wall");
+		case EWallKind::Slope: return TEXT("sloped wall");
+		case EWallKind::Late: return TEXT("wall, on the way down");
+		case EWallKind::LowWall: return TEXT("ledge-high wall, on the way down");
+		case EWallKind::Lip: return TEXT("low lip at the landing");
+		case EWallKind::StepDown: return TEXT("step at the landing");
+		case EWallKind::StepUp: return TEXT("step on the rise");
+		case EWallKind::Ceiling: return TEXT("ceiling");
+		case EWallKind::OpenApex: return TEXT("open air");
+		case EWallKind::WallApex: return TEXT("wall early in the rise");
 		default: return TEXT("ledge");
 		}
 	}
@@ -184,27 +184,27 @@ OL_SHOT_TEST(OLJumpWallProbe, 2410)
 			const TArray<float> Angles = Numbers(TEXT("OLJumpWallAngles"), { 0.f, 15.f, 30.f, 44.f, 46.f, 60.f, 80.f });
 			for (const float D : Numbers(TEXT("OLJumpWallDials"), { 0.5f, 0.2f, 0.75f }))
 			{
-				for (const float A : Angles) WallCases.Add({ EKind::Wall, A, 0.0, 0.0, D });
+				for (const float A : Angles) WallCases.Add({ EWallKind::Wall, A, 0.0, 0.0, D });
 			}
 			for (const double Lean : { -12.0, 12.0 })
 			{
-				for (const double A : { 20.0, 60.0 }) WallCases.Add({ EKind::Slope, A, Lean, 0.0, 0.5f });
+				for (const double A : { 20.0, 60.0 }) WallCases.Add({ EWallKind::Slope, A, Lean, 0.0, 0.5f });
 			}
-			WallCases.Add({ EKind::Late, 20.0, 0.0, 0.0, 0.5f });
-			WallCases.Add({ EKind::LowWall, 20.0, 0.0, 240.0, 0.5f });
-			WallCases.Add({ EKind::Lip, 0.0, 0.0, 20.0, 0.5f });
-			WallCases.Add({ EKind::Lip, 20.0, 0.0, 20.0, 0.5f });
-			WallCases.Add({ EKind::StepDown, 0.0, 0.0, 60.0, 0.5f });
-			WallCases.Add({ EKind::StepUp, 20.0, 0.0, 100.0, 0.5f });
-			WallCases.Add({ EKind::Ceiling, 0.0, 0.0, 0.0, 0.5f });
-			WallCases.Add({ EKind::OpenApex, 0.0, 0.0, 0.0, 0.2f });
-			WallCases.Add({ EKind::WallApex, 20.0, 0.0, 0.0, 0.2f });
+			WallCases.Add({ EWallKind::Late, 20.0, 0.0, 0.0, 0.5f });
+			WallCases.Add({ EWallKind::LowWall, 20.0, 0.0, 240.0, 0.5f });
+			WallCases.Add({ EWallKind::Lip, 0.0, 0.0, 20.0, 0.5f });
+			WallCases.Add({ EWallKind::Lip, 20.0, 0.0, 20.0, 0.5f });
+			WallCases.Add({ EWallKind::StepDown, 0.0, 0.0, 60.0, 0.5f });
+			WallCases.Add({ EWallKind::StepUp, 20.0, 0.0, 100.0, 0.5f });
+			WallCases.Add({ EWallKind::Ceiling, 0.0, 0.0, 0.0, 0.5f });
+			WallCases.Add({ EWallKind::OpenApex, 0.0, 0.0, 0.0, 0.2f });
+			WallCases.Add({ EWallKind::WallApex, 20.0, 0.0, 0.0, 0.2f });
 		}
 		if (bHaveWall && bVRMode)
 		{
-			for (const double A : { 0.0, 25.0, -25.0 }) WallCases.Add({ EKind::Ledge, A, 0.0, 0.0, 0.5f });
-			WallCases.Add({ EKind::Ledge, 25.0, 0.0, 0.0, 0.75f });
-			WallCases.Add({ EKind::Ledge, 25.0, 0.0, 0.0, 0.5f, 480.0 });      // (reaching the wall on the way down)
+			for (const double A : { 0.0, 25.0, -25.0 }) WallCases.Add({ EWallKind::Ledge, A, 0.0, 0.0, 0.5f });
+			WallCases.Add({ EWallKind::Ledge, 25.0, 0.0, 0.0, 0.75f });
+			WallCases.Add({ EWallKind::Ledge, 25.0, 0.0, 0.0, 0.5f, 480.0 });      // (reaching the wall on the way down)
 		}
 		UE_LOG(LogOutlaws, Display, TEXT("OLSHOT jumpwall start: %d cases, %s, %s, leeway %.0f deg, level %s, gravity %.0f"), WallCases.Num(), bOld ? TEXT("-OLOldJumpWall") : TEXT("new"), bVRMode ? TEXT("vr") : TEXT("flat"), Leeway, *L->LevelName, M->GetGravityZ());
 		return;
@@ -261,7 +261,7 @@ OL_SHOT_TEST(OLJumpWallProbe, 2410)
 		bRunning = true;
 		const double Rad = FMath::DegreesToRadians(C.Angle);
 		FVector From;
-		if (C.Kind == EKind::Ledge)
+		if (C.Kind == EWallKind::Ledge)
 		{
 			// a block as high as the mill's walkway lip, 1.5 m out from the real wall, its top deep enough for the hand
 			In = WallIn;
@@ -276,14 +276,14 @@ OL_SHOT_TEST(OLJumpWallProbe, 2410)
 			Off[H] = In * (R - 6.0) + FVector(0.0, 0.0, 190.0 - Half);     // (ahead, up, 6 cm off the face at the wall)
 			Off[O] = -In * 30.0 + FVector(0.0, 0.0, 50.0 - Half);          // (low, behind the body, out of every reach)
 		}
-		else if (C.Kind == EKind::Lip || C.Kind == EKind::StepDown || C.Kind == EKind::StepUp || C.Kind == EKind::Ceiling || C.Kind == EKind::OpenApex)
+		else if (C.Kind == EWallKind::Lip || C.Kind == EWallKind::StepDown || C.Kind == EWallKind::StepUp || C.Kind == EWallKind::Ceiling || C.Kind == EWallKind::OpenApex)
 		{
 			// along the wall, off it: nothing in the way but what the case puts there
 			Way = WallT;
 			In = Way;
 			Tan = FVector(-In.Y, In.X, 0.0);
 			From = WallMid - WallIn * BandOff - WallT * (WallLen * 0.45);
-			if (C.Angle != 0.0 && C.Kind != EKind::Ceiling)
+			if (C.Angle != 0.0 && C.Kind != EWallKind::Ceiling)
 			{
 				// (the thing put in the way faces this much off the jump's line)
 				In = Way * FMath::Cos(Rad) - FVector(-Way.Y, Way.X, 0.0) * FMath::Sin(Rad);
@@ -297,21 +297,21 @@ OL_SHOT_TEST(OLJumpWallProbe, 2410)
 			Tan = WallT;
 			Way = In * FMath::Cos(Rad) + Tan * FMath::Sin(Rad);
 			FVector Mid = WallMid;
-			if (C.Kind == EKind::LowWall)
+			if (C.Kind == EWallKind::LowWall)
 			{
 				// a wall as high as the mill's ledge, 2 m out from the real one
 				const FVector At = WallMid - In * 200.0 + FVector(0.0, 0.0, C.High * 0.5);
 				AddBox(At, FRotator(0.0, In.Rotation().Yaw, 0.0), FVector(20.0, 400.0, C.High * 0.5));
 				Mid = FVector(At.X, At.Y, FloorZ) - In * 20.0;
 			}
-			if (C.Kind == EKind::Slope)
+			if (C.Kind == EWallKind::Slope)
 			{
 				// a slab 2 m out from the real wall, its near face the wall, pitched about its long side
 				const FVector At = WallMid - In * 200.0 + FVector(0.0, 0.0, 200.0);
 				AddBox(At, FRotator(C.Lean, In.Rotation().Yaw, 0.0), FVector(20.0, 400.0, 300.0));
 				Mid = FVector(At.X, At.Y, FloorZ) - In * 20.0;
 			}
-			From = Mid - In * R - Way * (C.Kind == EKind::Late || C.Kind == EKind::LowWall ? LateRun : C.Kind == EKind::WallApex ? 130.0 : Run);
+			From = Mid - In * R - Way * (C.Kind == EWallKind::Late || C.Kind == EWallKind::LowWall ? LateRun : C.Kind == EWallKind::WallApex ? 130.0 : Run);
 		}
 		From.Z = FloorZ + Half + 2.0;
 		const FRotator Face(0.0, Way.Rotation().Yaw, 0.0);
@@ -319,7 +319,7 @@ OL_SHOT_TEST(OLJumpWallProbe, 2410)
 		if (Controller) Controller->SetControlRotation(Face);
 		M->StopMovementImmediately();
 		M->SetMovementMode(MOVE_Walking);
-		if (C.Kind == EKind::Ledge) PutHands();
+		if (C.Kind == EWallKind::Ledge) PutHands();
 		CaseT = 0.f;
 		Frames = 0;
 		AirFrames = 0.f;
@@ -332,7 +332,7 @@ OL_SHOT_TEST(OLJumpWallProbe, 2410)
 		Step = 1;
 		return;
 	}
-	if (C.Kind == EKind::Ledge) PutHands();
+	if (C.Kind == EWallKind::Ledge) PutHands();
 	CaseT += Dt;
 	Stamina = 100.f;
 	bRunning = true;
@@ -369,7 +369,7 @@ OL_SHOT_TEST(OLJumpWallProbe, 2410)
 		bFlew = bFlew || bFalling;
 		Apex = FMath::Max(Apex, double(Feet.Z));
 		const double High = Feet.Z - FloorZ;
-		if (C.Kind == EKind::Ledge && bFalling && ++AirFrames >= 2.f && !bSqueezed)
+		if (C.Kind == EWallKind::Ledge && bFalling && ++AirFrames >= 2.f && !bSqueezed)
 		{
 			TestAxes.Add(H == 0 ? TEXT("OLVR_LeftGrip") : TEXT("OLVR_RightGrip"), 1.f);
 			bSqueezed = true;
@@ -377,12 +377,12 @@ OL_SHOT_TEST(OLJumpWallProbe, 2410)
 		// what the case puts in the way, a few cm ahead of the body; the lip by the next frame's feet (a frame's fall is wider than
 		// the height to meet it at), only as far ahead as the capsule's round reaches at its top, so it is met in the air
 		const double HighNext = High + M->Velocity.Z * Dt;
-		const bool bLand = M->Velocity.Z < 0.0 && (C.Kind == EKind::Lip ? HighNext <= C.High - 12.0 : C.Kind == EKind::StepDown && High <= C.High - 35.0);
-		const bool bRise = C.Kind == EKind::StepUp && M->Velocity.Z > 0.0 && High >= 15.0;
+		const bool bLand = M->Velocity.Z < 0.0 && (C.Kind == EWallKind::Lip ? HighNext <= C.High - 12.0 : C.Kind == EWallKind::StepDown && High <= C.High - 35.0);
+		const bool bRise = C.Kind == EWallKind::StepUp && M->Velocity.Z > 0.0 && High >= 15.0;
 		if (bFlew && !bPlaced && (bLand || bRise))
 		{
 			const double Under = FMath::Clamp(C.High - FMath::Max(0.0, HighNext), 0.0, double(R));      // (its top over the next feet)
-			const double Near = C.Kind == EKind::Lip ? FMath::Sqrt(R * R - (R - Under) * (R - Under)) + Speed * Dt * 0.7 : R + 6.0 + Speed * Dt;
+			const double Near = C.Kind == EWallKind::Lip ? FMath::Sqrt(R * R - (R - Under) * (R - Under)) + Speed * Dt * 0.7 : R + 6.0 + Speed * Dt;
 			const FVector At = FVector(Feet.X, Feet.Y, FloorZ + C.High * 0.5) + In * (Near + 30.0);
 			AddBox(At, FRotator(0.0, In.Rotation().Yaw, 0.0), FVector(30.0, 200.0, C.High * 0.5));
 			BoxFar = At + In * 30.0;
@@ -392,14 +392,14 @@ OL_SHOT_TEST(OLJumpWallProbe, 2410)
 			UE_LOG(LogOutlaws, Display, TEXT("OLSHOT jumpwall   %s: put %.0f cm ahead, the feet %.0f over the floor, %.0f cm/s across, %.0f up"), KindName(C.Kind), Near, High, Speed, M->Velocity.Z);
 		}
 		if (bPlaced) TopAfter = FMath::Max(TopAfter, double(Feet.Z));
-		if (C.Kind == EKind::Ceiling && bFlew && !bPlaced && M->Velocity.Z > 100.0 && CaseT > 0.05f)
+		if (C.Kind == EWallKind::Ceiling && bFlew && !bPlaced && M->Velocity.Z > 100.0 && CaseT > 0.05f)
 		{
 			AddBox(GetActorLocation() + FVector(0.0, 0.0, Half + 16.0), FRotator(0.0, In.Rotation().Yaw, 0.0), FVector(400.0, 400.0, 10.0));
 			bPlaced = true;
 		}
 		if (bFlew && !bHit)
 		{
-			const bool bCeil = C.Kind == EKind::Ceiling;
+			const bool bCeil = C.Kind == EWallKind::Ceiling;
 			if (bCeil ? bPlaced && M->Velocity.Z < VzPrev * 0.5 && VzPrev > 30.0 : IntoPrev > 30.0 && Into < IntoPrev * 0.5)
 			{
 				bHit = true;
@@ -422,9 +422,9 @@ OL_SHOT_TEST(OLJumpWallProbe, 2410)
 		bTook = bTook || (IsClimbing() && GrabHand == H);
 		const bool bDown = bFlew && !bFalling;
 		bool bEnd = CaseT > 3.5f;
-		const bool bTail = C.Kind == EKind::Lip || C.Kind == EKind::StepDown || C.Kind == EKind::StepUp;
-		if (C.Kind == EKind::OpenApex || C.Kind == EKind::WallApex) bEnd = bEnd || bDown;
-		else if (C.Kind == EKind::Ledge) bEnd = bEnd || bTook || (bDown && CaseT > 0.1f);
+		const bool bTail = C.Kind == EWallKind::Lip || C.Kind == EWallKind::StepDown || C.Kind == EWallKind::StepUp;
+		if (C.Kind == EWallKind::OpenApex || C.Kind == EWallKind::WallApex) bEnd = bEnd || bDown;
+		else if (C.Kind == EWallKind::Ledge) bEnd = bEnd || bTook || (bDown && CaseT > 0.1f);
 		else if (bTail) bEnd = bEnd || (bPlaced && CaseT > PlaceT + 1.2f);
 		else bEnd = bEnd || (bHit && CaseT >= HitT + 0.3f) || (bDown && bHit);
 		if (!bEnd) return;
@@ -441,15 +441,15 @@ OL_SHOT_TEST(OLJumpWallProbe, 2410)
 			*Id, V0, S0, S05, S25, Peak, Slid, Speed05, bBoost ? TEXT("held") : TEXT("over"), Apex - TakeOffZ);
 		switch (C.Kind)
 		{
-		case EKind::Wall:
-		case EKind::Slope:
-		case EKind::Late:
-		case EKind::LowWall:
-		case EKind::WallApex:
+		case EWallKind::Wall:
+		case EWallKind::Slope:
+		case EWallKind::Late:
+		case EWallKind::LowWall:
+		case EWallKind::WallApex:
 		{
 			Check(bHit, FString::Printf(TEXT("%s: hit the wall"), *Id));
 			const bool bStop = !bOld && C.Angle <= Leeway;
-			if (C.Kind == EKind::WallApex && !bOld)
+			if (C.Kind == EWallKind::WallApex && !bOld)
 			{
 				Check(Apex - TakeOffZ >= OpenApexZ - 8.0, FString::Printf(TEXT("%s: as high as the open air's %.0f cm (%.0f)"), *Id, OpenApexZ, Apex - TakeOffZ));
 			}
@@ -467,8 +467,8 @@ OL_SHOT_TEST(OLJumpWallProbe, 2410)
 			}
 			break;
 		}
-		case EKind::Lip:
-		case EKind::StepDown:
+		case EWallKind::Lip:
+		case EWallKind::StepDown:
 		{
 			const bool bOver = FVector::DotProduct(Feet - BoxFar, In) > 0.0;
 			Check(bPlaced && TopAfter >= FloorZ + C.High - 3.0, FString::Printf(TEXT("%s: rode up over its top (the feet to %.0f cm over the floor)"), *Id, TopAfter - FloorZ));
@@ -476,7 +476,7 @@ OL_SHOT_TEST(OLJumpWallProbe, 2410)
 			Check(bOver, FString::Printf(TEXT("%s: over it (%.0f cm past its far side)"), *Id, FVector::DotProduct(Feet - BoxFar, In)));
 			break;
 		}
-		case EKind::StepUp:
+		case EWallKind::StepUp:
 		{
 			const bool bOver = FVector::DotProduct(Feet - BoxFar, In) > 0.0;
 			Check(bPlaced && bHit, FString::Printf(TEXT("%s: met it on the rise"), *Id));
@@ -489,16 +489,16 @@ OL_SHOT_TEST(OLJumpWallProbe, 2410)
 			Check(bOver, FString::Printf(TEXT("%s: over it (%.0f cm past its far side)"), *Id, FVector::DotProduct(Feet - BoxFar, In)));
 			break;
 		}
-		case EKind::Ceiling:
+		case EWallKind::Ceiling:
 			Check(bPlaced && bHit, FString::Printf(TEXT("%s: hit it"), *Id));
 			Check(Held > 0.f, FString::Printf(TEXT("%s: the boost is kept"), *Id));
 			Check(Speed05 >= V0 * 0.9, FString::Printf(TEXT("%s: the speed across kept, %.0f (%.0f)"), *Id, V0, Speed05));
 			break;
-		case EKind::OpenApex:
+		case EWallKind::OpenApex:
 			OpenApexZ = Apex - TakeOffZ;
 			Check(!bHit, FString::Printf(TEXT("%s: nothing in the way"), *Id));
 			break;
-		case EKind::Ledge:
+		case EWallKind::Ledge:
 			Check(bHit || bTook, FString::Printf(TEXT("%s: reached the wall"), *Id));
 			if (!bOld) Check(bTook, FString::Printf(TEXT("%s: ended in the grab"), *Id));
 			UE_LOG(LogOutlaws, Display, TEXT("OLSHOT jumpwall   %s: %s, %.0f cm along the wall from the hit, %.2f s after it"), *Id, bTook ? TEXT("grabbed") : TEXT("no grab"), bHit ? FMath::Abs(FVector::DotProduct(Feet - HitFeet, Tan)) : -1.0, HitT >= 0.f ? CaseT - HitT : -1.f);
