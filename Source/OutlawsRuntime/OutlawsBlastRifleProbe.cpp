@@ -489,7 +489,8 @@ void UOutlawsCoop::TickHostBlastRifleTest(double Now, AOutlawsLevelActor* L, AOu
 			WatchPlayer.Note(P->GetActorLocation(), P->GetVelocity().Size());
 			if (Now < TestAt) return;
 			L->bInvincible = false;
-			Check(WatchPlayer.Rise > 100.0, FString::Printf(TEXT("that stick on the host's player, on the bot's spot: %s"), *WatchPlayer.Say()));
+			// (thrown at all: a roof over the bot's spot can leave the player's taller body no room to rise, the speed says it was thrown)
+			Check(WatchPlayer.Rise > 100.0 || WatchPlayer.PeakSpeed > 3000.0, FString::Printf(TEXT("that stick on the host's player, on the bot's spot: %s"), *WatchPlayer.Say()));
 			// (the flight, from the same spot: the speed is a tick's sample, a low roof or a wall takes it in a frame, and one launch rises
 			// less on the desktop player here, 4.59 g, than on a bot, 1 g (a headset's player, 1.5 g, in between): at least the player's
 			// rise, no more than the launch carries at 1 g, 3130 cm)
@@ -533,6 +534,12 @@ void UOutlawsCoop::TickHostBlastRifleTest(double Now, AOutlawsLevelActor* L, AOu
 				return;
 			}
 			if (!R || !D || !D->bAlive || Wall <= D->ProtectedUntil + 0.3) return;
+			if (ClientHealth() < 50.f)
+			{
+				// (back up on 10: a blast of 12 only shows on more than it takes)
+				if (Now >= TestAt) { TestSayTo(Client, TEXT("ml:brhealth"), 100); TestAt = Now + 1.0; }
+				return;
+			}
 			Before = ClientHealth();
 			StandBeside(R->ShownBody());
 			L->TestSetHealth(100.f);            // (the host stands in this one too)
