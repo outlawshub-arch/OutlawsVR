@@ -119,7 +119,8 @@ void AOutlawsLevelActor::TickHmCareerTest(float Dt)
 		const int32 Mt = It.IndexOfByPredicate([](const OutlawsMenu::FItem& I) { return I.Label == TEXT("Marshal Training") && I.Target == TEXT("#difficulty:hom"); });
 		const int32 Rs = It.IndexOfByPredicate([](const OutlawsMenu::FItem& I) { return I.Name == TEXT("hom_resume"); });
 		Check(Mt != INDEX_NONE && Mt <= 1, FString::Printf(TEXT("Marshal Training is at the top (row %d)"), Mt));
-		Check((Rs != INDEX_NONE) == HasHomSave() && (Rs == INDEX_NONE || Rs == 0), FString::Printf(TEXT("Resume Marshal Training %s (a career save %s)"), Rs != INDEX_NONE ? TEXT("on top") : TEXT("absent"), HasHomSave() ? TEXT("there") : TEXT("absent")));
+		Check((Rs != INDEX_NONE) == HomResumeOffered() && (Rs == INDEX_NONE || Rs == 0), FString::Printf(TEXT("Resume Marshal Training %s (a career save %s, one the Historical autosave does not hold %s)"), Rs != INDEX_NONE ? TEXT("on top") : TEXT("absent"),
+			HasHomSave() ? TEXT("there") : TEXT("absent"), HomResumeOffered() ? TEXT("yes") : TEXT("no")));
 		TArray<FString> HNames, HLabels;
 		GetHandfulChoices(HNames, HLabels, AssetsRef.Get());
 		Check(HNames.Num() == 4, FString::Printf(TEXT("the LABs hold all four Handful missions (%s)"), *FString::Join(HNames, TEXT(", "))));

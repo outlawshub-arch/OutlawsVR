@@ -443,6 +443,9 @@ public:
 	 *  totals, the score, the difficulty.  HomResume starts the office from it (no crawl). */
 	bool SaveHom() const;
 	static bool HasHomSave();
+	/** (REQ-NOHOMRESUME) The Historical Missions page's Resume Marshal Training row is wanted: a session the Historical autosave
+	 *  does not hold (a player from v0.95: no slot, or a slot with no session in it; or the slot behind the session file). */
+	static bool HomResumeOffered();
 	void HomResume();
 	/** (BUG-RESPAWNCRASH) the session as it stands (the mission and its way back, the totals, the stamps, the result and
 	 *  card, the mission's own counts) for a map load's rebuild, and taken back in the fresh world before it builds. */

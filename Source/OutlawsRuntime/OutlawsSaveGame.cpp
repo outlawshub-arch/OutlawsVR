@@ -584,7 +584,13 @@ void AOutlawsLevelActor::TickSaves(float Dt)
 		{
 			if (!bSteady || !AutosaveDanger().IsEmpty()) StartSaveDelay = 0.5f;       // not mid-fall, nor in danger: in a moment
 			else if (UOutlawsCoop::IsActive(this) && UOutlawsCoop::HoldStartAutosave(this)) StartSaveDelay = 0.5f;   // (R8: the partner's kit first)
-			else if (bAutosave) SaveGame(-1);          // (-1: this level's mode's autosave, REQ-AUTOSAVESLOTS)
+			else
+			{
+				// (REQ-NOHOMRESUME) the arrival in the office whatever the Autosave option: the session file is written there
+				// whatever it says, and the Historical autosave now stands for that file on the Load page
+				const bool bHomArrival = bHom && LevelName.Equals(TEXT("office"), ESearchCase::IgnoreCase) && !UOutlawsCoop::IsActive(this) && !OLFlags::Param(TEXT("OLOldHomResume"));
+				if (bAutosave || bHomArrival) SaveGame(-1);          // (-1: this level's mode's autosave, REQ-AUTOSAVESLOTS)
+			}
 			AutosaveWait = 0.f;
 		}
 		return;

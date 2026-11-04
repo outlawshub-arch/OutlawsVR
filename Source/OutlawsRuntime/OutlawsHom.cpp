@@ -289,6 +289,31 @@ bool AOutlawsLevelActor::HasHomSave()
 	return FPaths::FileExists(HomSavePath());
 }
 
+bool AOutlawsLevelActor::HomResumeOffered()
+{
+	// REQ-NOHOMRESUME (the user 4 Nov): Historical Missions has its own autosave now, the session in it, so Resume Marshal
+	// Training only clutters its page.  The row stays for a session that slot does not hold, where it is the only way back in:
+	// a player from v0.95 (the file and no slot, or their old autosave moved to the slot with no session in it), or a slot
+	// behind the file (a quit in the office's first moments).  The first arrival in the office then writes the slot and the row
+	// is gone: keeping it was smaller than building the slot from the file.  -OLOldHomResume: whenever there is a session
+	if (!HasHomSave()) return false;
+	if (OLFlags::Param(TEXT("OLOldHomResume"))) return true;
+	auto Read = [](const FString& Path, TSharedPtr<FJsonObject>& O)
+	{
+		FString Text;
+		return FFileHelper::LoadFileToString(Text, *Path) && FJsonSerializer::Deserialize(TJsonReaderFactory<>::Create(Text), O) && O.IsValid();
+	};
+	TSharedPtr<FJsonObject> File, Slot;
+	const TSharedPtr<FJsonObject>* Held = nullptr;
+	if (!Read(HomSavePath(), File) || !Read(SavePath(AutosaveHom), Slot) || !Slot->TryGetObjectField(TEXT("hom_save"), Held) || !Held || !Held->IsValid()) return true;
+	auto Done = [](const FJsonObject& O)
+	{
+		const TSharedPtr<FJsonObject>* P = nullptr;
+		return O.TryGetObjectField(TEXT("porches"), P) && P ? (*P)->Values.Num() : 0;
+	};
+	return (*Held)->GetNumberField(TEXT("score")) < File->GetNumberField(TEXT("score")) || Done(**Held) < Done(*File);
+}
+
 bool AOutlawsLevelActor::SaveHom() const
 {
 	TSharedRef<FJsonObject> O = MakeShared<FJsonObject>();

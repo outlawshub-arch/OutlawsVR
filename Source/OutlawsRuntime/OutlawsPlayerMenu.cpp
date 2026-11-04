@@ -676,8 +676,9 @@ bool AOutlawsPlayer::ShowMenuPage(const FString& File, bool bPush)
 		TArray<FString> Names, Labels;
 		const AOutlawsLevelActor* LM = Level.Get();
 		AOutlawsLevelActor::GetHandfulChoices(Names, Labels, LM ? LM->GetAssets() : nullptr);
-		// (HM1) the original's way in: the crawl, then the Marshal's office and its posters
-		if (AOutlawsLevelActor::HasHomSave())
+		// (HM1) the original's way in: the crawl, then the Marshal's office and its posters; (REQ-NOHOMRESUME) the Load page's
+		// Historical autosave resumes the session: this row only for a session that slot does not hold
+		if (AOutlawsLevelActor::HomResumeOffered())
 		{
 			FItem I;
 			I.Kind = EItemKind::Action;
@@ -4300,7 +4301,8 @@ void AOutlawsPlayer::DrawFrontCanvas(UCanvas* C, int32 Width, int32 Height)
 		Stage(TEXT("StartGame_Base"), 1024.f - 1344.f, -180.f, 1844.f, 1440.f);
 		Txt(SaveFont(0), MenuPage->Title, 815.f, 176.f, 1, Col(0x1d, 0x08, 0x00), false);
 		// menu_items.start: menu_link.main links centred on x 815 from y 350; (REQ-HMCAREER) more than five rows (Historical
-		// Missions with Resume Marshal Training) closer together, the last row's middle at 930, its letters clear of the help line
+		// Missions when a v0.95 session keeps Resume Marshal Training, REQ-NOHOMRESUME) closer together, the last row's middle
+		// at 930, its letters clear of the help line
 		const int32 N = MenuPage->Items.Num();
 		const float Step = N > 1 ? FMath::Min(118.f, (930.f - 413.f) / float(N - 1)) : 118.f;
 		for (int32 i = 0; i < N; ++i)
