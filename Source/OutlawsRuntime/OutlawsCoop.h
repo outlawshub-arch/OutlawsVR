@@ -1784,6 +1784,7 @@ private:
 	void TickCardPingsProbe(double Now, AOutlawsLevelActor* L, AOutlawsPlayer* P);         // (REQ-CARDPINGS: OutlawsCardPingsProbe.cpp)
 	void OnPauseCharTestStep(const FString& Step, int32 Arg, AOutlawsLevelActor* L, AOutlawsPlayer* P);
 	void TickStickRestTest(double Now, AOutlawsLevelActor* L, AOutlawsPlayer* P);          // (REQ-STICKREST: OutlawsStickRestProbe.cpp)
+	void TickUnderwaterFireCoopProbe(double Now, AOutlawsLevelActor* L, AOutlawsPlayer* P);    // (BUG-UNDERWATERFIRE: OutlawsUnderwaterFireCoopProbe.cpp)
 	void TickHostMpSpeedTest(double Now, AOutlawsLevelActor* L, AOutlawsPlayer* P);        // (REQ-MPSPEED: OutlawsMpSpeedProbe.cpp)
 	void TickClientMpSpeedTest(double Now, AOutlawsLevelActor* L, AOutlawsPlayer* P);
 	void OnMpSpeedTestStep(const FString& Step, int32 Arg, AOutlawsLevelActor* L, AOutlawsPlayer* P);
@@ -1791,7 +1792,6 @@ private:
 	/** The host: a death's kill line to every machine (and this one). */
 	void SayKill(int32 Killer, int32 Victim, EOutlawsObit Kind);
 	/** Every machine: a death worded for this machine's player, into its kill feed. */
-	void TickUnderwaterFireCoopProbe(double Now, AOutlawsLevelActor* L, AOutlawsPlayer* P);    // (BUG-UNDERWATERFIRE: OutlawsUnderwaterFireCoopProbe.cpp)
 	void OnMatchKill(int32 Killer, int32 Victim, uint8 Kind, const FString& KillerName, const FString& VictimName);
 	TArray<FString> KillLinesSeen;               // (the test's: every line shown here)
 	void TickHostKillFeedTest(double Now, AOutlawsLevelActor* L, AOutlawsPlayer* P);
