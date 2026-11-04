@@ -777,6 +777,10 @@ public:
 	 *  the host's game instead of the lobby's start. */
 	UPROPERTY(Replicated)
 	bool bLateJoin = false;
+	/** REQ-SPAWNGRACE: the host's word that this player is inside its spawn protection, to every machine (a late joiner gets it as it
+	 *  gets the rest of the link): what the flash goes by.  The rules' ProtectedUntil stays the host's alone. */
+	UPROPERTY(Replicated)
+	bool bSpawnGrace = false;
 	/** The start serial whose snapshot the host has sent this owner (0: none yet), and how the join stands (EJoin as a
 	 *  number: the host busy between levels, the snapshot on its way), for the owner's lobby to say. */
 	UPROPERTY(Replicated)
@@ -1042,6 +1046,20 @@ public:
 	static constexpr bool bMenuKeepsSafe = true;
 	/** True when this machine's own player is in its pause menu and so takes no hurt (Damage: for the log). */
 	static bool MenuShields(const UObject* Context, float Damage);
+	// ---- REQ-SPAWNGRACE (OutlawsCoopMatch.cpp): a match's fresh spawn, 3 s untouchable and harmless, flashing ----
+	/** Who is inside its spawn protection, as this machine has it (its link's bSpawnGrace; not in a match: nobody). */
+	bool SpawnGraceOf(int32 Who) const;
+	/** This machine's own player out of harm: a blow the host has not judged (its own stick, a fall, the floor); a hurt the host
+	 *  sends is its word already, and a kill the rules order (1e6: the level's kill floor, unstuck) still kills. */
+	static bool SpawnGraceShields(const UObject* Context, float Damage);
+	/** The blast going off now is credited to a protected player: no throw either. */
+	static bool SpawnGraceBlast(const AOutlawsLevelActor* L);
+	/** The flash on this machine's own hands and what they hold, 0 to 1 this moment (0: none; the sprite takes SpawnGracePulse). */
+	static float SpawnGraceFlashHere(const UObject* Context);
+	/** The flash's beat, 0 to 1 this moment; every flash runs on it. */
+	static float SpawnGracePulse();
+	/** The Brightness at the flash's top, for the hands and the sprites alike (a dark sector flashes as bright as a lit one). */
+	static constexpr float SpawnGraceBright = 3.f;
 	// (the links hand these over)
 	void OnRevive(int32 Epoch, int32 By, int32 Health);
 
@@ -1773,6 +1791,14 @@ private:
 	void TickHostBlastRifleTest(double Now, AOutlawsLevelActor* L, AOutlawsPlayer* P);
 	void OnBlastRifleTestStep(const FString& Step, int32 Arg, AOutlawsLevelActor* L, AOutlawsPlayer* P);
 	void TickClientBlastRifleTest(AOutlawsLevelActor* L);
+	// ---- REQ-SPAWNGRACE's probe (-OLSpawnGraceProbe on a host, its client and a joiner; OutlawsSpawnGraceProbe.cpp) ----
+	void TickHostSpawnGraceTest(double Now, AOutlawsLevelActor* L, AOutlawsPlayer* P);
+	void TickClientSpawnGraceTest(AOutlawsLevelActor* L);
+	void OnSpawnGraceTestStep(const FString& Step, int32 Arg, AOutlawsLevelActor* L, AOutlawsPlayer* P);
+	/** This machine's gun, fist and knife on Who, as it draws Who, then (bStick) a stick at its feet. */
+	void SpawnGraceBlows(AOutlawsLevelActor* L, AOutlawsPlayer* P, int32 Who, bool bStick);
+	/** A stick of bot Who lying lit at Where, off in FuseLeft s: the bots' own list and blast.  Where zero: the last one's fuse set anew. */
+	void TestBotStick(int32 Who, const FVector& Where, double FuseLeft);
 	// ---- REQ-MPLETHAL's probe (-OLMpLethalProbe on a host and its client; OutlawsMpLethalProbe.cpp) ----
 	void TickHostLethalTest(double Now, AOutlawsLevelActor* L, AOutlawsPlayer* P);
 	void OnLethalTestStep(const FString& Step, int32 Arg, AOutlawsLevelActor* L, AOutlawsPlayer* P);
@@ -1937,6 +1963,10 @@ public:
 	void BotPellet(AOutlawsEnemy* E, float Damage, const FVector& At, const FVector& From, uint8 Spot);
 	/** REQ-MPBOTS: while a bot's stick goes off on the host, the player credited with what the blast does (else -1). */
 	static int32 BlastShooter;
+	/** REQ-SPAWNGRACE: a blast told from another machine came from a protected player (OnBlast, around its Explode). */
+	static bool BlastFromGrace;
+	/** REQ-SPAWNGRACE: the hurt going in now is the host's judged one, past the shield (it asked the rules itself). */
+	bool bHostDealing = false;
 	/** ... and what that blast would deal the host's own player (Explode leaves it to the match, credited to the bot). */
 	static float BlastHostDealt;
 	/** ... and the other players that blast struck (BlastAtPlayers), a bit each. */

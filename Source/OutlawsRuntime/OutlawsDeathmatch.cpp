@@ -411,7 +411,10 @@ void FOutlawsDeathmatch::NoteShot(int32 Shooter, double Now)
 {
 	FOutlawsDmPlayer* P = Find(Shooter);
 	if (!P || !P->bAlive) return;
-	P->ProtectedUntil = FMath::Min(P->ProtectedUntil, Now);      // (shooting ends the protection)
+	// (REQ-SPAWNGRACE, the user 4 Nov: "stop spawn killing and spawn deaths") its own shot no longer ends the protection: the whole 3 s
+	// stand, and what it fires does no harm (NoteHit).  -OLOldSpawnGrace: shooting ends it, as before
+	static const bool bOldGrace = OLFlags::Param(TEXT("OLOldSpawnGrace"));
+	if (bOldGrace) P->ProtectedUntil = FMath::Min(P->ProtectedUntil, Now);
 	if (Phase == EOutlawsDmPhase::Live) ++P->Shots;
 }
 
@@ -423,6 +426,13 @@ bool FOutlawsDeathmatch::NoteHit(int32 Shooter, int32 Victim, double Now)
 	if (Now < V->ProtectedUntil)
 	{
 		UE_LOG(LogOutlaws, Log, TEXT("OLDM hit on %s refused: protected %.1f s more"), *V->Name, V->ProtectedUntil - Now);
+		return false;
+	}
+	// (REQ-SPAWNGRACE) a hit from a protected player deals nothing: a gun, a knife, a punch, a stick that goes off while it lasts
+	static const bool bOldGrace = OLFlags::Param(TEXT("OLOldSpawnGrace"));
+	if (!bOldGrace && S && S != V && Now < S->ProtectedUntil)
+	{
+		UE_LOG(LogOutlaws, Log, TEXT("OLDM hit by %s refused: it is protected %.1f s more"), *S->Name, S->ProtectedUntil - Now);
 		return false;
 	}
 	if (S && S != V && Phase == EOutlawsDmPhase::Live) ++S->Hits;
@@ -594,11 +604,13 @@ void UOutlawsDeathmatchTest::Tick(float DeltaTime)
 	T += 10.0;
 	Dm.Tick(T);
 	Check(Dm.GetPhase() == EOutlawsDmPhase::Live && Respawns == R0 + 4, TEXT("live: all four respawned at spawn points"));
-	// spawn protection: a hit at once is refused, after it counts; shooting ends one's own
+	// spawn protection: a hit at once is refused, after it counts; shooting does not end one's own, and a protected shooter deals nothing
 	Check(!Dm.NoteHit(1, 3, T + 1.0), TEXT("a hit on a fresh spawn is refused"));
 	Check(Dm.NoteHit(1, 3, T + 3.5), TEXT("a hit after the protection counts"));
 	Dm.NoteShot(0, T + 0.5);
-	Check(Dm.NoteHit(1, 0, T + 0.6), TEXT("a fresh spawn who shoots loses the protection"));
+	const bool bOldGrace = OLFlags::Param(TEXT("OLOldSpawnGrace"));
+	Check(Dm.NoteHit(1, 0, T + 3.5) && Dm.Find(0) && (bOldGrace ? Dm.Find(0)->ProtectedUntil <= T + 0.5 : Dm.Find(0)->ProtectedUntil > T + 2.9), TEXT("a fresh spawn who shoots keeps the protection (old: loses it)"));
+	if (!bOldGrace) Check(!Dm.NoteHit(0, 3, T + 1.0), TEXT("a hit from a protected player deals nothing"));
 	// kills, a suicide, the character switch
 	T += 4.0;
 	Dm.SetPendingCharacter(1, TEXT("Bob"));

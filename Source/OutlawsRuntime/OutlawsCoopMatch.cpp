@@ -353,6 +353,16 @@ void UOutlawsCoop::TickMatch(double Now)
 		const int32 Who = K->PlayerIndex;
 		if (Who < 0 || Who >= MaxPlayers) continue;
 		Present[Who] = true;
+		// (REQ-SPAWNGRACE) the rules' spawn protection on the link, for every machine's flash (bots too: they play as players)
+		static const bool bOldGrace = OLFlags::Param(TEXT("OLOldSpawnGrace"));
+		const FOutlawsDmPlayer* Rules = Dm.Find(Who);
+		const bool bGrace = !bOldGrace && Rules && Rules->bAlive && Now < Rules->ProtectedUntil;
+		if (K->bSpawnGrace != bGrace)
+		{
+			K->bSpawnGrace = bGrace;
+			K->ForceNetUpdate();
+			UE_LOG(LogOutlawsCoop, Log, TEXT("OLMATCH the %s's spawn protection %s"), WhoWord(Who), bGrace ? TEXT("starts") : TEXT("is over"));
+		}
 		// (REQ-MPLOBBY: the host once it enters from the lobby; b: a joiner too, which builds the next match's level behind it)
 		const bool bBuilt = Who == 0 ? S->bHostReady : K->BuiltSerial == StartedSerial && (K->bBot || K->bLobbyReady);
 		if (!bBuilt || MatchInRules[Who]) continue;
@@ -596,7 +606,7 @@ bool UOutlawsCoop::ShotAtPlayers(AOutlawsLevelActor* L, const FVector& From, con
 	const uint8 Blow = bScoped && C->InDrawnHead(Best, BestP) ? uint8(EOutlawsMatchBlow::ScopedHead) : uint8(bRifle ? EOutlawsMatchBlow::RifleShot : EOutlawsMatchBlow::Plain);
 	UE_LOG(LogOutlawsCoop, Log, TEXT("OLMATCH shot hits the %s at %.0f m for %.1f%s (%s)"), WhoWord(Best), BestT / 100.0, Damage, Blow == uint8(EOutlawsMatchBlow::ScopedHead) ? TEXT(", scoped, in the head") : bScoped ? TEXT(", scoped") : TEXT(""),
 		C->IsHost() ? TEXT("the host deals it") : TEXT("reported to the host"));
-	L->SpawnBlood(OutAt, Dir, 2);
+	if (!C->SpawnGraceOf(Best) && !C->SpawnGraceOf(C->MyIndex())) L->SpawnBlood(OutAt, Dir, 2);      // (REQ-SPAWNGRACE: it will deal nothing)
 	if (C->IsHost()) C->OnMatchHit(0, C->LevelEpoch(), Best, Damage, OutAt, From, false, Blow, Spot);
 	else if (AOutlawsCoopLink* Mine = C->GetLink(C->MyIndex())) Mine->ServerPlayerHit(C->LevelEpoch(), Best, Damage, OutAt, From, false, Blow, Spot);
 	return true;
@@ -668,6 +678,7 @@ void UOutlawsCoop::OnMatchHit(int32 Shooter, int32 Epoch, int32 Victim, float Da
 		if (AOutlawsLevelActor* L = FindLevel())
 		{
 			L->SetHurtSource(From);
+			TGuardValue<bool> Dealing(bHostDealing, true);      // (REQ-SPAWNGRACE: the rules have just passed it)
 			L->DamagePlayer(Damage, AfterPlate, bPastPlate);
 		}
 	}
@@ -679,6 +690,52 @@ void UOutlawsCoop::OnMatchHit(int32 Shooter, int32 Epoch, int32 Victim, float Da
 	{
 		HurtOther(Damage, AfterPlate, bPastPlate, &From, -1, Victim);
 	}
+}
+
+// ---- REQ-SPAWNGRACE (the user after the Quest test of 4 Nov: "stop spawn killing and spawn deaths") -------------------------------
+// A fresh spawn is invincible and deals no damage for 3 s and flashes while it lasts: its own hands and what they hold on its own
+// view, its sprite on everyone else's.  The rules (FOutlawsDeathmatch) hold the time; every match type comes through OnMatchHit,
+// so a hit from or on a protected player stops at NoteHit whatever struck.  The host writes the state on each player's link each
+// frame (TickMatch): one replicated flag, so a late joiner sees a flash under way and a bot's reaches every machine as a player's.
+// What never came to the host is shielded on the machine it happens on (SpawnGraceShields: own stick, a fall, the floor's hurt).
+// No HUD word, no host option; co-op's story has none of this.  -OLOldSpawnGrace: its own shot ended it, no flash, no shield
+
+bool UOutlawsCoop::SpawnGraceOf(int32 Who) const
+{
+	if (Who < 0 || !IsMatch()) return false;
+	const AOutlawsCoopLink* K = GetLink(Who);
+	return K && K->bSpawnGrace;
+}
+
+bool UOutlawsCoop::SpawnGraceShields(const UObject* Context, float Damage)
+{
+	if (!IsActive(Context)) return false;
+	const UOutlawsCoop* C = Get(Context);
+	if (!C || C->bHostDealing || Damage >= 1.0e5f || !C->SpawnGraceOf(C->MyIndex())) return false;
+	UE_LOG(LogOutlawsCoop, Log, TEXT("OLMATCH hurt dropped here: the %s's spawn protection (%.2f)"), WhoWord(C->MyIndex()), Damage);
+	return true;
+}
+
+bool UOutlawsCoop::SpawnGraceBlast(const AOutlawsLevelActor* L)
+{
+	if (!L || !IsActive(L)) return false;
+	const UOutlawsCoop* C = Get(L);
+	if (!C) return false;
+	return L->bCoopRemoteBlast ? BlastFromGrace : C->SpawnGraceOf(BlastShooter >= 0 ? BlastShooter : C->MyIndex());
+}
+
+float UOutlawsCoop::SpawnGracePulse()
+{
+	// three beats a second: quick enough to read as a flash at any glance, under the rate that troubles the eye on a whole view
+	const double Beat = FMath::Sin(PI * 3.0 * FPlatformTime::Seconds());
+	return float(Beat * Beat);
+}
+
+float UOutlawsCoop::SpawnGraceFlashHere(const UObject* Context)
+{
+	if (!IsActive(Context)) return 0.f;
+	const UOutlawsCoop* C = Get(Context);
+	return C && C->SpawnGraceOf(C->MyIndex()) ? SpawnGracePulse() : 0.f;
 }
 
 void UOutlawsCoop::OnMatchCharacter(int32 Who, const FString& Short)

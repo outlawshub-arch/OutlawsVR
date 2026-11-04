@@ -829,6 +829,7 @@ void AOutlawsLevelActor::DamagePlayer(float Damage, float LocationMult, bool bSk
 	const uint8 Cause = HurtCause;           // (REQ-KILLFEED: this hit's cause, for its death's kill line)
 	HurtCause = 0;
 	if (bDead || Damage <= 0.f || bInvincible || bFrontEnd) { bHurtByBadGuy = false; return; }      // (nothing hurts at the main menu)
+	if (UOutlawsCoop::SpawnGraceShields(this, Damage)) { bHurtByBadGuy = false; return; }           // (REQ-SPAWNGRACE: a match's fresh spawn)
 	++HomWounds;                             // (HM1: the results' Wounds)
 	if (UOutlawsCoop::IsActive(this) && UOutlawsCoop::MenuShields(this, Damage)) return;      // (co-op, 2026-10-02: out of harm in the pause menu)
 	if (HasBadgePower()) Damage *= 0.5f;     // the Sheriff's Badge

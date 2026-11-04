@@ -671,6 +671,7 @@ void UOutlawsCoop::OnHurt(float Damage, float LocationMult, bool bSkipArmour, bo
 	if (bHasFrom && SourceEnemy >= 0 && !bSkipArmour && PlateTakesHurt(L, From, Dealt)) return;
 	if (bHasFrom) L->SetHurtSource(From);
 	L->bHurtByBadGuy = SourceEnemy >= 0;
+	TGuardValue<bool> Dealing(bHostDealing, SourceEnemy < 0);      // (REQ-SPAWNGRACE: a match's hit the host has judged)
 	L->DamagePlayer(Dealt, LocationMult, bSkipArmour);
 	UE_LOG(LogOutlawsCoop, Log, TEXT("OLCOOP hurt by the host: %.2f, health %.1f -> %.1f%s"), Dealt, Before, L->GetHealth(),
 		SourceEnemy >= 0 ? *FString::Printf(TEXT(" (enemy %d's shot, x%.1f where it struck)"), SourceEnemy, LocationMult) : TEXT(""));
@@ -860,6 +861,8 @@ void UOutlawsCoop::TickTest(double Now)
 	else if (TestOnly == TEXT("flicknet")) return;
 	else if (IsHost() && TestOnly == TEXT("mplethal")) TickHostLethalTest(Now, L, P);    // (REQ-MPLETHAL: OutlawsMpLethalProbe.cpp)
 	else if (TestOnly == TEXT("mplethal")) { TickClientBlastRifleTest(L); return; }     // (BUG-BLASTMISS's probe: what the client sees)
+	else if (IsHost() && TestOnly == TEXT("spawngrace")) TickHostSpawnGraceTest(Now, L, P);    // (REQ-SPAWNGRACE: OutlawsSpawnGraceProbe.cpp)
+	else if (TestOnly == TEXT("spawngrace")) { TickClientSpawnGraceTest(L); return; }
 	else if (IsHost() && TestOnly == TEXT("mptntpick")) TickHostTntPickTest(Now, L, P);    // (BUG-MPTNTPICK: OutlawsMpTntPickProbe.cpp)
 	else if (TestOnly == TEXT("mptntpick")) return;
 	else if (IsHost() && TestOnly == TEXT("pausechar")) TickHostPauseCharTest(Now, L, P);  // (REQ-PAUSECHAR: OutlawsPauseCharProbe.cpp)
@@ -1443,6 +1446,10 @@ void UOutlawsCoop::OnTestStep(const FString& Step, int32 Arg)
 	else if (Step.StartsWith(TEXT("ds:")))
 	{
 		OnStrikeTestStep(Step.Mid(3), Arg, L, P);    // (M1's gaps' test: OutlawsCoopMatchStrikes.cpp)
+	}
+	else if (Step.StartsWith(TEXT("sg:")))
+	{
+		OnSpawnGraceTestStep(Step.Mid(3), Arg, L, P);    // (REQ-SPAWNGRACE's probe: OutlawsSpawnGraceProbe.cpp)
 	}
 	else if (Step.StartsWith(TEXT("ml:")))
 	{

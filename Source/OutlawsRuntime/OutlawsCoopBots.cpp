@@ -863,12 +863,12 @@ void UOutlawsCoop::BlastThrowsBots(AOutlawsLevelActor* L, const FVector& From, f
 	// (AOutlawsEnemy::TickFlightAsPlayer), not 31 m at 1 g.  -OLOldBotPush: no push, as before
 	static const bool bOld = OLFlags::Param(TEXT("OLOldBotPush"));
 	UOutlawsCoop* C = L ? Get(L) : nullptr;
-	if (bOld || !C || !C->IsHost() || !C->IsMatch() || !C->bLevelBuilt || RadiusCm <= 0.f) return;
+	if (bOld || !C || !C->IsHost() || !C->IsMatch() || !C->bLevelBuilt || RadiusCm <= 0.f || SpawnGraceBlast(L)) return;     // (REQ-SPAWNGRACE: a protected player's stick throws nobody)
 	const double R = RadiusCm;
 	for (const FBot& B : C->Bots)
 	{
 		AOutlawsEnemy* E = B.Brain.Get();
-		if (!E || B.bDead || E->IsDead()) continue;
+		if (!E || B.bDead || E->IsDead() || C->SpawnGraceOf(B.Who)) continue;
 		const FVector Mid = E->GetActorLocation();
 		const double D = FVector::Dist(From, Mid);
 		if (D >= R || !L->CanSee(From, Mid, E)) continue;
@@ -1939,6 +1939,7 @@ void UOutlawsCoop::BotDrive(FBot& B, AOutlawsLevelActor* L, double Now)
 // ---- dynamite and knives ------------------------------------------------------------------------------------------------
 
 int32 UOutlawsCoop::BlastShooter = -1;
+bool UOutlawsCoop::BlastFromGrace = false;
 float UOutlawsCoop::BlastHostDealt = -1.f;
 uint32 UOutlawsCoop::BlastStruckMask = 0;
 
@@ -2069,6 +2070,27 @@ void UOutlawsCoop::BotThrow(FBot& B, AOutlawsLevelActor* L, double Now)
 	UE_LOG(LogOutlawsAI, Log, TEXT("OLBOT %s throws %s at the %s (%.0f m, %s %.1f m/s; %d sticks, %d knives left)"), *B.Name, Kind == 1 ? TEXT("a stick of dynamite") : TEXT("a knife"), WhoWord(Who), D / 100.0,
 		F.bMoving ? TEXT("moving") : TEXT("standing"), Pace.Size2D() / 100.0, B.Sticks, B.Knives);
 }
+
+#if WITH_OUTLAWS_TESTS
+void UOutlawsCoop::TestBotStick(int32 Who, const FVector& Where, double FuseLeft)
+{
+	// (REQ-SPAWNGRACE's probe: a stick lit in one life that goes off in the next, on the list a bot's throw goes on)
+	const double GoesAt = FPlatformTime::Seconds() + FuseLeft;
+	if (Where.IsZero())
+	{
+		if (GBotFlying.Num() > 0) GBotFlying.Last().EndAt = GoesAt;
+		return;
+	}
+	FBotFlying F;
+	F.Who = Who;
+	F.Kind = 1;
+	F.Pos = Where;
+	F.EndAt = GoesAt;
+	F.bRest = true;
+	F.Epoch = LevelEpoch();
+	GBotFlying.Add(F);
+}
+#endif
 
 void UOutlawsCoop::TickBotThrown(AOutlawsLevelActor* L, double Dt)
 {

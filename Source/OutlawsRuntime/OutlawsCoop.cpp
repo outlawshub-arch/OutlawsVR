@@ -162,6 +162,7 @@ void AOutlawsCoopLink::GetLifetimeReplicatedProps(TArray<FLifetimeProperty>& Out
 	DOREPLIFETIME(AOutlawsCoopLink, NameSerial);
 	DOREPLIFETIME(AOutlawsCoopLink, LevelStats);
 	DOREPLIFETIME(AOutlawsCoopLink, bLateJoin);
+	DOREPLIFETIME(AOutlawsCoopLink, bSpawnGrace);
 	DOREPLIFETIME(AOutlawsCoopLink, JoinSerial);
 	DOREPLIFETIME(AOutlawsCoopLink, JoinState);
 	DOREPLIFETIME(AOutlawsCoopLink, BuildLine);
@@ -336,6 +337,11 @@ void UOutlawsCoop::Initialize(FSubsystemCollectionBase& Collection)
 		// REQ-RIFLEMP's, OutlawsBlastRifleProbe.cpp, runs on the same test)
 		bAuto = bAutoReady = bWorldTest = true;
 		TestOnly = TEXT("mplethal");
+	}
+	if (OLFlags::Param(TEXT("OLSpawnGraceProbe")))
+	{
+		bAuto = bAutoReady = bWorldTest = true;      // (REQ-SPAWNGRACE's probe: OutlawsSpawnGraceProbe.cpp; the host starts the match itself)
+		TestOnly = TEXT("spawngrace");
 	}
 	if (OLFlags::Param(TEXT("OLMpTntPickProbe")) && !OLFlags::ValueIs(TEXT("OLMpTntPickProbe"), TEXT("story")))
 	{

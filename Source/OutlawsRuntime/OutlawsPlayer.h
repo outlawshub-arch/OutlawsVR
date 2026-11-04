@@ -1431,6 +1431,10 @@ private:
 	UPROPERTY(Transient)
 	TArray<TObjectPtr<class UMaterialInstanceDynamic>> HeldMids;
 	float HeldLight = -1.f;
+	float HeldGrace = 0.f;                    // (REQ-SPAWNGRACE) the flash last put on them, 0 to 1
+public:
+	float HeldGraceShown() const { return HeldGrace; }
+private:
 	float HandWaterDim[2] = { 1.f, 1.f };     // (BUG-WATERHANDS) each hand's held gear dimmed under the water (1: not)
 	float HandWaterWant[2] = { 1.f, 1.f };
 	UMaterialInterface* HeldBase() const;

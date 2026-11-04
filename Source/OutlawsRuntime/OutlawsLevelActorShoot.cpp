@@ -413,6 +413,7 @@ void AOutlawsLevelActor::SpawnBlood(const FVector& Where, const FVector& Dir, in
 {
 	// gore (user 2026-09-28): small blood.nwx spatters (its three frames looping) thrown out of the wound, mostly on
 	// along the shot with some spray, falling and gone within the second
+	++BloodSpawns;
 	const TSharedPtr<OutlawsTextures::FSpriteAtlas> Atlas = GetAtlas(TEXT("blood.nwx"), false);
 	const FVector On = Dir.GetSafeNormal();
 	// lit by where it flies, as the bad guy bleeding is (user 2026-09-29: it stayed bright in the dark)
@@ -1163,7 +1164,9 @@ void AOutlawsLevelActor::Explode(const FVector& Where)
 					static const bool bOldBlastPlayer = OLFlags::Param(TEXT("OLOldBlastPlayer"));
 					DamagePlayer(Dealt, bOldBlastPlayer || UOutlawsCoop::IsMatchActive(this) ? 1.f : 0.5f);
 				}
-				if (AOutlawsPlayer* PP = Cast<AOutlawsPlayer>(Pawn)) PP->BlastThrow(From, Dealt);
+				// (REQ-SPAWNGRACE: a fresh spawn is not thrown, and a protected player's stick throws nobody)
+				AOutlawsPlayer* PP = Cast<AOutlawsPlayer>(Pawn);
+				if (PP && !UOutlawsCoop::SpawnGraceShields(this, Dealt) && !UOutlawsCoop::SpawnGraceBlast(this)) PP->BlastThrow(From, Dealt);
 			}
 		}
 	}

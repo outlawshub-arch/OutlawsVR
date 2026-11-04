@@ -178,7 +178,7 @@ bool UOutlawsCoop::ReportStrike(AOutlawsLevelActor* L, int32 Victim, float Damag
 	}
 	++MatchHitsSent;
 	UE_LOG(LogOutlawsCoop, Log, TEXT("OLMATCH %s hits the %s for %.2f (%s)"), Kind, WhoWord(Victim), Damage, IsHost() ? TEXT("the host deals it") : TEXT("reported to the host"));
-	L->SpawnBlood(At, (At - From).GetSafeNormal(), 2);
+	if (!SpawnGraceOf(Victim) && !SpawnGraceOf(Striker > 0 ? Striker : MyIndex())) L->SpawnBlood(At, (At - From).GetSafeNormal(), 2);      // (REQ-SPAWNGRACE: it will deal nothing)
 	const bool bBlast = FCString::Strcmp(Kind, TEXT("dynamite")) == 0;      // (REQ-KILLFEED: "blew up")
 	// (REQ-MPLETHAL) what struck, for the host's word on it
 	const EOutlawsMatchBlow Blow = FCString::Strcmp(Kind, TEXT("a fist")) == 0 ? EOutlawsMatchBlow::Fist

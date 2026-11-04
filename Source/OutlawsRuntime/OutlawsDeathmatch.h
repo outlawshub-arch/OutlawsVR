@@ -122,7 +122,7 @@ struct FOutlawsDmConfig
 	float TimeLimit = 600.f;          // mp_timeToEnd, seconds (0: none)
 	float Countdown = 10.f;
 	float RespawnDelay = 2.f;         // the least time dead before a respawn is granted
-	float SpawnProtect = 3.f;         // a fresh spawn takes no hurt this long (ended early by its own shot)
+	float SpawnProtect = 3.f;         // a fresh spawn takes no hurt and deals none this long (REQ-SPAWNGRACE; -OLOldSpawnGrace: its own shot ended it)
 	float EndShow = 10.f;             // the table at the end, then back to warm-up
 };
 

@@ -1458,6 +1458,7 @@ public:
 	/** Armour takes its share of every hit (the original's rule; in VR too since the plate is worn, REQ-CHESTPLATE). */
 	bool bArmourPassive = true;
 	int32 BlastsSeen = 0;                                          // (the tests': blasts gone off here)
+	int32 BloodSpawns = 0;                                         // (REQ-SPAWNGRACE, the tests': spatters asked for here)
 	float BlastRadiusCm() const { return BlastRadius * 30.f; }      // (pdynam's 50 units)
 	/** BUG-DYNTHROW (OutlawsEnemyThrow.cpp): a bad guy's stick (Kind 1: it flies, lies lit and goes off Fuse seconds after it
 	 *  left his hand, the level's own blast) or knife (2: Damage to the player it strikes, spent on the level), let go at From

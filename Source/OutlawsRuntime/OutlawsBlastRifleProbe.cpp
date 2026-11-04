@@ -402,7 +402,9 @@ void UOutlawsCoop::TickHostBlastRifleTest(double Now, AOutlawsLevelActor* L, AOu
 		FBot* B = FindBot(BotIds[1]);
 		if (Phase == 0)
 		{
-			if (!MatchDead[Client] && !ClientDead() && B && !B->bDead) { TestAt = Now; Phase = 1; }
+			// (REQ-SPAWNGRACE: the striker past its own protection too, a protected player's shot is refused)
+			const FOutlawsDmPlayer* Striker = Dm.Find(J.Pull == 2 ? 0 : Client);
+			if (!MatchDead[Client] && !ClientDead() && B && !B->bDead && Striker && Wall > Striker->ProtectedUntil + 0.3) { TestAt = Now; Phase = 1; }
 			return;
 		}
 		if (Phase == 1)

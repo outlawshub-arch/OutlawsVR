@@ -354,8 +354,10 @@ void UOutlawsCoop::TickHostLethalTest(double Now, AOutlawsLevelActor* L, AOutlaw
 		const TCHAR* VictimWord = Victim == 0 ? TEXT("host") : TEXT("client");
 		if (Phase == 0)
 		{
-			// (and the client striking alive: a dead one's blows are refused, and its respawn would move it off the victim)
-			const bool bReady = Fresh(Victim) && (!J.bClientStrikes || (!MatchDead[Client] && !DeadOf(Client)));
+			// (and the client striking alive: a dead one's blows are refused, and its respawn would move it off the victim; REQ-SPAWNGRACE:
+			// and the striker past its own protection, a protected player's blows are refused too)
+			const FOutlawsDmPlayer* Striker = Dm.Find(J.bClientStrikes ? Client : 0);
+			const bool bReady = Fresh(Victim) && (!J.bClientStrikes || (!MatchDead[Client] && !DeadOf(Client))) && Striker && Wall > Striker->ProtectedUntil + 0.3;
 			if (!bReady && Now - PhaseAt < 40.0) return;
 			if (!bReady) { Check(false, FString::Printf(TEXT("job %d: the %s never came back fresh"), Job, VictimWord)); ++Job; PhaseAt = Now; return; }
 			// the striker beside the victim with what it strikes with in hand; the armour on

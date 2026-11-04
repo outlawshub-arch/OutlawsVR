@@ -345,6 +345,15 @@ void AOutlawsSpriteActor::SetLook(UTexture* Hd)
 	if (MID && bMaskLook) MID->SetTextureParameterValue(TEXT("Mask"), Hd && FireMaskHd ? FireMaskHd.Get() : FireMask.Get());    // (REQ-FIREBRIGHT2)
 }
 
+void AOutlawsSpriteActor::SetFlash(float Amount, float Top)
+{
+	if (Amount == Flash) return;
+	Flash = Amount;
+	FlashTop = Top;
+	if (Amount > 0.f) EnsureMID();
+	if (MID) MID->SetScalarParameterValue(TEXT("Brightness"), LitBrightness());
+}
+
 void AOutlawsSpriteActor::SetLightLevel(int32 Level)
 {
 	if (Level == LightLevel)

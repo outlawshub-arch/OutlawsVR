@@ -138,7 +138,8 @@ void UOutlawsCoop::NoteBlast(AOutlawsLevelActor* L, const FVector& Where, int32 
 	}
 	if (C->IsHost())
 	{
-		C->ForClients([&](AOutlawsCoopLink& CL) { CL.ClientBlast(0, Epoch, Where, Stick); });
+		// (REQ-SPAWNGRACE: a bot's stick goes out as the bot's, for its credit on the far machine)
+		C->ForClients([&](AOutlawsCoopLink& CL) { CL.ClientBlast(BlastShooter >= 0 ? BlastShooter : 0, Epoch, Where, Stick); });
 	}
 	else if (AOutlawsCoopLink* Mine = C->GetLink(C->MyIndex()))
 	{
@@ -348,6 +349,7 @@ void UOutlawsCoop::OnBlast(int32 Who, int32 Epoch, const FVector& Where, int32 S
 			UE_LOG(LogOutlawsCoop, Log, TEXT("OLCOOP blast at %s (%s) from the %s%s"), *Where.ToCompactString(), Me, Other, *StickNote);
 		}
 		TGuardValue<bool> Remote(L->bCoopRemoteBlast, true);
+		TGuardValue<bool> Grace(BlastFromGrace, SpawnGraceOf(Who));      // (REQ-SPAWNGRACE)
 		L->Explode(Where);
 	});
 }

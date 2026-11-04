@@ -215,7 +215,7 @@ void AOutlawsPlayer::BeginPlay()
 		|| OLFlags::Param(TEXT("OLFlickTest")) || OLFlags::Param(TEXT("OLFlickNetTest")) || OLFlags::Param(TEXT("OLReloadGripProbe"))
 		|| OLFlags::Param(TEXT("OLCharLoadoutTest")) || (OLFlags::Has(TEXT("OLTreadTest"))) || OLFlags::Has(TEXT("OLVb2Test"))
 		|| OLFlags::Has(TEXT("OLWaterHandsTest")) || OLFlags::Has(TEXT("OLWheelTopTest")) || OLFlags::Has(TEXT("OLHurtTintTest"))
-		|| OLFlags::Param(TEXT("OLLevelCarryTest")) || OLFlags::ValueIs(TEXT("OLCoopTest"), TEXT("levelcarry")))
+		|| OLFlags::Param(TEXT("OLLevelCarryTest")) || OLFlags::ValueIs(TEXT("OLCoopTest"), TEXT("levelcarry")) || OLFlags::Param(TEXT("OLSpawnGraceProbe")))
 	{
 		BuildHands();                    // the desktop hand pictures
 	}
@@ -757,14 +757,20 @@ void AOutlawsPlayer::UpdateHeldLight(float Dt)
 		const float Dn = FMath::Abs(D - HandWaterWant[H]) < 0.01f ? HandWaterWant[H] : D;
 		if (FMath::Abs(Dn - HandWaterDim[H]) > 0.0005f) { HandWaterDim[H] = Dn; bDimMoved = true; }
 	}
-	if (FMath::Abs(Next - HeldLight) < 0.002f && !bDimMoved)
+	// (REQ-SPAWNGRACE) a match's fresh spawn: the hands and whatever they hold flash on its own view.  The material's own Brightness, the
+	// same on PC and on the headset, from the light it stands in up to the flash's top; HeldLight itself eases on underneath
+	const float Grace = UOutlawsCoop::SpawnGraceFlashHere(this);
+	const bool bGraceMoved = Grace != HeldGrace;
+	if (FMath::Abs(Next - HeldLight) < 0.002f && !bDimMoved && !bGraceMoved)
 	{
 		return;
 	}
 	HeldLight = Next;
+	HeldGrace = Grace;
+	const float Shown = FMath::Lerp(HeldLight, UOutlawsCoop::SpawnGraceBright, Grace);
 	for (UMaterialInstanceDynamic* M : HeldMids)
 	{
-		if (M) M->SetScalarParameterValue(TEXT("Brightness"), HeldLight);
+		if (M) M->SetScalarParameterValue(TEXT("Brightness"), Shown);
 	}
 	for (int32 H = 0; H < 2; ++H)
 	{
@@ -778,7 +784,7 @@ void AOutlawsPlayer::UpdateHeldLight(float Dt)
 			for (int32 i = 0; i < P->GetNumMaterials(); ++i)
 			{
 				UMaterialInstanceDynamic* M = Cast<UMaterialInstanceDynamic>(P->GetMaterial(i));
-				if (M && HeldMids.Contains(M)) M->SetScalarParameterValue(TEXT("Brightness"), HeldLight * HandWaterDim[H]);
+				if (M && HeldMids.Contains(M)) M->SetScalarParameterValue(TEXT("Brightness"), Shown * HandWaterDim[H]);
 			}
 		}
 	}

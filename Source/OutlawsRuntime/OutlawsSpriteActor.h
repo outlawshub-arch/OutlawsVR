@@ -103,7 +103,10 @@ public:
 	bool bFullBright = false;
 	/** The material's Brightness: the sector light in display space, as the Jedi colour maps apply it, or 1 full bright
 	 *  (REQ-FIREBRIGHT2: but the sector light again while the fire material's mask keeps the flame's pixels bright). */
-	float LitBrightness() const { return bFullBright && !bMaskLook ? 1.f : FMath::Pow(FMath::Clamp(LightLevel, 0, 31) / 31.f, 2.2f); }
+	float LitBrightness() const { const float Lit = bFullBright && !bMaskLook ? 1.f : FMath::Pow(FMath::Clamp(LightLevel, 0, 31) / 31.f, 2.2f); return Flash > 0.f ? FMath::Lerp(Lit, FlashTop, Flash) : Lit; }
+	/** REQ-SPAWNGRACE: a flash on the whole sprite, Amount 0 (none) to 1 (Brightness Top), whatever light it stands in. */
+	void SetFlash(float Amount, float Top);
+	float FlashShown() const { return Flash; }
 	/** REQ-FIREBRIGHT2: the atlas's mask of the pixels the light dims (AOutlawsLevelActor::SpriteMaterialFor), for the 8-bit
 	 *  look and the HD one; set before FinishSpawning with M_OLR_SpriteFire on the quad. */
 	UPROPERTY(Transient)
@@ -327,6 +330,7 @@ private:
 	bool EnsureMID();
 	/** (REQ-FIREBRIGHT2) the MID's light: the fire mask for the look shown when its material takes one, and Brightness. */
 	void ApplyLitLook();
+	float Flash = 0.f, FlashTop = 1.f;     // (REQ-SPAWNGRACE) SetFlash's
 	void ApplyCell(int32 Cell);
 	/** (BUG-DRIPABOVE) ApplyCell, or for -1 (a frame with nothing to draw) the quad hidden while it is on. */
 	void ShowCell(int32 Cell);

@@ -604,6 +604,9 @@ void AOutlawsRemotePlayer::Tick(float DeltaSeconds)
 		if (S) S->SetActorHiddenInGame(true);
 		return;
 	}
+	// (REQ-SPAWNGRACE) a match's fresh spawn flashes for everyone else, by the host's word on its link (a joiner in late too); PC and
+	// headset alike: the sprite's own Brightness, whatever light it stands in
+	if (S) S->SetFlash(L->bSpawnGrace ? UOutlawsCoop::SpawnGracePulse() : 0.f, UOutlawsCoop::SpawnGraceBright);
 	// REQ-MPLOBBY: a player still in the lobby is not in the level (its pose is its pawn at the level's start): nothing of it
 	// drawn here, no plate, no lantern; drawn from its own place once it enters (no easing from the start)
 	const bool bLobby = UOutlawsCoop::InLobbyFor(this, PlayerIndex);
