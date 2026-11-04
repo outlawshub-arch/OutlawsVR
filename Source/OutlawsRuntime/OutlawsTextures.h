@@ -89,6 +89,10 @@ namespace OutlawsTextures
 		int32 LandRow = -1;
 		float LandCover = 0.f;
 		const TCHAR* LandHow = TEXT("none");
+		// (REQ-SKYDOME) the plain colour over a land sky's top: Top, or (bOverBlue) the picture's bluest row when its top rows are pale
+		FLinearColor Over = FLinearColor(0.07f, 0.12f, 0.31f);
+		bool bOverBlue = false;
+		int32 OverRow = -1;
 	};
 	OUTLAWSRUNTIME_API bool SkyLook(const FOutlawsAssets& A, const FString& Name, const TArray<FColor>& Palette, FOutlawsSkyLook& Out);
 	/** (REQ-SKYDOME, the census) the same from a PCX's bytes. */

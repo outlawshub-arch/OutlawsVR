@@ -257,6 +257,8 @@ OL_SHOT_TEST(OLSkyDomeProbe, 2155)
 			Check(FootDeg <= 0.f && FootDeg >= -3.f, FString::Printf(TEXT("the land's foot %.2f degrees from the horizon (want 0 to 3 under it)"), FootDeg));
 			Check(!D.bWrap && !D.bCloudLayer, FString::Printf(TEXT("no second copy up the dome (wrap %d) and no cloud layer (%d)"), D.bWrap ? 1 : 0, D.bCloudLayer ? 1 : 0));
 			Check(TopDeg < 60.f && Spread >= 0.0 && Spread < 4.0, FString::Printf(TEXT("the zenith one colour: the up view's middle spread %.2f (want under 4; the picture's top colour alone from %.0f degrees up)"), Spread, TopDeg));
+			// (user 3 Nov ~23:4x: armad's overhead colour bluer) no land sky near white overhead
+			Check(Mean.Z - Mean.X > 30.0, FString::Printf(TEXT("the overhead colour reads blue, not near white: the up view's mean %.0f %.0f %.0f (want blue over red by more than 30)"), Mean.X, Mean.Y, Mean.Z));
 		}
 		else
 		{

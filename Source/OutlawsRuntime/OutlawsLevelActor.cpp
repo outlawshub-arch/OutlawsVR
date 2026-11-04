@@ -1368,7 +1368,8 @@ void AOutlawsLevelActor::Build()
 			SkySurfaceMid->SetScalarParameterValue(TEXT("Wrap"), bTiles ? 1.f : 0.f);
 			SkySurfaceMid->SetScalarParameterValue(TEXT("LandV"), LandV);
 			SkySurfaceMid->SetScalarParameterValue(TEXT("LandDrop"), LandDrop);
-			SkySurfaceMid->SetVectorParameterValue(TEXT("FadeColour"), Look.Top);
+			const FLinearColor DomeTop = bLand ? Look.Over : Look.Top;      // (a pale land sky: its bluest row, armad, SkyLookPcx)
+			SkySurfaceMid->SetVectorParameterValue(TEXT("FadeColour"), DomeTop);
 			// the dome shows the same picture the same way, so it and the sky surfaces meet seamlessly
 			if (SkyMesh) SkyMesh->SetMaterial(0, SkySurfaceMid);
 			UE_LOG(LogOutlaws, Log, TEXT("OLRT sky %s %dx%d: %s (band %.1f, seam %.1f, rows %.1f), %.0f up the dome"), *SkyStem, SkyInfo.W, SkyInfo.H,
@@ -1378,7 +1379,7 @@ void AOutlawsLevelActor::Build()
 			if (bLooked && Look.bTiles && Look.bLand)
 			{
 				UE_LOG(LogOutlaws, Log, TEXT("OLRT sky %s: its land's foot at row %d of %d (%s, %.0f%% of its columns)%s"), *SkyStem, Look.LandRow, Look.H, Look.LandHow,
-					100.f * Look.LandCover, bOldSkyDome ? TEXT(", taken as tiling (-OLOldSkyDome)") : TEXT(": 1 degree under the horizon, its top colour above, no cloud layer"));
+					100.f * Look.LandCover, bOldSkyDome ? TEXT(", taken as tiling (-OLOldSkyDome)") : Look.bOverBlue ? *FString::Printf(TEXT(": 1 degree under the horizon, row %d's blue above, no cloud layer"), Look.OverRow) : TEXT(": 1 degree under the horizon, its top colour above, no cloud layer"));
 			}
 			SkyDome.Stem = SkyStem;
 			SkyDome.W = SkyInfo.W;
@@ -1391,7 +1392,7 @@ void AOutlawsLevelActor::Build()
 			SkyDome.LandV = LandV;
 			SkyDome.LandDrop = LandDrop;
 			SkyDome.bWrap = bTiles;
-			SkyDome.Fade = Look.Top;
+			SkyDome.Fade = DomeTop;
 			// (BUG-TRAINSKY, user 2026-10-12) the train's sky picture looks broken through the dome and cloud layer: this level alone
 			// gets a plain gradient dome, sky blue from the top to halfway down, then to a lighter, whiter blue at the horizon
 			bGradientSky = LevelName.Equals(TEXT("train"), ESearchCase::IgnoreCase);

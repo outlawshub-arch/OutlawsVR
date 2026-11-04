@@ -422,6 +422,29 @@ bool OutlawsTextures::SkyLookPcx(const TArray<uint8>& Bytes, const TArray<FColor
 			Out.LandHow = TEXT("edge");
 		}
 	}
+	// (REQ-SKYDOME, user 3 Nov ~23:4x: armad's overhead colour should be bluer) a land sky whose top rows are pale (armad's thin
+	// cloud, near white once drawn; frostbi's and isla's tops are a full blue already) goes up to its picture's bluest row instead,
+	// by the row means' saturation: armad's is the first row under its land, the deep end of the rows meant for over the top
+	// -OLOldSkyBlue: its top rows' colour as landed
+	Out.Over = Out.Top;
+	static const bool bOldSkyBlue = OLFlags::Param(TEXT("OLOldSkyBlue"));
+	auto Saturation = [](const FVector& C)
+	{
+		const double Hi = FMath::Max3(C.X, C.Y, C.Z), Lo = FMath::Min3(C.X, C.Y, C.Z);
+		return Hi > 0.0 ? (Hi - Lo) / Hi : 0.0;
+	};
+	if (Out.bLand && Saturation(Top) < 0.4 && !bOldSkyBlue)
+	{
+		double Best = -1.0;
+		FVector Blue = Top;
+		for (int32 y = 0; y < H; ++y)
+		{
+			const FVector M = RowMean(y);
+			if (M.Z >= M.X && Saturation(M) > Best) { Best = Saturation(M); Blue = M; Out.OverRow = y; }
+		}
+		Out.Over = FLinearColor(FColor(uint8(FMath::RoundToInt(Blue.X)), uint8(FMath::RoundToInt(Blue.Y)), uint8(FMath::RoundToInt(Blue.Z))));
+		Out.bOverBlue = true;
+	}
 	return true;
 }
 
