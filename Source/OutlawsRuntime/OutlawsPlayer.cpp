@@ -998,6 +998,12 @@ bool AOutlawsPlayer::OldSwimStack()
 	return bOld;
 }
 
+bool AOutlawsPlayer::OldSwimWeak()
+{
+	static const bool bOld = OLFlags::Param(TEXT("OLOldSwimWeak"));     // (BUG-SWIMWEAK's before: the arms' own swim a step a frame)
+	return bOld;
+}
+
 bool AOutlawsPlayer::SwimStackMaxMin()
 {
 	static const bool bOn = OLFlags::Param(TEXT("OLSwimStackMaxMin"));  // (REQ-SWIMUPDOWN's first stacking: max + share x min)
@@ -2837,7 +2843,8 @@ void AOutlawsPlayer::SwimStrokes(float Dt)
 	if ((!bVR && !GSwimStrokeTest) || !bSwimming || !M || M->MovementMode != MOVE_Flying)
 	{
 		SwimCarry = FVector::ZeroVector;          // (out of the water: nothing left owed)
-		SwimArmVel = FVector::ZeroVector;
+		SwimArmVel = SwimArmCarry = FVector::ZeroVector;
+		SwimArmOwed = 0.f;
 		StrokeDiveCharge = 0.f;
 		if (M) M->BrakingDecelerationFlying = 600.f;
 		return;
@@ -2847,21 +2854,6 @@ void AOutlawsPlayer::SwimStrokes(float Dt)
 	// (user 2026-10-03: the push "ends too quick"): the water slows a gliding body less than one at rest, and what is
 	// left of the last strokes' push keeps coming over the next half second or so
 	M->BrakingDecelerationFlying = Now < StrokeGlideUntil ? 250.f : 600.f;
-	// (REQ-SWIMUPDOWN's stacking) the arms' own swim glides down as the fly mode glides a body with nothing on the stick: its
-	// braking (BrakingDecelerationFlying, and twice the fluid friction), then the fluid friction; and, as the engine's braking
-	// does, under 10 cm/s (BRAKE_TO_STOP_VELOCITY) it stops dead: a gentle stroke's few cm/s a frame on its own never builds
-	{
-		const float Fr = 0.5f * (GetPhysicsVolume() ? GetPhysicsVolume()->FluidFriction : 0.3f);
-		const float Was = float(SwimArmVel.Size());
-		if (Was > 0.f)
-		{
-			float Left = FMath::Max(0.f, Was - (2.f * Fr * Was + M->BrakingDecelerationFlying) * Dt);
-			if (Left < 10.f) Left = 0.f;
-			Left *= 1.f - FMath::Min(Fr * Dt, 1.f);
-			SwimArmVel *= Left / Was;
-		}
-		if (bSurfaceLocked) SwimArmVel.Z = 0.0;
-	}
 	const FVector Start = M->Velocity;
 	const FVector Due = SwimCarry * (1.0 - FMath::Exp(-Dt / 0.4));
 	SwimCarry -= Due;
@@ -2877,12 +2869,66 @@ void AOutlawsPlayer::SwimStrokes(float Dt)
 		const float Before = float(M->Velocity.Size());
 		if (Room > 0.0) M->Velocity += Dn * FMath::Min(D.Size(), Room);
 		M->Velocity = M->Velocity.GetClampedToMaxSize(FMath::Max(Cap, Before));
-		// (and the arms' own swim, the same)
-		const double ArmRoom = Cap - FVector::DotProduct(SwimArmVel, Dn);
-		const float ArmBefore = float(SwimArmVel.Size());
-		if (ArmRoom > 0.0) SwimArmVel += Dn * FMath::Min(D.Size(), ArmRoom);
-		SwimArmVel = SwimArmVel.GetClampedToMaxSize(FMath::Max(Cap, ArmBefore));
 	}
+	// (REQ-SWIMUPDOWN's stacking) the arms' own swim, a step of it (Step seconds, P the strokes' push): it glides down as the fly
+	// mode glides a body with nothing on the stick: its braking (BrakingDecelerationFlying, and twice the fluid friction), then
+	// the fluid friction; and, as the engine's braking does, under 10 cm/s (BRAKE_TO_STOP_VELOCITY) it stops dead: a gentle
+	// stroke's few cm/s a frame on its own never builds.  Then the push still to come and the stroke's, as the body gets them
+	auto ArmStep = [&](float Step, const FVector& P)
+	{
+		const float Fr = 0.5f * (GetPhysicsVolume() ? GetPhysicsVolume()->FluidFriction : 0.3f);
+		const float Was = float(SwimArmVel.Size());
+		if (Was > 0.f)
+		{
+			float Left = FMath::Max(0.f, Was - (2.f * Fr * Was + M->BrakingDecelerationFlying) * Step);
+			if (Left < 10.f) Left = 0.f;
+			Left *= 1.f - FMath::Min(Fr * Step, 1.f);
+			SwimArmVel *= Left / Was;
+		}
+		if (bSurfaceLocked) SwimArmVel.Z = 0.0;
+		const FVector ArmDue = SwimArmCarry * (1.0 - FMath::Exp(-Step / 0.4));
+		SwimArmCarry -= ArmDue;
+		if (!ArmDue.IsNearlyZero())
+		{
+			const FVector D = bSurfaceLocked ? FVector(ArmDue.X, ArmDue.Y, 0.0) : ArmDue;
+			const FVector Dn = D.GetSafeNormal();
+			const double ArmRoom = Cap - FVector::DotProduct(SwimArmVel, Dn);
+			const float ArmBefore = float(SwimArmVel.Size());
+			if (ArmRoom > 0.0) SwimArmVel += Dn * FMath::Min(D.Size(), ArmRoom);
+			SwimArmVel = SwimArmVel.GetClampedToMaxSize(FMath::Max(Cap, ArmBefore));
+		}
+		if (P.IsNearlyZero()) return;
+		const FVector Way = P.GetSafeNormal();
+		SwimArmCarry += P * (0.5 * Step);
+		const float CarryAlong = static_cast<float>(FVector::DotProduct(SwimArmCarry, Way));
+		if (CarryAlong > Cap) SwimArmCarry -= Way * (CarryAlong - Cap);
+		FVector A = SwimArmVel + P * (0.5 * Step);
+		const float ArmAlong = static_cast<float>(FVector::DotProduct(A, Way));
+		if (ArmAlong > Cap) A -= Way * (ArmAlong - Cap);
+		SwimArmVel = A.GetClampedToMaxSize(FMath::Max(Cap, float(SwimArmVel.Size())));
+	};
+	// BUG-SWIMWEAK (found by REQ-SWIMUPDOWN2's probe, 4 Nov: the same weak stroke read 13 cm/s or 159 and both with the stick 143
+	// or 173 against the rule's 140): a frame's push grows with the frame's length and the 10 cm/s stop does not, so at 72 a
+	// second a weak stroke's frames (8 cm/s each, wiped by the stop) stay under it and one frame a few ms late goes over it, and
+	// from there the frames add up: same strokes, two speeds.  (60 runs of one stroke: 16 with every stroke frame on time all read
+	// 12.9, of 44 with one late 30 went over 100.)  The arms' own swim is the rule's number, so it runs in steps of the usual
+	// frame (the shortest lately, up 0.2 % a frame): a late frame is two usual ones, as if on time; past a dropped frame the
+	// hand's reading is stale, the rest of it a glide.  On time it is one step of the frame, as before, and the body's own swim
+	// is not touched: a stroke on the edge alone can still catch on a late frame, the stop is the engine's.  -OLOldSwimWeak: a
+	// step a frame
+	auto ArmSwim = [&](const FVector& P)
+	{
+		if (OldSwimWeak())
+		{
+			ArmStep(Dt, P);
+			return;
+		}
+		SwimUsualDt = FMath::Max(FMath::Min(Dt, SwimUsualDt > 0.f ? SwimUsualDt * 1.002f : Dt), 1.f / 200.f);
+		SwimArmOwed += Dt;
+		const int32 Steps = FMath::RoundToInt(SwimArmOwed / SwimUsualDt);
+		SwimArmOwed -= Steps * SwimUsualDt;
+		for (int32 i = 0; i < Steps; ++i) ArmStep(SwimUsualDt, i < 2 ? P : FVector::ZeroVector);
+	};
 	auto Stack = [&]()
 	{
 		// REQ-SWIMUPDOWN's stacking (user 3 Nov: "arm swimming STACKS on top of left-stick swimming and nearly doubles the
@@ -2934,6 +2980,7 @@ void AOutlawsPlayer::SwimStrokes(float Dt)
 	}
 	// (the surface holds the body, UpdateGravity: the stroke runs along it)
 	if (bSurfaceLocked) Push.Z = 0.0;
+	ArmSwim(Push);
 	if (Push.IsNearlyZero())
 	{
 		Stack();
@@ -2954,11 +3001,6 @@ void AOutlawsPlayer::SwimStrokes(float Dt)
 	// (and no faster overall: a stroke across the stick's swim, or a current, adds nothing past it)
 	V = V.GetClampedToMaxSize(FMath::Max(Cap, float(M->Velocity.Size())));
 	M->Velocity = V;
-	// (REQ-SWIMUPDOWN's stacking) the same push to the arms' own swim
-	FVector A = SwimArmVel + Push * (0.5 * Dt);
-	const float ArmAlong = static_cast<float>(FVector::DotProduct(A, Way));
-	if (ArmAlong > Cap) A -= Way * (ArmAlong - Cap);
-	SwimArmVel = A.GetClampedToMaxSize(FMath::Max(Cap, float(SwimArmVel.Size())));
 	Stack();
 }
 

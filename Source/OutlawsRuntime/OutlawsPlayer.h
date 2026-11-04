@@ -1691,8 +1691,14 @@ private:
 	 *  reading ("measured against the stick's speed"): both together go at most max(arms, (1 + SwimStackShare()) x stick);
 	 *  each alone as before.  SwimArmVel is the arms' own swim, what the strokes alone would give the body (their push,
 	 *  glided down as the water glides the body).  ol.SwimStackShare (0.3) tunes it; -OLSwimStackMaxMin: the first one's
-	 *  max(stick, arms) + share x min(stick, arms); -OLOldSwimStack: the two added, as before. */
+	 *  max(stick, arms) + share x min(stick, arms); -OLOldSwimStack: the two added, as before.
+	 *  BUG-SWIMWEAK: it runs in steps of the usual frame (SwimUsualDt, what is owed in SwimArmOwed, its own SwimArmCarry), so a
+	 *  frame that runs late cannot lift a weak stroke over the fly mode's 10 cm/s stop in it; -OLOldSwimWeak: a step a frame. */
 	FVector SwimArmVel = FVector::ZeroVector;
+	FVector SwimArmCarry = FVector::ZeroVector;
+	float SwimUsualDt = 0.f;
+	float SwimArmOwed = 0.f;
+	static bool OldSwimWeak();
 	static bool OldSwimStack();
 	static bool SwimStackMaxMin();
 	static float SwimStackShare();

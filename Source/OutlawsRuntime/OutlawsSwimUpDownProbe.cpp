@@ -3,7 +3,7 @@
 // swimming on top of the stick's nearly doubled the speed; REQ-SWIMUPDOWN2, the user's answers: both together at most
 // max(arms, 1.3 x stick), and a held jump climbs out at an edge by itself):
 // -OLShots -OLNoFrontEnd -OLLevel=hideout -OLSwimUpDownProbe[=vr] [-OLSwimUpDownSector=N] [-OLOldSwimUpDown] [-OLOldSwimStack]
-// [-OLSwimStackMaxMin] [-OLOldSwimClimb].
+// [-OLSwimStackMaxMin] [-OLOldSwimClimb] [-OLOldSwimWeak].
 // In the level's deepest water (DebugWaterSector; hideout's shaft 64, 11 m deep), at the Movement Speed dial's 100 %, each
 // case put in place and settled:
 //   up        from near the floor, jump held (the desktop's Space; =vr the turn stick pushed up): the speed up reaches the
@@ -25,6 +25,9 @@
 // so the shaft's sides never stop it, and the swim's own speed read): across, the stick alone, the arms alone (a hard swing;
 // a breaststroke's rhythm), both; up, the stick looking up, the arms looking up, both, the held swim up, the held swim up
 // and the arms; then the table's one line.  -OLSwimStackMaxMin: the first one's max + 0.3 x min.  -OLOldSwimStack: as before.
+// BUG-SWIMWEAK: a weak stroke (2.0 m/s) with the stick held to the stick's limit whatever the arms alone read, and a sweep of
+// stroke strengths: the arms alone on time, then both with a frame late in each stroke (about a dropped frame at 72 a second),
+// never past the limit at any of them.  -OLOldSwimWeak: the late frame must take both past it at one strength at least.
 // Lines "OLSHOT swimupdown <case>: ...", "OLSHOT swimupdown check PASS|FAIL: ..." and "OLSHOT swimupdown RESULT".
 
 #include "OutlawsPlayer.h"
@@ -38,6 +41,7 @@
 #include "GameFramework/Controller.h"
 #include "Engine/World.h"
 #include "HAL/PlatformMisc.h"
+#include "HAL/PlatformProcess.h"
 #include "HAL/IConsoleManager.h"
 
 #if WITH_OUTLAWS_TESTS
@@ -61,6 +65,9 @@ namespace OutlawsSwimUpDownLocal
 		float Pitch = 0.f;       // the view's pitch
 		bool bUpHeld = false;    // the jump held
 		bool bAcross = true;     // measured across (else up)
+		// (BUG-SWIMWEAK's sweep)
+		float Hand = 0.f;        // the hands' speed in a Weak rhythm (cm/s; else the weak stroke's 200)
+		bool bLate = false;      // a frame late in each stroke
 	};
 	const FCase SwimCases[] = {
 		{ TEXT("up"), Up, 2.0f }, { TEXT("down"), Down, 2.0f }, { TEXT("tosurface"), ToSurface, 4.0f },
@@ -72,6 +79,16 @@ namespace OutlawsSwimUpDownLocal
 		{ TEXT("across both short"), Stack, 2.6f, true, Short, 0.f }, { TEXT("across arms weak"), Stack, 2.6f, false, Weak, 0.f },
 		{ TEXT("across both weak"), Stack, 2.6f, true, Weak, 0.f }, { TEXT("across arms light"), Stack, 3.6f, false, Light, 0.f },
 		{ TEXT("across both light"), Stack, 3.6f, true, Light, 0.f },
+		{ TEXT("sweep arms 130"), Stack, 2.6f, false, Weak, 0.f, false, true, 130.f }, { TEXT("sweep both 130"), Stack, 2.6f, true, Weak, 0.f, false, true, 130.f, true },
+		{ TEXT("sweep arms 150"), Stack, 2.6f, false, Weak, 0.f, false, true, 150.f }, { TEXT("sweep both 150"), Stack, 2.6f, true, Weak, 0.f, false, true, 150.f, true },
+		{ TEXT("sweep arms 170"), Stack, 2.6f, false, Weak, 0.f, false, true, 170.f }, { TEXT("sweep both 170"), Stack, 2.6f, true, Weak, 0.f, false, true, 170.f, true },
+		{ TEXT("sweep arms 190"), Stack, 2.6f, false, Weak, 0.f, false, true, 190.f }, { TEXT("sweep both 190"), Stack, 2.6f, true, Weak, 0.f, false, true, 190.f, true },
+		{ TEXT("sweep arms 200"), Stack, 2.6f, false, Weak, 0.f, false, true, 200.f }, { TEXT("sweep both 200"), Stack, 2.6f, true, Weak, 0.f, false, true, 200.f, true },
+		{ TEXT("sweep arms 205"), Stack, 2.6f, false, Weak, 0.f, false, true, 205.f }, { TEXT("sweep both 205"), Stack, 2.6f, true, Weak, 0.f, false, true, 205.f, true },
+		{ TEXT("sweep arms 210"), Stack, 2.6f, false, Weak, 0.f, false, true, 210.f }, { TEXT("sweep both 210"), Stack, 2.6f, true, Weak, 0.f, false, true, 210.f, true },
+		{ TEXT("sweep arms 215"), Stack, 2.6f, false, Weak, 0.f, false, true, 215.f }, { TEXT("sweep both 215"), Stack, 2.6f, true, Weak, 0.f, false, true, 215.f, true },
+		{ TEXT("sweep arms 220"), Stack, 2.6f, false, Weak, 0.f, false, true, 220.f }, { TEXT("sweep both 220"), Stack, 2.6f, true, Weak, 0.f, false, true, 220.f, true },
+		{ TEXT("sweep arms 230"), Stack, 2.6f, false, Weak, 0.f, false, true, 230.f }, { TEXT("sweep both 230"), Stack, 2.6f, true, Weak, 0.f, false, true, 230.f, true },
 		{ TEXT("up stick looking up"), Stack, 2.6f, true, NoArms, 80.f, false, false },
 		{ TEXT("up arms looking up"), Stack, 2.6f, false, Stroke, 80.f, false, false },
 		{ TEXT("up both looking up"), Stack, 2.6f, true, Stroke, 80.f, false, false },
@@ -91,6 +108,9 @@ namespace OutlawsSwimUpDownLocal
 	TArray<FSample> Samples;
 	TMap<FString, float> Means;                 // (the stacking's means, for the rule's check)
 	float GameSpeedWas = 0.5f, FpsWas = -1.f;
+	int32 LateStroke = -1, OverLimit = 0;       // (BUG-SWIMWEAK's sweep: the stroke with its late frame done; strengths past the limit)
+	float LongestDt = 0.f, SweepLimit = 0.f, SweepArms = 0.f;
+	bool bOldWeak = false;
 
 	void Check(bool bOk, const FString& What)
 	{
@@ -116,6 +136,7 @@ OL_SHOT_TEST(OLSwimUpDownProbe, 1920)
 		bOldStack = OLFlags::Param(TEXT("OLOldSwimStack"));
 		bMaxMin = SwimStackMaxMin();
 		bOldClimb = OldSwimClimb();
+		bOldWeak = OldSwimWeak();
 		GameSpeedWas = L->GameSpeed;
 		// at the headset's frame rate (the Quest's 72; -OLSwimUpDownFps=N, 0 as it comes): the fly mode's stop under 10 cm/s
 		// makes a stroke's push a frame count, so the arms' numbers go with the rate
@@ -126,8 +147,8 @@ OL_SHOT_TEST(OLSwimUpDownProbe, 1920)
 			FpsWas = MaxFps->GetFloat();
 			MaxFps->Set(Fps, ECVF_SetByCode);
 		}
-		UE_LOG(LogOutlaws, Display, TEXT("OLSHOT swimupdown start: %s, %s, %s, %s, %s, stack share %.2f, at %.0f frames a second"), *L->LevelName, bOldUD ? TEXT("-OLOldSwimUpDown") : TEXT("new up/down"),
-			StackMode(), bOldClimb ? TEXT("-OLOldSwimClimb") : TEXT("held climb"), bVRMode ? TEXT("vr") : TEXT("flat"), SwimStackShare(), Fps);
+		UE_LOG(LogOutlaws, Display, TEXT("OLSHOT swimupdown start: %s, %s, %s, %s, %s, %s, stack share %.2f, at %.0f frames a second"), *L->LevelName, bOldUD ? TEXT("-OLOldSwimUpDown") : TEXT("new up/down"),
+			StackMode(), bOldWeak ? TEXT("-OLOldSwimWeak") : TEXT("arms in usual steps"), bOldClimb ? TEXT("-OLOldSwimClimb") : TEXT("held climb"), bVRMode ? TEXT("vr") : TEXT("flat"), SwimStackShare(), Fps);
 	}
 	if (bVRMode) { bVR = true; BaseGravityScale = 1.5f; }     // (the headset's rules, this run only)
 	auto Release = [&]()
@@ -145,6 +166,8 @@ OL_SHOT_TEST(OLSwimUpDownProbe, 1920)
 		GSwimStrokeTest = false;
 		L->GameSpeed = GameSpeedWas;
 		if (IConsoleVariable* MaxFps = IConsoleManager::Get().FindConsoleVariable(TEXT("t.MaxFPS")); MaxFps && FpsWas >= 0.f) MaxFps->Set(FpsWas, ECVF_SetByCode);
+		// (the old's fault, shown: a late frame in a stroke takes both past the limit)
+		if (bOldWeak && !bOldStack && !bMaxMin && Means.Num() > 0) Check(OverLimit > 0, FString::Printf(TEXT("-OLOldSwimWeak: a late frame took both past the limit at %d strengths"), OverLimit));
 		if (Means.Num() > 0)
 		{
 			// the stacking's table in one line (cm/s across): the stick, then the arms alone and both, hard, short and light
@@ -207,6 +230,7 @@ OL_SHOT_TEST(OLSwimUpDownProbe, 1920)
 	if (!(CaseI < int32(UE_ARRAY_COUNT(SwimCases)))) { Finish(); return; }
 	const FCase& C = SwimCases[CaseI];
 	if (C.Kind == Stack && bVRMode) { ++CaseI; return; }         // (the stacking: the desktop run's, the strokes driven by hand there)
+	if (C.Hand > 0.f && (bOldStack || bMaxMin)) { ++CaseI; return; }     // (the sweep goes by the rule against the stick)
 	const float CaseYaw = C.Kind == Stack ? Across : C.Kind == EdgeUp || C.Kind == EdgeOut ? EdgeYaw : SurfYaw;
 	auto Put = [&](float Middle)
 	{
@@ -248,8 +272,10 @@ OL_SHOT_TEST(OLSwimUpDownProbe, 1920)
 		Put(Start);
 		// (nothing left of the case before's strokes: the velocity is zeroed by Put, the carry, the arms' own swim and the glide
 		// are not, and strokes that start over the fly mode's 10 cm/s stop go at their full speed, those under it hardly at all)
-		SwimCarry = SwimArmVel = FVector::ZeroVector;
+		SwimCarry = SwimArmVel = SwimArmCarry = FVector::ZeroVector;
 		StrokeUntil = StrokeGlideUntil = 0.0;
+		LateStroke = -1;
+		LongestDt = 0.f;
 		StartMid = Start;
 		T = 0.f;
 		Samples.Reset();
@@ -298,6 +324,7 @@ OL_SHOT_TEST(OLSwimUpDownProbe, 1920)
 		return;
 	}
 	// the measure, every frame
+	LongestDt = FMath::Max(LongestDt, Dt);
 	const float Vz = (Mid - PrevMid) / FMath::Max(Dt, 1e-4f);
 	PrevMid = Mid;
 	const bool bHeldNow = T <= HoldFor;
@@ -308,8 +335,14 @@ OL_SHOT_TEST(OLSwimUpDownProbe, 1920)
 		// 10 cm/s stop a frame at 72 a second); a light one (2.6 m/s for 0.1 s of every 1.5 s: alone, under the stick's speed)
 		const float Part = C.Arms == Short ? 0.2f : C.Arms == Light ? 0.1f : 0.4f;
 		const bool bSwing = C.Arms == Hard || (C.Arms != NoArms && FMath::Fmod(T, C.Arms == Light ? 1.5f : 1.0f) < Part);
-		const float HandSpeed = C.Arms == Hard ? 400.f : C.Arms == Short || C.Arms == Light ? 260.f : C.Arms == Weak ? 200.f : 250.f;
+		const float HandSpeed = C.Arms == Hard ? 400.f : C.Arms == Short || C.Arms == Light ? 260.f : C.Hand > 0.f ? C.Hand : C.Arms == Weak ? 200.f : 250.f;
 		HandVelocity[0] = HandVelocity[1] = bSwing && bHeldNow ? FVector(0.0, 0.0, -HandSpeed) : FVector::ZeroVector;
+		// (BUG-SWIMWEAK's sweep: a frame late at each stroke's middle, about a dropped frame at 72 a second: what flips a weak stroke)
+		if (C.bLate && bSwing && bHeldNow && FMath::Fmod(T, 1.0f) >= 0.2f && int32(T) != LateStroke)
+		{
+			LateStroke = int32(T);
+			FPlatformProcess::Sleep(0.022f);
+		}
 		if (C.bStick && bHeldNow) HoldMoveStick(FVector2D(0.0, 1.0), 0.2f);
 		// the body held where it is across (the shaft's sides would stop it; the swim's own speed is what is read)
 		SetActorLocation(FVector(Plan.X, Plan.Y, GetActorLocation().Z), false, nullptr, ETeleportType::TeleportPhysics);
@@ -458,8 +491,8 @@ OL_SHOT_TEST(OLSwimUpDownProbe, 1920)
 		int32 ArmN = 0;
 		for (const FSample& S : Samples) if (S.T >= From && S.T <= HoldFor) { ArmMean += S.Arm; ArmPeak = FMath::Max(ArmPeak, S.Arm); ++ArmN; }
 		ArmMean = ArmN ? ArmMean / ArmN : 0.f;
-		UE_LOG(LogOutlaws, Display, TEXT("OLSHOT swimupdown stack %s: %.2f..%.2f s, mean %.0f cm/s (min %.0f, max %.0f), peak %.0f; the stick's swim %.0f, the arms' cap %.0f; the body's own rise %.0f cm/s; the arms' own swim mean %.0f, peak %.0f; %.0f frames a second"),
-			C.Name, From, HoldFor, Mean, Lo, Hi, Peak, Speed, Speed / 0.5f, MoveMean, ArmMean, ArmPeak, ArmN / FMath::Max(HoldFor - From, 0.01f));
+		UE_LOG(LogOutlaws, Display, TEXT("OLSHOT swimupdown stack %s: %.2f..%.2f s, mean %.0f cm/s (min %.0f, max %.0f), peak %.0f; the stick's swim %.0f, the arms' cap %.0f; the body's own rise %.0f cm/s; the arms' own swim mean %.0f, peak %.0f; %.0f frames a second, the longest %.1f ms"),
+			C.Name, From, HoldFor, Mean, Lo, Hi, Peak, Speed, Speed / 0.5f, MoveMean, ArmMean, ArmPeak, ArmN / FMath::Max(HoldFor - From, 0.01f), LongestDt * 1000.f);
 		// the rule, once both and each alone are in: both no more than max + share x min (some slack), no less than the faster
 		auto Rule = [&](const TCHAR* Both, const TCHAR* Stick, const TCHAR* Arms)
 		{
@@ -472,9 +505,14 @@ OL_SHOT_TEST(OLSwimUpDownProbe, 1920)
 			const float Sum = *S + *A;
 			UE_LOG(LogOutlaws, Display, TEXT("OLSHOT swimupdown stack rule %s (%s): both %.0f, stick %.0f, arms %.0f; max(arms, %.2f x stick) %.0f, max + %.2f x min %.0f, the sum %.0f; both / stick %.2f, both / the faster %.2f"),
 				Both, StackMode(), *B, *S, *A, 1.f + SwimStackShare(), Against, SwimStackShare(), MaxMin, Sum, *B / FMath::Max(*S, 1.f), *B / FMath::Max(FMath::Max(*S, *A), 1.f));
-			// (weak strokes sit on the fly mode's 10 cm/s stop: with the same input the arms' own swim reads 13 or 159 and the cap follows it,
-			// so both lands at 143 or 173. The line above prints it; not checked till that flip's cause is found, BUG-SWIMWEAK)
-			if (FCString::Strcmp(Both, TEXT("across both weak")) == 0) return;
+			// (BUG-SWIMWEAK: a weak stroke sits on the fly mode's 10 cm/s stop. Alone, the same stroke still reads 13 or 159, a frame
+			// running late takes it over; the cap's copy no longer goes by that, so both is held to the stick's limit whichever the
+			// arms alone read. -OLOldSwimWeak: printed only, the old lands at 143 or 173 by the frames)
+			if (FCString::Strcmp(Both, TEXT("across both weak")) == 0)
+			{
+				if (!bOldStack && !bOldWeak && !bMaxMin) Check(*B <= (1.f + SwimStackShare()) * *S * 1.08f + 5.f && *B >= *S * 0.92f - 5.f, FString::Printf(TEXT("%s: both %.0f cm/s, the stick's limit %.0f (arms alone %.0f, the stick %.0f)"), Both, *B, (1.f + SwimStackShare()) * *S, *A, *S));
+				return;
+			}
 			if (!bOldStack) Check(*B <= Want * 1.08f + 5.f && *B >= FMath::Max(*S, *A) * 0.92f - 5.f, FString::Printf(TEXT("%s: both %.0f cm/s, the rule's %.0f (between the faster alone, %.0f, and it)"), Both, *B, Want, FMath::Max(*S, *A)));
 		};
 		Rule(TEXT("across both hard"), TEXT("across stick"), TEXT("across arms hard"));
@@ -484,6 +522,32 @@ OL_SHOT_TEST(OLSwimUpDownProbe, 1920)
 		Rule(TEXT("across both light"), TEXT("across stick"), TEXT("across arms light"));
 		Rule(TEXT("up both looking up"), TEXT("up stick looking up"), TEXT("up arms looking up"));
 		Rule(TEXT("up held and arms looking up"), TEXT("up held"), TEXT("up arms looking up"));
+		// BUG-SWIMWEAK's sweep: at each strength both, with a frame late in each stroke, against the limit by the arms alone on
+		// time: the two farthest apart a strength's flip can put them, the arms at their lowest and both at their highest.  The
+		// limit a frame at a time, its mean over the arms' frames: max(arms then, the stick's limit); both rides that limit's
+		// top between the strokes, so its mean passes the arms' mean and max(mean, the stick's limit) would read too low
+		const float* S = Means.Find(TEXT("across stick"));
+		if (C.Hand > 0.f && S)
+		{
+			const float StickLimit = (1.f + SwimStackShare()) * *S;
+			if (!C.bStick)
+			{
+				float Sum = 0.f;
+				int32 N = 0;
+				for (const FSample& F : Samples) if (F.T >= From && F.T <= HoldFor) { Sum += FMath::Max(F.VelH, StickLimit); ++N; }
+				SweepLimit = N ? Sum / N : StickLimit;
+				SweepArms = Mean;
+			}
+			else
+			{
+				// (to the weak stroke's strength the arms on time stay under the stop, the limit the stick's whatever they read here)
+				const float Limit = C.Hand <= 200.f ? StickLimit : SweepLimit;
+				const bool bOver = Mean > Limit * 1.08f + 5.f;
+				UE_LOG(LogOutlaws, Display, TEXT("OLSHOT swimupdown sweep %.0f: both %.0f cm/s with a late frame a stroke (the longest %.1f ms), the arms' own swim %.0f in it; arms alone %.0f, the limit %.0f"), C.Hand, Mean, LongestDt * 1000.f, ArmMean, SweepArms, Limit);
+				if (bOver) ++OverLimit;
+				if (!bOldWeak) Check(!bOver && Mean >= *S * 0.92f - 5.f, FString::Printf(TEXT("%s: both %.0f cm/s, the limit %.0f (arms alone %.0f)"), C.Name, Mean, Limit, SweepArms));
+			}
+		}
 	}
 	Release();
 	Step = 0;
