@@ -8,7 +8,7 @@
 // the client one (a stick more there, gone on the host, the host's word), the bot one (its own take, BotLookForPickups); the first
 // comes back after its generator's period, a new pickup on both machines.  -OLOldMpTntPick: none is a pickup anywhere, none taken.
 // -OLMpTntPickProbe=story -OLShots -OLLevel=hideout -OLNoFrontEnd: a story level, no match: the level's own stick still a pickup
-// and walked over, a stick made in play still no pickup, as before.
+// and walked over, a stick made in play a pickup too (REQ-STICKREST; -OLOldStickRest: none, as before).
 // Lines "OLSHOT mptntpick check PASS|FAIL (host|client): ..." and "OLSHOT mptntpick <host|client|story> RESULT".
 
 #include "OutlawsCoop.h"
@@ -34,6 +34,7 @@ namespace OutlawsMpTntPickProbeLocal
 	FVector Where[NumTaken], Home = FVector::ZeroVector, Told = FVector::ZeroVector;
 	TWeakObjectPtr<AActor> Actors[NumTaken];
 	double TakenAt = 0.0, Deadline = 0.0;
+	int32 SticksLeft = 0;
 
 	void Check(bool bOk, const TCHAR* Who, const FString& What)
 	{
@@ -320,15 +321,17 @@ OL_SHOT_TEST(OLMpTntPickProbe, 2310)
 		L->bInvincible = true;
 		Mine(!UOutlawsCoop::IsMatchActive(L), FString::Printf(TEXT("%s: no match"), *L->LevelName));
 		Mine(StickPickups(L) >= 1, FString::Printf(TEXT("the level's own sticks are pickups: %d"), StickPickups(L)));
-		// a stick made in play: no pickup, as ever (its callers make it loose dynamite)
+		// a stick made in play: a pickup (REQ-STICKREST; -OLOldStickRest: none, its callers make it loose dynamite)
 		const int32 Listed = StickPickups(L);
+		const bool bRestOld = OLFlags::Param(TEXT("OLOldStickRest"));
 		AActor* Made = L->SpawnGroundItem(TEXT("gdynam"), GetActorLocation() + GetActorForwardVector() * 200.0 - FVector(0.0, 0.0, 100.0));
-		Mine(Made && StickPickups(L) == Listed && !L->IsDynamitePickup(Made), FString::Printf(TEXT("a stick made in play: drawn, no pickup (%d listed, %d before)"), StickPickups(L), Listed));
+		Mine(Made && StickPickups(L) == Listed + (bRestOld ? 0 : 1) && L->IsDynamitePickup(Made) != bRestOld, FString::Printf(TEXT("a stick made in play: drawn, %s (%d listed, %d before)"), bRestOld ? TEXT("no pickup") : TEXT("a pickup"), StickPickups(L), Listed));
 		// the level's own stick walked onto
 		Home = FVector::ZeroVector;
 		TArray<AOutlawsLevelActor::FPickupDebug> All;
 		L->DebugPickups(All);
-		for (const AOutlawsLevelActor::FPickupDebug& Pk : All) if (Pk.Actor && AOutlawsLevelActor::IsStickGround(Pk.Ground)) Home = Pk.Actor->GetActorLocation();
+		for (const AOutlawsLevelActor::FPickupDebug& Pk : All) if (Pk.Actor && Pk.Actor != Made && AOutlawsLevelActor::IsStickGround(Pk.Ground)) Home = Pk.Actor->GetActorLocation();
+		SticksLeft = StickPickups(L) - 1;
 		CountWas = L->GetCount(Stick);
 		if (!Home.IsZero()) StandOn(this, Home);
 		ShotTime = 0.f;
@@ -336,7 +339,7 @@ OL_SHOT_TEST(OLMpTntPickProbe, 2310)
 		return;
 	}
 	if (ShotTime < 2.f) return;
-	Mine(L->GetCount(Stick) == CountWas + 1 && StickPickups(L) == 0, FString::Printf(TEXT("the level's stick walked onto: %d -> %d, %d left"), CountWas, L->GetCount(Stick), StickPickups(L)));
+	Mine(L->GetCount(Stick) == CountWas + 1 && StickPickups(L) == SticksLeft, FString::Printf(TEXT("the level's stick walked onto: %d -> %d, %d left"), CountWas, L->GetCount(Stick), StickPickups(L)));
 	UE_LOG(LogOutlawsCoop, Display, TEXT("OLSHOT mptntpick story RESULT %s (%d passed, %d failed)"), Fails == 0 && Passes > 0 ? TEXT("ALL PASS") : TEXT("FAIL"), Passes, Fails);
 	ShotStep = -1;
 	FGenericPlatformMisc::RequestExit(false);

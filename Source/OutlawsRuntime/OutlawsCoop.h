@@ -1751,6 +1751,7 @@ private:
 	// ---- REQ-PAUSECHAR's probe (-OLPauseCharProbe on a host and its client; OutlawsPauseCharProbe.cpp) ----
 	void TickHostPauseCharTest(double Now, AOutlawsLevelActor* L, AOutlawsPlayer* P);
 	void OnPauseCharTestStep(const FString& Step, int32 Arg, AOutlawsLevelActor* L, AOutlawsPlayer* P);
+	void TickStickRestTest(double Now, AOutlawsLevelActor* L, AOutlawsPlayer* P);          // (REQ-STICKREST: OutlawsStickRestProbe.cpp)
 	void TickHostMpSpeedTest(double Now, AOutlawsLevelActor* L, AOutlawsPlayer* P);        // (REQ-MPSPEED: OutlawsMpSpeedProbe.cpp)
 	void TickClientMpSpeedTest(double Now, AOutlawsLevelActor* L, AOutlawsPlayer* P);
 	void OnMpSpeedTestStep(const FString& Step, int32 Arg, AOutlawsLevelActor* L, AOutlawsPlayer* P);

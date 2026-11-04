@@ -863,6 +863,7 @@ void UOutlawsCoop::TickTest(double Now)
 	else if (TestOnly == TEXT("mptntpick")) return;
 	else if (IsHost() && TestOnly == TEXT("pausechar")) TickHostPauseCharTest(Now, L, P);  // (REQ-PAUSECHAR: OutlawsPauseCharProbe.cpp)
 	else if (TestOnly == TEXT("pausechar")) return;
+	else if (TestOnly == TEXT("stickrest")) { TickStickRestTest(Now, L, P); return; }    // (REQ-STICKREST: OutlawsStickRestProbe.cpp)
 	else if (TestOnly == TEXT("mpspeed"))           // (REQ-MPSPEED: OutlawsMpSpeedProbe.cpp)
 	{
 		if (IsHost()) TickHostMpSpeedTest(Now, L, P); else TickClientMpSpeedTest(Now, L, P);

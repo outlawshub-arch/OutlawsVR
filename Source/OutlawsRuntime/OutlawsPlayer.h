@@ -1844,6 +1844,8 @@ public:
 	bool VrSpeedMenuTestPress();
 	/** (tests, REQ-MPSPEED) the page File opened, its row Name as shown and whether it is greyed (the menu stays open); false: no such row. */
 	bool MenuPageTestRow(const FString& File, const FString& Name, FString& OutText, bool& bOutGrey);
+	/** (tests, REQ-STICKREST) a stick put in the hand and let go unlit, as the grip does; false: none let go. */
+	bool DropUnlitStickTest();
 private:
 	bool bScopeTestNeedsItem = false;
 	bool bScopeNoItemLogged = false;

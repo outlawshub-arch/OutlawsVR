@@ -494,7 +494,7 @@ void UOutlawsCoop::TickSaves(double Now)
 				double Id = -1.0;
 				const bool bNumbered = J->TryGetNumberField(TEXT("coop_id"), Id);
 				// (not made again: ApplyLoad; BUG-MPTNTPICK: a match's stick, from 100000, is, and keeps its place in the order)
-				if (AOutlawsLevelActor::IsStickGround(J->GetStringField(TEXT("ground"))) && Id < 100000.0) continue;
+				if (AOutlawsLevelActor::IsStickGround(J->GetStringField(TEXT("ground"))) && Id < 100000.0 && !J->HasField(TEXT("play_stick"))) continue;
 				HostIds.Add(bNumbered ? int32(Id) : -1);
 			}
 		}

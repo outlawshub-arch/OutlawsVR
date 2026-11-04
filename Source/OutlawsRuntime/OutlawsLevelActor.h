@@ -2409,6 +2409,7 @@ private:
 		bool bDropLock = false;  // (user 2026-10-02) dropped from the wheel by this machine's player: not theirs to take again
 		double DropLockAt = 0.0; //   until they have been 1.5 m from it (or 30 s on, real time)
 		bool bMapSeen = false;   // REQ-MAPITEMS: seen by this machine's player, on the map from then on
+		bool bPlayStick = false; // REQ-STICKREST: a stick made in play, not the build's: a save keeps it as dropped ("play_stick")
 	};
 	bool IsMapItem(const FPickup& P) const;
 	int32 PickupSerials = 0;

@@ -353,6 +353,11 @@ void UOutlawsCoop::Initialize(FSubsystemCollectionBase& Collection)
 		bAuto = bAutoReady = bWorldTest = true;
 		TestOnly = TEXT("mpspeed");
 	}
+	if (OLFlags::ValueIs(TEXT("OLStickRestProbe"), TEXT("coop")))
+	{
+		bAuto = bAutoReady = bWorldTest = true;      // (REQ-STICKREST's co-op pair: OutlawsStickRestProbe.cpp)
+		TestOnly = TEXT("stickrest");
+	}
 	// REQ-MPLOBBY: the lobby's start rule, off where a test starts the match itself (M1's Death Match test presses Start the game)
 	bLobbyRuleOff = OLFlags::Param(TEXT("OLMpNoLobbyRule")) || TestOnly == TEXT("dm") || TestOnly == TEXT("killfeed") || TestOnly == TEXT("remotefx") || TestOnly == TEXT("flicknet")
 		|| TestOnly == TEXT("mplethal") || TestOnly == TEXT("mptntpick") || TestOnly == TEXT("pausechar") || TestOnly == TEXT("mpspeed");

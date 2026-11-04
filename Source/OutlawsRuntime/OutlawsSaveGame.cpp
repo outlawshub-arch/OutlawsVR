@@ -424,11 +424,13 @@ bool AOutlawsLevelActor::BuildSaveText(AOutlawsPlayer* P, FString& OutText, int3
 		// ones gone; saved as dropped they came back twice, a second stick that was no pickup (10 Oct: 15 at a rejoin).
 		// (BUG-MPTNTPICK) a match's stick, numbered from 100000 as a thing made in play, is no build's: it goes as dropped, or a
 		// client joining after the first wave never has it
-		if (Pk.Serial < 0 && Pk.CoopId < 100000 && IsDynamitePickup(A)) continue;
+		// (REQ-STICKREST) so is any stick made in play: no build makes it again, and "play_stick" names it, a co-op id or none
+		if (Pk.Serial < 0 && Pk.CoopId < 100000 && !Pk.bPlayStick && IsDynamitePickup(A)) continue;
 		const TSharedRef<FJsonObject> J = MakeShared<FJsonObject>();
 		J->SetNumberField(TEXT("serial"), Pk.Serial);
 		J->SetStringField(TEXT("ground"), Pk.Ground);
 		if (Pk.bMapSeen) J->SetBoolField(TEXT("map_seen"), true);      // (REQ-MAPITEMS: on this player's map; older saves: none seen)
+		if (Pk.bPlayStick) J->SetBoolField(TEXT("play_stick"), true);  // (REQ-STICKREST; older saves: none, their sticks as they were)
 		if (Pk.Serial < 0)
 		{
 			// a dropped thing: what it gives (a gun passed from the wheel or left at a death gives what was carried, user 2026-10-02)
@@ -803,7 +805,7 @@ void AOutlawsLevelActor::ApplyLoad(const FJsonObject& O, bool bWorldOnly)
 			bSeen &= !bWorldOnly;
 			if (Serial >= 0 && bSeen) SeenSerials.Add(Serial);
 			if (Serial >= 0) Keep.Add(Serial, GetVec(*J));
-			else if (double StickId = -1.0; IsStickGround(J->GetStringField(TEXT("ground"))) && !(J->TryGetNumberField(TEXT("coop_id"), StickId) && StickId >= 100000.0))     // (BUG-MPTNTPICK: not a match's)
+			else if (double StickId = -1.0; IsStickGround(J->GetStringField(TEXT("ground"))) && !J->HasField(TEXT("play_stick")) && !(J->TryGetNumberField(TEXT("coop_id"), StickId) && StickId >= 100000.0))     // (BUG-MPTNTPICK, REQ-STICKREST: not a match's, not one made in play)
 			{
 				++LevelSticks;      // (an older save's copy of the level's own stick: the build has made it already)
 			}

@@ -2860,7 +2860,10 @@ AActor* AOutlawsLevelActor::SpawnGroundItem(const FString& Name, const FVector& 
 		A->SetActorLocationAndRotation(FeetPos + FVector(0.0, 0.0, 2.0), FRotator(0.0, FMath::FRandRange(0.f, 360.f), 0.0));
 		SpawnedActors.Add(A);
 		bool bPickup = RegisterPickup(A, Name, Itm);
-		if (!bPickup && IsStickGround(Name) && UOutlawsCoop::IsMatchActive(this))
+		// (REQ-STICKREST, user 4 Nov: an unlit stick let go lay in story and co-op where it came to rest, loose dynamite no one could take:
+		// a pickup there too, numbered and made on every machine as a match's; a save keeps it by bPlayStick) -OLOldStickRest: matches only
+		static const bool bOldStickRest = OLFlags::Param(TEXT("OLOldStickRest"));
+		if (!bPickup && IsStickGround(Name) && (!bOldStickRest || UOutlawsCoop::IsMatchActive(this)))
 		{
 			// (BUG-MPTNTPICK, the user's stream, 3 Nov: in a match the TNT boxes are picked up, the single sticks never, and nothing
 			// refused in the log) a match's sticks are its NDYNAM1 generators' (GENERATE GDYNAM.ITM), made here, and gdynam's FUNC is
@@ -2875,6 +2878,7 @@ AActor* AOutlawsLevelActor::SpawnGroundItem(const FString& Name, const FVector& 
 				TMap<FString, FString> StickData;
 				OutlawsFormats::ParseItm(Itm, StickFunc, StickData);
 				AddStickPickup(A, Name, StickData);
+				Pickups.Last().bPlayStick = true;
 				AddLooseDynamite(A);
 				bPickup = true;
 			}
