@@ -1,7 +1,8 @@
 // REQ-CREDITS (user 2026-10-05, board card): the end credits roll at the end of the final cutscene, as James rides off into
-// the sunset: first the Outlaws VR credits (Content/Credits/vr_credits.txt), then the original game's own (credits.txt from
-// the player's LABs), both in the original's layout ("~" a heading, a plain line a name, an empty line a line of space), in
-// the crawl's look (REQ-HOMCRAWL: mf3s.laf, white with a black drop shadow, rising flat up the full picture).
+// the sunset: first the Outlaws VR credits (Content/Credits/vr_credits.txt), then Night Dive's (REQ-CREDITORDER: from the player's
+// Common.kpf), then the original game's own (credits.txt from the player's LABs), all in the original's layout ("~" a heading, a
+// plain line a name, an empty line a line of space), in the crawl's look (REQ-HOMCRAWL: mf3s.laf, white with a black drop shadow,
+// rising flat up the full picture).
 #include "OutlawsMovieScreen.h"
 #include "OutlawsRuntime.h"
 #include "OutlawsFlags.h"
@@ -92,8 +93,8 @@ void AOutlawsMovieScreen::ArmCredits(const TArray<FOutlawsCreditLine>& Lines, co
 	CreditsHoldAt = FMath::Max(HoldAt, StartAt);
 	bCreditsFadeEnd = bFadeEnd;
 	bCredits = true;
-	UE_LOG(LogOutlaws, Log, TEXT("OLRT credits armed: %d lines (Outlaws VR %d, the original %d), the roll from %.1f s of the movie, its picture held at %.1f s, %.0f s long"),
-		CreditLines.Num(), CreditsLineCount(0), CreditsLineCount(1), CreditsStartAt, CreditsHoldAt, CreditsSeconds());
+	UE_LOG(LogOutlaws, Log, TEXT("OLRT credits armed: %d lines (Outlaws VR %d, Night Dive %d, the original %d), the roll from %.1f s of the movie, its picture held at %.1f s, %.0f s long"),
+		CreditLines.Num(), CreditsLineCount(0), CreditsLineCount(2), CreditsLineCount(1), CreditsStartAt, CreditsHoldAt, CreditsSeconds());
 }
 
 void AOutlawsMovieScreen::PlayCredits(const TArray<FOutlawsCreditLine>& Lines, const OutlawsFormats::FLafFont* Font, const FVector& Eye, const FVector& Forward,

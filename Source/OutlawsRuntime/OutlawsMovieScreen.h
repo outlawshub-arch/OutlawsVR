@@ -18,7 +18,7 @@ class UFont;
 namespace OutlawsFormats { struct FLafFont; }
 
 /** (REQ-CREDITS) one line of the end credits: the original's credits.txt layout ("~" a heading, a plain line a name, an empty
- *  line a line of space); Part 0 the Outlaws VR credits, 1 the original game's. */
+ *  line a line of space); Part 0 the Outlaws VR credits, 2 Night Dive's, 1 the original game's, in that order on the roll. */
 struct FOutlawsCreditLine
 {
 	FString Text;
