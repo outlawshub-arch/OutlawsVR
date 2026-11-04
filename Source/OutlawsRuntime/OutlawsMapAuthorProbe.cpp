@@ -5,7 +5,8 @@
 // The names (the name before the last " by ", the whole NAME kept, a map with no author as it was), the Host Game page's MAP page
 // (no author, no tag, one list by name, stock and community mixed, photographed), the filters that need the difference (the random
 // pool, bCustom), the match lines (the name alone; the white "Next match" line with the author, hosted for real and photographed),
-// the lobby's line after it.  -OLOldMapAuthor: the same run wants the tag, the "by" and the stock maps first.  One line a check
+// the lobby's line after it, the line again and its shot once the map has faded in.  -OLMpHost=zekes: the first match's white line
+// too.  -OLOldMapAuthor: the same run wants the tag, the "by" and the stock maps first.  One line a check
 // "OLSHOT mapauthor check PASS|FAIL: ...", then "OLSHOT mapauthor RESULT".
 
 #include "OutlawsPlayer.h"
@@ -74,6 +75,13 @@ OL_SHOT_TEST(OLMapAuthorProbe, 2424)
 		}
 		OutlawsMpHost::ListMaps(A, Maps);
 		auto Find = [](const TCHAR* Lv) { return Maps.FindByPredicate([Lv](const FOutlawsMpMap& M) { return M.Level.Equals(Lv, ESearchCase::IgnoreCase); }); };
+		// (0) hosted straight on a map with an author (-OLMpHost=zekes): the first match has no "Next match" line, so EnterGame says it
+		if (S && !bOld && OutlawsMpHost::MapTitleBy(S->MapName) != OutlawsMpHost::MapTitle(S->MapName))
+		{
+			const FString Line = FString::Join(HudLines, TEXT(" | "));
+			Check(Line.Contains(OutlawsMpHost::MapTitleBy(S->MapName)), FString::Printf(TEXT("the first match's white line: \"%s\""), *Line));
+			Picture(TEXT("first"));
+		}
 		// (1) the names
 		int32 Natives = 0, WithBy = 0, Short = 0;
 		for (const FOutlawsMpMap& M : Maps)
@@ -139,7 +147,8 @@ OL_SHOT_TEST(OLMapAuthorProbe, 2424)
 			if (Modes != INDEX_NONE) Name.LeftInline(Modes);
 			Name.RemoveFromStart(TEXT("> "));
 			CustomTags += Rows[i].Contains(TEXT("(custom)")) ? 1 : 0;
-			Bys += Name.Contains(TEXT(" by "), ESearchCase::IgnoreCase) ? 1 : 0;
+			// (a row is a map's short name and nothing else: Dead By Dawn keeps its own "By", the author is what has to go)
+			Bys += Maps.ContainsByPredicate([&Name](const FOutlawsMpMap& X) { return X.Name == Name; }) ? 0 : 1;
 			OutOfOrder += i > 0 && Name.ToLower() < Last ? 1 : 0;
 			const FOutlawsMpMap* M = Maps.FindByPredicate([&Name](const FOutlawsMpMap& X) { return Name.StartsWith(X.Name); });
 			const bool bCustomRow = M && M->bCustom;
@@ -176,7 +185,6 @@ OL_SHOT_TEST(OLMapAuthorProbe, 2424)
 		if (Now - StageAt < 0.6) return;
 		const FString Line = FString::Join(HudLines, TEXT(" | "));
 		Check(Line.Contains(TEXT("Next match: Death Match on Zeke's Cabins by Molycoat")), FString::Printf(TEXT("the white line as the map loads: \"%s\""), *Line));
-		Picture(TEXT("load"));
 		StageAt = Now;
 		Stage = 4;
 		return;
@@ -192,7 +200,21 @@ OL_SHOT_TEST(OLMapAuthorProbe, 2424)
 			return;
 		}
 		Check(bOld ? C->MatchLine().Contains(TEXT(" by ")) : !C->MatchLine().Contains(TEXT(" by ")), FString::Printf(TEXT("the lobby and the score page say \"%s\""), *C->MatchLine()));
-		Finish();
+		StageAt = Now;
+		Stage = 5;
+		return;
 	}
+	if (Stage == 5)
+	{
+		// the screen is black while the map builds: the line is read and photographed once the new map has faded in
+		if (Now - StageAt < 1.5) return;
+		const FString Line = FString::Join(HudLines, TEXT(" | "));
+		Check(Line.Contains(TEXT("Next match: Death Match on Zeke's Cabins by Molycoat")), FString::Printf(TEXT("the line is still up as the map fades in: \"%s\""), *Line));
+		Picture(TEXT("load"));
+		StageAt = Now;
+		Stage = 6;
+		return;
+	}
+	if (Stage == 6 && Now - StageAt > 1.0) Finish();
 }
 #endif // WITH_OUTLAWS_TESTS
