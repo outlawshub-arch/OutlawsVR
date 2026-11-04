@@ -1505,8 +1505,9 @@ public:
 	/** What the player's hits are multiplied by (2 with the badge). */
 	float PlayerDamageScale() const { return HasBadgePower() ? 2.f : 1.f; }
 	/** A sprite's first cell as a picture: its atlas (the HD one when Remastered is on), the cell's UV rect and its
-	 *  width / height (the original HUD's heart and plate cards, intheart.nwx / ibplate.nwx). */
-	bool SpriteIcon(const FString& Nwx, UTexture*& OutTex, FVector2D& OutScale, FVector2D& OutOffset, float& OutAspect);
+	 *  width / height (the original HUD's heart and plate cards, intheart.nwx / ibplate.nwx).  With Chor: that
+	 *  choreography's first cell instead (REQ-WRISTGAUGE: thermom.nwx, its chor 0 an empty cell). */
+	bool SpriteIcon(const FString& Nwx, UTexture*& OutTex, FVector2D& OutScale, FVector2D& OutOffset, float& OutAspect, int32 Chor = INDEX_NONE);
 	/** One cell of a remaster sprite (the SPX beside an NWX: ijrifle.spx) as a texture at its own size, or null
 	 *  (no remaster archives). Kept for the session. */
 	UTexture2D* SpxCell(const FString& Spx, int32 Cell, FIntPoint& OutSize);

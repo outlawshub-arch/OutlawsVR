@@ -241,15 +241,19 @@ public:
 	TArray<TObjectPtr<class UStaticMeshComponent>> WristIcons;
 	UPROPERTY(Transient)
 	TArray<TObjectPtr<UTextRenderComponent>> WristNumbers;
+	UPROPERTY(Transient)
+	TArray<TObjectPtr<class UStaticMeshComponent>> WristGauge;     // the thermometer (REQ-WRISTGAUGE): its coloured part, its cream part
+	static constexpr int32 WristGaugeSteps = 64;      // the steps the tube moves in, so a run lays the wrist out a few times a second, not every frame
 	struct FWristIconSrc { UTexture* Tex = nullptr; FVector2D Scale = FVector2D(1.0, 1.0); FVector2D Offset = FVector2D::ZeroVector; float Aspect = 1.f; };
 	// (BUG-WRISTCRASH, the user's Quest crash 2 Nov: the cache held the level's sprite atlases by a raw pointer; a restart's
 	// Clear() and GC freed them and the next relayout handed a freed texture to the card's material) the picture is held
 	// weakly: an entry whose texture is gone is a miss, rebuilt from the level as it is now
 	struct FWristIconHeld { FWristIconSrc Src; TWeakObjectPtr<UTexture> Live; };
-	TMap<FString, FWristIconHeld> WristIconCache;     // "nwx:intheart" / "kpf:idocbag" (+ the HD switch) -> its picture
+	TMap<FString, FWristIconHeld> WristIconCache;     // "nwx:intheart" / "kpf:idocbag" / "tube:1" (+ the HD switch) -> its picture
 	int32 WristIconRebuilt = 0;                       // (tests) stale entries found and rebuilt since the start
 	bool WristIcon(const FString& Key, FWristIconSrc& Out);
 	int32 WristIconCacheStale(FString* Keys = nullptr) const;     // (tests) entries whose texture is gone; the weak side only, never the pointer
+	class UStaticMeshComponent* NewWristPlane();
 	class UStaticMeshComponent* WristIconPlane(int32 Index);
 	void LayoutWrist();
 
@@ -385,6 +389,8 @@ private:
 	FString WristShownKeys;            // (tests) its cards as laid out last ("nwx:intheart nwx:ibplate")
 	int32 WristIconsUsed = 0;          // the cards the last layout placed; the rest stay hidden (BUG-WRISTPLATE)
 	FString WristRowsLog;              // (tests) each row's cards and where they sit, as laid out last
+	FString WristGaugeKeys;            // (tests) the tube's two cards as laid out last ("tube:1 tube:2"), empty with no tube
+	float WristGaugeLevel = -1.f;      // (tests) the share of the tube's length drawn in colour as laid out last
 	FVector SmokeStart = FVector::ZeroVector;
 	float HeightOffset = 0.f;          // added to the tracked head height (recenter / eye-level fix)
 	float TrainRock = 0.f;

@@ -3926,17 +3926,19 @@ UTexture2D* AOutlawsLevelActor::SpxCell(const FString& Spx, int32 Cell, FIntPoin
 	return T;
 }
 
-bool AOutlawsLevelActor::SpriteIcon(const FString& Nwx, UTexture*& OutTex, FVector2D& OutScale, FVector2D& OutOffset, float& OutAspect)
+bool AOutlawsLevelActor::SpriteIcon(const FString& Nwx, UTexture*& OutTex, FVector2D& OutScale, FVector2D& OutOffset, float& OutAspect, int32 Chor)
 {
-	const TSharedPtr<OutlawsTextures::FSpriteAtlas> A = GetAtlas(Nwx, false);
-	if (!A || !A->Texture || A->CellW <= 0 || A->CellH <= 0)
+	const TSharedPtr<OutlawsTextures::FSpriteAtlas> A = GetAtlas(Nwx, Chor >= 0);
+	if (!A || !A->Texture || A->CellW <= 0 || A->CellH <= 0 || (Chor >= 0 && !A->Chors.IsValidIndex(Chor)))
 	{
 		return false;
 	}
 	UTexture* Hd = bHDTextures ? SpriteHdFor(A) : nullptr;
 	OutTex = Hd ? Hd : A->Texture;
 	const int32 Cols = FMath::Max(1, A->Cols), Rows = FMath::Max(1, A->Rows);
-	const int32 Cell = A->Grid.Num() > 0 ? FMath::Clamp(A->Grid[0], 0, Cols * Rows - 1) : 0;
+	const TArray<int32>& Grid = Chor >= 0 ? A->ChorGrid : A->Grid;
+	const int32 First = Chor >= 0 ? A->Chors[Chor].GridStart : 0;
+	const int32 Cell = Grid.IsValidIndex(First) ? FMath::Clamp(Grid[First], 0, Cols * Rows - 1) : 0;
 	OutScale = FVector2D(1.0 / Cols, 1.0 / Rows);
 	OutOffset = FVector2D(double(Cell % Cols) / Cols, double(Cell / Cols) / Rows);
 	OutAspect = float(A->CellW) / float(A->CellH);

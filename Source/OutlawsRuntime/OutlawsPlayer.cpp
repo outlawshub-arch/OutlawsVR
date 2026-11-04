@@ -5102,6 +5102,11 @@ bool AOutlawsPlayer::WristIcon(const FString& Key, FWristIconSrc& Out)
 		Src.Tex = ItemCard(Key.Mid(4), true);
 		Src.Aspect = 152.f / 216.f;
 	}
+	else if (Key.StartsWith(TEXT("tube:")))
+	{
+		// (REQ-WRISTGAUGE) a choreography of the thermometer
+		if (L) L->SpriteIcon(TEXT("thermom.nwx"), Src.Tex, Src.Scale, Src.Offset, Src.Aspect, FCString::Atoi(*Key.Mid(5)));
+	}
 	WristIconCache.Add(CacheKey, FWristIconHeld{ Src, Src.Tex });
 	Out = Src;
 	return Src.Tex != nullptr;
@@ -5119,27 +5124,29 @@ int32 AOutlawsPlayer::WristIconCacheStale(FString* Keys) const
 	return N;
 }
 
+UStaticMeshComponent* AOutlawsPlayer::NewWristPlane()
+{
+	UStaticMeshComponent* P = NewObject<UStaticMeshComponent>(this);
+	P->SetStaticMesh(LoadObject<UStaticMesh>(nullptr, TEXT("/Engine/BasicShapes/Plane.Plane")));
+	P->SetCollisionEnabled(ECollisionEnabled::NoCollision);
+	P->SetCastShadow(false);
+	P->SetupAttachment(WristRoot);
+	P->RegisterComponent();
+	FOutlawsViewCone::WidenHandBounds(P);
+	UMaterialInterface* Base = LoadObject<UMaterialInterface>(nullptr, TEXT("/Game/Outlaws/Runtime/M_OLR_WristIcon.M_OLR_WristIcon"));
+	if (!Base) Base = LoadOverlayMaterial(TEXT("M_OLR_UIOverlay"));
+	if (Base)
+	{
+		UMaterialInstanceDynamic* Mid = UMaterialInstanceDynamic::Create(Base, this);
+		P->SetMaterial(0, Mid);
+		KeepAlive.Add(Mid);
+	}
+	return P;
+}
+
 UStaticMeshComponent* AOutlawsPlayer::WristIconPlane(int32 Index)
 {
-	while (WristIcons.Num() <= Index)
-	{
-		UStaticMeshComponent* P = NewObject<UStaticMeshComponent>(this);
-		P->SetStaticMesh(LoadObject<UStaticMesh>(nullptr, TEXT("/Engine/BasicShapes/Plane.Plane")));
-		P->SetCollisionEnabled(ECollisionEnabled::NoCollision);
-		P->SetCastShadow(false);
-		P->SetupAttachment(WristRoot);
-		P->RegisterComponent();
-		FOutlawsViewCone::WidenHandBounds(P);
-		UMaterialInterface* Base = LoadObject<UMaterialInterface>(nullptr, TEXT("/Game/Outlaws/Runtime/M_OLR_WristIcon.M_OLR_WristIcon"));
-		if (!Base) Base = LoadOverlayMaterial(TEXT("M_OLR_UIOverlay"));
-		if (Base)
-		{
-			UMaterialInstanceDynamic* Mid = UMaterialInstanceDynamic::Create(Base, this);
-			P->SetMaterial(0, Mid);
-			KeepAlive.Add(Mid);
-		}
-		WristIcons.Add(P);
-	}
+	while (WristIcons.Num() <= Index) WristIcons.Add(NewWristPlane());
 	return WristIcons[Index];
 }
 
@@ -5153,7 +5160,10 @@ void AOutlawsPlayer::LayoutWrist()
 	const int32 Health = FMath::RoundToInt(L->GetHealth() * 10.f);
 	const int32 Armour = L->GetArmour();
 	const TArray<FString> Items;
-	FString Sig = FString::Printf(TEXT("%d|%d|%d|"), Health, Armour, L->bHDTextures ? 1 : 0);
+	static const bool bOldGauge = OLFlags::Param(TEXT("OLOldWristGauge"));     // (REQ-WRISTGAUGE: no thermometer)
+	const bool bUnder = !bOldGauge && bHeadUnder;
+	const int32 GaugeAt = bOldGauge ? 0 : FMath::RoundToInt((bUnder ? Air : StaminaFrac()) * WristGaugeSteps);
+	FString Sig = FString::Printf(TEXT("%d|%d|%d|%d|%d|"), Health, Armour, L->bHDTextures ? 1 : 0, bUnder ? 1 : 0, GaugeAt);
 	if (Sig == WristLast) return;
 	WristLast = Sig;
 
@@ -5234,8 +5244,51 @@ void AOutlawsPlayer::LayoutWrist()
 		RowSpans.Emplace(RowFirst, X);
 		Widest = FMath::Max(Widest, X);
 	}
+	// the thermometer under the rows (REQ-WRISTGAUGE, the user after his Quest test, 4 Nov 2026: a tube on the wrist under
+	// health and armour, tube only, without the HUD's background design), thermom.nwx from the player's own files, as the
+	// heart is, never shipped: choreography 1 red, 2 the empty cream, 3 blue, and the remaster's THERMOM.SPX the same three
+	// at 4x.  The blue is a drawing of its own in both, not a filter: the game draws the cream, then the red or the blue over
+	// it.  Here they lie side by side, the colour from the bulb up to the level, the cream on from there, so neither card has
+	// to sort over the other.  Stamina out of water; with the head under, blue and the air left.  The column runs from the
+	// bulb's neck and the bulb stays coloured, so an empty tube still says which of the two it is.  -OLOldWristGauge: no tube
+	float Height = Y + IconH;
+	WristGaugeKeys.Reset();
+	WristGaugeLevel = -1.f;
+	const FString TubeKey = bUnder ? TEXT("tube:3") : TEXT("tube:1"), CreamKey = TEXT("tube:2");
+	FWristIconSrc Tube, Cream;
+	if (!bOldGauge && WristIcon(TubeKey, Tube) && WristIcon(CreamKey, Cream))
+	{
+		constexpr float TubeW = 8.f, Neck = 0.13f, Seam = 0.0025f;       // (shares of its length; the seam a hair over, so no gap ever shows)
+		const float TubeH = TubeW / Tube.Aspect, TubeY = Height + 0.4f;
+		const float At = Neck + (1.f - Neck) * float(GaugeAt) / WristGaugeSteps;
+		while (WristGauge.Num() < 2) WristGauge.Add(NewWristPlane());
+		auto Part = [&](int32 Index, const FWristIconSrc& Src, float From, float To)
+		{
+			const float W = FMath::Max(0.001f, (To - From) * TubeW);
+			UStaticMeshComponent* P = WristGauge[Index];
+			if (UMaterialInstanceDynamic* M = Cast<UMaterialInstanceDynamic>(P->GetMaterial(0)))
+			{
+				M->SetTextureParameterValue(TEXT("Tex"), Src.Tex);
+				M->SetVectorParameterValue(TEXT("UVScale"), FLinearColor(Src.Scale.X * (To - From), Src.Scale.Y, 0.f, 0.f));
+				M->SetVectorParameterValue(TEXT("UVOffset"), FLinearColor(Src.Offset.X + Src.Scale.X * From, Src.Offset.Y, 0.f, 0.f));
+			}
+			P->SetRelativeLocationAndRotation(FVector(0.0, -(From * TubeW + W * 0.5f), -(TubeY + TubeH * 0.5f)), Facing);
+			P->SetRelativeScale3D(FVector(W / 100.0, TubeH / 100.0, 1.0));
+			P->SetVisibility(true);
+		};
+		Part(0, Tube, 0.f, At);
+		Part(1, Cream, At < 1.f ? At - Seam : 1.f, 1.f);
+		WristGaugeKeys = TubeKey + TEXT(" ") + CreamKey;
+		WristGaugeLevel = At;
+		Widest = FMath::Max(Widest, TubeW);
+		Height = TubeY + TubeH;
+	}
 	// centre the panel on the wrist, and each card row in it
-	const float Height = Y + IconH;
+	for (UStaticMeshComponent* P : WristGauge)
+	{
+		if (WristGaugeKeys.IsEmpty()) P->SetVisibility(false);
+		else P->AddRelativeLocation(FVector(0.0, Widest * 0.5, Height * 0.5));
+	}
 	for (int32 i = 0; i < WristIcons.Num(); ++i)
 	{
 		if (i >= NIcon) { WristIcons[i]->SetVisibility(false); continue; }
@@ -5276,7 +5329,7 @@ void AOutlawsPlayer::UpdateWrist()
 	// when that wrist is raised in front of the face (-OLWristTest: held in front of the desktop camera)
 	UpdateBadgeIcon();
 	WristText->SetVisibility(false);
-	const bool bTest = OLFlags::Param(TEXT("OLWristTest")) || OLFlags::Has(TEXT("OLWristCrashProbe"));     // (BUG-WRISTCRASH's probe too)
+	const bool bTest = OLFlags::Param(TEXT("OLWristTest")) || OLFlags::Has(TEXT("OLWristCrashProbe")) || OLFlags::Has(TEXT("OLWristGaugeProbe"));     // (BUG-WRISTCRASH's and REQ-WRISTGAUGE's probes too)
 	static const bool bHandTest = OLFlags::Param(TEXT("OLChestTest"));     // (REQ-CHESTPLATE: on the off hand, on the desktop)
 	if (!bVR && !bTest && !bHandTest)
 	{
@@ -5320,6 +5373,7 @@ void AOutlawsPlayer::UpdateWrist()
 	for (int32 i = WristIconsUsed; i < WristIcons.Num(); ++i) WristIcons[i]->SetVisibility(false);
 	for (int32 i = WristPlatesUsed; i < WristPlates.Num(); ++i) PlatePlanes[WristPlates[i]]->SetVisibility(false);
 	for (UTextRenderComponent* T : WristNumbers) if (T) T->SetVisibility(false);
+	if (WristGaugeKeys.IsEmpty()) for (UStaticMeshComponent* P : WristGauge) P->SetVisibility(false);
 }
 
 // ---- smoke test ----------------------------------------------------------------------------------
