@@ -704,15 +704,19 @@ bool UOutlawsCoop::SpawnGraceOf(int32 Who) const
 {
 	if (Who < 0 || !IsMatch()) return false;
 	const AOutlawsCoopLink* K = GetLink(Who);
-	return K && K->bSpawnGrace;
+	if (K && K->bSpawnGrace) return true;
+	return Who == MyIndex() && FPlatformTime::Seconds() < OwnGraceUntil;       // (the flag is on its way: OnMatchRespawnHere)
 }
 
 bool UOutlawsCoop::SpawnGraceShields(const UObject* Context, float Damage)
 {
 	if (!IsActive(Context)) return false;
-	const UOutlawsCoop* C = Get(Context);
+	UOutlawsCoop* C = Get(Context);
 	if (!C || C->bHostDealing || Damage >= 1.0e5f || !C->SpawnGraceOf(C->MyIndex())) return false;
-	UE_LOG(LogOutlawsCoop, Log, TEXT("OLMATCH hurt dropped here: the %s's spawn protection (%.2f)"), WhoWord(C->MyIndex()), Damage);
+	const AOutlawsCoopLink* Mine = C->GetLink(C->MyIndex());
+	const bool bAhead = !Mine || !Mine->bSpawnGrace;
+	if (bAhead) ++C->GraceAheadOfFlag;
+	UE_LOG(LogOutlawsCoop, Log, TEXT("OLMATCH hurt dropped here: the %s's spawn protection (%.2f)%s"), WhoWord(C->MyIndex()), Damage, bAhead ? TEXT(", ahead of its flag") : TEXT(""));
 	return true;
 }
 
@@ -813,6 +817,11 @@ void UOutlawsCoop::OnMatchRespawnHere(int32 Epoch, const FVector& At, float Yaw,
 		AOutlawsLevelActor* L = FindLevel();
 		AOutlawsPlayer* P = LocalPlayer();
 		if (!L || !P) return;
+		// (REQ-SPAWNGRACE, 5 Nov) the host's rules took the protection before they sent this, and a blast told the same moment comes
+		// ahead of the link's flag, a net update behind (a client thrown 40 m, unhurt): this machine's player counts as protected from
+		// here.  0.5 s: the flag well in on any link, well inside the 3 s, and every hit still the host's to judge
+		static const bool bOldGrace = OLFlags::Param(TEXT("OLOldSpawnGrace"));
+		if (!bOldGrace) OwnGraceUntil = FPlatformTime::Seconds() + 0.5;
 		const bool bWasDead = L->bDead;
 		if (AOutlawsCoopLink* Mine = GetLink(MyIndex())) Mine->Character = Character;
 		L->ApplyStartKit(Character);                 // (BUG-CHARLOADOUT: the character's own kit and weapons)

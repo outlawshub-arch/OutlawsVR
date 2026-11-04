@@ -274,6 +274,8 @@ void UOutlawsCoop::TickHostBlastRifleTest(double Now, AOutlawsLevelActor* L, AOu
 	{
 	case 2330:
 	{
+		// (the level's own dynamite out of it: a stick by a pickup sets it off, and 12.00 + 2.87 + 2.96 + 1.83 is no reading of one blast)
+		for (AOutlawsLevelActor::FDynamite& D : L->Dynamite) D.bGone = true;
 		// the three bots and the client in the rules; then Start, and past the spawn protection
 		TArray<AOutlawsCoopLink*> Links;
 		GetLinks(Links);
@@ -701,7 +703,11 @@ void UOutlawsCoop::OnBlastRifleTestStep(const FString& Step, int32 Arg, AOutlaws
 	if (Step == TEXT("brshot"))
 	{
 		const int32 C = Arg / 16, Who = Arg % 16;
-		const int32 Hits = Fire(this, L, Eye, Who, Guns[C / 3], Spots[C % 3]);
+		// (the near step's spot can lie in a wall, and the game's unstuck then warps this body onto the target itself: a line straight
+		// down its axis meets it at the waist, the spot low, x1 for x1.5.  The shot goes from 120 cm off then, as the near step has it)
+		const AOutlawsRemotePlayer* Aimed = PuppetOf(Who);
+		const FVector From = Aimed && FVector::Dist2D(Eye, Aimed->ShownBody()) < 60.0 ? Aimed->ShownBody() + FVector(120.0, 0.0, 60.0) : Eye;
+		const int32 Hits = Fire(this, L, From, Who, Guns[C / 3], Spots[C % 3]);
 		UE_LOG(LogOutlaws, Display, TEXT("OLSHOT blastrifle client: its %s at %s on the %s: %d of %d pellets on the body"), Guns[C / 3].Name, Spots[C % 3].Name, WhoWord(Who), Hits, Guns[C / 3].Pellets);
 		return;
 	}

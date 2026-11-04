@@ -1047,7 +1047,7 @@ public:
 	/** True when this machine's own player is in its pause menu and so takes no hurt (Damage: for the log). */
 	static bool MenuShields(const UObject* Context, float Damage);
 	// ---- REQ-SPAWNGRACE (OutlawsCoopMatch.cpp): a match's fresh spawn, 3 s untouchable and harmless, flashing ----
-	/** Who is inside its spawn protection, as this machine has it (its link's bSpawnGrace; not in a match: nobody). */
+	/** Who is inside its spawn protection, as this machine has it (its link's bSpawnGrace, this machine's own player from its respawn; not in a match: nobody). */
 	bool SpawnGraceOf(int32 Who) const;
 	/** This machine's own player out of harm: a blow the host has not judged (its own stick, a fall, the floor); a hurt the host
 	 *  sends is its word already, and a kill the rules order (1e6: the level's kill floor, unstuck) still kills. */
@@ -1726,6 +1726,8 @@ private:
 	bool MatchDead[MaxPlayers] = {};             // host: each player's death as last seen
 	bool MatchInRules[MaxPlayers] = {};          // host: each player added to the rules
 	int32 MatchHitsSent = 0, MatchHitsDealt = 0, MatchHitsRefused = 0, MatchRespawns = 0;
+	double OwnGraceUntil = 0.0;                  // (REQ-SPAWNGRACE) this machine's own player counts as protected till then, its respawn's word (OnMatchRespawnHere)
+	int32 GraceAheadOfFlag = 0;                  // (REQ-SPAWNGRACE, the tests': blows SpawnGraceShields stopped before the link's flag reached this machine)
 	// ---- REQ-MPLETHAL (OutlawsCoopMatchStrikes.cpp): the host's word on a fist, a knife and a scoped head shot ----
 	/** The rule on: a match, the Host Game row on, no -OLOldMpLethal. */
 	bool MatchLethalOn() const;

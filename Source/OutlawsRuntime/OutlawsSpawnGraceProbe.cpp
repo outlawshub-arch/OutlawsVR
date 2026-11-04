@@ -10,6 +10,8 @@
 // 1. The match's start: the flag on every link, off on time; the flash on the hands and on a sprite, the host's and the client's.
 // 2. A protected victim, a bot and the client: a shot, a knife, a fist and a stick deal nothing, throw nothing and draw no blood; a
 //    fist just before the end is refused, one just after it deals and bleeds.
+//    Then the client comes up on a stick, three times: set off in the very call that sends its respawn, so the blast goes ahead of
+//    the flag, and the client is not thrown (-OLOldSpawnGrace: it is, the control).
 // 3. A protected striker, the client, the host and a bot: its gun, knife, fist and stick (a bot's shot and stick) deal nothing and
 //    draw no blood, its shots do not end the protection, its own stick and a hurt of its own leave it whole and where it stood;
 //    once it ends its hit deals.
@@ -48,13 +50,20 @@ namespace OutlawsSpawnGraceProbeLocal
 	bool bStarted = false, bCheckedOn = false, bClientFlag = false, bSaid = false, bShotTop = false, bShotLow = false, bQuit = false;
 	FVector BaseAt = FVector::ZeroVector;
 	double OffAt[8] = {}, UntilOf[8] = {};
+	// the client up on a stick (StepWindow; the client's half: sg:window)
+	const int32 WindowTries = 3;
+	int32 WindowShields = 0, WindowBlasts = 0;
+	bool bWindowHooked = false, bWindowArmed = false, bWindowWatch = false;
+	double WindowUpAt = 0.0;
+	float WindowMoved = 0.f, WindowSpeed = 0.f;
+	FVector WindowFrom = FVector::ZeroVector;
 
 	void Check(bool bOk, const FString& What)
 	{
 		UE_LOG(LogOutlawsCoop, Display, TEXT("OLSHOT spawngrace check %s: %s"), bOk ? TEXT("PASS") : TEXT("FAIL"), *What);
 		if (bOk) ++Passes; else ++Fails;
 	}
-	enum : int32 { StepWait = 3900, StepLive, StepStart, StepVictims, StepStrikers, StepSticks, StepHold, StepFinish, StepQuit, StepDone };
+	enum : int32 { StepWait = 3900, StepLive, StepStart, StepVictims, StepWindow, StepStrikers, StepSticks, StepHold, StepFinish, StepQuit, StepDone };
 }
 
 void UOutlawsCoop::SpawnGraceBlows(AOutlawsLevelActor* L, AOutlawsPlayer* P, int32 Who, bool bStick)
@@ -335,6 +344,61 @@ void UOutlawsCoop::TickHostSpawnGraceTest(double Now, AOutlawsLevelActor* L, AOu
 			Part = 0;
 			Target = Client;
 			Next(0);
+			TestStep = StepWindow;
+			return;
+		}
+	}
+	case StepWindow:
+	{
+		// part 2, the case Ready waits out: a stick beside the client's spawn point, set off in the very call that sends its respawn.
+		// The respawn and the blast leave together, the flag a net update behind.  The client measures it (TickClientSpawnGraceTest)
+		const FOutlawsDmPlayer* D = Dm.Find(Client);
+		switch (Phase)
+		{
+		case 0:
+			if (Wall - PhaseAt < 1.0) return;
+			if (!bWindowHooked)
+			{
+				bWindowHooked = true;
+				TFunction<void(const FOutlawsDmPlayer&, const FOutlawsDmSpawn&)> Sends = Dm.OnRespawn;
+				Dm.OnRespawn = [this, Sends](const FOutlawsDmPlayer& Who, const FOutlawsDmSpawn& At)
+				{
+					Sends(Who, At);
+					AOutlawsLevelActor* Lv = FindLevel();
+					AOutlawsPlayer* Me = LocalPlayer();
+					if (!bWindowArmed || Who.Id != Client || !Lv || !Me) return;
+					bWindowArmed = false;
+					double Best = -1.0;
+					FVector Far = Me->GetActorLocation();
+					for (const FOutlawsDmSpawn& Sp : Dm.GetSpawns())
+					{
+						const double Off = FVector::Dist(Sp.Location, At.Location);
+						if (Off > Best) { Best = Off; Far = Sp.Location; }
+					}
+					Me->SetActorLocation(Far, false, nullptr, ETeleportType::TeleportPhysics);
+					Check(Best > Lv->BlastRadiusCm(), FString::Printf(TEXT("the host %.0f cm from the stick on the client's spawn point"), Best));
+					Lv->Explode(At.Location + FVector(40.0, 0.0, -60.0));
+				};
+			}
+			bWindowArmed = true;
+			TestSayTo(Client, TEXT("sg:window"));
+			Next(1);
+			return;
+		case 1:
+			if (bWindowArmed) { if (Wall - PhaseAt > 20.0) { bWindowArmed = false; Check(false, TEXT("the client back up on the stick")); Finish(); } return; }
+			Next(2);
+			return;
+		default:
+			if (!D || !D->bAlive || MatchDead[Client] || Wall < D->ProtectedUntil + 0.3)
+			{
+				if (Wall - PhaseAt > 20.0) { Check(false, TEXT("the client up again after the stick")); Finish(); }
+				return;
+			}
+			if (!bOld) Check(HealthOf(Client) >= 9.99f, FString::Printf(TEXT("the client up on a stick kept its health (%.1f)"), HealthOf(Client)));
+			if (++Part < WindowTries) { Next(0); return; }
+			Part = 0;
+			Target = Client;
+			Next(0);
 			TestStep = StepStrikers;
 			return;
 		}
@@ -600,7 +664,23 @@ void UOutlawsCoop::TickClientSpawnGraceTest(AOutlawsLevelActor* L)
 	if (!bMine && bClientFlag) { ClientOnFor = Wall - GraceOnAt; UE_LOG(LogOutlawsCoop, Display, TEXT("OLSHOT spawngrace client: its own flag on for %.2f s"), ClientOnFor); }
 	bClientFlag = bMine;
 	MaxHeld = FMath::Max(MaxHeld, P->HeldGraceShown());
-	const bool bJoiner = OLFlags::Param(TEXT("OLSpawnGraceJoiner"));
+	// up on a stick (the host's StepWindow): how far the blast moved this body, from its first frame alive
+	if (bWindowWatch && (WindowUpAt > 0.0 || !L->bDead))
+	{
+		if (WindowUpAt == 0.0) { WindowUpAt = Wall; WindowFrom = P->GetActorLocation(); }
+		WindowMoved = FMath::Max(WindowMoved, float(FVector::Dist(P->GetActorLocation(), WindowFrom)));
+		WindowSpeed = FMath::Max(WindowSpeed, float(P->GetVelocity().Size()));
+		if (Wall - WindowUpAt >= 2.0)
+		{
+			bWindowWatch = false;
+			const int32 Ahead = GraceAheadOfFlag - WindowShields;
+			const FString Saw = FString::Printf(TEXT("the blast here %d, shielded ahead of the flag %d, moved %.0f cm, top speed %.0f cm/s"), L->BlastsSeen - WindowBlasts, Ahead, WindowMoved, WindowSpeed);
+			if (OLFlags::Param(TEXT("OLOldSpawnGrace"))) Check(L->BlastsSeen > WindowBlasts && WindowMoved >= 300.f, FString::Printf(TEXT("-OLOldSpawnGrace: the client up on a stick is thrown: %s"), *Saw));
+			else Check(L->BlastsSeen > WindowBlasts && Ahead >= 1 && WindowMoved < 60.f && WindowSpeed < 1000.f, FString::Printf(TEXT("the client up on a stick is not thrown: %s"), *Saw));
+			if (L->bDead) P->RequestRespawn(false);      // (thrown, the fall killed it)
+		}
+	}
+	const bool bJoiner =OLFlags::Param(TEXT("OLSpawnGraceJoiner"));
 	for (int32 Who = 0; Who < MaxPlayers; ++Who)
 	{
 		const AOutlawsRemotePlayer* R = PuppetOf(Who);
@@ -621,8 +701,16 @@ void UOutlawsCoop::TickClientSpawnGraceTest(AOutlawsLevelActor* L)
 void UOutlawsCoop::OnSpawnGraceTestStep(const FString& Step, int32 Arg, AOutlawsLevelActor* L, AOutlawsPlayer* P)
 {
 	using namespace OutlawsSpawnGraceProbeLocal;
-	if (Step == TEXT("die"))
+	if (Step == TEXT("die") || Step == TEXT("window"))
 	{
+		if (Step == TEXT("window"))
+		{
+			bWindowWatch = true;
+			WindowUpAt = 0.0;
+			WindowMoved = WindowSpeed = 0.f;
+			WindowShields = GraceAheadOfFlag;
+			WindowBlasts = L->BlastsSeen;
+		}
 		L->DamagePlayer(1e6f, 1.f, true);
 		TWeakObjectPtr<AOutlawsPlayer> WeakP(P);
 		FTimerHandle H;
