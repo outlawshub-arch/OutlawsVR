@@ -984,9 +984,10 @@ bool AOutlawsPlayer::ShowMenuPage(const FString& File, bool bPush)
 		{
 			// REQ-PAUSECHAR (user 3 Nov: "drop the players button in multiplayer pause menu, since we can see the scorecard below the
 			// weapon wheel now. And we should just have a change character button instead to replace it"): in a match Players' place
-			// is Change character, straight to the character page.  A Players row stays under Options only while its page holds what
-			// nothing else in reach does (UOutlawsCoop::MatchNeedsPlayersRow: the team switch, the other people's pings and mutes).
-			// The story co-op has no card and keeps Players where it was; -OLOldPauseChar: a match too
+			// is Change character, straight to the character page.  REQ-PAUSECHAR2 (the user, 4 Nov: "move mute and ping"): the Players
+			// page goes from a match altogether: each person's ping and mute are on the wheel's card (Tab's table on the desktop), and
+			// its team switch a row here in a team match.  The story co-op has no card and keeps Players where it was;
+			// -OLOldPauseChar: a match too
 			const bool bChangeChar = FOutlawsMpCharacter::bMatchMenu && !UOutlawsCoop::OldPauseChar();
 			FItem I;
 			I.Kind = EItemKind::Link;
@@ -994,11 +995,13 @@ bool AOutlawsPlayer::ShowMenuPage(const FString& File, bool bPush)
 			I.Target = bChangeChar ? TEXT("#character") : TEXT("#cooppause");
 			const int32 Opt = Page->Items.IndexOfByPredicate([](const FItem& It) { return It.Target.Equals(TEXT("options.rml"), ESearchCase::IgnoreCase); });
 			Page->Items.Insert(I, Opt != INDEX_NONE ? Opt : FMath::Max(0, Page->Items.Num() - 1));
-			if (bChangeChar && UOutlawsCoop::MatchNeedsPlayersRow(this))
+			if (bChangeChar && UOutlawsCoop::IsTeamMatch(this))
 			{
-				I.Label = TEXT("Players");
-				I.Target = TEXT("#cooppause");
-				Page->Items.Insert(I, Opt != INDEX_NONE ? Opt + 2 : FMath::Max(0, Page->Items.Num() - 1));
+				FItem Team;
+				Team.Kind = EItemKind::Action;
+				Team.Label = UOutlawsCoop::TeamRowLabel(this);
+				Team.Name = TEXT("coop:team");
+				Page->Items.Insert(Team, Opt != INDEX_NONE ? Opt + 1 : FMath::Max(0, Page->Items.Num() - 1));
 			}
 		}
 		if (OutlawsMpHost::Flow().GetState() == FOutlawsMatchFlow::EState::WarmUp)
@@ -1915,6 +1918,12 @@ void AOutlawsPlayer::MenuTriggerPress(int32 Hand, int32 Index)
 
 void AOutlawsPlayer::MenuMousePress(bool bRight)
 {
+	// (REQ-PAUSECHAR2) Tab's table up on the desktop: the left button presses the row the view's middle has lit
+	if (!bMenuOpen && !bVR && !bRight)
+	{
+		if (AOutlawsFragTablePanel* Table = UOutlawsCoop::HeldScoreboard(this)) UOutlawsCoop::PressScoreRow(this, Table, Table->GetHotRow());
+		return;
+	}
 	if (!bMenuOpen || bVR || !MenuPage || !MenuRoot || !Camera) return;
 	bDesktopMenuMouse = true;
 	if (MenuPage->File == TEXT("#unlocked"))
@@ -5380,8 +5389,8 @@ void UOutlawsCoop::PauseTidyTestTick(AOutlawsPlayer* P, float Dt)
 		if (Has(TEXT("#cooppause"))) { P->ShowMenuPage(TEXT("#cooppause"), true); NextAt = T + 1.0f; ++Step; }
 		else
 		{
-			// (REQ-PAUSECHAR: a match with no one else and no teams has no Players row, its page nothing of its own to show)
-			const bool bNoNeed = FOutlawsMpCharacter::bMatchMenu && !UOutlawsCoop::OldPauseChar() && !UOutlawsCoop::MatchNeedsPlayersRow(P);
+			// (REQ-PAUSECHAR2: a match has no Players row, the page's ping and mute on the wheel's card)
+			const bool bNoNeed = FOutlawsMpCharacter::bMatchMenu && !UOutlawsCoop::OldPauseChar();
 			FitCheck(bNoNeed, FString::Printf(TEXT("%s: the pause page has Players%s"), *Mode, bNoNeed ? TEXT(" or no need of it") : TEXT("")));
 			Step = 16;
 		}

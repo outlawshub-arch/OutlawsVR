@@ -1976,6 +1976,7 @@ void AOutlawsPlayer::Tick(float Dt)
 		DetectBodyJump(Dt);
 	}
 	UpdateWheel();
+	UpdateScoreTablePointer();           // (REQ-PAUSECHAR2)
 	UpdateScope();
 	UpdateStamina(Dt);
 	UpdateBreath(Dt);

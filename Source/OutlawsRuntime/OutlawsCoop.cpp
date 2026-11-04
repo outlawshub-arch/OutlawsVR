@@ -2339,7 +2339,7 @@ void UOutlawsCoop::MenuAction(AOutlawsPlayer* P, const FString& Name)
 		if (Who >= 0 && Who < MaxPlayers)
 		{
 			C->MutedBits ^= 1u << Who;
-			UE_LOG(LogOutlawsCoop, Log, TEXT("OLCOOP %s: the %s's voice %s"), P->CoopMenuPage() == TEXT("#cooppause") ? TEXT("pause Players page") : TEXT("lobby"), WhoWord(Who),
+			UE_LOG(LogOutlawsCoop, Log, TEXT("OLCOOP %s: the %s's voice %s"), !P->IsMenuOpen() ? TEXT("a row of the scorecard") : P->CoopMenuPage() == TEXT("#cooppause") ? TEXT("pause Players page") : TEXT("lobby"), WhoWord(Who),
 				(C->MutedBits & (1u << Who)) ? TEXT("muted") : TEXT("heard again"));
 		}
 	}

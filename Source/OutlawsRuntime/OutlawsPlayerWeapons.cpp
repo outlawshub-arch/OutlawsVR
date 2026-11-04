@@ -1871,6 +1871,7 @@ void AOutlawsPlayer::UpdateWheel()
 	// trigger brings it closer (OutlawsWheelMap.cpp)
 	UpdateWheelMapPointer();
 	UpdateWheelMap(FMath::Min(float(FApp::GetDeltaTime()), 0.05f));
+	UpdateWheelScorePointer();           // (REQ-PAUSECHAR2)
 }
 
 void AOutlawsPlayer::ReleaseWheel(int32 Hand)
@@ -1981,6 +1982,7 @@ void AOutlawsPlayer::CloseWheel()
 	bWheelOpen = false;
 	WheelArrowHover[0] = WheelArrowHover[1] = 0;
 	bWheelTriggerArmed[0] = bWheelTriggerArmed[1] = false;
+	bWheelScoreTrigArmed[0] = bWheelScoreTrigArmed[1] = false;
 	bWheelMapZoom = false;               // (BUG-MAPZOOMTRIGGER: closing the wheel sends the map back)
 	bWheelMapHover = false;
 	WheelMapPointHand = -1;
@@ -1988,6 +1990,7 @@ void AOutlawsPlayer::CloseWheel()
 	if (AOutlawsFragTablePanel* Card = WheelScore.Get())
 	{
 		// (REQ-WHEELSCORE) the card goes with it (kept for the next open, its rows no longer looked at)
+		Card->SetHotRow(INDEX_NONE);
 		Card->SetSource(nullptr);
 		Card->SetActorHiddenInGame(true);
 	}
@@ -2062,6 +2065,63 @@ bool AOutlawsPlayer::HeadOnWheelScore() const
 	const double Margin = T * FMath::Tan(FMath::DegreesToRadians(4.0));      // (4 degrees round it)
 	return FMath::Abs(FVector::DotProduct(Off, Card->GetActorForwardVector())) < Size.X * 0.5 + Margin
 		&& FMath::Abs(FVector::DotProduct(Off, Card->GetActorRightVector())) < Size.Y * 0.5 + Margin;
+}
+
+void AOutlawsPlayer::UpdateWheelScorePointer()
+{
+	// REQ-PAUSECHAR2 (the user, 4 Nov: "move mute and ping"): the Players page's mute, on the card: a laser on a person's row, and
+	// on no icon, arrow or the map, lights it; a trigger let go since the wheel opened arms one press, as the map's zoom
+	AOutlawsFragTablePanel* Card = WheelScore.Get();
+	int32 Hot = INDEX_NONE, Hand = -1;
+	bool bPressed = false;
+	for (int32 H = 0; H < 2; ++H)
+	{
+		if (!bWheelHeld[H])
+		{
+			bWheelScoreTrigArmed[H] = false;
+			continue;
+		}
+		const float Trig = Axis(H == 0 ? TEXT("OLVR_LeftTrigger") : TEXT("OLVR_RightTrigger"));
+		if (Trig < 0.3f) bWheelScoreTrigArmed[H] = true;
+		if (!Card || WheelPick[H] >= 0 || WheelDropPick[H] >= 0 || WheelArrowHover[H] != 0 || WheelMapPointHand == H) continue;
+		UMotionControllerComponent* Aim = AimOf(H);
+		const bool bTest = !bVR && !WheelScoreTestAim.IsZero() && Hand < 0;
+		if (!Aim || (!bVR && !bTest)) continue;
+		const FVector O = Aim->GetComponentLocation();
+		const FVector D = bTest ? (WheelScoreTestAim - O).GetSafeNormal() : Aim->GetForwardVector();
+		float Along = 0.f;
+		const int32 Row = Card->RowUnderRay(O, D, Along);
+		if (Row == INDEX_NONE || !Card->GetData().Rows.IsValidIndex(Row)) continue;
+		// (the laser ends on the card, tipped up from the wheel's plane it was measured to)
+		if (Lasers[H])
+		{
+			Lasers[H]->SetRelativeLocationAndRotation(FVector(Along * 0.5, 0.0, 0.0), FRotator::ZeroRotator);
+			Lasers[H]->SetRelativeScale3D(FVector(Along / 100.0, 0.004, 0.004));
+		}
+		if (!Card->GetData().Rows[Row].bCanMute) continue;
+		Hot = Row;
+		Hand = H;
+		if (bWheelScoreTrigArmed[H] && Trig > 0.7f)
+		{
+			bWheelScoreTrigArmed[H] = false;
+			bWheelTriggerArmed[H] = false;
+			bPressed = true;
+		}
+	}
+	if (!Card) return;
+	if (Hot != Card->GetHotRow() && Hot != INDEX_NONE) Pulse(Hand, 0.15f);
+	Card->SetHotRow(Hot);
+	if (bPressed && UOutlawsCoop::PressScoreRow(this, Card, Hot)) Pulse(Hand, 0.35f);
+}
+
+void AOutlawsPlayer::UpdateScoreTablePointer()
+{
+	if (bVR) return;
+	AOutlawsFragTablePanel* Table = bMenuOpen ? nullptr : UOutlawsCoop::HeldScoreboard(this);
+	if (!Table || !Camera) return;
+	float Along = 0.f;
+	const int32 Row = Table->RowUnderRay(Camera->GetComponentLocation(), Camera->GetForwardVector(), Along);
+	Table->SetHotRow(Table->GetData().Rows.IsValidIndex(Row) && Table->GetData().Rows[Row].bCanMute ? Row : INDEX_NONE);
 }
 
 void AOutlawsPlayer::DrawStartPistol()

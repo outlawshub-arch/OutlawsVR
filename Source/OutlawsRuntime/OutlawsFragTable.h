@@ -50,10 +50,22 @@ struct FFragTableRow
 	bool bLocal = false;
 	int32 SortA = 0;
 	int32 SortB = 0;
+	/** (REQ-PAUSECHAR2) a running match's table: whose row it is, and whether a press on it mutes them (another person with a
+	 *  microphone). */
+	int32 Who = INDEX_NONE;
+	bool bCanMute = false;
 	bool operator==(const FFragTableRow& O) const
 	{
-		return Name == O.Name && Team == O.Team && Values == O.Values && bLocal == O.bLocal && SortA == O.SortA && SortB == O.SortB;
+		return Name == O.Name && Team == O.Team && Values == O.Values && bLocal == O.bLocal && SortA == O.SortA && SortB == O.SortB && Who == O.Who && bCanMute == O.bCanMute;
 	}
+};
+
+/** (REQ-PAUSECHAR2) Where a drawing put a row, on the canvas: Row its index in the data's Rows. */
+struct FFragTableRowBox
+{
+	int32 Row = INDEX_NONE;
+	FVector2D Min = FVector2D::ZeroVector;
+	FVector2D Max = FVector2D::ZeroVector;
 };
 
 /** The table's words: what a source (the level's counts, M1's match) hands the drawing. */
@@ -116,14 +128,15 @@ struct OUTLAWSRUNTIME_API FOutlawsFragTable
 {
 	static constexpr int32 CanvasW = 1920;
 	static int32 Measure(const FFragTableData& Data);
-	static float Draw(UCanvas* C, const FFragTableData& Data, const FFragTableArt& Art, int32 Width, int32 Height);
+	static float Draw(UCanvas* C, const FFragTableData& Data, const FFragTableArt& Art, int32 Width, int32 Height, int32 HotRow = INDEX_NONE, TArray<FFragTableRowBox>* OutRows = nullptr);
 	/** (REQ-WHEELSCORE) the scorecard under the weapon wheel: every word in the cells' font at its own size (none shrunk, a long
 	 *  name cut short with an ellipsis), the title and the clock over the column heads, then a row a player: the name, the mode's
-	 *  column, K and D.  One column of players up to 4, two from 5 (the first half, rounded up, on the left); a team game red's
-	 *  block then blue's (side by side from 5 too), each headed by its team's score.  The canvas's size for these rows (it is as
-	 *  wide as its columns). */
+	 *  column, K and D, (REQ-PAUSECHAR2) the ping and the Mute word when the data has them (in two columns of players the word
+	 *  only on a row pointed at or muted).  One column of players up to 4, two from 5 (the first half, rounded up, on the left);
+	 *  a team game red's block then blue's (side by side from 5 too), each headed by its team's score.  The canvas's size for
+	 *  these rows (it is as wide as its columns). */
 	static FIntPoint MeasureCard(const FFragTableData& Data, const FFragTableArt& Art);
-	static float DrawCard(UCanvas* C, const FFragTableData& Data, const FFragTableArt& Art, int32 Width, int32 Height, TArray<FFragTableText>* OutTexts);
+	static float DrawCard(UCanvas* C, const FFragTableData& Data, const FFragTableArt& Art, int32 Width, int32 Height, TArray<FFragTableText>* OutTexts, int32 HotRow = INDEX_NONE, TArray<FFragTableRowBox>* OutRows = nullptr);
 	/** The cells' font's cap height on the card's canvas, px (the H's ink at 26 pt: 23 px as -OLWheelScoreProbe measured it,
 	 *  3 Nov; the probe measures it again each run). */
 	static constexpr float CardCapPx = 23.f;
@@ -178,6 +191,14 @@ public:
 	int32 GetCanvasW() const { return CanvasW; }
 	/** (REQ-WHEELSCORE) the card's last drawing's texts (the probe's floor and fit checks). */
 	TArray<FFragTableText> LastTexts;
+	/** (REQ-PAUSECHAR2) where the last drawing put the rows. */
+	TArray<FFragTableRowBox> LastRows;
+	/** (REQ-PAUSECHAR2) the row a ray from O along D lands on (an index into GetData().Rows, INDEX_NONE off the rows or from behind),
+	 *  OutDist how far along it. */
+	int32 RowUnderRay(const FVector& O, const FVector& D, float& OutDist) const;
+	/** (REQ-PAUSECHAR2) the row lit as pointed at (INDEX_NONE: none), redrawn only on a change. */
+	void SetHotRow(int32 Row);
+	int32 GetHotRow() const { return HotRow; }
 	/** The plane's size now, cm (width, height). */
 	FVector2D GetSizeCm() const;
 	/** The material the plane is drawn in and its sort priority, for the logs. */
@@ -206,6 +227,7 @@ private:
 	float WidthCm = 320.f;
 	int32 CanvasH = 0;
 	int32 CanvasW = FOutlawsFragTable::CanvasW;
+	int32 HotRow = INDEX_NONE;
 	void Redraw();
 	void Fit();
 	/** (BUG-SCOREOCCLUDE) an on-top panel's bounds reach past Eye, so occlusion culling never drops it behind a near wall. */

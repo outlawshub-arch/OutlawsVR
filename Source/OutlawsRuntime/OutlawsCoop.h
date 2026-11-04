@@ -1269,11 +1269,16 @@ public:
 	 *  (the score screen at a match's end keeps its table).  -OLOldWheelScore: the pause menu's table as before, none under the
 	 *  wheel. */
 	static bool OldWheelScore();
-	/** REQ-PAUSECHAR (user 3 Nov): in a match the pause menu's Players row is Change character, straight to the character page.
-	 *  -OLOldPauseChar: Players there as before, with Switch character on its page. */
+	/** REQ-PAUSECHAR (user 3 Nov): in a match the pause menu's Players row is Change character, straight to the character page;
+	 *  REQ-PAUSECHAR2 (4 Nov): the page is gone from a match, its ping and mute on the card's rows, its team switch a pause row.
+	 *  -OLOldPauseChar: Players there as before, with Switch character on its page, and no ping or mute on the card. */
 	static bool OldPauseChar();
-	/** REQ-PAUSECHAR: whether a match keeps a Players row under Options: its page holds what nothing else in reach does. */
-	static bool MatchNeedsPlayersRow(const AOutlawsPlayer* P);
+	/** REQ-PAUSECHAR2: the team switch row's words ("Team: Red (join Blue)"), on the pause menu in a team match. */
+	static FString TeamRowLabel(const AOutlawsPlayer* P);
+	/** REQ-PAUSECHAR2: Tab's table while it is up until closed (null otherwise): on the desktop its rows are pressed, as the card's. */
+	static class AOutlawsFragTablePanel* HeldScoreboard(const AOutlawsPlayer* P);
+	/** REQ-PAUSECHAR2: a press on a row of the card or of Tab's table: that person muted, or heard again (false: not a row to mute). */
+	static bool PressScoreRow(AOutlawsPlayer* P, class AOutlawsFragTablePanel* Panel, int32 Row);
 	/** REQ-WHEELSCORE: the wheel's card (made the first time, then kept), shown with the wheel and its rows looked at twice a
 	 *  second, or hidden (bShow false); null with no match (or -OLOldWheelScore). The wheel places it (AOutlawsPlayer::PlaceWheelScore). */
 	static class AOutlawsFragTablePanel* WheelScoreCard(AOutlawsPlayer* P, bool bShow);
@@ -2026,6 +2031,8 @@ private:
 	void ModeWon(const FString& Winner, const FString& Why);
 	/** The frag table's columns and rows for the class (M2: CAPT, TIME, the team scores). */
 	void FillModeColumns(struct FFragTableData& Out) const;
+	/** REQ-PAUSECHAR2: a running match's rows get the Players page's ping and mute (their whose too); FillMatchTable's. */
+	void FillPingAndMute(struct FFragTableData& Out) const;
 	// -OLMpTest=modes (OutlawsCoopModes.cpp): each class's own checks, the host and two clients
 	void TickHostModesTest(double Now, AOutlawsLevelActor* L, AOutlawsPlayer* P);
 	void OnModesTestStep(const FString& Step, int32 Arg, AOutlawsLevelActor* L, AOutlawsPlayer* P);

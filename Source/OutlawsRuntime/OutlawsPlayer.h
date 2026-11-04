@@ -784,6 +784,13 @@ private:
 	/** (REQ-WHEELSCORE) the head's line of sight on the card (its rows and a few degrees round them): the wheel does not set off
 	 *  after the head then, or the card would run from the eyes reading it. */
 	bool HeadOnWheelScore() const;
+	/** (REQ-PAUSECHAR2) each hand holding the wheel points at the card as at the wheel: a row with a Mute on it lights, and that
+	 *  hand's trigger mutes that person or hears them again. */
+	void UpdateWheelScorePointer();
+	/** (REQ-PAUSECHAR2) the desktop, which has no wheel: Tab's table up, the view's middle lights a row as the menus' does. */
+	void UpdateScoreTablePointer();
+	bool bWheelScoreTrigArmed[2] = { false, false };
+	FVector WheelScoreTestAim = FVector::ZeroVector;         // (desktop tests: the first hand holding the wheel points here)
 	TWeakObjectPtr<class AOutlawsFragTablePanel> WheelScore;
 	float WheelScoreTilt = 0.f, WheelScoreLowDeg = 0.f, WheelScoreCmPerPx = 0.f;     // (the probe reads them)
 	/** A picture from Common.kpf as a texture (cached; null when missing). */

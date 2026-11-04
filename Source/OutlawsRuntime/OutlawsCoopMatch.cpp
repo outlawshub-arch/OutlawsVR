@@ -511,6 +511,14 @@ void UOutlawsCoop::OnMatchMessage(const FString& Text, float Seconds)
 	if (Text.StartsWith(TEXT("Waiting for players")))
 	{
 		WaitingSaid = Text;
+		// (REQ-PAUSECHAR2) the new count takes the last one's place: the line lives 5.5 s and is said again at each change of the
+		// count too, so the alone host's start (1/16, a bot's 2/16, 1/16 again, within a frame) stacked three of them
+		if (AOutlawsPlayer* Me = LocalPlayer())
+		{
+			TArray<FString> Up;
+			for (const FString& H : Me->HudLines) if (H.StartsWith(TEXT("Waiting for players"))) Up.AddUnique(H);
+			for (const FString& H : Up) Me->DropMessage(H);
+		}
 		if (bWaitingOff) return;
 	}
 	if (AOutlawsLevelActor* L = FindLevel()) L->Notify(Text, Seconds);
@@ -748,6 +756,7 @@ bool UOutlawsCoop::FillMatchTable(FFragTableData& Out) const
 		FFragTableRow& Row = Out.Rows.AddDefaulted_GetRef();
 		Row.Name = R.Name;
 		Row.bLocal = R.Who == MyIndex();
+		Row.Who = R.Who;
 		Row.Values = { FString::FromInt(R.Frags), FString::FromInt(R.Deaths), FString::FromInt(R.Shots),
 			R.Shots > 0 ? FString::Printf(TEXT("%d%%"), FMath::Min(100, FMath::RoundToInt(100.f * float(R.Hits) / float(R.Shots)))) : FString(TEXT("-")),
 			R.LongestCm > 0 ? FString::Printf(TEXT("%d m"), FMath::Max(1, FMath::RoundToInt(R.LongestCm / 100.f))) : FString(TEXT("-")) };
@@ -764,10 +773,14 @@ bool UOutlawsCoop::FillMatchTable(FFragTableData& Out) const
 			TEXT("Spittin' Jack"), TEXT("Gatling Jim"), TEXT("Bob Graham"), TEXT("Matt Morgan"), TEXT("Kid Calico"), TEXT("Doc Holliday"), TEXT("Ugly Jim"),
 			TEXT("Cactus Pete"), TEXT("Two-Gun Tess"), TEXT("Rattler"), TEXT("Ol' Clem") };
 		const bool bMode = Out.Columns.Num() > 1 && (Out.Columns[1].Header == TEXT("CAPTURES") || Out.Columns[1].Header == TEXT("TIME"));
+		TArray<FPlayerRow> Listed;
+		PlayerRows(Listed);
+		Listed.RemoveAll([](const FPlayerRow& R) { return !R.bStandIn; });
 		for (int32 k = 0; k < FakePlayers; ++k)
 		{
 			FFragTableRow& Row = Out.Rows.AddDefaulted_GetRef();
 			Row.Name = Names[k % UE_ARRAY_COUNT(Names)];
+			Row.Who = Listed.IsValidIndex(k) ? Listed[k].Who : INDEX_NONE;       // (REQ-PAUSECHAR2: its ping and mute, the lists' stand-in's)
 			Row.Team = S->bTeams ? (k % 2 == 0 ? 2 : 1) : 0;
 			const int32 Frags = (k * 7 + 3) % 23, Deaths = (k * 5 + 1) % 17;
 			Row.Values = { FString::FromInt(Frags), FString::FromInt(Deaths), FString::FromInt(Frags * 6 + 9), FString::Printf(TEXT("%d%%"), 20 + k * 3), FString::Printf(TEXT("%d m"), 4 + k) };
@@ -778,8 +791,61 @@ bool UOutlawsCoop::FillMatchTable(FFragTableData& Out) const
 		Out.SortRows();
 	}
 #endif
+	// REQ-PAUSECHAR2: a running match's table has the ping and the mute the Players page had (not the final table at its end)
+	if (!OldPauseChar() && S->MatchState != uint8(FOutlawsMatchFlow::EState::Ended)) FillPingAndMute(Out);
 	if (bMatchPanelHeld) Out.HeaderRows.Add({ ScoreboardCloseHint(LocalPlayer()), FString(), 0 });      // (BUG-SCOREBOARD)
+	if (bMatchPanelHeld && Out.Rows.ContainsByPredicate([](const FFragTableRow& R) { return R.bCanMute; }) && LocalPlayer() && !LocalPlayer()->bVR)
+	{
+		Out.HeaderRows.Add({ TEXT("Aim at a row, click to mute"), FString(), 0 });                      // (REQ-PAUSECHAR2: Tab's table on the desktop)
+	}
 	return Out.Rows.Num() > 0;
+}
+
+void UOutlawsCoop::FillPingAndMute(FFragTableData& Out) const
+{
+	// REQ-PAUSECHAR2 (the user, 4 Nov, via the planner: "move mute and ping"): each person's row, by what the Players page listed:
+	// a ping where this machine knows one (the host every client's, a client the host's alone), the word Mute or Muted on another
+	// person with a microphone.  Each a column only while some row has it, so the card is no wider than it needs to be
+	TArray<FPlayerRow> Listed;
+	PlayerRows(Listed);
+	TArray<FString> Pings, Mutes;
+	bool bAnyPing = false, bAnyMute = false;
+	for (FFragTableRow& Row : Out.Rows)
+	{
+		const FPlayerRow* R = Row.Who == INDEX_NONE ? nullptr : Listed.FindByPredicate([&Row](const FPlayerRow& X) { return X.Who == Row.Who; });
+		Row.bCanMute = R && R->bMic && R->Who != MyIndex();
+		const bool bPing = R && R->PingMs >= 0.f && R->Who != MyIndex();
+		Pings.Add(bPing ? FString::Printf(TEXT("%.0f"), R->PingMs) : FString());
+		Mutes.Add(Row.bCanMute ? FString(IsVoiceMuted(R->Who) ? TEXT("Muted") : TEXT("Mute")) : FString());
+		bAnyPing |= bPing;
+		bAnyMute |= Row.bCanMute;
+	}
+	auto Column = [&Out](const TCHAR* Header, float Width, const TArray<FString>& Cells)
+	{
+		FFragTableColumn& C = Out.Columns.AddDefaulted_GetRef();
+		C.Header = Header;
+		C.Width = Width;
+		for (int32 r = 0; r < Out.Rows.Num(); ++r) Out.Rows[r].Values.Add(Cells[r]);
+	};
+	if (bAnyPing) Column(TEXT("PING"), 150.f, Pings);
+	if (bAnyMute) Column(TEXT("VOICE"), 150.f, Mutes);
+}
+
+AOutlawsFragTablePanel* UOutlawsCoop::HeldScoreboard(const AOutlawsPlayer* P)
+{
+	UOutlawsCoop* C = Get(P);
+	return C && C->bMatchPanelHeld ? C->MatchPanel.Get() : nullptr;
+}
+
+bool UOutlawsCoop::PressScoreRow(AOutlawsPlayer* P, AOutlawsFragTablePanel* Panel, int32 Row)
+{
+	// REQ-PAUSECHAR2: a press on a row is the mute the Players page's row pressed (MenuAction's coop:mute), shown at once
+	UOutlawsCoop* C = Get(P);
+	if (!C || !Panel || !Panel->GetData().Rows.IsValidIndex(Row) || !Panel->GetData().Rows[Row].bCanMute) return false;
+	MenuAction(P, FString::Printf(TEXT("coop:mute:%d"), Panel->GetData().Rows[Row].Who));
+	FFragTableData Now;
+	if (C->FillMatchTable(Now)) Panel->SetData(Now);
+	return true;
 }
 
 void UOutlawsCoop::ShowMatchPanel(float Seconds)

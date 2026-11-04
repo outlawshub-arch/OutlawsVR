@@ -13,18 +13,25 @@
 // The story co-op (-OLCoopAuto -OLCoopHost -OLCoopLevel=hideout, -OLCoopAuto -OLCoopJoin=<host>:<port>): its pause menu as before.
 // Single player (-OLPauseCharProbe=sp -OLShots -OLLevel=hideout -OLNoFrontEnd): neither row.
 // -OLOldPauseChar: the rows as before (the row checks FAIL, the control; nothing is picked).
-// Lines "OLSHOT pausechar check PASS|FAIL (host|client|sp): ..." and "OLSHOT pausechar <host|client|sp> RESULT".
+// REQ-PAUSECHAR2 (the user, 4 Nov: "move mute and ping"): no Players row in a match at all, in a team match a team switch row under
+// Change character (pressed, the team changes).  In the warm-up and in play: the wheel's card has each other person's ping and
+// mute (the other machine's person given a microphone, none being here; -OLFakePlayers's stand-ins in the table), a hand pointed
+// at their row lights it, a pull mutes them (the same bit the page's row set; a shot), a second pull hears them again, a pull
+// on this player's own row does nothing.  Tab's table on the desktop the same, by the view's middle and the left button.  The
+// host alone has neither column; the warm-up's "Waiting for players" is one line, not three.  -OLOldPauseChar: neither column.
 
 #include "OutlawsCoop.h"
 #include "OutlawsRuntime.h"
 #include "OutlawsDeathmatch.h"
 #include "OutlawsFlags.h"
+#include "OutlawsFragTable.h"
 #include "OutlawsLevelActor.h"
 #include "OutlawsMenuDoc.h"
 #include "OutlawsMpHost.h"
 #include "OutlawsPlayer.h"
 #include "OutlawsRemotePlayer.h"
 #include "OutlawsShotTests.h"
+#include "Camera/CameraComponent.h"
 #include "Components/TextRenderComponent.h"
 #include "HAL/PlatformMisc.h"
 #include "Misc/Paths.h"
@@ -40,6 +47,7 @@ namespace OutlawsPauseCharProbeLocal
 	constexpr int32 Starts = Pack(0, 1), WarmPicks = Pack(2, 3), PlayPicks = Pack(4, 4);
 
 	int32 Passes = 0, Fails = 0, Client = -1, Line = 0;
+	int32 TeamWas = 0, ThePerson = INDEX_NONE;           // (the team before the switch; the row's person the steps press)
 
 	struct FLine
 	{
@@ -50,12 +58,45 @@ namespace OutlawsPauseCharProbeLocal
 	// the host's script: each line done here and on the client, Wait seconds before the next (start, alive and end the host's own)
 	const FLine InMatch[] = {
 		{ TEXT("rows"), 0, 1.5 }, { TEXT("change"), 0, 1.5 }, { TEXT("pick"), WarmPicks, 1.5 }, { TEXT("rules"), WarmPicks, 0.5 }, { TEXT("worn"), Starts, 0.5 },
-		{ TEXT("back"), 0, 1.0 }, { TEXT("players"), 0, 1.5 }, { TEXT("close"), 0, 1.0 }, { TEXT("start"), 0, 3.0 }, { TEXT("worn"), WarmPicks, 0.5 },
+		{ TEXT("back"), 0, 1.0 }, { TEXT("team"), 0, 1.5 }, { TEXT("teamis"), 0, 0.5 }, { TEXT("close"), 0, 1.0 },
+		{ TEXT("card"), 0, 1.5 }, { TEXT("cardpoint"), 0, 0.6 }, { TEXT("cardpull"), 0, 0.6 }, { TEXT("cardmuted"), 0, 0.6 }, { TEXT("cardpull"), 0, 0.6 }, { TEXT("cardheard"), 0, 0.6 },
+		{ TEXT("cardself"), 0, 0.6 }, { TEXT("cardpull"), 0, 0.6 }, { TEXT("cardselfis"), 0, 0.6 },
+		{ TEXT("cardwide"), 0, 1.0 }, { TEXT("cardwidepoint"), 0, 0.6 }, { TEXT("cardpull"), 0, 0.6 }, { TEXT("cardmuted"), 0, 0.6 }, { TEXT("cardpull"), 0, 0.6 }, { TEXT("cardheard"), 0, 0.6 }, { TEXT("cardnarrow"), 0, 0.8 },
+		{ TEXT("cardshut"), 0, 0.6 }, { TEXT("tab"), 0, 0.8 }, { TEXT("tabpoint"), 0, 0.6 }, { TEXT("tabpress"), 0, 0.6 }, { TEXT("tabshut"), 0, 0.8 },
+		{ TEXT("start"), 0, 3.0 }, { TEXT("worn"), WarmPicks, 0.5 },
 		{ TEXT("rows"), 1, 1.5 }, { TEXT("change"), 1, 1.5 }, { TEXT("pick"), PlayPicks, 1.5 }, { TEXT("rules"), PlayPicks, 0.5 }, { TEXT("worn"), WarmPicks, 0.5 },
-		{ TEXT("back"), 1, 1.0 }, { TEXT("players"), 1, 1.5 }, { TEXT("close"), 1, 1.0 }, { TEXT("die"), 0, 3.0 }, { TEXT("respawn"), 0, 0.5 },
-		{ TEXT("alive"), 0, 3.0 }, { TEXT("worn"), PlayPicks, 0.5 }, { TEXT("end"), 0, 0.0 } };
+		{ TEXT("back"), 1, 1.0 }, { TEXT("close"), 1, 1.0 },
+		{ TEXT("card"), 1, 1.5 }, { TEXT("cardpoint"), 1, 0.6 }, { TEXT("cardpull"), 1, 0.6 }, { TEXT("cardmuted"), 1, 0.6 }, { TEXT("cardpull"), 1, 0.6 }, { TEXT("cardheard"), 1, 0.6 },
+		{ TEXT("cardshut"), 1, 0.6 }, { TEXT("tab"), 1, 0.8 }, { TEXT("tabpoint"), 1, 0.6 }, { TEXT("tabpress"), 1, 0.6 }, { TEXT("tabshut"), 1, 0.8 },
+		{ TEXT("die"), 0, 3.0 }, { TEXT("respawn"), 0, 0.5 }, { TEXT("alive"), 0, 3.0 }, { TEXT("worn"), PlayPicks, 0.5 }, { TEXT("end"), 0, 0.0 } };
 	const FLine InStory[] = { { TEXT("rows"), 0, 1.5 }, { TEXT("players"), 0, 1.5 }, { TEXT("close"), 0, 1.0 }, { TEXT("end"), 0, 0.0 } };
-	const FLine OldMatch[] = { { TEXT("rows"), 0, 1.5 }, { TEXT("close"), 0, 1.0 }, { TEXT("end"), 0, 0.0 } };
+	const FLine OldMatch[] = { { TEXT("rows"), 0, 1.5 }, { TEXT("close"), 0, 1.0 }, { TEXT("card"), 0, 1.5 }, { TEXT("cardpoint"), 0, 0.6 }, { TEXT("cardshut"), 0, 0.6 }, { TEXT("end"), 0, 0.0 } };
+
+	int32 ColumnOf(const FFragTableData& D, const TCHAR* Header)
+	{
+		// (into a row's Values)
+		return D.Columns.IndexOfByPredicate([Header](const FFragTableColumn& C) { return C.Header == Header; }) - 1;
+	}
+
+	FString Cell(const FFragTableRow& R, int32 Column)
+	{
+		return R.Values.IsValidIndex(Column) ? R.Values[Column] : FString();
+	}
+
+	/** Where a row's middle is in the world, from the last drawing (false: not drawn). */
+	bool RowPlace(const AOutlawsFragTablePanel* Panel, int32 Row, FVector& Out)
+	{
+		const FFragTableRowBox* B = Panel->LastRows.FindByPredicate([Row](const FFragTableRowBox& X) { return X.Row == Row; });
+		if (!B) return false;
+		const FVector2D Size = Panel->GetSizeCm(), Px = (B->Min + B->Max) * 0.5;
+		Out = Panel->GetActorLocation() + Panel->GetActorForwardVector() * ((Px.X / Panel->GetCanvasW() - 0.5) * Size.X) + Panel->GetActorRightVector() * ((Px.Y / Panel->GetCanvasH() - 0.5) * Size.Y);
+		return true;
+	}
+
+	int32 RowOf(const FFragTableData& D, int32 Who)
+	{
+		return Who == INDEX_NONE ? INDEX_NONE : D.Rows.IndexOfByPredicate([Who](const FFragTableRow& R) { return R.Who == Who; });
+	}
 
 	void Check(bool bOk, const TCHAR* Who, const FString& What)
 	{
@@ -172,9 +213,16 @@ void UOutlawsCoop::OnPauseCharTestStep(const FString& Step, int32 Arg, AOutlawsL
 		}
 		else
 		{
-			Mine(PageIs(TEXT("main_game.rml")) && Opt > 0 && Char == Opt - 1 && Items[Char].Label == TEXT("Change character"), FString::Printf(TEXT("(%s) Change character is where Players was, just over Options (row %d, Options %d)"), When, Char, Opt));
-			const bool bWant = !OLFlags::Param(TEXT("OLPauseCharSolo")) || IsTeamMatch(P);
-			Mine(bWant ? Play != INDEX_NONE && Play == Opt + 1 && Items[Play].Label == TEXT("Players") : Play == INDEX_NONE, FString::Printf(TEXT("(%s) Players %s (row %d)"), When, bWant ? TEXT("just under Options") : TEXT("gone: nothing of its own for it to show"), Play));
+			Mine(PageIs(TEXT("main_game.rml")) && Opt > 0 && Char == Opt - (IsTeamMatch(P) ? 2 : 1) && Items[Char].Label == TEXT("Change character"), FString::Printf(TEXT("(%s) Change character is where Players was, over Options (row %d, Options %d)"), When, Char, Opt));
+			Mine(Play == INDEX_NONE, FString::Printf(TEXT("(%s) no Players row in a match (row %d)"), When, Play));
+			const int32 Team = Items.IndexOfByPredicate([](const OutlawsMenu::FItem& I) { return I.Name == TEXT("coop:team"); });
+			Mine(IsTeamMatch(P) ? Team == Char + 1 && Items[Team].Label.StartsWith(TEXT("Team: ")) : Team == INDEX_NONE, FString::Printf(TEXT("(%s) the team switch: %s (row %d)"), When, IsTeamMatch(P) ? TEXT("under Change character") : TEXT("no teams, no row"), Team));
+			if (Arg == 0)
+			{
+				// (the warm-up: the new count takes the last one's place, the alone host's start said three in a frame)
+				const int32 Waits = P->HudLines.FilterByPredicate([](const FString& H) { return H.StartsWith(TEXT("Waiting for players")); }).Num();
+				Mine(Waits <= 1, FString::Printf(TEXT("(%s) %d \"Waiting for players\" line%s up as the menu opens"), When, Waits, Waits == 1 ? TEXT("") : TEXT("s")));
+			}
 			const int32 Go = Items.IndexOfByPredicate([](const OutlawsMenu::FItem& I) { return I.Name == TEXT("mphost_matchstart"); });
 			Mine(Go == (bHost && Arg == 0 ? 1 : INDEX_NONE), FString::Printf(TEXT("(%s) Start the game row %d"), When, Go));
 		}
@@ -245,6 +293,169 @@ void UOutlawsCoop::OnPauseCharTestStep(const FString& Step, int32 Arg, AOutlawsL
 	else if (Step == TEXT("close"))
 	{
 		if (P->bMenuOpen) P->CloseMenu();
+	}
+	else if (Step == TEXT("team"))
+	{
+		// (REQ-PAUSECHAR2: the row is the page's switch: the other team, the menu shut)
+		TeamWas = MyTeam(P);
+		if (!IsTeamMatch(P)) return;
+		Mine(P->CoopPressRow(TEXT("coop:team")), TEXT("the team switch row pressed"));
+	}
+	else if (Step == TEXT("teamis"))
+	{
+		if (IsTeamMatch(P)) Mine(MyTeam(P) == (TeamWas == 1 ? 2 : 1) && !P->bMenuOpen, FString::Printf(TEXT("the team switched: %d to %d"), TeamWas, MyTeam(P)));
+	}
+	else if (Step == TEXT("card"))
+	{
+		// REQ-PAUSECHAR2: the wheel up, the stand-ins in the table; the other machine's person has a microphone here (no real one)
+		bScoreStandIns = true;
+		ThePerson = bHost ? Client : 0;
+		if (AOutlawsCoopLink* K = ThePerson != INDEX_NONE && ThePerson >= 0 ? GetLink(ThePerson) : nullptr) K->bMic = true;
+		P->OpenWheel(1);
+	}
+	else if (Step == TEXT("cardpoint"))
+	{
+		AOutlawsFragTablePanel* Card = P->WheelScore.Get();
+		const bool bUp = Card && !Card->IsHidden() && Card->GetCanvas();
+		Mine(bUp, FString::Printf(TEXT("(%s) the card is up with the wheel"), When));
+		if (!bUp) return;
+		const FFragTableData& D = Card->GetData();
+		const int32 PingC = ColumnOf(D, TEXT("PING")), MuteC = ColumnOf(D, TEXT("VOICE"));
+		for (const FFragTableRow& R : D.Rows)
+		{
+			UE_LOG(LogOutlawsCoop, Display, TEXT("OLSHOT pausechar (%s, %s) card row: player %d, \"%s\", ping \"%s\", \"%s\"%s"), Who, When, R.Who, *R.Name, *Cell(R, PingC), *Cell(R, MuteC), R.bCanMute ? TEXT(", a press mutes") : TEXT(""));
+		}
+		UE_LOG(LogOutlawsCoop, Display, TEXT("OLSHOT pausechar (%s, %s) the card: %d x %d px, %.0f cm wide"), Who, When, Card->GetCanvasW(), Card->GetCanvasH(), Card->GetSizeCm().X);
+		if (bOld)
+		{
+			Mine(PingC < 0 && MuteC < 0, TEXT("-OLOldPauseChar: no ping or mute on the card"));
+			return;
+		}
+		const int32 Mine1 = D.Rows.IndexOfByPredicate([](const FFragTableRow& R) { return R.bLocal; });
+		Mine(D.Rows.IsValidIndex(Mine1) && !D.Rows[Mine1].bCanMute && Cell(D.Rows[Mine1], PingC).IsEmpty() && Cell(D.Rows[Mine1], MuteC).IsEmpty(), FString::Printf(TEXT("(%s) this player's own row has no ping and no mute"), When));
+		if (FakePlayers <= 0 && ThePerson <= 0 && bHost)
+		{
+			Mine(PingC < 0 && MuteC < 0, FString::Printf(TEXT("(%s) alone, the card has neither column"), When));
+			ThePerson = INDEX_NONE;
+			return;
+		}
+		const int32 Row = RowOf(D, ThePerson);
+		Mine(D.Rows.IsValidIndex(Row) && Cell(D.Rows[Row], PingC).IsNumeric() && Cell(D.Rows[Row], MuteC) == TEXT("Mute"), FString::Printf(TEXT("(%s) the other person's row: ping \"%s\", \"%s\""), When, Row >= 0 ? *Cell(D.Rows[Row], PingC) : TEXT("?"), Row >= 0 ? *Cell(D.Rows[Row], MuteC) : TEXT("?")));
+		// (a stand-in with a microphone has its Mute too, the one without none)
+		TArray<FPlayerRow> Listed;
+		PlayerRows(Listed);
+		int32 Wrong = 0, Stand = 0;
+		for (const FPlayerRow& R : Listed)
+		{
+			const int32 At = R.bStandIn ? RowOf(D, R.Who) : INDEX_NONE;
+			if (!R.bStandIn) continue;
+			++Stand;
+			Wrong += D.Rows.IsValidIndex(At) && D.Rows[At].bCanMute == R.bMic && (Cell(D.Rows[At], MuteC) == TEXT("Mute")) == R.bMic && Cell(D.Rows[At], PingC) == FString::Printf(TEXT("%.0f"), R.PingMs) ? 0 : 1;
+		}
+		Mine(Stand == FakePlayers && Wrong == 0, FString::Printf(TEXT("(%s) the %d stand-ins' rows: their pings, a Mute on those with a microphone (%d wrong)"), When, Stand, Wrong));
+		FVector At = FVector::ZeroVector;
+		if (!RowPlace(Card, Row, At)) { Mine(false, TEXT("the row was drawn")); return; }
+		P->WheelScoreTestAim = At;
+		if (AController* Ctl = P->GetController()) Ctl->SetControlRotation((Card->GetActorLocation() - P->Camera->GetComponentLocation()).Rotation());      // (the shot's: the head on the card)
+	}
+	else if (Step == TEXT("cardpull"))
+	{
+		// (a pull of the hand holding the wheel, let go in the next step's frame)
+		if (ThePerson != INDEX_NONE) P->TestAxes.Add(TEXT("OLVR_RightTrigger"), 1.f);
+	}
+	else if (Step == TEXT("cardmuted") || Step == TEXT("cardheard"))
+	{
+		P->TestAxes.Remove(TEXT("OLVR_RightTrigger"));
+		AOutlawsFragTablePanel* Card = P->WheelScore.Get();
+		if (ThePerson == INDEX_NONE || !Card) return;
+		const bool bWant = Step == TEXT("cardmuted");
+		const FFragTableData& D = Card->GetData();
+		const int32 Row = RowOf(D, ThePerson);
+		const FString Word = D.Rows.IsValidIndex(Row) ? Cell(D.Rows[Row], ColumnOf(D, TEXT("VOICE"))) : FString();
+		Mine(IsVoiceMuted(ThePerson) == bWant && MutedBits == (bWant ? 1u << ThePerson : 0u), FString::Printf(TEXT("(%s) the pull %s that person (bits 0x%x, the bit the page's row set)"), When, bWant ? TEXT("mutes") : TEXT("hears again"), MutedBits));
+		Mine(Word == (bWant ? TEXT("Muted") : TEXT("Mute")) && Card->GetHotRow() == Row, FString::Printf(TEXT("(%s) the row says \"%s\", still lit (row %d, lit %d)"), When, *Word, Row, Card->GetHotRow()));
+		const bool bDrawn = Card->LastTexts.ContainsByPredicate([&Word](const FFragTableText& T) { return T.Str == Word; });
+		Mine(bDrawn, FString::Printf(TEXT("(%s, %d rows) \"%s\" is drawn on the card"), When, D.Rows.Num(), *Word));
+		Shoot(FString::Printf(TEXT("ol_pausechar_%s_card_%s_%s%s"), Who, bWant ? TEXT("muted") : TEXT("heard"), Arg == 0 ? TEXT("warmup") : TEXT("play"), D.Rows.Num() > 4 ? TEXT("_two") : TEXT("")));
+	}
+	else if (Step == TEXT("cardwide"))
+	{
+		// (two columns of players: the word has no column of its own, it shows on the row pointed at)
+		if (ThePerson != INDEX_NONE) FakePlayers = 4;
+	}
+	else if (Step == TEXT("cardwidepoint"))
+	{
+		AOutlawsFragTablePanel* Card = P->WheelScore.Get();
+		if (ThePerson == INDEX_NONE || !Card) return;
+		const FFragTableData& D = Card->GetData();
+		const int32 Row = D.Rows.IndexOfByPredicate([](const FFragTableRow& R) { return R.bCanMute; });
+		const int32 Words = Card->LastTexts.FilterByPredicate([](const FFragTableText& T) { return T.Str == TEXT("Mute"); }).Num();
+		FVector At = FVector::ZeroVector;
+		Mine(D.Rows.Num() == 6 && Words == 0 && RowPlace(Card, Row, At), FString::Printf(TEXT("(%s) %d players in two columns, %d Mute words until a row is pointed at"), When, D.Rows.Num(), Words));
+		if (D.Rows.IsValidIndex(Row)) ThePerson = D.Rows[Row].Who;
+		P->WheelScoreTestAim = At;
+	}
+	else if (Step == TEXT("cardnarrow"))
+	{
+		if (ThePerson == INDEX_NONE) return;
+		FakePlayers = 2;
+		ThePerson = bHost ? Client : 0;
+	}
+	else if (Step == TEXT("cardself"))
+	{
+		AOutlawsFragTablePanel* Card = P->WheelScore.Get();
+		if (ThePerson == INDEX_NONE || !Card) return;
+		FVector At = FVector::ZeroVector;
+		const int32 Row = Card->GetData().Rows.IndexOfByPredicate([](const FFragTableRow& R) { return R.bLocal; });
+		if (RowPlace(Card, Row, At)) P->WheelScoreTestAim = At;
+	}
+	else if (Step == TEXT("cardselfis"))
+	{
+		P->TestAxes.Remove(TEXT("OLVR_RightTrigger"));
+		AOutlawsFragTablePanel* Card = P->WheelScore.Get();
+		if (ThePerson == INDEX_NONE || !Card) return;
+		Mine(Card->GetHotRow() == INDEX_NONE && MutedBits == 0u, FString::Printf(TEXT("(%s) pointed at this player's own row nothing lights and a pull mutes no one (lit %d, bits 0x%x)"), When, Card->GetHotRow(), MutedBits));
+	}
+	else if (Step == TEXT("cardshut"))
+	{
+		P->TestAxes.Remove(TEXT("OLVR_RightTrigger"));
+		P->WheelScoreTestAim = FVector::ZeroVector;
+		P->CloseWheel();
+		if (AController* Ctl = P->GetController()) Ctl->SetControlRotation(FRotator(0.0, Ctl->GetControlRotation().Yaw, 0.0));
+	}
+	else if (Step == TEXT("tab"))
+	{
+		ToggleScoreboard(P, TEXT("the test's Tab"));
+	}
+	else if (Step == TEXT("tabpoint"))
+	{
+		// (the desktop has no wheel: Tab's table has the columns, the view's middle points as in its menus)
+		AOutlawsFragTablePanel* Table = HeldScoreboard(P);
+		Mine(Table != nullptr, FString::Printf(TEXT("(%s) Tab's table is up"), When));
+		if (!Table || ThePerson == INDEX_NONE) return;
+		const FFragTableData& D = Table->GetData();
+		const int32 Row = RowOf(D, ThePerson);
+		FVector At = FVector::ZeroVector;
+		const bool bPlaced = RowPlace(Table, Row, At);
+		Mine(bPlaced && ColumnOf(D, TEXT("PING")) >= 0 && Cell(D.Rows[Row], ColumnOf(D, TEXT("VOICE"))) == TEXT("Mute"), FString::Printf(TEXT("(%s) the table has the person's ping and Mute"), When));
+		if (bPlaced) if (AController* Ctl = P->GetController()) Ctl->SetControlRotation((At - P->Camera->GetComponentLocation()).Rotation());
+	}
+	else if (Step == TEXT("tabpress"))
+	{
+		AOutlawsFragTablePanel* Table = HeldScoreboard(P);
+		if (!Table || ThePerson == INDEX_NONE) return;
+		const int32 Row = RowOf(Table->GetData(), ThePerson);
+		Mine(Table->GetHotRow() == Row, FString::Printf(TEXT("(%s) the view's middle lights the row (row %d, lit %d)"), When, Row, Table->GetHotRow()));
+		P->MenuMouseLeft();
+		const bool bMuted = IsVoiceMuted(ThePerson) && MutedBits == 1u << ThePerson;
+		Shoot(FString::Printf(TEXT("ol_pausechar_%s_tab_muted_%s"), Who, Arg == 0 ? TEXT("warmup") : TEXT("play")));
+		P->MenuMouseLeft();
+		Mine(bMuted && MutedBits == 0u, FString::Printf(TEXT("(%s) the left button mutes that person, and hears them again"), When));
+	}
+	else if (Step == TEXT("tabshut"))
+	{
+		if (HeldScoreboard(P)) ToggleScoreboard(P, TEXT("the test's Tab"));
+		if (AController* Ctl = P->GetController()) Ctl->SetControlRotation(FRotator(0.0, Ctl->GetControlRotation().Yaw, 0.0));
 	}
 	else if (Step == TEXT("worn"))
 	{

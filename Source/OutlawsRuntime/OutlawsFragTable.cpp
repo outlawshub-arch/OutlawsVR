@@ -82,6 +82,7 @@ namespace
 	constexpr float CdInX = 16.f, CdInY = 10.f;
 	constexpr float CdTitleH = 46.f, CdHeadH = 44.f;
 	constexpr float CdNameW = 250.f, CdModeW = 110.f, CdNumW = 70.f, CdGutter = 36.f, CdCellPad = 8.f;
+	constexpr float CdPingW = 92.f, CdMuteW = 116.f;      // (REQ-PAUSECHAR2: "PING" and "Muted" whole, clear of their neighbours)
 	// players in one column; past it two (user 3 Nov, the WHEELSCORE follow-up: a Death Match's two columns from 5 players, as a
 	// team game's blocks go side by side, so its 8 players' card reaches about 37 degrees under the wheel's middle, not 49)
 	constexpr int32 CdOneColumn = 4;
@@ -100,6 +101,8 @@ namespace
 	{
 		bool bTeams = false;
 		int32 ModeVal = INDEX_NONE, KillVal = INDEX_NONE, DeathVal = INDEX_NONE;     // into a row's Values
+		int32 PingVal = INDEX_NONE, MuteVal = INDEX_NONE;                            // (REQ-PAUSECHAR2: there too)
+		bool bMuteColumn = false;                                                    // (the Mute word's own column: the players in one)
 		FString ModeHead;
 		TArray<TArray<FCardBlock>> Cols;
 		FString Clock;
@@ -126,6 +129,8 @@ namespace
 			if (Hd == TEXT("KILLS")) P.KillVal = c - 1;
 			else if (Hd == TEXT("DEATHS")) P.DeathVal = c - 1;
 			else if (Hd == TEXT("CAPTURES") || Hd == TEXT("TIME")) { P.ModeVal = c - 1; P.ModeHead = Hd == TEXT("TIME") ? TEXT("TIME") : TEXT("CAPS"); }
+			else if (Hd == TEXT("PING")) P.PingVal = c - 1;
+			else if (Hd == TEXT("VOICE")) P.MuteVal = c - 1;
 		}
 		const int32 N = D.Rows.Num();
 		if (P.bTeams)
@@ -164,7 +169,8 @@ namespace
 			if (H.Label == TEXT("Time Limit")) P.Clock = H.Value + (P.Clock.IsEmpty() ? FString() : TEXT("   ") + P.Clock);
 			else if (H.Label == TEXT("Kill Limit")) P.Clock += (P.Clock.IsEmpty() ? FString() : FString(TEXT("   "))) + TEXT("first to ") + H.Value;
 		}
-		P.ColW = CdNameW + (P.ModeVal != INDEX_NONE ? CdModeW : 0.f) + 2.f * CdNumW;
+		P.bMuteColumn = P.MuteVal != INDEX_NONE && P.Cols.Num() == 1;
+		P.ColW = CdNameW + (P.ModeVal != INDEX_NONE ? CdModeW : 0.f) + 2.f * CdNumW + (P.PingVal != INDEX_NONE ? CdPingW : 0.f) + (P.bMuteColumn ? CdMuteW : 0.f);
 		const float Inner = P.Cols.Num() * P.ColW + (P.Cols.Num() - 1) * CdGutter;
 		P.W = CdPadL + CdInX + Inner + CdInX + CdPadR;
 		if (Art.Cell && !P.Clock.IsEmpty())
@@ -259,8 +265,9 @@ int32 FOutlawsFragTable::Measure(const FFragTableData& Data)
 	return FMath::CeilToInt(H);
 }
 
-float FOutlawsFragTable::Draw(UCanvas* C, const FFragTableData& Data, const FFragTableArt& Art, int32 Width, int32 Height)
+float FOutlawsFragTable::Draw(UCanvas* C, const FFragTableData& Data, const FFragTableArt& Art, int32 Width, int32 Height, int32 HotRow, TArray<FFragTableRowBox>* OutRows)
 {
+	if (OutRows) OutRows->Reset();
 	if (!C) return 0.f;
 	const float W = float(Width);
 	auto Fill = [C](float X, float Y, float Wd, float Ht, const FLinearColor& Colour, bool bBlend)
@@ -396,6 +403,8 @@ float FOutlawsFragTable::Draw(UCanvas* C, const FFragTableData& Data, const FFra
 		const FFragTableRow& Row = Data.Rows[r];
 		// every other row on a faint dark band; the local player's in the hot row's yellow
 		if (r % 2 == 1) Fill(TL, Ry, TR - TL, RowH, FLinearColor(0.f, 0.f, 0.f, 0.28f), true);
+		if (r == HotRow) Fill(TL, Ry, TR - TL, RowH, FtGold() * FLinearColor(1.f, 1.f, 1.f, 0.3f), true);      // (REQ-PAUSECHAR2: pointed at)
+		if (OutRows) OutRows->Add({ r, FVector2D(TL, Ry), FVector2D(TR, Ry + RowH) });
 		const FLinearColor Ink = Row.bLocal ? FtHot() : Row.Team ? FtTeam(Row.Team) : FLinearColor::White;
 		int32 v = 0;
 		for (int32 c = 0; c < Data.Columns.Num(); ++c)
@@ -423,9 +432,10 @@ FIntPoint FOutlawsFragTable::MeasureCard(const FFragTableData& Data, const FFrag
 	return FIntPoint(FMath::CeilToInt(P.W), FMath::CeilToInt(P.H));
 }
 
-float FOutlawsFragTable::DrawCard(UCanvas* C, const FFragTableData& Data, const FFragTableArt& Art, int32 Width, int32 Height, TArray<FFragTableText>* OutTexts)
+float FOutlawsFragTable::DrawCard(UCanvas* C, const FFragTableData& Data, const FFragTableArt& Art, int32 Width, int32 Height, TArray<FFragTableText>* OutTexts, int32 HotRow, TArray<FFragTableRowBox>* OutRows)
 {
 	if (OutTexts) OutTexts->Reset();
+	if (OutRows) OutRows->Reset();
 	if (!C || !Art.Cell) return 0.f;
 	const FCardPlan P = PlanCard(Data, Art);
 	const float W = float(Width), H = float(Height);
@@ -544,6 +554,7 @@ float FOutlawsFragTable::DrawCard(UCanvas* C, const FFragTableData& Data, const 
 	{
 		const float X = L + c * (P.ColW + CdGutter);
 		const float NameR = X + CdNameW, ModeR = NameR + (P.ModeVal != INDEX_NONE ? CdModeW : 0.f), KR = ModeR + CdNumW, DR = KR + CdNumW;
+		const float PingR = DR + (P.PingVal != INDEX_NONE ? CdPingW : 0.f), MuteR = PingR + (P.bMuteColumn ? CdMuteW : 0.f);      // (REQ-PAUSECHAR2)
 		float Ry = Y;
 		for (const FCardBlock& Block : P.Cols[c])
 		{
@@ -552,20 +563,32 @@ float FOutlawsFragTable::DrawCard(UCanvas* C, const FFragTableData& Data, const 
 			if (P.ModeVal != INDEX_NONE) Txt(P.ModeHead, ModeR - CdCellPad, Ry + CdHeadH * 0.5f, 2, FtGold(), 0.f, true);
 			Txt(TEXT("K"), KR - CdCellPad, Ry + CdHeadH * 0.5f, 2, FtGold(), 0.f, true);
 			Txt(TEXT("D"), DR - CdCellPad, Ry + CdHeadH * 0.5f, 2, FtGold(), 0.f, true);
+			if (P.PingVal != INDEX_NONE) Txt(TEXT("PING"), PingR - CdCellPad, Ry + CdHeadH * 0.5f, 2, FtGold(), 0.f, true);
 			Ry += CdHeadH;
-			Fill(X, Ry - 3.f, DR - X, 2.f, FtGold() * FLinearColor(1.f, 1.f, 1.f, 0.6f));
+			Fill(X, Ry - 3.f, MuteR - X, 2.f, FtGold() * FLinearColor(1.f, 1.f, 1.f, 0.6f));
 			for (int32 k = 0; k < Block.Rows.Num(); ++k)
 			{
 				const FFragTableRow& Row = Data.Rows[Block.Rows[k]];
-				if (k % 2 == 1) Fill(X, Ry, DR - X, CardRowPx, FLinearColor(0.f, 0.f, 0.f, 0.28f));
+				if (k % 2 == 1) Fill(X, Ry, MuteR - X, CardRowPx, FLinearColor(0.f, 0.f, 0.f, 0.28f));
+				// (REQ-PAUSECHAR2) the row pointed at, lit; where a press lands
+				if (Block.Rows[k] == HotRow) Fill(X, Ry, MuteR - X, CardRowPx, FtGold() * FLinearColor(1.f, 1.f, 1.f, 0.22f));
+				if (OutRows) OutRows->Add({ Block.Rows[k], FVector2D(X, Ry), FVector2D(MuteR, Ry + CardRowPx) });
 				const FLinearColor NameInk = Row.bLocal ? FtHot() : Row.Team ? FtTeam(Row.Team) : FLinearColor::White;
 				const FLinearColor NumInk = Row.bLocal ? FtHot() : FLinearColor::White;
 				const float Mid = Ry + CardRowPx * 0.5f;
-				Txt(Row.Name, X + CdCellPad, Mid, 0, NameInk, CdNameW - 2.f * CdCellPad, false);
 				auto Val = [&Row](int32 v) { return Row.Values.IsValidIndex(v) ? Row.Values[v] : FString(); };
+				// (REQ-PAUSECHAR2) the row's mute as the old Players page worded it, red once muted: in its own column while the
+				// players fit one column; in two the card has no room for it (16 players' reached the hands at rest), so the word
+				// takes the end of the name's cell, on the row pointed at or muted
+				const FString Word = P.MuteVal != INDEX_NONE ? Val(P.MuteVal) : FString();
+				const bool bHot = Block.Rows[k] == HotRow, bMuted = Word == TEXT("Muted");
+				const bool bOnName = !P.bMuteColumn && !Word.IsEmpty() && (bHot || bMuted);
+				Txt(Row.Name, X + CdCellPad, Mid, 0, NameInk, CdNameW - 2.f * CdCellPad - (bOnName ? CdMuteW : 0.f), false);
 				if (P.ModeVal != INDEX_NONE) Txt(Val(P.ModeVal), ModeR - CdCellPad, Mid, 2, NumInk, CdModeW - 2.f * CdCellPad, false);
 				Txt(Val(P.KillVal), KR - CdCellPad, Mid, 2, NumInk, 0.f, false);      // (a number whole: three figures reach into the pad)
 				Txt(Val(P.DeathVal), DR - CdCellPad, Mid, 2, NumInk, 0.f, false);
+				if (P.PingVal != INDEX_NONE) Txt(Val(P.PingVal), PingR - CdCellPad, Mid, 2, NumInk, 0.f, false);
+				if (P.bMuteColumn || bOnName) Txt(Word, (bOnName ? NameR : MuteR) - CdCellPad, Mid, 2, bMuted ? FtRed() : bHot ? FtHot() : FLinearColor::White, 0.f, false);
 				// (a local player on a team: a mark of the team's colour before the name, as the table has it)
 				if (Row.bLocal && Row.Team) Fill(X - 2.f, Ry + 7.f, 4.f, CardRowPx - 14.f, FtTeam(Row.Team));
 				Ry += CardRowPx;
@@ -651,6 +674,37 @@ void AOutlawsFragTablePanel::Fit()
 FVector2D AOutlawsFragTablePanel::GetSizeCm() const
 {
 	return FVector2D(WidthCm, CanvasH > 0 ? WidthCm * float(CanvasH) / float(CanvasW) : WidthCm * 0.25f);
+}
+
+int32 AOutlawsFragTablePanel::RowUnderRay(const FVector& O, const FVector& D, float& OutDist) const
+{
+	// (REQ-PAUSECHAR2) the ray on the plane (its face the +Z, X the picture's right, Y down), as canvas px, in a row's box
+	OutDist = 0.f;
+	if (IsHidden() || CanvasH <= 0) return INDEX_NONE;
+	const FVector Centre = GetActorLocation(), N = GetActorUpVector();
+	const double Den = FVector::DotProduct(D, N);
+	if (Den > -1e-3) return INDEX_NONE;
+	const double T = FVector::DotProduct(Centre - O, N) / Den;
+	if (T <= 0.0) return INDEX_NONE;
+	const FVector Off = O + D * T - Centre;
+	const FVector2D Size = GetSizeCm();
+	const FVector2D Px((FVector::DotProduct(Off, GetActorForwardVector()) / Size.X + 0.5) * CanvasW, (FVector::DotProduct(Off, GetActorRightVector()) / Size.Y + 0.5) * CanvasH);
+	for (const FFragTableRowBox& B : LastRows)
+	{
+		if (Px.X >= B.Min.X && Px.X < B.Max.X && Px.Y >= B.Min.Y && Px.Y < B.Max.Y)
+		{
+			OutDist = float(T);
+			return B.Row;
+		}
+	}
+	return INDEX_NONE;
+}
+
+void AOutlawsFragTablePanel::SetHotRow(int32 Row)
+{
+	if (Row == HotRow) return;
+	HotRow = Row;
+	if (Canvas) Redraw();
 }
 
 void AOutlawsFragTablePanel::Redraw()
@@ -754,7 +808,7 @@ FString AOutlawsFragTablePanel::DescribeMaterial() const
 
 void AOutlawsFragTablePanel::DrawCanvas(UCanvas* C, int32 Width, int32 Height)
 {
-	LastDrawnBottom = bCard ? FOutlawsFragTable::DrawCard(C, Shown, Art, Width, Height, &LastTexts) : FOutlawsFragTable::Draw(C, Shown, Art, Width, Height);
+	LastDrawnBottom = bCard ? FOutlawsFragTable::DrawCard(C, Shown, Art, Width, Height, &LastTexts, HotRow, &LastRows) : FOutlawsFragTable::Draw(C, Shown, Art, Width, Height, HotRow, &LastRows);
 }
 
 // ---- -OLFragTableTest ----------------------------------------------------------------------------------------------------
