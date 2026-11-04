@@ -7980,7 +7980,7 @@ void AOutlawsPlayer::FireGun(int32 Hand, bool bFan)
 		if (L && UOutlawsCoop::IsMatchActive(L))
 		{
 			FVector PAt;
-			if (UOutlawsCoop::ShotAtPlayers(L, From, PImpact, W.Damage * FMath::FRandRange(0.9f, 1.1f) * L->PlayerDamageScale(), PAt, bScopedShot))     // (REQ-MPLETHAL: scoped)
+			if (UOutlawsCoop::ShotAtPlayers(L, From, PImpact, W.Damage * FMath::FRandRange(0.9f, 1.1f) * L->PlayerDamageScale(), PAt, bScopedShot, Wi == 1))     // (REQ-MPLETHAL: scoped; REQ-RIFLEMP: the rifle's, GWeapons' order)
 			{
 				if (p == 0)
 				{

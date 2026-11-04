@@ -845,7 +845,8 @@ void UOutlawsCoop::BotPellet(AOutlawsEnemy* E, float Damage, const FVector& At, 
 		if (E->CoopTarget != E->CoopSelf) ++GBotTeamRefused;       // (never itself, nor a teammate)
 		return;
 	}
-	OnMatchHit(E->CoopSelf, LevelEpoch(), E->CoopTarget, Damage, At, From);
+	const FBot* B = FindBot(E->CoopSelf);        // (REQ-RIFLEMP: a bot's rifle as a player's, gun 1)
+	OnMatchHit(E->CoopSelf, LevelEpoch(), E->CoopTarget, Damage, At, From, false, uint8(B && B->Weapon == 1 ? EOutlawsMatchBlow::RifleShot : EOutlawsMatchBlow::Plain));
 }
 
 void UOutlawsCoop::BlastThrowsBots(AOutlawsLevelActor* L, const FVector& From, float RadiusCm, float Damage)

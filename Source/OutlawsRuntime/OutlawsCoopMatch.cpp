@@ -71,7 +71,7 @@ private:
 void AOutlawsCoopLink::ServerPlayerHit_Implementation(int32 Epoch, int32 Victim, float Damage, FVector_NetQuantize10 At, FVector_NetQuantize10 From, bool bBlast, uint8 Blow)
 {
 	if (!Admit(EOLGate::PlayerHit, Finite(Damage, 1000.f) && Finite(At) && Finite(From))) return;
-	if (UOutlawsCoop* C = UOutlawsCoop::Get(this)) C->OnMatchHit(PlayerIndex, Epoch, Victim, Damage, At, From, bBlast, Blow <= uint8(EOutlawsMatchBlow::ScopedHead) ? Blow : 0);
+	if (UOutlawsCoop* C = UOutlawsCoop::Get(this)) C->OnMatchHit(PlayerIndex, Epoch, Victim, Damage, At, From, bBlast, Blow <= uint8(EOutlawsMatchBlow::RifleShot) ? Blow : 0);
 }
 
 void AOutlawsCoopLink::ServerMatchRespawn_Implementation(int32 Epoch)
@@ -526,7 +526,7 @@ void UOutlawsCoop::OnMatchMessage(const FString& Text, float Seconds)
 
 // ---- shots, hits and kills -------------------------------------------------------------------------------------------------
 
-bool UOutlawsCoop::ShotAtPlayers(AOutlawsLevelActor* L, const FVector& From, const FVector& To, float Damage, FVector& OutAt, bool bScoped)
+bool UOutlawsCoop::ShotAtPlayers(AOutlawsLevelActor* L, const FVector& From, const FVector& To, float Damage, FVector& OutAt, bool bScoped, bool bRifle)
 {
 	UOutlawsCoop* C = Get(L);
 	if (!C || !C->IsMatch() || !C->bLevelBuilt || Damage <= 0.f) return false;
@@ -568,8 +568,8 @@ bool UOutlawsCoop::ShotAtPlayers(AOutlawsLevelActor* L, const FVector& From, con
 	OutAt = From + Dir * BestT;
 	++C->MatchHitsSent;
 	// (REQ-MPLETHAL) a scoped shot through the head as drawn here says so; the host decides what it does
-	const uint8 Blow = bScoped && C->InDrawnHead(Best, BestP) ? uint8(EOutlawsMatchBlow::ScopedHead) : uint8(EOutlawsMatchBlow::Plain);
-	UE_LOG(LogOutlawsCoop, Log, TEXT("OLMATCH shot hits the %s at %.0f m for %.1f%s (%s)"), WhoWord(Best), BestT / 100.0, Damage, Blow != 0 ? TEXT(", scoped, in the head") : bScoped ? TEXT(", scoped") : TEXT(""),
+	const uint8 Blow = bScoped && C->InDrawnHead(Best, BestP) ? uint8(EOutlawsMatchBlow::ScopedHead) : uint8(bRifle ? EOutlawsMatchBlow::RifleShot : EOutlawsMatchBlow::Plain);
+	UE_LOG(LogOutlawsCoop, Log, TEXT("OLMATCH shot hits the %s at %.0f m for %.1f%s (%s)"), WhoWord(Best), BestT / 100.0, Damage, Blow == uint8(EOutlawsMatchBlow::ScopedHead) ? TEXT(", scoped, in the head") : bScoped ? TEXT(", scoped") : TEXT(""),
 		C->IsHost() ? TEXT("the host deals it") : TEXT("reported to the host"));
 	L->SpawnBlood(OutAt, Dir, 2);
 	if (C->IsHost()) C->OnMatchHit(0, C->LevelEpoch(), Best, Damage, OutAt, From, false, Blow);
@@ -621,6 +621,7 @@ void UOutlawsCoop::OnMatchHit(int32 Shooter, int32 Epoch, int32 Victim, float Da
 	// anything else, or the rule off: the victim's character's DAMAGE_MULTIPLIER on what was struck (OutlawsCoopMatchStrikes.cpp)
 	const float Lethal = LethalBlowDamage(Shooter, Victim, Blow, At, ShooterAt);
 	const bool bPastPlate = Lethal > 0.f;
+	if (!bPastPlate && MatchRifleDoubles(Shooter, Blow)) Damage *= 2.f;      // (REQ-RIFLEMP: here, so the host's is the one that counts)
 	Damage = bPastPlate ? Lethal : MatchDamageFor(Victim, Damage);
 	LastAttacker[Victim] = Shooter;
 	LastAttackAt[Victim] = Now;

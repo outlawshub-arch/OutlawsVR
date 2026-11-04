@@ -87,6 +87,28 @@ float UOutlawsCoop::MatchDamageFor(int32 Victim, float Damage) const
 	return Damage * Mult;
 }
 
+bool UOutlawsCoop::MatchRifleDoubles(int32 Shooter, uint8 Blow) const
+{
+	// (REQ-RIFLEMP, the tester dotard via the user, the user's answer of 4 Nov) the original doubles the rifle's DAMAGE in all three
+	// fire modes in a net game, on the host's machine and a client's alike, and no other gun's (Weapon_RifleHandler 0x1400d9e60, game
+	// modes 4 and 5, +0x200, +0x21c, +0x238): matches only, never co-op or the story, this runs nowhere else.  Ours has one
+	// rifle shot, scoped or not, from one place; its machine says it was the rifle and the host does the doubling.  A client's word
+	// is checked against what the host sees in its hands, as a scoped head shot's is; the host's own and its bots' are the host's.
+	// REQ-MPLETHAL's scoped head shot is dealt before this comes in.  -OLOldRifleMp: the rifle's 2
+	static const bool bOld = OLFlags::Param(TEXT("OLOldRifleMp"));
+	if (bOld || (Blow != uint8(EOutlawsMatchBlow::RifleShot) && Blow != uint8(EOutlawsMatchBlow::ScopedHead))) return false;
+	if (Shooter > 0 && !IsBot(Shooter))
+	{
+		const AOutlawsCoopLink* K = GetLink(Shooter);
+		if (!K || (K->Pose.LeftWeapon != RifleWeapon && K->Pose.RightWeapon != RifleWeapon))
+		{
+			UE_LOG(LogOutlawsCoop, Log, TEXT("OLMATCH the %s's rifle shot not doubled: no rifle in its hands"), WhoWord(Shooter));
+			return false;
+		}
+	}
+	return true;
+}
+
 bool UOutlawsCoop::MatchLethalOn() const
 {
 	return IsMatch() && MatchOptions.bLethalBlows && !OLFlags::Param(TEXT("OLOldMpLethal"));

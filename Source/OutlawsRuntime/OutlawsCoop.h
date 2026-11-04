@@ -35,7 +35,8 @@ enum class EOutlawsMatchBlow : uint8
 	Fist = 1,
 	Stab = 2,            // the knife's jab
 	ThrownKnife = 3,
-	ScopedHead = 4       // the rifle's shot along its scope, through the head as drawn there
+	ScopedHead = 4,      // the rifle's shot along its scope, through the head as drawn there
+	RifleShot = 5        // (REQ-RIFLEMP) any other shot of the rifle's, scoped or not: not a lethal blow, the host doubles it
 };
 
 /**
@@ -1234,8 +1235,9 @@ public:
 	bool HostMatch(const FOutlawsMpHostOptions& Options);
 	/** A pellet from From to To (what it struck, or its reach) on this machine: the first other player's body it passes
 	 *  through, reported to the host as a hit (true: OutAt where; the pellet stops there).  bScoped: a rifle's shot along its
-	 *  scope (REQ-MPLETHAL: through the drawn head it is reported as a scoped head shot). */
-	static bool ShotAtPlayers(AOutlawsLevelActor* L, const FVector& From, const FVector& To, float Damage, FVector& OutAt, bool bScoped = false);
+	 *  scope (REQ-MPLETHAL: through the drawn head it is reported as a scoped head shot).  bRifle: any shot of the rifle's
+	 *  (REQ-RIFLEMP: reported so; the host doubles it). */
+	static bool ShotAtPlayers(AOutlawsLevelActor* L, const FVector& From, const FVector& To, float Damage, FVector& OutAt, bool bScoped = false, bool bRifle = false);
 	/** REQ-MPLETHAL: point P on player Who's body as drawn here is in its head (the top of the drawn figure, within a head's
 	 *  width of its middle). */
 	bool InDrawnHead(int32 Who, const FVector& P) const;
@@ -1744,6 +1746,8 @@ private:
 	static bool PageFits(AOutlawsPlayer* P, FString& Said);
 	void SetUpMatchLevel(AOutlawsLevelActor* L);
 	void OnMatchHit(int32 Shooter, int32 Epoch, int32 Victim, float Damage, const FVector& At, const FVector& From, bool bBlast = false, uint8 Blow = 0);
+	/** REQ-RIFLEMP: (the host) this blow is a rifle shot and counts double (OutlawsCoopMatchStrikes.cpp). */
+	bool MatchRifleDoubles(int32 Shooter, uint8 Blow) const;
 	// ---- REQ-MPLETHAL's probe (-OLMpLethalProbe on a host and its client; OutlawsMpLethalProbe.cpp) ----
 	void TickHostLethalTest(double Now, AOutlawsLevelActor* L, AOutlawsPlayer* P);
 	void OnLethalTestStep(const FString& Step, int32 Arg, AOutlawsLevelActor* L, AOutlawsPlayer* P);
