@@ -307,10 +307,13 @@ struct FOutlawsMatchScore
 	int16 Captures = 0;
 	UPROPERTY()
 	int16 HeldSeconds = 0;
+	/** REQ-CARDPINGS: this client's ping to the host, ms, as the host measures it, new every few seconds (-1: none, the host, a bot). */
+	UPROPERTY()
+	int16 PingMs = -1;
 
 	bool operator==(const FOutlawsMatchScore& O) const
 	{
-		return Who == O.Who && Name == O.Name && Character == O.Character && Frags == O.Frags && Deaths == O.Deaths && Shots == O.Shots && Hits == O.Hits
+		return PingMs == O.PingMs && Who == O.Who && Name == O.Name && Character == O.Character && Frags == O.Frags && Deaths == O.Deaths && Shots == O.Shots && Hits == O.Hits
 			&& LongestCm == O.LongestCm && bAlive == O.bAlive && Team == O.Team && Captures == O.Captures && HeldSeconds == O.HeldSeconds;
 	}
 };
@@ -1524,6 +1527,9 @@ private:
 	TArray<FDeferred> Deferred;                  // the other machine's news for a level this one has not finished building
 	FOutlawsCoopStats SentStats;
 	double NextStatsAt = 0.0;
+	double NextScorePingAt = 0.0;                // (REQ-CARDPINGS: the next read of the clients' pings for the scores)
+	TMap<int32, int16> ScorePings;               // (the last read, a player's number to ms)
+	int32 ScorePingSends = 0;                    // (how many reads changed one: its probe's count)
 	int32 LoggedOtherStats[MaxPlayers] = {};
 	void ResetWorld();
 	void AssignPickupIds(AOutlawsLevelActor* L);
@@ -1775,6 +1781,7 @@ private:
 	void OnTntPickTestStep(const FString& Step, int32 Arg, AOutlawsLevelActor* L, AOutlawsPlayer* P);
 	// ---- REQ-PAUSECHAR's probe (-OLPauseCharProbe on a host and its client; OutlawsPauseCharProbe.cpp) ----
 	void TickHostPauseCharTest(double Now, AOutlawsLevelActor* L, AOutlawsPlayer* P);
+	void TickCardPingsProbe(double Now, AOutlawsLevelActor* L, AOutlawsPlayer* P);         // (REQ-CARDPINGS: OutlawsCardPingsProbe.cpp)
 	void OnPauseCharTestStep(const FString& Step, int32 Arg, AOutlawsLevelActor* L, AOutlawsPlayer* P);
 	void TickStickRestTest(double Now, AOutlawsLevelActor* L, AOutlawsPlayer* P);          // (REQ-STICKREST: OutlawsStickRestProbe.cpp)
 	void TickHostMpSpeedTest(double Now, AOutlawsLevelActor* L, AOutlawsPlayer* P);        // (REQ-MPSPEED: OutlawsMpSpeedProbe.cpp)

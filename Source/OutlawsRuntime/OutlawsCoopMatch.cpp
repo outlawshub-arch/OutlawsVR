@@ -26,6 +26,7 @@
 #include "Components/CapsuleComponent.h"
 #include "GameFramework/CharacterMovementComponent.h"
 #include "GameFramework/PlayerController.h"
+#include "Engine/NetConnection.h"
 #include "Engine/World.h"
 #include "HAL/IConsoleManager.h"
 #include "Misc/CommandLine.h"
@@ -448,10 +449,32 @@ void UOutlawsCoop::PublishScores()
 {
 	AOutlawsCoopSession* S = GetSession();
 	if (!S || !IsHost()) return;
+	// REQ-CARDPINGS (the user, 4 Nov, via the planner: "yes fill in other players' pings on the card"): a client measures only its
+	// own way to the host, so the other clients' pings ride with the scores, the host's measure of each.  Read every 5 s and
+	// the scores already go out only on a change, so two bytes a person each 5 s at the most.  A client with none measured
+	// yet, the host and a bot send -1: blank on the card.  -OLOldCardPings: none sent
+	static const bool bOldPings = OLFlags::Param(TEXT("OLOldCardPings"));
+	if (const double Clock = FPlatformTime::Seconds(); !bOldPings && Clock >= NextScorePingAt)
+	{
+		NextScorePingAt = Clock + 5.0;
+		TMap<int32, int16> Read;
+		TArray<AOutlawsCoopLink*> Links;
+		GetLinks(Links);
+		for (const AOutlawsCoopLink* K : Links)
+		{
+			const APlayerController* PC = K->PlayerIndex > 0 && !K->bBot ? Cast<APlayerController>(K->GetOwner()) : nullptr;
+			const float Ms = PC && PC->NetConnection ? PC->NetConnection->AvgLag * 1000.f : 0.f;
+			if (Ms > 0.f) Read.Add(K->PlayerIndex, int16(FMath::Min(FMath::RoundToInt(Ms), 9999)));
+		}
+		if (!Read.OrderIndependentCompareEqual(ScorePings)) ++ScorePingSends;
+		ScorePings = MoveTemp(Read);
+	}
 	TArray<FOutlawsMatchScore> Now;
 	for (const FOutlawsDmPlayer& P : Dm.GetPlayers())
 	{
 		FOutlawsMatchScore& R = Now.AddDefaulted_GetRef();
+		const int16* Ping = ScorePings.Find(P.Id);
+		R.PingMs = Ping ? *Ping : int16(-1);
 		R.Who = P.Id;
 		R.Name = P.Name;
 		R.Character = P.Character;

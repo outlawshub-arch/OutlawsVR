@@ -349,6 +349,12 @@ void UOutlawsCoop::Initialize(FSubsystemCollectionBase& Collection)
 		bAuto = bAutoReady = bWorldTest = true;
 		TestOnly = TEXT("uwfire");
 	}
+	if (OLFlags::Param(TEXT("OLCardPingsProbe")))
+	{
+		// (REQ-CARDPINGS's three-machine probe: OutlawsCardPingsProbe.cpp; the host starts the match itself)
+		bAuto = bAutoReady = bWorldTest = true;
+		TestOnly = TEXT("cardpings");
+	}
 	if (OLFlags::Param(TEXT("OLPauseCharProbe")))
 	{
 		// (REQ-PAUSECHAR's two-machine probe: OutlawsPauseCharProbe.cpp; the host starts the match itself)
@@ -368,7 +374,7 @@ void UOutlawsCoop::Initialize(FSubsystemCollectionBase& Collection)
 	}
 	// REQ-MPLOBBY: the lobby's start rule, off where a test starts the match itself (M1's Death Match test presses Start the game)
 	bLobbyRuleOff = OLFlags::Param(TEXT("OLMpNoLobbyRule")) || TestOnly == TEXT("dm") || TestOnly == TEXT("killfeed") || TestOnly == TEXT("remotefx") || TestOnly == TEXT("flicknet")
-		|| TestOnly == TEXT("mplethal") || TestOnly == TEXT("mptntpick") || TestOnly == TEXT("pausechar") || TestOnly == TEXT("mpspeed");
+		|| TestOnly == TEXT("mplethal") || TestOnly == TEXT("mptntpick") || TestOnly == TEXT("pausechar") || TestOnly == TEXT("cardpings") || TestOnly == TEXT("mpspeed");
 	OLFlags::Value(TEXT("OLLobbyEnterAfter"), LobbyEnterAfter);
 	bLobbyEnterAfterPeer = OLFlags::Param(TEXT("OLLobbyEnterAfterPeer"));
 	OLFlags::Value(TEXT("OLLobbyShot"), LobbyShotName);

@@ -43,6 +43,11 @@ void UOutlawsCoop::PlayerRows(TArray<FPlayerRow>& Out) const
 		{
 			R.PingMs = PingMs();
 		}
+		else if (!IsHost() && R.Who != MyIndex() && S)
+		{
+			// (REQ-CARDPINGS: another client's, as the host measures it and sends it with the scores)
+			for (const FOutlawsMatchScore& Sc : S->Scores) if (Sc.Who == R.Who) R.PingMs = float(Sc.PingMs);
+		}
 		Out.Add(R);
 	}
 	for (int32 k = 0, Who = 0; k < FakePlayers && Who < MaxPlayers; ++Who)
