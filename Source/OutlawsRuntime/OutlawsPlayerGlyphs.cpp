@@ -80,7 +80,7 @@ bool AOutlawsPlayer::UpdateGlyphPrompt(UTextRenderComponent* Over, const FString
 void AOutlawsPlayer::UpdateHudGlyph(float Dt)
 {
 	// (REQ-TUTORIAL2: the card panel's control under the panel; the glyph test's cards still stand as notice lines)
-	const bool bOnCard = bVR && Camera && !bMenuOpen && !bDeadView && bTutCardUp && !TutGlyph.Glyph.IsEmpty();
+	const bool bOnCard = bVR && Camera && !bMenuOpen && !bDeadView && bTutCardUp && !bTutCardFading && !TutGlyph.Glyph.IsEmpty();
 	const bool bOn = bOnCard || (bVR && HudText && Camera && !bMenuOpen && !bDeadView && !TutGlyphLine.IsEmpty() && !TutGlyph.Glyph.IsEmpty() && HudLines.Contains(TutGlyphLine));
 	if (!bOn)
 	{

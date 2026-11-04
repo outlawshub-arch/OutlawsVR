@@ -3,8 +3,14 @@
 // stands where the notice lines stood: its bottom edge 10 degrees over the middle of the view, 80 cm out (nearer in front of
 // a wall, as the notices are), so it never covers a shot; the lines go over it while it is up and the card's controller
 // glyph under it.  Hidden under the menu and the death view.
+// REQ-TUTCARDFLOAT (user 2026-11-04: "they should fade in front of me directly. Hold that position for 3 seconds and then slowly
+// float up to the position they're in now. Maybe tilt it down at the player too as it rises up"): a new card fades in at the
+// middle of the view, holds, then eases up to that place.  The tilt needs nothing of its own: Place has always turned the
+// plane's face to the eye, so at the top it already leans down at the player, by the same 16 degrees or so as ever; a turn
+// added on top would double it.  -OLOldTutCardFloat: up at the top from the first frame.
 
 #include "OutlawsTutorialCard.h"
+#include "OutlawsFlags.h"
 #include "OutlawsPerf.h"
 #include "OutlawsPlayer.h"
 #include "Camera/CameraComponent.h"
@@ -28,6 +34,14 @@ namespace
 	constexpr float CardW = 46.f;                 // cm across at 80 cm (its height by the canvas's shape)
 	constexpr float CardFull = 80.f;              // cm out
 	constexpr float CardBottomDeg = 10.f;         // its bottom edge over the middle of the view
+	// (REQ-TUTCARDFLOAT) a new card's seconds: the fade, the hold after it, the rise; the "Age" a card is past all of them at
+	constexpr float TutCardFadeSec = 0.3f, TutCardHoldSec = 3.f, TutCardRiseSec = 1.5f;
+	constexpr float TutCardSettled = TutCardFadeSec + TutCardHoldSec + TutCardRiseSec;
+	bool TutCardOldFloat()
+	{
+		static const bool bOld = OLFlags::Param(TEXT("OLOldTutCardFloat"));
+		return bOld;
+	}
 	TWeakObjectPtr<AOutlawsTutorialCard> GCard;
 }
 
@@ -75,6 +89,11 @@ void AOutlawsTutorialCard::SetCard(int32 InStep, int32 InSteps, const FString& I
 	Picked = -1;
 	Hover[0] = Hover[1] = -1;
 	bArmed[0] = bArmed[1] = false;           // (a trigger already held does not press at once)
+	// (REQ-TUTCARDFLOAT) every new card starts over, Back and Next too; SetGood on the same card does not come through here
+	Age = TutCardOldFloat() ? TutCardSettled : 0.f;
+	Fade = TutCardOldFloat() ? 1.f : 0.f;
+	Rise = TutCardOldFloat() ? 1.f : 0.f;
+	if (AOutlawsPlayer* P = Cast<AOutlawsPlayer>(UGameplayStatics::GetPlayerPawn(this, 0))) P->bTutCardFading = Fade < 1.f;
 	Redraw();
 }
 
@@ -250,6 +269,14 @@ void AOutlawsTutorialCard::DrawCanvas(UCanvas* C, int32 Width, int32 Height)
 		Txt(Font, Label, X + Bw * 0.5f, By + Bh * 0.5f, bHot ? Hot : bLit ? Gold : Dim, Bw - 24.f);
 		Buttons[b] = FBox2D(FVector2D(X, By), FVector2D(X + Bw, By + Bh));
 	}
+	// (REQ-TUTCARDFLOAT) the fade in: the overlay's material has only the picture to go by, so the picture itself goes from
+	// nothing (a black veil over all of it, which takes the alpha down with it) to the whole card
+	if (Fade < 1.f)
+	{
+		FCanvasTileItem Veil(FVector2D(0.f, 0.f), FVector2D(W, H), FLinearColor(0.f, 0.f, 0.f, 1.f - Fade));
+		Veil.BlendMode = SE_BLEND_Translucent;
+		C->DrawItem(Veil);
+	}
 }
 
 void AOutlawsTutorialCard::Place(float Dt)
@@ -260,8 +287,19 @@ void AOutlawsTutorialCard::Place(float Dt)
 	const FTransform CamX = Cam->GetComponentTransform();
 	const float Hcm = CardW * CardPxH / CardPxW;
 	const double TanB = FMath::Tan(FMath::DegreesToRadians(double(CardBottomDeg)));
+	// (REQ-TUTCARDFLOAT) how far along its first seconds the card is: the time it is on show (a pause does not run it down);
+	// the picture is redrawn only through the fade
+	Age = PinAge >= 0.f ? PinAge : FMath::Min(Age + Dt, TutCardSettled);
+	const float FadeNow = FMath::Clamp(Age / TutCardFadeSec, 0.f, 1.f);
+	if (FadeNow != Fade)
+	{
+		Fade = FadeNow;
+		Redraw();
+	}
+	P->bTutCardFading = Fade < 1.f;
+	Rise = FMath::SmoothStep(0.f, 1.f, FMath::Clamp((Age - TutCardFadeSec - TutCardHoldSec) / TutCardRiseSec, 0.f, 1.f));
 	// (as the notices: in front of a nearer wall along the line to its middle, scaled so it reads the same size)
-	const double MidZ = CardFull * TanB + Hcm * 0.5;
+	const double MidZ = (CardFull * TanB + Hcm * 0.5) * Rise;
 	const FVector Eye = CamX.GetLocation();
 	const FVector Way = CamX.TransformVectorNoScale(FVector(1.0, 0.0, MidZ / CardFull)).GetSafeNormal();
 	const double Along = CardFull * FMath::Sqrt(1.0 + FMath::Square(MidZ / CardFull));
@@ -276,7 +314,7 @@ void AOutlawsTutorialCard::Place(float Dt)
 	}
 	Dist = Want < Dist ? float(Want) : FMath::FInterpTo(Dist, float(Want), Dt, 4.f);
 	const float K = Dist / CardFull;
-	const FVector Local(Dist, 0.0, (CardFull * TanB + Hcm * 0.5) * K);
+	const FVector Local(Dist, 0.0, MidZ * K);
 	// (the plane's face is its +Z, turned to the eye: X to the card's right, Y down)
 	const FVector Centre = CamX.TransformPosition(Local);
 	const FVector Right = CamX.TransformVectorNoScale(FVector(0.0, 1.0, 0.0));
@@ -285,8 +323,15 @@ void AOutlawsTutorialCard::Place(float Dt)
 	SetActorLocationAndRotation(Centre, FRotationMatrix::MakeFromXY(Right, Down).Rotator());
 	Plane->SetWorldScale3D(FVector(CardW * K / 100.f, Hcm * K / 100.f, 1.f));
 	P->TutCardDist = Dist;
-	P->TutCardBottomZ = float(CardFull * TanB * K);
-	P->TutCardTopZ = float((CardFull * TanB + Hcm) * K);
+	P->TutCardBottomZ = float((MidZ - Hcm * 0.5) * K);            // (the lines over it and the glyph under it ride with it)
+	P->TutCardTopZ = float((MidZ + Hcm * 0.5) * K);
+}
+
+FVector AOutlawsTutorialCard::TestButtonAt(int32 Button) const
+{
+	if (!Buttons[Button & 1].bIsValid) return FVector::ZeroVector;
+	const FVector2D Px = Buttons[Button & 1].GetCenter();
+	return GetActorTransform().TransformPosition(FVector((Px.X / CardPxW - 0.5) * 100.0, (Px.Y / CardPxH - 0.5) * 100.0, 0.0));
 }
 
 void AOutlawsTutorialCard::Tick(float DeltaSeconds)

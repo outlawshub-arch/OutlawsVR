@@ -1,6 +1,7 @@
 // REQ-TUTORIAL2: the tutorial's card, a small panel with Back and Next in the join bubble's look (OutlawsBeacon.h), up where
 // the notice lines stand (10 degrees over the middle of the view, 80 cm out, pulled in front of a nearer wall), so it never
 // covers a shot.  Its buttons are pressed as the bubble's are: a hand's laser on one and the trigger.
+// REQ-TUTCARDFLOAT: each new card fades in at the middle of the view, holds, then eases up to that place (OutlawsTutorialCard.cpp).
 #pragma once
 
 #include "CoreMinimal.h"
@@ -39,6 +40,14 @@ public:
 	bool IsShown() const { return bUp && !IsHidden(); }
 	/** A hand's laser is on one of the card's buttons: the trigger is the card's, not the gun's. */
 	static bool HandOnCard(int32 Hand);
+	/** REQ-TUTCARDFLOAT, for the tests: its seconds on show, its fade 0..1, its rise 0..1 from the middle of the view. */
+	float GetAge() const { return Age; }
+	float GetFade() const { return Fade; }
+	float GetRise() const { return Rise; }
+	/** Tests: the seconds on show held at this (for a shot of a stage), under 0 to let it run. */
+	void TestPinAge(float Seconds) { PinAge = Seconds; }
+	/** Tests: where button 0 Back, 1 Next is now (zero: not drawn). */
+	FVector TestButtonAt(int32 Button) const;
 
 	virtual void Tick(float DeltaSeconds) override;
 
@@ -64,6 +73,7 @@ private:
 	bool bArmed[2] = { false, false };
 	int32 Picked = -1;
 	float Dist = 80.f;
+	float Age = 0.f, Fade = 1.f, Rise = 1.f, PinAge = -1.f;   // (REQ-TUTCARDFLOAT)
 	FBox2D Buttons[2];
 	void Place(float Dt);
 	void Redraw();

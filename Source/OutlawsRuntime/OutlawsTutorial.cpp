@@ -45,6 +45,7 @@
 //         walk Multiplayer > Co-op > Host / Join and > Competitive > Host / Join, each page's rows, title and fit, Back up;
 //         then Historical Missions > Ice Caves > Good builds the Handful mission (no tutorial; REQ-HMCAREER: the five
 //         original missions only through Marshal Training, -OLHmCareerTest)
+//   float REQ-TUTCARDFLOAT: a new card's first seconds, stage by stage (phase 30 below)
 // Prints "OLTUT test check PASS|FAIL: ..." and "OLTUT test RESULT ...".  Screenshots: Saved/OLShots/ol_tut_<name>.png.
 
 #include "OutlawsLevelActor.h"
@@ -1036,6 +1037,8 @@ namespace OutlawsTutorialLocal
 		TWeakObjectPtr<AActor> ManBefore;   // (the grab card's bad guy when Back was pressed)
 		TSet<FString> Backed;
 		TSet<FString> Shot;
+		int32 Job = 0;                      // (the one-job modes, phase 30 on: the step they are at)
+		int32 JobTick = 0;
 	};
 	FTest GTest;
 }
@@ -1171,9 +1174,182 @@ void AOutlawsLevelActor::TickTutorialTest(float Dt)
 		T.Tries = 0;
 		T.LastStep = 1;
 		T.bGoodSeen = false;
-		T.Phase = 4;
+		T.Phase = Mode == TEXT("float") ? 30 : 4;
 		T.At = Now + 1.5;
 		return;
+	}
+	case 30:
+	{
+		// REQ-TUTCARDFLOAT (-OLTutorialTest=float): the card's first seconds, read off the card and the camera: Next's new card
+		// fading in at the middle of the view, its hold, the rise part way, the top where it always stood (its bottom edge 10
+		// degrees up), its face on the eyes at each (the tilt, not doubled); the step going to done does not start it over; Back
+		// and Next each do; the laser stays on a moving button and the trigger presses it; the wall's pull-in at both ends; a
+		// shot at each stage, the lines over the card and the glyph under it.  -OLOldTutCardFloat: at the top from the start
+		FOutlawsTutorialRun& R = *TutorialRun;
+		AOutlawsTutorialCard* C = R.CardActor.Get();
+		if (!C || !P->Camera) { Check(false, TEXT("float: the card and the camera are there")); Finish(); return; }
+		const FTransform CamX = P->Camera->GetComponentTransform();
+		const FVector Local = CamX.InverseTransformPosition(C->GetActorLocation());
+		const double MidDeg = FMath::RadiansToDegrees(FMath::Atan2(Local.Z, Local.X));
+		const double BottomDeg = FMath::RadiansToDegrees(FMath::Atan2(double(P->TutCardBottomZ), double(P->TutCardDist)));
+		const double TopDeg = FMath::RadiansToDegrees(FMath::Atan2(double(P->TutCardTopZ), double(P->TutCardDist)));
+		const FVector ToEye = (CamX.GetLocation() - C->GetActorLocation()).GetSafeNormal();
+		const double FaceDeg = FMath::RadiansToDegrees(FMath::Acos(FMath::Clamp(FVector::DotProduct(C->GetActorTransform().GetUnitAxis(EAxis::Z), ToEye), -1.0, 1.0)));
+		const FString Where = FString::Printf(TEXT("age %.2f, fade %.2f, rise %.2f: its middle %.1f degrees up, its edges %.1f to %.1f, %.0f cm out, its face %.1f degrees off the eyes"),
+			C->GetAge(), C->GetFade(), C->GetRise(), MidDeg, BottomDeg, TopDeg, P->TutCardDist, FaceDeg);
+		const FString Id = TutorialCardId();
+		const float HoldEnd = 3.3f, MidRise = 4.05f, Settled = 4.8f;
+		T.At = Now + 0.03;
+		if (Now - T.CardSeen > 40.0) { Check(false, FString::Printf(TEXT("float: stuck at step %d (%s)"), T.Job, *Where)); Finish(); return; }
+		// (hand H's laser laid on the point from beside the head)
+		auto Lay = [P, &CamX](int32 H, const FVector& To)
+		{
+			const FVector From = CamX.GetLocation() + CamX.TransformVectorNoScale(FVector(25.0, H == 0 ? -15.0 : 15.0, -20.0));
+			P->AimOf(H)->SetWorldLocationAndRotation(From, (To - From).Rotation());
+		};
+		const FString Trig = TEXT("OLVR_RightTrigger");
+		switch (T.Job)
+		{
+		case 0:
+			C->Pick(1);
+			T.Job = 1;
+			return;
+		case 1:
+			if (Id != TEXT("turn")) return;
+			UE_LOG(LogOutlaws, Display, TEXT("OLTUT test: float: the new card: %s"), *Where);
+			if (OLFlags::Param(TEXT("OLOldTutCardFloat")))
+			{
+				Check(C->GetFade() == 1.f && C->GetRise() == 1.f && FMath::Abs(BottomDeg - 10.0) < 0.3, FString::Printf(TEXT("old: the card is at the top at once (%s)"), *Where));
+				Finish();
+				return;
+			}
+			Check(C->GetFade() < 1.f && C->GetRise() == 0.f && FMath::Abs(MidDeg) < 1.0, FString::Printf(TEXT("the new card fades in at the middle of the view (%s)"), *Where));
+			T.Job = 2;
+			return;
+		case 2:
+			if (C->GetAge() < 1.5f) return;
+			Check(C->GetFade() == 1.f && C->GetRise() == 0.f && FMath::Abs(MidDeg) < 0.5 && FaceDeg < 1.0 && BottomDeg < 0.0 && TopDeg > 0.0, FString::Printf(TEXT("it holds there, faded in (%s)"), *Where));
+			P->TurnBy(70.f);
+			T.Job = 3;
+			return;
+		case 3:
+			if (!C->IsGood()) return;
+			Check(C->GetAge() > 1.4f && C->GetRise() == 0.f, FString::Printf(TEXT("the same step going to done does not start it over (%s)"), *Where));
+			T.Job = 4;
+			return;
+		case 4:
+			if (C->GetAge() < MidRise) return;
+			Check(C->GetRise() > 0.1f && C->GetRise() < 0.9f && MidDeg > 2.0 && MidDeg < 14.5 && FaceDeg < 1.0, FString::Printf(TEXT("3 s on it is rising, its face still on the eyes (%s)"), *Where));
+			T.Job = 5;
+			return;
+		case 5:
+			if (C->GetAge() < Settled) return;
+			Check(C->GetRise() == 1.f && FMath::Abs(BottomDeg - 10.0) < 0.2 && FMath::Abs(MidDeg - 15.8) < 0.5 && FaceDeg < 1.0, FString::Printf(TEXT("it ends where it always stood, tilted at the eyes, not doubled (%s)"), *Where));
+			Check(C->IsGood(), TEXT("still done"));
+			C->Pick(0);
+			T.Job = 6;
+			return;
+		case 6:
+			if (Id != TEXT("walk")) return;
+			Check(C->GetAge() < 0.7f && C->GetRise() == 0.f && FMath::Abs(MidDeg) < 1.0, FString::Printf(TEXT("Back counts as new (%s)"), *Where));
+			C->Pick(1);
+			T.Job = 7;
+			return;
+		case 7:
+			if (Id != TEXT("turn")) return;
+			Check(C->GetAge() < 0.7f && C->GetRise() == 0.f && FMath::Abs(MidDeg) < 1.0, FString::Printf(TEXT("Next counts as new (%s)"), *Where));
+			// (the headset's rules for the rest: the lasers, the glyph plate)
+			P->bVR = true;
+			C->TestPinAge(0.6f);
+			T.JobTick = 0;
+			T.Job = 8;
+			return;
+		case 8:
+			Lay(1, C->TestButtonAt(1));
+			if (++T.JobTick < 6) return;
+			Check(AOutlawsTutorialCard::HandOnCard(1), FString::Printf(TEXT("the laser on Next at the middle of the view (%s)"), *Where));
+			C->TestPinAge(HoldEnd + 0.1f);
+			T.JobTick = 0;
+			T.Job = 9;
+			return;
+		case 9:
+			Lay(1, C->TestButtonAt(1));
+			if (++T.JobTick < 3) return;
+			C->TestPinAge(-1.f);
+			T.Job = 10;
+			return;
+		case 10:
+			// (let run: the laser put on the button again each frame, as a hand following it)
+			Lay(1, C->TestButtonAt(1));
+			T.At = Now;
+			if (C->GetRise() < 0.4f) return;
+			Check(AOutlawsTutorialCard::HandOnCard(1), FString::Printf(TEXT("the laser stays on Next as the card moves (%s)"), *Where));
+			P->TestAxes.Add(Trig, 1.f);
+			T.Job = 11;
+			return;
+		case 11:
+			if (Id == TEXT("turn")) { Lay(1, C->TestButtonAt(1)); return; }
+			Check(Id == TEXT("take_revolver"), FString::Printf(TEXT("the trigger on Next on the rising card pressed it (%s)"), *Id));
+			P->TestAxes.Remove(Trig);
+			T.Job = 12;
+			return;
+		case 12:
+		{
+			// the nearest wall from the walk's post: the feet put before it, facing it
+			FVector Dir = FVector::ForwardVector, Spot = FVector::ZeroVector;
+			double Near = 1e9;
+			const FVector From = R.Marker + FVector(0.0, 0.0, 150.0);
+			for (int32 k = 0; k < 24; ++k)
+			{
+				const FVector D = FRotator(0.0, k * 15.0, 0.0).Vector();
+				FHitResult H;
+				FCollisionQueryParams Q(SCENE_QUERY_STAT(OutlawsTutWall), true, P);
+				if (World->LineTraceSingleByChannel(H, From, From + D * 3000.0, ECC_Visibility, Q) && H.Distance < Near && H.Distance > 200.0) { Near = H.Distance; Dir = D; Spot = H.ImpactPoint; }
+			}
+			PutFeet(FVector(Spot.X, Spot.Y, R.Start.Z) - Dir * 62.0, Spot);
+			if (AController* Ctl = P->GetController()) Ctl->SetControlRotation(FRotator(0.0, Dir.Rotation().Yaw, 0.0));
+			C->TestPinAge(1.5f);
+			T.At = Now + 0.6;
+			T.Job = 13;
+			return;
+		}
+		case 13:
+			Check(P->TutCardDist < 65.f && FMath::Abs(MidDeg) < 1.0, FString::Printf(TEXT("a wall near: the card is pulled in at the middle of the view (%s)"), *Where));
+			C->TestPinAge(Settled);
+			T.At = Now + 0.4;
+			T.Job = 14;
+			return;
+		case 14:
+			Check(P->TutCardDist < 70.f && FMath::Abs(BottomDeg - 10.0) < 0.5, FString::Printf(TEXT("a wall near: pulled in at the top too (%s)"), *Where));
+			PutFeet(R.Marker - R.Dir * 150.0, R.Rail);
+			Face(R.Rail);
+			T.JobTick = 0;
+			T.At = Now + 0.5;
+			T.Job = 15;
+			return;
+		default:
+		{
+			// a shot at each stage, each held still long enough for the frame
+			static const float Ages[] = { 0.15f, 1.5f, 4.05f, 4.8f };
+			static const TCHAR* const Names[] = { TEXT("float_fade"), TEXT("float_hold"), TEXT("float_rise"), TEXT("float_top") };
+			if (T.Job % 2 == 1)
+			{
+				const int32 i = (T.Job - 15) / 2;
+				if (i >= UE_ARRAY_COUNT(Ages)) { C->TestPinAge(-1.f); Finish(); return; }
+				C->TestPinAge(Ages[i]);
+				Notify(TEXT("A notice line goes over the card"), 3.f);
+				T.At = Now + 0.5;
+			}
+			else
+			{
+				UE_LOG(LogOutlaws, Display, TEXT("OLTUT test: float: shot: %s"), *Where);
+				Shot(Names[(T.Job - 16) / 2]);
+				T.At = Now + 0.4;
+			}
+			++T.Job;
+			return;
+		}
+		}
 	}
 	case 4:
 	{

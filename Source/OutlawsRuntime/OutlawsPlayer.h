@@ -2565,6 +2565,7 @@ public:
 	/** REQ-TUTORIAL2: the tutorial's card panel up this frame (AOutlawsTutorialCard), its distance and its bottom and top
 	 *  edges in the camera's frame (cm up at that distance): the card's glyph plate stands under it, the notices over it. */
 	bool bTutCardUp = false;
+	bool bTutCardFading = false;             // (REQ-TUTCARDFLOAT: the plate comes up when the card has)
 	float TutCardDist = 80.f, TutCardBottomZ = 0.f, TutCardTopZ = 0.f;
 	UFont* GlyphFont(bool bTitle);
 	/** A menu canvas's VR prompt line ("B or Y: back", "more below", the title screens' help line) drawn as short labels
