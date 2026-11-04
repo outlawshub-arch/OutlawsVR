@@ -258,7 +258,8 @@ bool UOutlawsCoop::SweepAtPlayers(AOutlawsLevelActor* L, const FVector& A, const
 }
 
 #if WITH_OUTLAWS_TESTS
-void (*GOLBlastMissNote)(AOutlawsLevelActor* L, const FVector& From, const AOutlawsRemotePlayer* Body, double R, float Damage) = nullptr;
+void (*GOLBlastMissNote)(AOutlawsLevelActor* L, const FVector& From, const AOutlawsRemotePlayer* Body, double R, float Damage, int32 Who, int32 Shooter, float Health) = nullptr;
+void (*GOLBlastMissDealt)(int32 Who, float Dealt, float Health) = nullptr;
 #endif
 
 int32 UOutlawsCoop::BlastAtPlayers(AOutlawsLevelActor* L, const FVector& Where, float RadiusCm, float Damage)
@@ -275,7 +276,11 @@ int32 UOutlawsCoop::BlastAtPlayers(AOutlawsLevelActor* L, const FVector& Where, 
 		const AOutlawsRemotePlayer* Rp = C->PuppetOf(Who);
 		if (!Rp || Rp->IsHidden() || Rp->PlateDead()) continue;
 #if WITH_OUTLAWS_TESTS
-		if (GOLBlastMissNote) GOLBlastMissNote(L, Where, Rp, R, Damage);       // (BUG-BLASTMISS's probe: every blast on every body, logged)
+		if (GOLBlastMissNote)      // (BUG-BLASTMISS's probe: every blast on every body, logged)
+		{
+			const FBot* Bt = C->FindBot(Who);
+			GOLBlastMissNote(L, Where, Rp, R, Damage, Who, BlastShooter, Bt ? Bt->Health : -1.f);
+		}
 #endif
 		const FVector Mid = Rp->ShownBody();
 		const double D = FVector::Dist(Where, Mid);
@@ -286,6 +291,13 @@ int32 UOutlawsCoop::BlastAtPlayers(AOutlawsLevelActor* L, const FVector& Where, 
 		++Struck;
 		if (BlastShooter >= 0) BlastStruckMask |= 1u << Who;
 		C->ReportStrike(L, Who, Dealt, Mid, TEXT("dynamite"));
+#if WITH_OUTLAWS_TESTS
+		if (GOLBlastMissDealt)     // (the probe: what the strike did to the body's health, refused by the match or not)
+		{
+			const FBot* Bt = C->FindBot(Who);
+			GOLBlastMissDealt(Who, Dealt, Bt ? Bt->Health : -1.f);
+		}
+#endif
 	}
 	return Struck;
 }

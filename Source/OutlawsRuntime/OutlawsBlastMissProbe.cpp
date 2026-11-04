@@ -13,8 +13,10 @@
 //           both sectors' floor and ceiling.  (The exe's visible-sector shortlist 0x1402ccf80 is not ported: a little kinder.)
 //   rays3   three rays from stick + 30 cm: to the feet, the middle and the head; any clear.
 //   head    the one ray from stick + 30 cm to the head.
-// Lines: "OLSHOT blastmiss real ..." a blast a body, "OLSHOT blastmiss miss ..." for the first sites ours stops and the original
-// passes, the map's tables ("table", "blocker", "orig why"), then "OLSHOT blastmiss RESULT".
+// Lines: "OLSHOT blastmiss real ..." a blast a body (a kind for what stopped the ray: lip/curb, wall resting, wall, floor, ceiling,
+// prop, fence/bars, door/lift, another body), "OLSHOT blastmiss struck ..." what each strike did to the body's health,
+// "OLSHOT blastmiss miss ..." for the first sites ours stops and the original passes, the map's tables ("table", "blocker", "kind",
+// "real sum", "orig why"), then "OLSHOT blastmiss RESULT".
 
 #include "OutlawsPlayer.h"
 #include "OutlawsRuntime.h"
@@ -32,7 +34,8 @@
 
 #if WITH_OUTLAWS_TESTS
 
-extern void (*GOLBlastMissNote)(AOutlawsLevelActor* L, const FVector& From, const AOutlawsRemotePlayer* Body, double R, float Damage);
+extern void (*GOLBlastMissNote)(AOutlawsLevelActor* L, const FVector& From, const AOutlawsRemotePlayer* Body, double R, float Damage, int32 Who, int32 Shooter, float Health);
+extern void (*GOLBlastMissDealt)(int32 Who, float Dealt, float Health);
 
 namespace OutlawsBlastMissProbeLocal
 {
@@ -49,6 +52,14 @@ namespace OutlawsBlastMissProbeLocal
 	int32 Stage = 0, Bot = 0, MissLines = 0, RealLines = 0, NoSector = 0;
 	double StartAt = 0.0, Credit = 0.0;
 	FRandomStream Rng(2190);
+	// (the real blasts' count: bodies in our reach, a bot's own stick left out as the match refuses it)
+	struct FRealSum { int32 Blasts = 0, Own = 0, PastOurs = 0, InReach = 0, Faint = 0, Stopped = 0, StoppedNear = 0, StoppedOrig = 0, Struck = 0, Survived = 0, Killed = 0, Refused = 0; };
+	FRealSum Sum;
+	struct FKind { int32 N = 0, Near = 0, OrigPass = 0; };
+	TMap<FString, FKind> KindsReal, KindsSites;
+	TMap<int32, float> HealthWas;
+	FVector LastBlast = FVector::ZeroVector;
+	int32 NoteWho = -1;
 
 	double Oct(double Dx, double Dz)
 	{
@@ -132,6 +143,31 @@ namespace OutlawsBlastMissProbeLocal
 		return FString::Printf(TEXT("%s/%s/%s"), A ? *A->GetClass()->GetName() : TEXT("none"), C ? *C->GetName() : TEXT("none"), Nz > 0.6 ? TEXT("floor") : Nz < -0.6 ? TEXT("ceiling") : TEXT("side"));
 	}
 
+	/** The row of the count what stopped the ray goes in: the component says, and on the level's own surfaces the normal; a side with
+	 *  a floor on top of it within 130 cm and nothing over that is a lip, a taller one by the stick the wall the stick lies against. */
+	FString KindOf(UWorld* W, const FHitResult& Hit, const FVector& StickAt)
+	{
+		const AActor* A = Hit.GetActor();
+		const UPrimitiveComponent* C = Hit.GetComponent();
+		const FString Comp = C ? C->GetName() : FString();
+		if (Cast<AOutlawsRemotePlayer>(A)) return TEXT("another body");
+		if (!Cast<AOutlawsLevelActor>(A) || Comp.StartsWith(TEXT("Outlaws3DO"))) return TEXT("prop");
+		if (Comp.StartsWith(TEXT("OutlawsBlock"))) return TEXT("fence/bars");
+		if (Comp.StartsWith(TEXT("OutlawsDoor")) || Comp.StartsWith(TEXT("OutlawsLift"))) return TEXT("door/lift");
+		const FVector N = Hit.ImpactNormal, At = Hit.ImpactPoint, In = N.GetSafeNormal2D();
+		if (N.Z > 0.6) return TEXT("floor");
+		if (N.Z < -0.6) return TEXT("ceiling");
+		FCollisionQueryParams Q(SCENE_QUERY_STAT(OutlawsBlastMissRest), true);
+		FHitResult Top;
+		if (W->LineTraceSingleByChannel(Top, At - In * 8.0 + FVector(0.0, 0.0, 130.0), At - In * 8.0, ECC_Visibility, Q) && Top.ImpactNormal.Z > 0.6)
+		{
+			const FVector Over = FVector(Top.ImpactPoint) + FVector(0.0, 0.0, 30.0);
+			FHitResult Beyond;
+			if (!W->LineTraceSingleByChannel(Beyond, Over + In * 12.0, Over - In * 12.0, ECC_Visibility, Q)) return TEXT("lip/curb");
+		}
+		return FVector::Dist2D(At, StickAt) < 40.0 ? TEXT("wall resting") : TEXT("wall");
+	}
+
 	void Case(AOutlawsLevelActor* L, int32 Site, const FVector& Stick, const AOutlawsRemotePlayer* Rp, double R, float Damage)
 	{
 		UWorld* W = L->GetWorld();
@@ -185,11 +221,35 @@ namespace OutlawsBlastMissProbeLocal
 		}
 		else if (Passes == 0) ++T.OursClearOrigNone;
 		const double FromStick = bStopped && D < R ? FVector::Dist(FVector(Hit.ImpactPoint), StickAt) : 0.0;
-		if (Site == Real && RealLines < 400)
+		const FString KindName = !bStopped ? FString() : D >= R ? FString(TEXT("past our reach")) : KindOf(W, Hit, StickAt);
+		const bool bOrigPass = Passes * 2 >= OrigTries;
+		if (bStopped)
+		{
+			FKind& K = (Site == Real ? KindsReal : KindsSites).FindOrAdd(KindName);
+			++K.N;
+			K.Near += Band == 0 ? 1 : 0;
+			K.OrigPass += bOrigPass ? 1 : 0;
+		}
+		if (Site == Real)
+		{
+			if (D >= R) ++Sum.PastOurs;
+			else
+			{
+				++Sum.InReach;
+				if (Damage * Fall < 0.05) ++Sum.Faint;
+				else if (bStopped)
+				{
+					++Sum.Stopped;
+					Sum.StoppedNear += Band == 0 ? 1 : 0;
+					Sum.StoppedOrig += bOrigPass ? 1 : 0;
+				}
+			}
+		}
+		if (Site == Real && RealLines < 3000)
 		{
 			++RealLines;
-			UE_LOG(LogOutlaws, Display, TEXT("OLSHOT blastmiss real: D %.0f cm of R %.0f, dealt %.2f%s, ours %s%s, orig %d/%d, rays3 %s, head %s"), D, R, Damage * Fall, bStopped ? TEXT(" (not dealt)") : TEXT(""),
-				bStopped ? TEXT("stopped by ") : TEXT("clear"), *Name, Passes, OrigTries, bRays3 ? TEXT("clear") : TEXT("stopped"), bHead ? TEXT("clear") : TEXT("stopped"));
+			UE_LOG(LogOutlaws, Display, TEXT("OLSHOT blastmiss real: blast %d body %d, D %.0f cm of R %.0f, dealt %.2f%s, ours %s%s, kind %s, met %.0f cm from the stick %.0f cm above it, orig %d/%d, rays3 %s, head %s"), Sum.Blasts, NoteWho, D, R, Damage * Fall, bStopped ? TEXT(" (not dealt)") : TEXT(""),
+				bStopped ? TEXT("stopped by ") : TEXT("clear"), *Name, bStopped ? *KindName : TEXT("none"), FromStick, bStopped && D < R ? Hit.ImpactPoint.Z - StickAt.Z : 0.0, Passes, OrigTries, bRays3 ? TEXT("clear") : TEXT("stopped"), bHead ? TEXT("clear") : TEXT("stopped"));
 		}
 		else if (Site != Real && bStopped && Passes * 2 >= OrigTries && MissLines < 60)
 		{
@@ -199,9 +259,28 @@ namespace OutlawsBlastMissProbeLocal
 		}
 	}
 
-	void Note(AOutlawsLevelActor* L, const FVector& From, const AOutlawsRemotePlayer* Body, double R, float Damage)
+	void Note(AOutlawsLevelActor* L, const FVector& From, const AOutlawsRemotePlayer* Body, double R, float Damage, int32 Who, int32 Shooter, float Health)
 	{
+		if (From != LastBlast) { LastBlast = From; ++Sum.Blasts; }
+		if (Who == Shooter)        // (the match refuses a bot's own stick on itself: no miss)
+		{
+			Sum.Own += FVector::Dist(From, Body->ShownBody()) < R ? 1 : 0;
+			return;
+		}
+		NoteWho = Who;
+		HealthWas.Add(Who, Health);
 		Case(L, Real, From, Body, R, Damage);
+	}
+
+	void Dealt(int32 Who, float Damage, float Health)
+	{
+		const float Was = HealthWas.FindRef(Who);
+		const bool bRefused = Health >= Was, bKilled = !bRefused && Health <= 0.f;
+		++Sum.Struck;
+		Sum.Refused += bRefused ? 1 : 0;
+		Sum.Killed += bKilled ? 1 : 0;
+		Sum.Survived += !bRefused && !bKilled ? 1 : 0;
+		UE_LOG(LogOutlaws, Display, TEXT("OLSHOT blastmiss struck: blast %d body %d, dealt %.2f, health %.1f to %.1f: %s"), Sum.Blasts, Who, Damage, Was, Health, bRefused ? TEXT("refused") : bKilled ? TEXT("killed") : TEXT("survived"));
 	}
 
 	/** A stick lying on what is under Try: true with where it lies (3 cm off the floor, as a thrown one comes to rest). */
@@ -277,6 +356,7 @@ OL_SHOT_TEST(OLBlastMissProbe, 2190)
 		FOutlawsMatchFlow& F = OutlawsMpHost::Flow();
 		if (F.GetState() == FOutlawsMatchFlow::EState::WarmUp) F.HostStart();
 		GOLBlastMissNote = &OutlawsBlastMissProbeLocal::Note;
+		GOLBlastMissDealt = &OutlawsBlastMissProbeLocal::Dealt;
 		StartAt = Now;
 		UE_LOG(LogOutlaws, Display, TEXT("OLSHOT blastmiss watching %d bots on %s for %d s, %d sites a second; radius %.0f cm"), Views.Num(), *Lv, Seconds, Rate, L->BlastRadiusCm());
 		Stage = 1;
@@ -302,6 +382,7 @@ OL_SHOT_TEST(OLBlastMissProbe, 2190)
 		return;
 	}
 	GOLBlastMissNote = nullptr;
+	GOLBlastMissDealt = nullptr;
 	int32 Counted = 0, Stopped = 0;
 	for (int32 s = 0; s < NumSites; ++s)
 	{
@@ -327,6 +408,15 @@ OL_SHOT_TEST(OLBlastMissProbe, 2190)
 			UE_LOG(LogOutlaws, Display, TEXT("OLSHOT blastmiss blocker %s %s: %d"), Pass == 0 ? TEXT("(the original passes)") : TEXT("(all)"), *Kv.Key, Kv.Value);
 		}
 	}
+	for (int32 Pass = 0; Pass < 2; ++Pass)
+	{
+		for (const TPair<FString, FKind>& Kv : Pass == 0 ? KindsReal : KindsSites)
+		{
+			UE_LOG(LogOutlaws, Display, TEXT("OLSHOT blastmiss kind (%s) %s: %d, under 3 m %d, the original passes %d"), Pass == 0 ? TEXT("real") : TEXT("sites"), *Kv.Key, Kv.Value.N, Kv.Value.Near, Kv.Value.OrigPass);
+		}
+	}
+	UE_LOG(LogOutlaws, Display, TEXT("OLSHOT blastmiss real sum %s: %d blasts; bodies %d in our reach, %d own stick left out, %d past our reach and in the original's, %d too faint; %d stopped by the line (%d under 3 m, %d the original passes); %d struck: %d survived, %d killed, %d refused"),
+		*Lv, Sum.Blasts, Sum.InReach, Sum.Own, Sum.PastOurs, Sum.Faint, Sum.Stopped, Sum.StoppedNear, Sum.StoppedOrig, Sum.Struck, Sum.Survived, Sum.Killed, Sum.Refused);
 	UE_LOG(LogOutlaws, Display, TEXT("OLSHOT blastmiss orig why %s: passed %d, solid wall %d, over a ceiling %d, under a floor %d, ended elsewhere %d; no sector %d"), *Lv, OrigWhy[0], OrigWhy[1], OrigWhy[2], OrigWhy[3], OrigWhy[4], NoSector);
 	UE_LOG(LogOutlaws, Display, TEXT("OLSHOT blastmiss RESULT logged: %d cases on %s, ours stopped %d, real %d"), Counted, *Lv, Stopped, RealLines);
 	Stage = -1;
