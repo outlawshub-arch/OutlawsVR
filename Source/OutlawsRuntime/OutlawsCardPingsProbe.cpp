@@ -4,8 +4,11 @@
 //   clients: -OLCoopJoin=<host>:<port> [-OLOldCardPings]
 // The host starts the match once both clients are in its rules, and 16 s into it each machine reads its own wheel card
 // (FillMatchTable, the card's and Tab's table): on a client the host's row has the ping it always had, the other client's row
-// has one too (-OLOldCardPings: blank), its own row and the bot's none; on the host each client's as ever.  The host counts
-// the times a new ping went out with the scores: no more than one each 5 s.  Lines "OLSHOT cardpings check PASS|FAIL: ...",
+// has one too (-OLOldCardPings: blank), its own row and the bot's none; on the host each client's as ever.  Each machine stays
+// past the reads: a client that quits takes its row off the scores, so a client's quit at its own read took that row off the card
+// of the one that read a tenth of a second after it.  The host counts the times a new ping went out with the scores from the
+// match's start (its count runs from the warm-up): no more than one each 5 s.  To force that quit's race: -OLCardPingsQuitAtRead
+// on each client and -OLCardPingsReadLate=<ms> on one.  Lines "OLSHOT cardpings check PASS|FAIL: ...",
 // "OLSHOT cardpings (who) card row: ..." and "OLSHOT cardpings RESULT".
 
 #include "OutlawsCoop.h"
@@ -22,9 +25,9 @@
 
 namespace OutlawsCardPingsProbeLocal
 {
-	constexpr double ReadAfter = 16.0, HostStays = 10.0;
-	int32 Passes = 0, Fails = 0;
-	double StartAt = -1.0, Deadline = -1.0;
+	constexpr double ReadAfter = 16.0, ClientStays = 5.0, HostStays = 10.0;
+	int32 Passes = 0, Fails = 0, SendsAtStart = 0, SendsSeen = 0;
+	double StartAt = -1.0, Deadline = -1.0, LastSendAt = -1.0, LeastGap = -1.0;
 	bool bRead = false, bDone = false;
 
 	void Check(bool bOk, const TCHAR* Who, const FString& What)
@@ -74,11 +77,21 @@ void UOutlawsCoop::TickCardPingsProbe(double Now, AOutlawsLevelActor* L, AOutlaw
 		}
 		else if (!S || S->Scores.Num() < 4 || !IsMatch() || S->MatchState != uint8(FOutlawsMatchFlow::EState::Playing)) return;
 		StartAt = Now;
+		SendsAtStart = SendsSeen = ScorePingSends;
 		return;
+	}
+	if (bHost && ScorePingSends != SendsSeen)
+	{
+		// (as this tick sees them, a frame late at most: the number for the report, the check is the count)
+		SendsSeen = ScorePingSends;
+		if (LastSendAt >= 0.0) LeastGap = LeastGap < 0.0 ? Now - LastSendAt : FMath::Min(LeastGap, Now - LastSendAt);
+		LastSendAt = Now;
 	}
 	if (!bRead)
 	{
-		if (Now < StartAt + ReadAfter) return;
+		int32 LateMs = 0;
+		OLFlags::Value(TEXT("OLCardPingsReadLate"), LateMs);
+		if (Now < StartAt + ReadAfter + LateMs / 1000.0) return;
 		bRead = true;
 		FFragTableData T;
 		const bool bTable = FillMatchTable(T);
@@ -101,11 +114,15 @@ void UOutlawsCoop::TickCardPingsProbe(double Now, AOutlawsLevelActor* L, AOutlaw
 		}
 		Check(Others == 2 - (bOld && !bHost ? 1 : 0) && Numbers == Others, Who, FString::Printf(TEXT("%d of the %d other people's rows have a number"), Numbers, Others));
 		Check(BotRows >= 1 && BotBlank == BotRows, Who, FString::Printf(TEXT("the %d bot row(s) show nothing"), BotRows));
-		if (bHost) Check(ScorePingSends <= 1 + int32((Now - StartAt) / 5.0) + 1, Who, FString::Printf(TEXT("%d new pings sent in %.0f s of play"), ScorePingSends, Now - StartAt));
-		if (!bHost) Finish();
+		if (bHost)
+		{
+			const int32 Sends = ScorePingSends - SendsAtStart;
+			Check(Sends <= 1 + int32((Now - StartAt) / 5.0), Who, FString::Printf(TEXT("%d new pings sent in %.1f s of play, the least gap %.2f s (%d more before the match)"), Sends, Now - StartAt, LeastGap, SendsAtStart));
+		}
+		else if (OLFlags::Param(TEXT("OLCardPingsQuitAtRead"))) Finish();
 		return;
 	}
-	if (Now >= StartAt + ReadAfter + HostStays) Finish();
+	if (Now >= StartAt + ReadAfter + (bHost ? HostStays : ClientStays)) Finish();
 }
 
 #endif // WITH_OUTLAWS_TESTS
