@@ -7803,6 +7803,7 @@ void AOutlawsPlayer::FireGun(int32 Hand, bool bFan)
 	}
 	++TutNotes.Shots;                                // (REQ-TUTORIAL)
 	if (GrabbedEnemy[1 - Hand].IsValid()) ++TutNotes.ShotsHolding;
+	if (bFan) ++TutNotes.FanShots;                   // (REQ-TUTFAN)
 	CylSpinTarget[Hand] += Cylinder().Chamber;       // cocking turns the cylinder a chamber
 	if (W.bAuto && !bCrankShot) GatCrankAngle += 60.f;   // the gatling's crank comes round a sixth with each shot
 	if (W.bAuto) OutlawsAchievements::NoteGatlingFired(L);   // (REQ-EXTRAS)

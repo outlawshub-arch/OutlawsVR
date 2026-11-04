@@ -2310,6 +2310,7 @@ public:
 		int32 Jumps = 0;
 		int32 HeldPunches = 0;            // a fist landed on the bad guy held in the other hand
 		int32 BagsUsed = 0;               // the medical bag used from a wheel
+		int32 FanShots = 0;               // a round fired by fanning the hammer (REQ-TUTFAN)
 	};
 	FTutorialNotes TutNotes;
 	/** Tests: hand Hand's wheel opened, the slot of Weapon pointed at and the button let go, as a player takes a weapon. */

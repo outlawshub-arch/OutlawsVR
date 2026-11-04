@@ -10,27 +10,28 @@
 //   2 turn            the turning stick or the body
 //   3 take_revolver   the main hand's wheel (no holsters), the revolver taken
 //   4 fire            five bottles on a rail, all five broken (any shots)
-//   5 reload          B / Y (the Classic layout and one controller: a tap of the wheel button)
-//   6 pickup          a box of bullets on the ground: a hand's grip on it, or walked over
-//   7 take_knife      the other hand's wheel, the knife
-//   8 throw_knife     aimed by the hand, thrown higher to go further (THROWAIM), at the post
-//   9 take_dynamite   a stick from the other hand's wheel
-//  10 throw_dynamite  lit with the trigger, thrown at the barrel (the game's barrel sprite, ahead on the right)
-//  11 climb           the crates, by their top edge (one hand is enough)
-//  12 jump            a crouch (the turning stick held down, or the body) and a jump (pushed up, or a dip and rise), both
+//   5 fan             REQ-TUTFAN: the other hand, empty, swiped back across the revolver's hammer: one fanned shot
+//   6 reload          B / Y (the Classic layout and one controller: a tap of the wheel button)
+//   7 pickup          a box of bullets on the ground: a hand's grip on it, or walked over
+//   8 take_knife      the other hand's wheel, the knife
+//   9 throw_knife     aimed by the hand, thrown higher to go further (THROWAIM), at the post
+//  10 take_dynamite   a stick from the other hand's wheel
+//  11 throw_dynamite  lit with the trigger, thrown at the barrel (the game's barrel sprite, ahead on the right)
+//  12 climb           the crates, by their top edge (one hand is enough)
+//  13 jump            a crouch (the turning stick held down, or the body) and a jump (pushed up, or a dip and rise), both
 //                     waited for; one controller: the jump
-//  13 door            the two front doors of the building by the well, across the street from the jail (REQ-TUTDOORS), each
+//  14 door            the two front doors of the building by the well, across the street from the jail (REQ-TUTDOORS), each
 //                     pushed open by hand; not found: the street's nearest door (left out when the level has none near)
-//  14 lantern         the lantern from the other hand's wheel, lit
-//  15 grab            a bad guy rushes in and holds still (frozen) until a hand takes him (a gun hand too)
-//  16 punch           the other hand's fist
-//  17 grab_shoot      another: taken, then shot
-//  18 fight           two more at range, no freeze; the player is left hurt (health 6) for the next card
-//  19 heal            the Medical Bag from a wheel: only using it finishes the card
-//  20 pause           the menu button: the pause menu opened (Options has comfort and speed)
-//  21 horse           "You're ready. Ride out!": a hand's grip on the horse ends it; back to the main menu, "Tutorial
+//  15 lantern         the lantern from the other hand's wheel, lit
+//  16 grab            a bad guy rushes in and holds still (frozen) until a hand takes him (a gun hand too)
+//  17 punch           the other hand's fist
+//  18 grab_shoot      another: taken, then shot
+//  19 fight           two more at range, no freeze; the player is left hurt (health 6) for the next card
+//  20 heal            the Medical Bag from a wheel: only using it finishes the card
+//  21 pause           the menu button: the pause menu opened (Options has comfort and speed)
+//  22 horse           "You're ready. Ride out!": a hand's grip on the horse ends it; back to the main menu, "Tutorial
 //                     complete" (Finish on the card does the same)
-// One controller (REQ-ONECTRL): no punch and no grab_shoot (no other hand), the grab card asks for a throw instead.
+// One controller (REQ-ONECTRL): no fan, no punch and no grab_shoot (no other hand), the grab card asks for a throw instead.
 // Nothing is saved (no autosave, no level opening), no best time, no unlock (CompleteLevel is never called), health stops at
 // 1 (DamagePlayer).  "Skip tutorial" heads the pause page (OutlawsPlayerMenu.cpp).  The props are the engine cube in the
 // level's own wood (the post, the rail, the crates), the game's own bottles, box of bullets, barrel and horse sprite; the
@@ -48,6 +49,7 @@
 //         original missions only through Marshal Training, -OLHmCareerTest)
 //   float REQ-TUTCARDFLOAT: a new card's first seconds, stage by stage (phase 30 below)
 //   doors REQ-TUTDOORS: the pair by name, a push on each, Back shuts them (phase 31 below)
+//   fan   REQ-TUTFAN: its station, and a hand really swiped past the hammer (phase 32 below)
 // Prints "OLTUT test check PASS|FAIL: ..." and "OLTUT test RESULT ...".  Screenshots: Saved/OLShots/ol_tut_<name>.png.
 
 #include "OutlawsLevelActor.h"
@@ -87,14 +89,15 @@ namespace OutlawsTutorialLocal
 {
 	enum ECard : int32
 	{
-		Walk, Turn, TakeRevolver, Fire, Reload, Pickup, TakeKnife, ThrowKnife, TakeDynamite, ThrowDynamite, Climb, Jump,
+		Walk, Turn, TakeRevolver, Fire, Fan, Reload, Pickup, TakeKnife, ThrowKnife, TakeDynamite, ThrowDynamite, Climb, Jump,
 		Door, Lantern, Grab, Punch, GrabShoot, Fight, Heal, Pause, Horse, NumCards
 	};
-	const TCHAR* const CardIds[NumCards] = { TEXT("walk"), TEXT("turn"), TEXT("take_revolver"), TEXT("fire"), TEXT("reload"), TEXT("pickup"),
+	const TCHAR* const CardIds[NumCards] = { TEXT("walk"), TEXT("turn"), TEXT("take_revolver"), TEXT("fire"), TEXT("fan"), TEXT("reload"), TEXT("pickup"),
 		TEXT("take_knife"), TEXT("throw_knife"), TEXT("take_dynamite"), TEXT("throw_dynamite"), TEXT("climb"), TEXT("jump"), TEXT("door"),
 		TEXT("lantern"), TEXT("grab"), TEXT("punch"), TEXT("grab_shoot"), TEXT("fight"), TEXT("heal"), TEXT("pause"), TEXT("horse") };
 	constexpr int32 RevolverIdx = 0, DynamiteIdx = 6, KnifeIdx = 7;
 	constexpr int32 NumBottles = 5;
+	constexpr int32 FanRounds = 3;           // (REQ-TUTFAN: the fewest the fan card leaves in the cylinder)
 	// the line the front menu shows once a finished tutorial is back at it
 	FString GToast;
 	// (REQ-TUTDOORS) the door card is about the pair (TutorialCardLines has no run to look at)
@@ -102,6 +105,11 @@ namespace OutlawsTutorialLocal
 	bool OldTutDoors()
 	{
 		static const bool bOld = OLFlags::Param(TEXT("OLOldTutDoors"));
+		return bOld;
+	}
+	bool OldTutFan()
+	{
+		static const bool bOld = OLFlags::Param(TEXT("OLOldTutFan"));
 		return bOld;
 	}
 }
@@ -145,10 +153,11 @@ struct FOutlawsTutorialRun
 
 namespace OutlawsTutorialLocal
 {
-	// (one controller: no other hand to punch or shoot with while holding; no door near: no door card)
+	// (one controller: no other hand to punch or shoot with while holding, or to fan with; no door near: no door card)
 	bool Skipped(const AOutlawsPlayer* P, const FOutlawsTutorialRun* R, int32 Card)
 	{
-		if (P && P->OneHand() >= 0 && (Card == Punch || Card == GrabShoot)) return true;
+		if (P && P->OneHand() >= 0 && (Card == Punch || Card == GrabShoot || Card == Fan)) return true;
+		if (Card == Fan && OldTutFan()) return true;
 		return Card == Door && R && R->DoorSector < 0;
 	}
 	int32 StepsOf(const AOutlawsPlayer* P, const FOutlawsTutorialRun* R, int32 Upto)
@@ -197,6 +206,12 @@ void AOutlawsLevelActor::TutorialCardLines(const AOutlawsPlayer* P, const FStrin
 		break;
 	case Fire:
 		Line = FString::Printf(TEXT("Shoot the five bottles on the rail: pull the trigger %s."), *OnDom);
+		break;
+	// REQ-TUTFAN (user 2026-11-04): what really fans (UpdateFan): the other hand empty, its palm not up, swept back or down past
+	// the hammer, over 80 cm/s and within 13 cm of the gun's back; the trigger plays no part
+	case Fan:
+		Line = FString::Printf(TEXT("Now fan it: swipe your empty %s hand back across the hammer, palm down."), bLeft ? TEXT("right") : TEXT("left"));
+		Hint = TEXT("A quick swipe under the arrow. No trigger needed.");
 		break;
 	case Reload:
 		Line = P->bFaceReload && One < 0 ? FString::Printf(TEXT("Press %s %s to reload."), Btn, *OnDom)
@@ -584,6 +599,31 @@ void AOutlawsLevelActor::TickTutorial(float Dt)
 			R.LastYaw = P->Camera ? float(P->Camera->GetComponentRotation().Yaw) : float(P->GetActorRotation().Yaw);
 			break;
 		case Fire: if (bReset) SetBottles(); break;
+		case Fan:
+		{
+			// REQ-TUTFAN: its station, whichever way the card came up (the fire card's five bottles can leave one round, or none, and
+			// Back can come from a hand holding anything): the revolver in the main hand, changing hands rounds and all as the wheel
+			// does it; the other hand empty, as the fan wants; at least FanRounds in the cylinder from the reserve, so a swipe always
+			// fires and the card after it still has an open chamber to reload; the bottles up again to fan at
+			if (P->Equipped[DomH] != RevolverIdx)
+			{
+				if (P->Equipped[OffH] == RevolverIdx)
+				{
+					P->Equip(OffH, -1);
+					P->SavedMag.Add(DomH * 16 + RevolverIdx, P->SavedMag.FindRef(OffH * 16 + RevolverIdx));
+				}
+				P->Equip(DomH, RevolverIdx);
+			}
+			P->Equip(OffH, -1);
+			int32& Reserve = Counts.FindOrAdd(TEXT("ibullit"));
+			const int32 Rounds = FMath::Clamp(FanRounds - P->Mag[DomH], 0, Reserve);
+			P->Mag[DomH] += Rounds;
+			P->Spent[DomH] = FMath::Max(0, P->Spent[DomH] - Rounds);
+			Reserve -= Rounds;
+			SetBottles();
+			UE_LOG(LogOutlaws, Log, TEXT("OLTUT the fan card: %d rounds in the revolver (%d topped up), %d left"), P->Mag[DomH], Rounds, Reserve);
+			break;
+		}
 		case Pickup: if (bReset || !R.Box.IsValid()) SetBox(); break;
 		case TakeKnife: case ThrowKnife:
 			if (bReset)
@@ -862,7 +902,7 @@ void AOutlawsLevelActor::TickTutorial(float Dt)
 			int32 Next = R.Card + 1;
 			while (Next < NumCards && Skipped(P, &R, Next))
 			{
-				UE_LOG(LogOutlaws, Log, TEXT("OLTUT card %d %s left out (%s)"), Next + 1, CardIds[Next], Next == Door ? TEXT("no door near") : TEXT("one controller"));
+				UE_LOG(LogOutlaws, Log, TEXT("OLTUT card %d %s left out (%s)"), Next + 1, CardIds[Next], Next == Door ? TEXT("no door near") : Next == Fan && One < 0 ? TEXT("-OLOldTutFan") : TEXT("one controller"));
 				++Next;
 			}
 			if (Next >= NumCards)
@@ -891,6 +931,13 @@ void AOutlawsLevelActor::TickTutorial(float Dt)
 		{
 		case Walk: Over = R.Marker + FVector(0.0, 0.0, 220.0); break;
 		case Fire: Over = FVector(R.Rail.X, R.Rail.Y, R.RailTop + 40.0); break;
+		case Fan:
+			// (REQ-TUTFAN: where the swipe goes: a small arrow riding the revolver's hammer, the gun's own hand or the one it is in)
+			for (const int32 H : { DomH, OffH })
+			{
+				if (P->Equipped[H] == RevolverIdx && P->WeaponMesh[H]) { Over = P->WeaponMesh[H]->GetComponentTransform().TransformPosition(AOutlawsPlayer::WeaponFanZone(RevolverIdx).Hammer); break; }
+			}
+			break;
 		case Pickup: Over = R.BoxAt + FVector(0.0, 0.0, 40.0); break;
 		case TakeKnife: case ThrowKnife: Over = R.KnifePost + FVector(0.0, 0.0, 190.0); break;
 		case TakeDynamite: case ThrowDynamite: Over = R.Barrel + FVector(0.0, 0.0, 130.0); break;
@@ -904,7 +951,9 @@ void AOutlawsLevelActor::TickTutorial(float Dt)
 		if (bShow)
 		{
 			const double T = Now - R.CardAt;
-			Arrow->SetActorLocationAndRotation(Over + FVector(0.0, 0.0, 30.0 + 10.0 * FMath::Sin(T * 3.0)), FRotator(180.0, FMath::Fmod(T * 90.0, 360.0), 0.0));
+			const double Size = R.Card == Fan ? 0.3 : 1.0;
+			Arrow->SetActorScale3D(FVector(0.22 * Size, 0.22 * Size, 0.30 * Size));
+			Arrow->SetActorLocationAndRotation(Over + FVector(0.0, 0.0, (30.0 + 10.0 * FMath::Sin(T * 3.0)) * Size), FRotator(180.0, FMath::Fmod(T * 90.0, 360.0), 0.0));
 		}
 	}
 	// the bad guy a card is about: held still once he is near (or has had 3.5 s to come), going again once taken
@@ -950,6 +999,7 @@ void AOutlawsLevelActor::TickTutorial(float Dt)
 		for (int32 i = 0; i < NumBottles; ++i) bDone = bDone && BottleDown(i);
 		break;
 	}
+	case Fan: bDone = N.FanShots > A.FanShots; break;           // (one is enough; the trigger's shots do not count)
 	case Reload: bDone = P->bButtonReload[0] || P->bButtonReload[1] || P->bReloadingNow[0] || P->bReloadingNow[1]; break;
 	case Pickup: bDone = BoxTaken(); break;
 	case TakeKnife: bDone = Holds(KnifeIdx); break;
@@ -1264,9 +1314,207 @@ void AOutlawsLevelActor::TickTutorialTest(float Dt)
 		T.Tries = 0;
 		T.LastStep = 1;
 		T.bGoodSeen = false;
-		T.Phase = Mode == TEXT("float") ? 30 : Mode == TEXT("doors") ? 31 : 4;
+		T.Phase = Mode == TEXT("float") ? 30 : Mode == TEXT("doors") ? 31 : Mode == TEXT("fan") ? 32 : 4;
 		T.At = Now + 1.5;
 		return;
+	}
+	case 32:
+	{
+		// REQ-TUTFAN (-OLTutorialTest=fan): Next to the fire card with no gun drawn, on to the fan card: its station (the revolver,
+		// the other hand empty, the rounds, the bottles, the arrow on the hammer, the card straight after fire); Back and a
+		// cylinder run dry with the knife in the free hand: the station again.  Then the headset's rules and a hand really swiped
+		// past the hammer (UpdateFan): sideways nothing, palm up nothing, back across with the trigger left alone a fanned shot,
+		// the card done; with the trigger held another (the manual's way works too, it just is not needed); the reload card
+		// after it has rounds to put back; Back from it, the lantern in the free hand, puts the station up again.
+		// -OLOldTutFan: no fan card, the steps as they were
+		FOutlawsTutorialRun& R = *TutorialRun;
+		AOutlawsTutorialCard* C = R.CardActor.Get();
+		if (!C) { Check(false, TEXT("fan: the card is there")); Finish(); return; }
+		const FString Id = TutorialCardId();
+		const int32 One = P->OneHand();
+		const int32 DomH = One >= 0 ? One : P->LeftDominant() ? 0 : 1;
+		const int32 OffH = 1 - DomH;
+		T.At = Now + 0.05;
+		if (Now - T.CardSeen > 60.0) { Check(false, FString::Printf(TEXT("fan: stuck at step %d on %s"), T.Job, *Id)); Finish(); return; }
+		auto BottlesUp = [&]()
+		{
+			int32 Up = 0;
+			for (int32 i = 0; i < NumBottles; ++i)
+			{
+				const AOutlawsSpriteActor* B = R.Bottles[i].Get();
+				const FProp* Pr = B ? Props.FindByPredicate([B](const FProp& X) { return X.Sprite.Get() == B; }) : nullptr;
+				Up += B && !B->IsHidden() && Pr && Pr->Current == 0 ? 1 : 0;
+			}
+			return Up;
+		};
+		// the station's checks (What: how the card came up)
+		auto Station = [&](const TCHAR* What, int32 RoundsWanted)
+		{
+			Check(Id == TEXT("fan") && P->Equipped[DomH] == RevolverIdx && P->Equipped[OffH] < 0 && P->HeldTool[OffH].IsEmpty() && P->Mag[DomH] == RoundsWanted && BottlesUp() == NumBottles,
+				FString::Printf(TEXT("%s: the revolver in the main hand, %d rounds (%d wanted), the other hand empty, %d bottles up"), What, P->Mag[DomH], RoundsWanted, BottlesUp()));
+		};
+		// the gun held out in front, the free hand's palm start and step along Way each frame
+		auto GunXf = [P, DomH]() { return P->WeaponMesh[DomH] ? P->WeaponMesh[DomH]->GetComponentTransform() : FTransform::Identity; };
+		auto HoldGun = [&]()
+		{
+			const FVector Fwd = P->Camera->GetForwardVector();
+			P->GripOf(DomH)->SetWorldLocationAndRotation(Cam() + Fwd * 40.0 - FVector(0.0, 0.0, 25.0), FRotator(0.0, Fwd.Rotation().Yaw, 0.0));
+		};
+		auto Hammer = [&]() { return GunXf().TransformPosition(AOutlawsPlayer::WeaponFanZone(RevolverIdx).Hammer); };
+		// (one stroke, 8 frames still at its start for the hand's speed to settle, then 16 along Way through the point By at 150
+		// cm/s; Roll turns the palm)
+		auto Stroke = [&](const FVector& Way, const FVector& By, float Roll)
+		{
+			const double Step = FMath::Max(double(Dt), 0.008) * 150.0;
+			const FVector At = By + Way * (double(FMath::Max(T.JobTick - 8, 0)) - 8.0) * Step;
+			P->GripOf(OffH)->SetWorldLocationAndRotation(At, FRotator(0.0, P->GetActorRotation().Yaw, Roll));
+			++T.JobTick;
+			T.At = Now;
+			return T.JobTick >= 24;
+		};
+		switch (T.Job)
+		{
+		case 0:
+			if (Id != TEXT("fire")) { C->Pick(1); T.At = Now + 0.15; return; }
+			Check(P->Equipped[0] < 0 && P->Equipped[1] < 0, TEXT("the fire card reached by Next, no gun drawn"));
+			C->Pick(1);
+			T.Job = 1;
+			T.At = Now + 0.4;
+			return;
+		case 1:
+		{
+			if (OLFlags::Param(TEXT("OLOldTutFan")))
+			{
+				Check(Id == TEXT("reload") && C->GetSteps() == NumCards - 1, FString::Printf(TEXT("old: reload follows fire (%s), %d steps"), *Id, C->GetSteps()));
+				Finish();
+				return;
+			}
+			Check(Id == TEXT("fan") && C->GetStep() == 5 && C->GetSteps() == NumCards, FString::Printf(TEXT("the fan card straight after fire: step %d of %d: \"%s\" / \"%s\""), C->GetStep(), C->GetSteps(), *C->GetLine(), *C->GetHint()));
+			Check(C->GetLine().Contains(DomH == 1 ? TEXT("left hand") : TEXT("right hand")), TEXT("it names the free hand"));
+			Station(TEXT("no gun drawn before"), 6);
+			Check(!C->IsGood(), TEXT("waiting for a fanned shot"));
+			Face(R.Rail);
+			T.At = Now + 0.6;
+			T.Job = 2;
+			return;
+		}
+		case 2:
+		{
+			const FVector To = R.Arrow.IsValid() ? R.Arrow->GetActorLocation() : FVector::ZeroVector;
+			Check(R.Arrow.IsValid() && !R.Arrow->IsHidden() && FVector::Dist(To, Hammer()) < 20.0 && R.Arrow->GetActorScale3D().X < 0.1, FString::Printf(TEXT("a small arrow on the hammer (%.0f cm off it, scale %.2f)"), FVector::Dist(To, Hammer()), R.Arrow.IsValid() ? R.Arrow->GetActorScale3D().X : 0.0));
+			C->Pick(0);
+			T.Job = 3;
+			T.At = Now + 0.3;
+			return;
+		}
+		case 3:
+			if (Id != TEXT("fire")) return;
+			// (the fire card's misses: the cylinder dry, then the knife drawn in the free hand)
+			P->Mag[DomH] = 0;
+			P->Spent[DomH] = 6;
+			P->Equip(OffH, KnifeIdx);
+			T.Tries = Counts.FindRef(TEXT("ibullit"));
+			C->Pick(1);
+			T.Job = 4;
+			T.At = Now + 0.4;
+			return;
+		case 4:
+			if (Id != TEXT("fan")) return;
+			Station(TEXT("a dry cylinder, the knife out"), FanRounds);
+			Check(Counts.FindRef(TEXT("ibullit")) == T.Tries - FanRounds && P->Spent[DomH] == 6 - FanRounds && Counts.FindRef(TEXT("iknife")) == 2,
+				FString::Printf(TEXT("the rounds came from the reserve (%d -> %d, %d cases), the knife kept (%d)"), T.Tries, Counts.FindRef(TEXT("ibullit")), P->Spent[DomH], Counts.FindRef(TEXT("iknife"))));
+			// the headset's rules from here: a hand's weapon tick, the swipes
+			P->bVR = true;
+			HoldGun();
+			T.Job = 5;
+			T.At = Now + 0.5;
+			return;
+		case 5:
+			Shot(TEXT("fan"));
+			T.JobTick = 0;
+			T.Tries = P->TutNotes.Shots;
+			T.Job = 6;
+			return;
+		case 6:
+		{
+			// sideways past the hammer
+			HoldGun();
+			const FTransform X = GunXf();
+			if (!Stroke(X.GetUnitAxis(EAxis::Y), Hammer(), 0.f)) return;
+			Check(P->TutNotes.Shots == T.Tries, FString::Printf(TEXT("a sideways brush does not fan (%d shots)"), P->TutNotes.Shots - T.Tries));
+			T.JobTick = 0;
+			T.Job = 7;
+			return;
+		}
+		case 7:
+		{
+			// back across it, the palm up (cupped under the gun, holding it up)
+			HoldGun();
+			const FTransform X = GunXf();
+			if (!Stroke(-X.GetUnitAxis(EAxis::X), Hammer() - X.GetUnitAxis(EAxis::Z) * 2.0, OffH == 0 ? -90.f : 90.f)) return;
+			Check(P->TutNotes.Shots == T.Tries, FString::Printf(TEXT("back across it palm up does not fan (palm %.2f up, %d shots)"), FVector::DotProduct(P->PalmDir(OffH), FVector::UpVector), P->TutNotes.Shots - T.Tries));
+			Check(!C->IsGood(), TEXT("the card still waits"));
+			T.JobTick = 0;
+			T.Job = 8;
+			return;
+		}
+		case 8:
+		{
+			// (the palm level again, a frame or two for the band to let it go)
+			HoldGun();
+			P->GripOf(OffH)->SetWorldLocationAndRotation(Hammer() + P->Camera->GetRightVector() * 60.0 + FVector(0.0, 0.0, 30.0), FRotator(0.0, P->GetActorRotation().Yaw, 0.f));
+			T.JobTick = 0;
+			T.Job = 9;
+			T.At = Now + 0.3;
+			return;
+		}
+		case 9:
+		{
+			// back across it, the trigger not touched
+			HoldGun();
+			const FTransform X = GunXf();
+			if (!Stroke(-X.GetUnitAxis(EAxis::X), Hammer() - X.GetUnitAxis(EAxis::Z) * 2.0, 0.f) && !C->IsGood()) return;
+			Check(P->TutNotes.FanShots == R.At.FanShots + 1 && P->Mag[DomH] == FanRounds - 1, FString::Printf(TEXT("back across the hammer, the trigger not touched: a fanned shot (%d, %d rounds left)"), P->TutNotes.FanShots - R.At.FanShots, P->Mag[DomH]));
+			Check(C->IsGood(), TEXT("one is enough: the card is done"));
+			T.JobTick = 0;
+			T.Job = 10;
+			T.At = Now + 0.4;
+			return;
+		}
+		case 10:
+		{
+			// the manual's way, the trigger held through the stroke: a second one (the pull's own shot goes first)
+			HoldGun();
+			const FTransform X = GunXf();
+			if (T.JobTick == 0) { P->TestAxes.Add(DomH == 0 ? TEXT("OLVR_LeftTrigger") : TEXT("OLVR_RightTrigger"), 1.f); T.JobTick = 1; T.At = Now + 0.5; return; }
+			if (!Stroke(-X.GetUnitAxis(EAxis::X), Hammer() - X.GetUnitAxis(EAxis::Z) * 2.0, 0.f)) return;
+			P->TestAxes.Remove(DomH == 0 ? TEXT("OLVR_LeftTrigger") : TEXT("OLVR_RightTrigger"));
+			UE_LOG(LogOutlaws, Display, TEXT("OLTUT test: the trigger held through a stroke: fanned shots now %d, rounds %d"), P->TutNotes.FanShots - R.At.FanShots, P->Mag[DomH]);
+			P->GripOf(OffH)->SetWorldLocation(Hammer() + P->Camera->GetRightVector() * 60.0);
+			C->Pick(1);
+			T.Job = 11;
+			T.At = Now + 0.3;
+			return;
+		}
+		case 11:
+			if (Id != TEXT("reload")) return;
+			Check(P->Mag[DomH] < 6 && !C->IsGood(), FString::Printf(TEXT("the reload card has chambers to fill (%d rounds) and waits"), P->Mag[DomH]));
+			P->ToggleGear(OffH, TEXT("ilantern"));
+			Check(!P->HeldTool[OffH].IsEmpty(), TEXT("the lantern in the free hand"));
+			C->Pick(0);
+			T.Job = 12;
+			T.At = Now + 0.3;
+			return;
+		case 12:
+			if (Id != TEXT("fan")) return;
+			Check(!C->IsGood() && P->HeldTool[OffH].IsEmpty() && BottlesUp() == NumBottles && P->Mag[DomH] >= FanRounds,
+				FString::Printf(TEXT("Back to the fan: the hand empty again, the bottles up, %d rounds, the card waiting"), P->Mag[DomH]));
+			P->bVR = false;
+			Finish();
+			return;
+		default:
+			return;
+		}
 	}
 	case 31:
 	{
@@ -1686,8 +1934,9 @@ void AOutlawsLevelActor::TickTutorialTest(float Dt)
 				T.Phase = 20;
 				return;
 			}
-			// Back once from three stations: the bottles (from reload), the knife (from take_dynamite), the grab (from punch)
-			const TCHAR* BackOn = Id == TEXT("reload") ? TEXT("fire") : Id == TEXT("take_dynamite") ? TEXT("throw_knife") : Id == TEXT("punch") ? TEXT("grab") : nullptr;
+			// Back once from three stations: the bottles (from the card after them), the knife (from take_dynamite), the grab (from punch)
+			const FString AfterFire = Skipped(P, &R, Fan) ? TEXT("reload") : TEXT("fan");
+			const TCHAR* BackOn = Id == AfterFire ? TEXT("fire") : Id == TEXT("take_dynamite") ? TEXT("throw_knife") : Id == TEXT("punch") ? TEXT("grab") : nullptr;
 			if (Mode == TEXT("walk") && BackOn && !T.Backed.Contains(Id))
 			{
 				T.Backed.Add(Id);
@@ -1699,7 +1948,7 @@ void AOutlawsLevelActor::TickTutorialTest(float Dt)
 				T.At = Now + 0.8;
 				return;
 			}
-			if (Id == TEXT("fire") && T.Backed.Contains(TEXT("reload")) && !T.Shot.Contains(TEXT("next_undone")))
+			if (Id == TEXT("fire") && T.Backed.Contains(AfterFire) && !T.Shot.Contains(TEXT("next_undone")))
 			{
 				// (Next always works: pressed on the bottles again before they are shot)
 				T.Shot.Add(TEXT("next_undone"));
@@ -1752,7 +2001,7 @@ void AOutlawsLevelActor::TickTutorialTest(float Dt)
 		{
 			// the card photographed, the desktop's view turned to its target (as the headset's player would look)
 			if (Id == TEXT("walk")) Face(R.Marker);
-			else if (Id == TEXT("take_revolver") || Id == TEXT("fire")) Face(R.Rail);
+			else if (Id == TEXT("take_revolver") || Id == TEXT("fire") || Id == TEXT("fan")) Face(R.Rail);
 			else if (Id == TEXT("pickup")) Face(R.BoxAt);
 			else if (Id == TEXT("take_knife") || Id == TEXT("throw_knife")) Face(R.KnifePost);
 			else if (Id == TEXT("take_dynamite")) Face(R.Barrel);
@@ -1789,7 +2038,7 @@ void AOutlawsLevelActor::TickTutorialTest(float Dt)
 			}
 			if (Id == TEXT("pickup")) Check(R.Box.IsValid(), TEXT("pickup: the box of bullets lies on the ground"));
 			const bool bArrow = R.Arrow.IsValid() && !R.Arrow->IsHidden();
-			const bool bWantsArrow = Id == TEXT("walk") || Id == TEXT("fire") || Id == TEXT("pickup") || Id == TEXT("take_knife") || Id == TEXT("throw_knife") || Id == TEXT("take_dynamite")
+			const bool bWantsArrow = Id == TEXT("walk") || Id == TEXT("fire") || Id == TEXT("fan") || Id == TEXT("pickup") || Id == TEXT("take_knife") || Id == TEXT("throw_knife") || Id == TEXT("take_dynamite")
 				|| Id == TEXT("throw_dynamite") || Id == TEXT("climb") || Id == TEXT("door") || Id == TEXT("horse");
 			if (bWantsArrow) Check(bArrow, FString::Printf(TEXT("%s: the arrow floats over its target"), *Id));
 			T.PendingShot = Id;
@@ -1845,6 +2094,14 @@ void AOutlawsLevelActor::TickTutorialTest(float Dt)
 				}
 			}
 			T.At = Now + 0.5;
+		}
+		else if (Id == TEXT("fan"))
+		{
+			// (the desktop runs no hand's weapon tick: the fanned shot itself; -OLTutorialTest=fan swipes a hand past the hammer)
+			const int32 H = GunHand();
+			Check(H == DomH && P->Equipped[OffH] < 0 && P->Mag[DomH] >= FanRounds, FString::Printf(TEXT("fan: the revolver in the main hand with %d rounds, the other hand empty (%d, %d)"), P->Mag[DomH], P->Equipped[0], P->Equipped[1]));
+			P->FireCooldown[DomH] = 0.f;
+			P->FireGun(DomH, true);
 		}
 		else if (Id == TEXT("reload"))
 		{
