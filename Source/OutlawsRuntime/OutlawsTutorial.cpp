@@ -1974,7 +1974,12 @@ void AOutlawsLevelActor::TickTutorialTest(float Dt)
 				const FVector D = FRotator(0.0, k * 15.0, 0.0).Vector();
 				FHitResult H;
 				FCollisionQueryParams Q(SCENE_QUERY_STAT(OutlawsTutWall), true, P);
-				if (World->LineTraceSingleByChannel(H, From, From + D * 3000.0, ECC_Visibility, Q) && H.Distance < Near && H.Distance > 200.0) { Near = H.Distance; Dir = D; Spot = H.ImpactPoint; }
+				if (!World->LineTraceSingleByChannel(H, From, From + D * 3000.0, ECC_Visibility, Q) || H.Distance >= Near || H.Distance <= 200.0) continue;
+				// (a real wall, not a prop: the line at 260 cm up meets it at the same place too)
+				FHitResult HighHit;
+				if (!World->LineTraceSingleByChannel(HighHit, From + FVector(0.0, 0.0, 110.0), From + FVector(0.0, 0.0, 110.0) + D * 3000.0, ECC_Visibility, Q) || FMath::Abs(HighHit.Distance - H.Distance) > 20.0) continue;
+				Near = H.Distance; Dir = D; Spot = H.ImpactPoint;
+				UE_LOG(LogOutlaws, Display, TEXT("OLTUT test: float wall candidate yaw %.0f, %.0f cm, hit %s, high hit %.0f cm"), k * 15.0, H.Distance, H.GetActor() ? *H.GetActor()->GetName() : TEXT("?"), HighHit.Distance);
 			}
 			PutFeet(FVector(Spot.X, Spot.Y, R.Start.Z) - Dir * 62.0, Spot);
 			if (AController* Ctl = P->GetController()) Ctl->SetControlRotation(FRotator(0.0, Dir.Rotation().Yaw, 0.0));
