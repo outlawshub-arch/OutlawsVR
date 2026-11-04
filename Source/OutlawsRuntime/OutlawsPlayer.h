@@ -353,6 +353,8 @@ protected:
 	void FitUnderRoofAfterTeleport();
 	/** Fall damage (user 2026-09-27), by how hard the landing is. */
 	virtual void Landed(const FHitResult& Hit) override;
+	/** (BUG-JUMPWALL) a boosted jump near head-on at a wall stops at it instead of shooting off along it. */
+	virtual void NotifyHit(UPrimitiveComponent* MyComp, AActor* Other, UPrimitiveComponent* OtherComp, bool bSelfMoved, FVector HitLocation, FVector HitNormal, FVector NormalImpulse, const FHitResult& Hit) override;
 	double FallGraceUntil = 0.0;         // no fall damage until then (world seconds): a level start or a respawn drops the player in
 	/** (BUG-FALLDAMAGE) the fall under way: its highest point (the jump's apex, or where the floor was left) and the last Z seen. */
 	bool bFallTracked = false;
@@ -2689,6 +2691,11 @@ private:
 	bool bLanternLow[2] = { false, false };    // the lantern hung lower: its fist holds the other hand's long gun
 	float JumpStretch = 1.f;                   // K: how many times longer the jump lasts
 	float JumpOffZ = 0.f;                      // the feet at the take-off
+	FVector JumpHeading = FVector::ZeroVector; // (BUG-JUMPWALL) the way across the body was going a frame ago
+	/** -OLOldJumpWall (BUG-JUMPWALL): the held speed scales a wall's slide back up whatever the angle. */
+	static bool OldJumpWall();
+	/** (BUG-JUMPWALL) degrees from straight at a wall a jump stops at it within: -OLJumpWallLeeway=<x>, else ol.JumpWallLeeway. */
+	static float JumpWallLeeway();
 	float JumpAirSpeed = 0.f;                  // (BUG-JUMPSPEED) the speed across held after the ease (0: none)
 	float JumpEaseFrom = 0.f;                  // the take-off's speed across, the ease's start
 	float JumpAge = 0.f;                       // seconds since the take-off, for the ease

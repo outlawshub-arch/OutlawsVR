@@ -1681,7 +1681,7 @@ void AOutlawsPlayer::OnJumped_Implementation()
 	const float Full = Tk > 0.05f ? Reach / Tk * Push : 0.f;
 	const float Share = JumpBoostShareNow();
 	JumpEaseFrom = float(Vh.Size());
-	JumpDir = Vh.GetSafeNormal();
+	JumpDir = JumpHeading = Vh.GetSafeNormal();
 	JumpAge = 0.f;
 	if (Full > JumpEaseFrom && Share > 0.f && !JumpDir.IsNearlyZero())
 	{
@@ -1700,6 +1700,64 @@ bool AOutlawsPlayer::OldJumpSpeed()
 {
 	static const bool bOld = OLFlags::Param(TEXT("OLOldJumpSpeed"));
 	return bOld;
+}
+
+static TAutoConsoleVariable<float> CVarOLJumpWallLeeway(TEXT("ol.JumpWallLeeway"), 45.f,
+	TEXT("BUG-JUMPWALL: a jump this many degrees or less from straight at a wall stops at it (the boost over), past that it glances along it (-OLJumpWallLeeway=<degrees> takes over)."));
+
+bool AOutlawsPlayer::OldJumpWall()
+{
+	static const bool bOld = OLFlags::Param(TEXT("OLOldJumpWall"));
+	return bOld;
+}
+
+float AOutlawsPlayer::JumpWallLeeway()
+{
+	static float Flag = 0.f;
+	static const bool bFlag = OLFlags::Value(TEXT("OLJumpWallLeeway"), Flag);
+	return bFlag ? Flag : CVarOLJumpWallLeeway.GetValueOnGameThread();
+}
+
+void AOutlawsPlayer::NotifyHit(UPrimitiveComponent* MyComp, AActor* Other, UPrimitiveComponent* OtherComp, bool bSelfMoved, FVector HitLocation, FVector HitNormal, FVector NormalImpulse, const FHitResult& Hit)
+{
+	Super::NotifyHit(MyComp, Other, OtherComp, bSelfMoved, HitLocation, HitNormal, NormalImpulse, Hit);
+	// BUG-JUMPWALL (user 4 Nov, after the Quest test: "I seem to bounce off walls I'm jumping into instead of being able to grab
+	// them"; "maybe there should be 45 degree leeway or maybe a 30 degree leeway", and a jump along a wall can still glance off
+	// it).  There is no bounce: the engine slides what hits a wall along it, leaving the sideways part, and BUG-JUMPSPEED's held
+	// speed (Locomotion) scaled that part back up to the whole boost the next frame, so a jump 15 degrees off head-on shot away
+	// along the wall at the speed it came in with.  So a wall within JumpWallLeeway of the way the body is going (degrees from
+	// straight at it, 0 head-on, across the wall's own plan direction so a sloped wall counts as it stands) ends the held speed
+	// for this jump: what the engine left stays, the air control's top speed is the walk's again, and the body drops beside the
+	// wall with the hand in reach.  Past the leeway it glances off with its speed, as before.  The stretch at the lower movement
+	// speeds stays (its gravity to the fall past the take-off): full gravity from the wall would cut the jump's height, and the
+	// ledge with it.  Not walls: a floor or a lip's edge under the round of the capsule (a walkable normal), a ceiling, and on
+	// the way down a step: the top within the walk's step of the floor under the feet, which the body rides over at the landing.
+	// -OLOldJumpWall: as before
+	UCharacterMovementComponent* M = GetCharacterMovement();
+	UCapsuleComponent* Cap = GetCapsuleComponent();
+	if (!bJumpBoost || JumpAirSpeed <= 0.f || !bSelfMoved || MyComp != Cap || !M || !M->IsFalling() || OldJumpWall()) return;
+	const FVector Across(Hit.Normal.X, Hit.Normal.Y, 0.0);
+	if (Hit.Normal.Z >= M->GetWalkableFloorZ() || Across.SizeSquared() < 0.25) return;
+	const FVector ToWall = -Across.GetSafeNormal();
+	const float Off = FMath::RadiansToDegrees(FMath::Acos(FMath::Clamp(float(FVector::DotProduct(JumpHeading, ToWall)), -1.f, 1.f)));
+	if (Off > JumpWallLeeway()) return;
+	if (M->Velocity.Z <= 0.0)
+	{
+		UWorld* World = GetWorld();
+		FCollisionQueryParams Q(SCENE_QUERY_STAT(OutlawsJumpWall), true, this);
+		if (const AOutlawsLevelActor* LQ = Level.Get()) LQ->IgnorePassedOverlaps(Q);
+		const FVector Mid = GetActorLocation();
+		const double Under = Cap->GetScaledCapsuleHalfHeight() + M->MaxStepHeight;
+		FHitResult Floor;
+		if (World && World->LineTraceSingleByChannel(Floor, Mid, Mid - FVector(0.0, 0.0, Under), ECC_Visibility, Q, PlayerNoPawns()))
+		{
+			const FVector Over(Mid.X, Mid.Y, Floor.ImpactPoint.Z + M->MaxStepHeight + 1.0);
+			if (Hit.ImpactPoint.Z < Over.Z && !World->LineTraceTestByChannel(Over, Over + ToWall * (Cap->GetScaledCapsuleRadius() + 30.0), ECC_Visibility, Q, PlayerNoPawns())) return;
+		}
+	}
+	JumpAirSpeed = 0.f;
+	if (JumpStretch <= 1.f) bJumpBoost = false;
+	UE_LOG(LogOutlaws, Log, TEXT("OLRT jump: a wall %.0f degrees off head-on (normal z %.2f): the boost is over, %.0f cm/s across left"), Off, Hit.Normal.Z, M->Velocity.Size2D());
 }
 
 float AOutlawsPlayer::JumpBoostShareNow()
@@ -2420,6 +2478,9 @@ void AOutlawsPlayer::Locomotion(float Dt, bool& bOutMoving)
 			M->Velocity.Y = Dir.Y * Want;
 		}
 		M->MaxWalkSpeed = FMath::Max(M->MaxWalkSpeed, Want);
+		// (BUG-JUMPWALL) the way the next frame's move starts out, NotifyHit's measure against a wall
+		const FVector Heading = FVector(M->Velocity.X, M->Velocity.Y, 0.0).GetSafeNormal();
+		if (!Heading.IsNearlyZero()) JumpHeading = Heading;
 	}
 	// the floor's own grip (the level's FRICTION per sector): a slope slides the player down it at gravity
 	// times its steepness times (1 - friction), unless it is NOSLIP; low friction also skates on the flat
