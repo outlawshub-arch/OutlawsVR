@@ -7,7 +7,8 @@
 // The revolver also: no stacking; 8 presses a second for 2 s; a dip to 0.45 re-arms, inside the cycle and after it (old: neither); a
 // dip to 0.55 does not; a kept press goes with a swapped gun and with the REQ-SMASHTRIGGER guard; the left hand; the fan's 0.2, and
 // the revolver's tunable never under it; the rifle's tunable.  The gatling and the knife as they were.  One line a check,
-// "OLSHOT triggertap check PASS|FAIL: ...", and "OLSHOT triggertap RESULT".
+// "OLSHOT triggertap check PASS|FAIL: ...", and "OLSHOT triggertap RESULT".  BUG-TRIGGERTAP2: the revolver's cycle is the trial's
+// 0.25 s, the other four the table's 0.5 s, each gun's checks against its own.
 
 #include "OutlawsPlayer.h"
 #include "OutlawsRuntime.h"
@@ -132,10 +133,9 @@ OL_SHOT_TEST(OLTriggerTapProbe, 2380)
 			K.Verify = MoveTemp(Verify);
 			TapCases.Add(MoveTemp(K));
 		};
-		const float Cy = Cycle;
 		const bool bO = bOld;
 		// the kept press's shot: the cycle after the first, whenever inside it the press came
-		auto TapVerify = [Cy, bO, Check](const TCHAR* Gun)
+		auto TapVerify = [bO, Check](const TCHAR* Gun, float Cy)
 		{
 			const FString Name = Gun;
 			return [Cy, bO, Check, Name]()
@@ -149,16 +149,17 @@ OL_SHOT_TEST(OLTriggerTapProbe, 2380)
 		for (int32 g = 0; g < 5; ++g)
 		{
 			const FString Gn = GunName[g];
-			Add(TEXT("tap"), g, 1, First({ Set(0.f), WaitFrames(1), MarkPress(), WaitFrames(1), Set(0.f), Wait(Cycle * 2.f + 0.2f) }), TapVerify(GunName[g]));
-			Add(TEXT("held"), g, 1, First({ Wait(Cycle * 3.f + 0.1f), Set(0.f) }), [Check, Gn]()
+			const float Cy = g == 0 ? Cycle : 0.5f;        // (BUG-TRIGGERTAP2: the revolver's alone is halved)
+			Add(TEXT("tap"), g, 1, First({ Set(0.f), WaitFrames(1), MarkPress(), WaitFrames(1), Set(0.f), Wait(Cy * 2.f + 0.2f) }), TapVerify(GunName[g], Cy));
+			Add(TEXT("held"), g, 1, First({ Wait(Cy * 3.f + 0.1f), Set(0.f) }), [Check, Gn]()
 			{
 				Check(ShotAt.Num() == 1, FString::Printf(TEXT("%s held past three cycles: %d shot"), *Gn, ShotAt.Num()));
 			});
-			Add(TEXT("held2"), g, 1, First({ Set(0.f), WaitFrames(1), MarkPress(), Wait(Cycle * 4.f), Set(0.f) }), [Check, Gn, bO]()
+			Add(TEXT("held2"), g, 1, First({ Set(0.f), WaitFrames(1), MarkPress(), Wait(Cy * 4.f), Set(0.f) }), [Check, Gn, bO]()
 			{
 				Check(ShotAt.Num() == (bO ? 1 : 2), FString::Printf(TEXT("%s press inside the cycle and held: %d shots (no repeat)"), *Gn, ShotAt.Num()));
 			});
-			Add(TEXT("spam"), g, 1, { Wait(0.3), Set(0.f), WaitFrames(2), Spam(Cycle * 6.f + 0.1f, 0.0), Set(0.f) }, [Check, Gn, Cy]()
+			Add(TEXT("spam"), g, 1, { Wait(0.3), Set(0.f), WaitFrames(2), Spam(Cy * 6.f + 0.1f, 0.0), Set(0.f) }, [Check, Gn, Cy]()
 			{
 				double Sum = 0.0, Lo = 100.0;
 				for (int32 i = 1; i < ShotAt.Num(); ++i) { const double G = ShotAt[i] - ShotAt[i - 1]; Sum += G; Lo = FMath::Min(Lo, G); }
@@ -210,7 +211,7 @@ OL_SHOT_TEST(OLTriggerTapProbe, 2380)
 			{
 				Check(FMath::IsNearlyEqual(Seen, 0.2f, 0.001f), FString::Printf(TEXT("ol.vr.CycleRevolver at 0.1: the aimed shot stays at the fan's %.3f"), Seen));
 			});
-			Add(TEXT("tunable"), 1, 1, { Wait(0.3), Do([this, SetCVar, RifleCvar]() { SetCVar(RifleCvar, 0.4f); FireCooldown[1] = 0.f; FireGun(1, false); Seen = FireCooldown[1]; SetCVar(RifleCvar, 0.25f); FireCooldown[1] = 0.f; }) }, [Check]()
+			Add(TEXT("tunable"), 1, 1, { Wait(0.3), Do([this, SetCVar, RifleCvar]() { SetCVar(RifleCvar, 0.4f); FireCooldown[1] = 0.f; FireGun(1, false); Seen = FireCooldown[1]; SetCVar(RifleCvar, 0.5f); FireCooldown[1] = 0.f; }) }, [Check]()
 			{
 				Check(FMath::IsNearlyEqual(Seen, 0.4f, 0.001f), FString::Printf(TEXT("ol.vr.CycleRifle at 0.4: %.3f"), Seen));
 			});

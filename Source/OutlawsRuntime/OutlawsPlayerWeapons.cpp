@@ -171,11 +171,15 @@ namespace
 	// to feel snappier"; trial: half the time): the seconds between aimed shots, one tunable a gun, over the table's 0.5 (5 frames
 	// of fire chor at 10 fps for every character; only Sanchez's revolver is quicker, 18 fps, 0.28 s).  The gatling, the fan and
 	// the throwables keep the table.  -OLOldTriggerTap: the table, a press inside the cycle lost, the trigger re-armed under 0.3
+	// BUG-TRIGGERTAP2 (user 2026-11-04: "I really like the new weapon fire rate change, but I think it should be a pistol only
+	// change. Revert the trial for all other weapons."): the halved cycle is the revolver's alone, every character's own pistol
+	// with it (impistol, ibpistol, idpistol, ispistol, ifpistol: this slot; CharKit's copies take its numbers, not its cycle); the
+	// others are back on the table's 0.5, their tunables kept.  The press kept and the re-arm at 0.5 stay on every gun
 	TAutoConsoleVariable<float> CVarCycleRevolver(TEXT("ol.vr.CycleRevolver"), 0.25f, TEXT("Seconds between the revolver's aimed shots (the table's 0.5); never under the fan's 0.2."));
-	TAutoConsoleVariable<float> CVarCycleRifle(TEXT("ol.vr.CycleRifle"), 0.25f, TEXT("Seconds between the rifle's shots (the table's 0.5)."));
-	TAutoConsoleVariable<float> CVarCycleShotgun(TEXT("ol.vr.CycleShotgun"), 0.25f, TEXT("Seconds between the shotgun's shots (the table's 0.5)."));
-	TAutoConsoleVariable<float> CVarCycleDouble(TEXT("ol.vr.CycleDouble"), 0.25f, TEXT("Seconds between the double barrel's shots (the table's 0.5)."));
-	TAutoConsoleVariable<float> CVarCycleSawed(TEXT("ol.vr.CycleSawed"), 0.25f, TEXT("Seconds between the sawed-off's shots (the table's 0.5)."));
+	TAutoConsoleVariable<float> CVarCycleRifle(TEXT("ol.vr.CycleRifle"), 0.5f, TEXT("Seconds between the rifle's shots (the table's 0.5)."));
+	TAutoConsoleVariable<float> CVarCycleShotgun(TEXT("ol.vr.CycleShotgun"), 0.5f, TEXT("Seconds between the shotgun's shots (the table's 0.5)."));
+	TAutoConsoleVariable<float> CVarCycleDouble(TEXT("ol.vr.CycleDouble"), 0.5f, TEXT("Seconds between the double barrel's shots (the table's 0.5)."));
+	TAutoConsoleVariable<float> CVarCycleSawed(TEXT("ol.vr.CycleSawed"), 0.5f, TEXT("Seconds between the sawed-off's shots (the table's 0.5)."));
 	TAutoConsoleVariable<float> CVarTriggerRearm(TEXT("ol.vr.TriggerRearm"), 0.5f, TEXT("A gun's trigger let back under this re-arms it (past 0.7 fires; was 0.3).  The throwables keep 0.3."));
 	bool OldTriggerTap()
 	{
