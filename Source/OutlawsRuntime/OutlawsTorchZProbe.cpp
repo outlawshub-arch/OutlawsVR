@@ -1,6 +1,6 @@
 // BUG-TORCHZ (user 3 Nov, snapshot 2026-11-03_19-42-07, frostbi: a wall torch in mid-air under the glow painted for it, "a z-axis issue
 // with how we're placing objects, or for this particular object it just doesn't seem to be sitting high enough"):
-// -OLShots -OLLevel=<frostbi|...> -OLNoFrontEnd [-OLNativeMaps=<dir>] -OLTorchZProbe [-OLOldTorchZ] [-OLTorchCensus].  The level's
+// -OLShots -OLLevel=<frostbi|...> -OLNoFrontEnd [-OLNativeMaps=<dir>] -OLTorchZProbe [-OLTorchZOf=<name>] [-OLOldTorchZ] [-OLTorchCensus].  The level's
 // hung sprites, each with its point, its insertion point and how far it rises; in frostbi from the snapshot's spot, elsewhere from a
 // few metres off the first that rises, a shot with the sprite and one without it (torchz_<level>_<new|old>[_bare].png in
 // Saved\OLShots): what the two disagree on is the sprite on the screen.  In frostbi the wall's painted glow is the brightest band of
@@ -192,21 +192,32 @@ OL_SHOT_TEST(OLTorchZProbe, 2170)
 		}
 		else
 		{
+			// -OLTorchZOf=<name>: that sprite, not the first: its whole height in the frame, from rings as far off as it takes, aimed
+			// at its middle (armad's AHANG stands over 8 m tall, 3.2 m from it is not a place to see it from)
+			FString Of;
+			OLFlags::Value(TEXT("OLTorchZOf"), Of);
 			for (const AOutlawsLevelActor::FTestHung& H : Hung)
 			{
-				if (!H.Actor.IsValid() || !H.bByName) continue;
+				if (!H.Actor.IsValid() || !H.bByName || (!Of.IsEmpty() && !H.Name.Equals(Of, ESearchCase::IgnoreCase))) continue;
+				// (the middle of where the rule puts it, on either look: the same view new and -OLOldTorchZ)
+				const double OnPoint = H.Point.Z - (H.CellH > 0 ? H.Ins * H.Hcm / H.CellH : 0.0);
+				const FVector Aim = Of.IsEmpty() ? H.Point - FVector(0.0, 0.0, 20.0) : FVector(H.Point.X, H.Point.Y, OnPoint + H.Hcm * 0.5);
+				const double Ring = Of.IsEmpty() ? 320.0 : FMath::Max(320.0, H.Hcm);
 				bool bFound = false;
-				for (int32 k = 0; k < 16 && !bFound; ++k)
+				for (int32 r = 0; r < (Of.IsEmpty() ? 1 : 4) && !bFound; ++r)
 				{
-					const FVector Pt = H.Point + FRotator(0.0, 22.5 * k, 0.0).Vector() * 320.0;
-					FHitResult Hit;
-					if (!W->LineTraceSingleByChannel(Hit, Pt, Pt - FVector(0.0, 0.0, 4000.0), ECC_Visibility, Q)) continue;
-					const FVector Eye = Hit.ImpactPoint + FVector(0.0, 0.0, 170.0);
-					if (!L->DebugCanSee(Eye, H.Point - FVector(0.0, 0.0, 20.0), nullptr)) continue;
-					At = Hit.ImpactPoint + FVector(0.0, 0.0, Half + 5.0);
-					Look = (H.Point - FVector(0.0, 0.0, 20.0) - Eye).Rotation();
-					Target = H.Actor;
-					bFound = true;
+					for (int32 k = 0; k < 16 && !bFound; ++k)
+					{
+						const FVector Pt = Aim + FVector(0.0, 0.0, 20.0) + FRotator(0.0, 22.5 * k, 0.0).Vector() * Ring * (1.0 + 0.5 * r);
+						FHitResult Hit;
+						if (!W->LineTraceSingleByChannel(Hit, Pt, Pt - FVector(0.0, 0.0, 4000.0), ECC_Visibility, Q)) continue;
+						const FVector Eye = Hit.ImpactPoint + FVector(0.0, 0.0, 170.0);
+						if (!L->DebugCanSee(Eye, Aim, nullptr)) continue;
+						At = Hit.ImpactPoint + FVector(0.0, 0.0, Half + 5.0);
+						Look = (Aim - Eye).Rotation();
+						Target = H.Actor;
+						bFound = true;
+					}
 				}
 				if (bFound) break;
 			}
