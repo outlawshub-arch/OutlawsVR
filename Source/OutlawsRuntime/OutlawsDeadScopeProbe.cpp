@@ -1,6 +1,9 @@
 // BUG-DEADSCOPE's probe (the user, 4 Nov: dying while looking down a scope left the scope stuck on the eye): -OLShots
-// -OLNoFrontEnd -OLLevel=thudtowr -OLDeadScopeProbe [-OLOldDeadScope], the headset's rules (the scope's picture is the
-// headset's).  The rifle raised by the scope tests' own raise (bScopeTestForce), the player killed, three times, one for each
+// -OLNoFrontEnd -OLLevel=hideout -OLDeadScopeProbe [-OLOldDeadScope], the headset's rules (the scope's picture is the
+// headset's).  A level that saves: thudtowr, a match map with no .inf, has no INF runtime, and SaveGame's first guard refuses
+// it without a line.  -OLDeadScopeProbe=stuck: after a load that fails, wait for the feet anyway, as the build that hung to its
+// 420 s on 5 Nov did, until the watch below ends it.
+// The rifle raised by the scope tests' own raise (bScopeTestForce), the player killed, three times, one for each
 // way back: the respawn, the revive (ResetForLevel, as UOutlawsCoop::OnRevive) and a load.  Each round: at the death neither
 // hand scoped, the picture hidden, the capture stopped, the held gear back in the ink; so still through the death view with
 // its fade come up in full; back on the feet the same with no fade left; and the next raise brings the picture up.
@@ -21,8 +24,9 @@
 
 namespace OutlawsDeadScopeProbeLocal
 {
-	int32 Stage = 0, Round = 0, Passes = 0, Fails = 0;
-	float StageT = 0.f;
+	constexpr float WatchSeconds = 90.f;       // (a whole run is about 30 s of this clock)
+	int32 Stage = 0, Round = 0, Passes = 0, Fails = 0, Frames = 0;
+	float StageT = 0.f, WatchT = 0.f;
 	bool bAsked = false, bShot = false;
 
 	void Check(bool bOk, const FString& What)
@@ -38,9 +42,9 @@ OL_SHOT_TEST(OLDeadScopeProbe, 2476)
 {
 	using namespace OutlawsDeadScopeProbeLocal;
 	if (!L || ShotTime < 0.f || Stage < 0) return;
-	const bool bOld = OLFlags::Param(TEXT("OLOldDeadScope"));
+	const bool bOld = OLFlags::Param(TEXT("OLOldDeadScope")), bStuck = OLFlags::ValueIs(TEXT("OLDeadScopeProbe"), TEXT("stuck"));
 	static const TCHAR* const Way[3] = { TEXT("the respawn"), TEXT("the revive"), TEXT("the load") };
-	constexpr int32 Rifle = 1, SaveSlot = 7;
+	constexpr int32 Rifle = 1, SaveSlot = 7, NoSlot = 99;
 	bVR = true;
 	auto Finish = [&]()
 	{
@@ -50,6 +54,15 @@ OL_SHOT_TEST(OLDeadScopeProbe, 2476)
 		Stage = -1;
 		FGenericPlatformMisc::RequestExit(false);
 	};
+	// (a run with no end holds the UE lock past the nightly, as this one did on 5 Nov: past the watch it ends, a FAIL by name)
+	WatchT += Dt;
+	++Frames;
+	if (WatchT > WatchSeconds)
+	{
+		Check(false, FString::Printf(TEXT("done in %.0f s: stage %d, round %d, dead view %d, %d frames (%.0f a second)"), WatchT, Stage, Round + 1, bDeadView ? 1 : 0, Frames, Frames / WatchT));
+		Finish();
+		return;
+	}
 	if (L->IsRebuildPending() || L->IsMoviePlaying() || bMenuOpen) { StageT = 0.f; return; }
 	L->StartSaveDelay = -1.f;           // (no autosaves: the one save is the load round's)
 	L->AutosaveWait = 0.f;
@@ -77,7 +90,13 @@ OL_SHOT_TEST(OLDeadScopeProbe, 2476)
 		if (StageT < 0.5f) return;
 		Check(bScoped[1] && bPicture && bCapture, FString::Printf(TEXT("(%d) raised: %s"), Round + 1, *State()));
 		const int32 Uninked = ScopeUninked.Num();
-		if (Round == 0) Check(L->SaveGame(SaveSlot), FString::Printf(TEXT("(1) saved to slot %d for the load in (3)"), SaveSlot));
+		if (Round == 0)
+		{
+			// (SaveGame's first guard says nothing, so what it reads goes on this line)
+			const bool bSaved = L->SaveGame(SaveSlot);
+			Check(bSaved, FString::Printf(TEXT("(1) saved to slot %d for the load in (3): level %s, INF runtime %d, dead %d, dead view %d, front end %d, won %d"), SaveSlot, *L->LevelName,
+				L->DebugInf() ? 1 : 0, L->IsPlayerDead() ? 1 : 0, bDeadView ? 1 : 0, L->IsFrontEnd() ? 1 : 0, L->DebugLevelWon() ? 1 : 0));
+		}
 		L->bInvincible = false;
 		L->DamagePlayer(1e6f, 1.f, true);
 		bScopeTestForce = false;        // (the forced raise would hold a hand up past any death)
@@ -112,11 +131,10 @@ OL_SHOT_TEST(OLDeadScopeProbe, 2476)
 			L->TestRevive(5.f);
 			ResetForLevel();
 		}
-		else if (!L->LoadGame(SaveSlot))
+		else if (!L->LoadGame(bStuck ? NoSlot : SaveSlot))      // (=stuck: a slot nobody has, whatever an earlier run left in 7)
 		{
-			Check(false, FString::Printf(TEXT("(3) loading slot %d"), SaveSlot));
-			Finish();
-			return;
+			Check(false, FString::Printf(TEXT("(3) loading slot %d"), bStuck ? NoSlot : SaveSlot));
+			if (!bStuck) { Finish(); return; }
 		}
 		Stage = 3;
 		StageT = 0.f;
