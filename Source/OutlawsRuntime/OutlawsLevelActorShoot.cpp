@@ -1155,7 +1155,13 @@ void AOutlawsLevelActor::Explode(const FVector& Where)
 					// (BUG-DYNTHROW: a bad guy's stick hurts as a bad guy's shot does, not as the player's own stick)
 					if (bEnemyBlast) bHurtByBadGuy = true;
 					else if (!bCoopRemote) HurtCause = uint8(EOutlawsHurtCause::OwnBlast);     // (REQ-KILLFEED: this machine's own stick)
-					DamagePlayer(Dealt);
+					// (BUG-BLASTMISS, the user's answer of 4 Nov: half, as the original) the original's blast sends the target's whole
+					// radius as where it struck, so the victim's location step always takes it as the edge, x0.5 after the plate
+					// [EXE 0x1400d1749, 0x1400baa61..0x1400baad1]: 6 at most, point blank.  The story and co-op's story (each machine
+					// deals its own player's here); a match keeps its 12.  The throw below stays the whole blast's.
+					// -OLOldBlastPlayer: 12 in the story too
+					static const bool bOldBlastPlayer = OLFlags::Param(TEXT("OLOldBlastPlayer"));
+					DamagePlayer(Dealt, bOldBlastPlayer || UOutlawsCoop::IsMatchActive(this) ? 1.f : 0.5f);
 				}
 				if (AOutlawsPlayer* PP = Cast<AOutlawsPlayer>(Pawn)) PP->BlastThrow(From, Dealt);
 			}
