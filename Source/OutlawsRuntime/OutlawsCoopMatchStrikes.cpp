@@ -257,6 +257,10 @@ bool UOutlawsCoop::SweepAtPlayers(AOutlawsLevelActor* L, const FVector& A, const
 	return C->ReportStrike(L, Best, Damage, OutAt, Kind);
 }
 
+#if WITH_OUTLAWS_TESTS
+void (*GOLBlastMissNote)(AOutlawsLevelActor* L, const FVector& From, const AOutlawsRemotePlayer* Body, double R, float Damage) = nullptr;
+#endif
+
 int32 UOutlawsCoop::BlastAtPlayers(AOutlawsLevelActor* L, const FVector& Where, float RadiusCm, float Damage)
 {
 	if (CVarOLMatchStrikes.GetValueOnGameThread() == 0) return 0;
@@ -270,6 +274,9 @@ int32 UOutlawsCoop::BlastAtPlayers(AOutlawsLevelActor* L, const FVector& Where, 
 		if (Who == C->MyIndex()) continue;
 		const AOutlawsRemotePlayer* Rp = C->PuppetOf(Who);
 		if (!Rp || Rp->IsHidden() || Rp->PlateDead()) continue;
+#if WITH_OUTLAWS_TESTS
+		if (GOLBlastMissNote) GOLBlastMissNote(L, Where, Rp, R, Damage);       // (BUG-BLASTMISS's probe: every blast on every body, logged)
+#endif
 		const FVector Mid = Rp->ShownBody();
 		const double D = FVector::Dist(Where, Mid);
 		if (D >= R || !L->CanSee(Where, Mid, Rp)) continue;
