@@ -259,6 +259,18 @@ OL_SHOT_TEST(OLSkyDomeProbe, 2155)
 			Check(TopDeg < 60.f && Spread >= 0.0 && Spread < 4.0, FString::Printf(TEXT("the zenith one colour: the up view's middle spread %.2f (want under 4; the picture's top colour alone from %.0f degrees up)"), Spread, TopDeg));
 			// (user 3 Nov ~23:4x: armad's overhead colour bluer) no land sky near white overhead
 			Check(Mean.Z - Mean.X > 30.0, FString::Printf(TEXT("the overhead colour reads blue, not near white: the up view's mean %.0f %.0f %.0f (want blue over red by more than 30)"), Mean.X, Mean.Y, Mean.Z));
+			// (REQ-SKYPCBLUE, user 4 Nov ~18:4x: "give PC its own blue") armad's row, 92 183 255: on the PC a clear blue on the screen,
+			// not the tone mapping's pure cyan (0 255 255: no red, green up with blue); on the headset's path the row as it is, no
+			// tone step, so the mobile preview's unencoded shot reads its linear values
+			if (D.bOverBlue && W->FeatureLevel > ERHIFeatureLevel::ES3_1)
+			{
+				Check(Mean.X >= 60.0 && Mean.Z - Mean.Y >= 40.0, FString::Printf(TEXT("the PC's overhead colour a clear blue, not cyan: the up view's mean %.0f %.0f %.0f (want red 60 or more, blue over green by 40 or more)"), Mean.X, Mean.Y, Mean.Z));
+			}
+			else if (D.bOverBlue)
+			{
+				const bool bAsRow = FMath::Abs(Mean.X - 255.0 * D.Fade.R) <= 3.0 && FMath::Abs(Mean.Y - 255.0 * D.Fade.G) <= 3.0 && FMath::Abs(Mean.Z - 255.0 * D.Fade.B) <= 3.0;
+				Check(bAsRow && FMath::IsNearlyEqual(D.Fade.B, 1.f), FString::Printf(TEXT("the headset's path draws the row as it is: the up view's mean %.0f %.0f %.0f, fade %.3f %.3f %.3f"), Mean.X, Mean.Y, Mean.Z, D.Fade.R, D.Fade.G, D.Fade.B));
+			}
 		}
 		else
 		{

@@ -1625,7 +1625,7 @@ public:
 		FString Stem, Old, Now;            // Old: "tiling" or "horizon" (the old test); Now: "tiling", "horizon" or "land"
 		int32 W = 0, H = 0, LandRow = -1;
 		float Repeats = 0.f, RepV = 0.f, LandV = 0.f, LandDrop = 0.f;
-		bool bWrap = false, bCloudLayer = false;
+		bool bWrap = false, bCloudLayer = false, bOverBlue = false;      // bOverBlue: a pale land sky, its bluest row above it
 		FLinearColor Fade = FLinearColor::Black;
 	};
 	const FSkyDomeInfo& GetSkyDome() const { return SkyDome; }

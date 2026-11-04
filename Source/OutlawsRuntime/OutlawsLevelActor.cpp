@@ -1404,7 +1404,13 @@ void AOutlawsLevelActor::Build()
 			SkySurfaceMid->SetScalarParameterValue(TEXT("Wrap"), bTiles ? 1.f : 0.f);
 			SkySurfaceMid->SetScalarParameterValue(TEXT("LandV"), LandV);
 			SkySurfaceMid->SetScalarParameterValue(TEXT("LandDrop"), LandDrop);
-			const FLinearColor DomeTop = bLand ? Look.Over : Look.Top;      // (a pale land sky: its bluest row, armad, SkyLookPcx)
+			FLinearColor DomeTop = bLand ? Look.Over : Look.Top;      // (a pale land sky: its bluest row, armad, SkyLookPcx)
+			// (REQ-SKYPCBLUE, user 4 Nov ~18:4x: "give PC its own blue") that row goes in as it is on the headset, which has no tone
+			// step.  On the PC the sky is an unlit emissive under the fixed exposure (about 2.6x, frostbi's and isla's tops read so) and
+			// the tonemapper's gamut expansion (a bright saturated colour pushed out of sRGB: its red goes under 0 and clips), which take
+			// 92 183 255 to pure cyan, 0 255 255: the PC's own value, down by what it will be lifted by and with more of its red kept,
+			// lands on the row's colour on the screen.  -OLOldSkyBlue: no bOverBlue, the top rows' colour as landed
+			if (bLand && Look.bOverBlue && GetWorld()->FeatureLevel > ERHIFeatureLevel::ES3_1) DomeTop *= FLinearColor(0.633f, 0.382f, 0.383f);
 			SkySurfaceMid->SetVectorParameterValue(TEXT("FadeColour"), DomeTop);
 			// the dome shows the same picture the same way, so it and the sky surfaces meet seamlessly
 			if (SkyMesh) SkyMesh->SetMaterial(0, SkySurfaceMid);
@@ -1428,6 +1434,7 @@ void AOutlawsLevelActor::Build()
 			SkyDome.LandV = LandV;
 			SkyDome.LandDrop = LandDrop;
 			SkyDome.bWrap = bTiles;
+			SkyDome.bOverBlue = bLand && Look.bOverBlue;
 			SkyDome.Fade = DomeTop;
 			// (BUG-TRAINSKY, user 2026-10-12) the train's sky picture looks broken through the dome and cloud layer: this level alone
 			// gets a plain gradient dome, sky blue from the top to halfway down, then to a lighter, whiter blue at the horizon
