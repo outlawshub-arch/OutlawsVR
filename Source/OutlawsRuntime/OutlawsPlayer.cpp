@@ -1167,6 +1167,9 @@ void AOutlawsPlayer::GripOnNothing(int32 Hand)
 {
 	// (user 2026-09-29: the grip on nothing does nothing: the jump is the right stick up, the medical bag and the other
 	// items are used from the wheel)
+	// (REQ-AIRCATCH) but in the air the squeeze stays live for as long as it is held (AirCatch).  Only in the air: a squeeze
+	// made on the ground arms nothing, so stepping off an edge on purpose with the grip held catches nothing
+	if (!OldAirCatch() && GetCharacterMovement()->MovementMode == MOVE_Falling && !bSwimming && !IsClimbing()) bAirCatch[Hand] = true;
 }
 
 void AOutlawsPlayer::DetectBodyJump(float Dt)
@@ -3028,6 +3031,7 @@ void AOutlawsPlayer::Climbing(float Dt)
 	// a mantle in progress: ease the body onto the ledge
 	if (MantleLeft > 0.f)
 	{
+		bAirCatch[0] = bAirCatch[1] = false;     // (REQ-AIRCATCH: a vault's fall off the far side is not a squeeze in the air)
 		MantleLeft = FMath::Max(0.f, MantleLeft - Dt);
 		const float A = FMath::InterpEaseInOut(0.f, 1.f, 1.f - MantleLeft / 0.25f, 2.f);
 		SetActorLocation(FMath::Lerp(MantleFrom, MantleTo, A), false, nullptr, ETeleportType::TeleportPhysics);
@@ -3051,6 +3055,8 @@ void AOutlawsPlayer::Climbing(float Dt)
 	{
 		return;
 	}
+	const FVector EyeFrom = PrevEyeWorld;        // (REQ-AIRCATCH: the eyes' end of this frame's hand path)
+	PrevEyeWorld = Camera->GetComponentLocation();
 	for (int32 H = 0; H < 2; ++H)
 	{
 		// hand motion relative to the body: what a release flings the player with
@@ -3063,6 +3069,7 @@ void AOutlawsPlayer::Climbing(float Dt)
 		FVector WorldV = PrevHandWorld[H].IsZero() ? FVector::ZeroVector : (WorldP - PrevHandWorld[H]) / Dt;
 		if (WorldV.Size() > 400.f) WorldV = FVector::ZeroVector;
 		HandWorldVel[H] = FMath::Lerp(HandWorldVel[H], WorldV, 0.5f);
+		const FVector HandFrom = PrevHandWorld[H];     // (REQ-AIRCATCH: the hand's end of it)
 		PrevHandWorld[H] = WorldP;
 		// a hanging lamp struck by the hand swings (user 2026-10-01)
 		if (HandVelocity[H].Size() > OutlawsFeel::HitSpeedLight) if (AOutlawsLevelActor* LH = Level.Get()) LH->HandNearHanging(WorldP, HandVelocity[H]);
@@ -3286,6 +3293,7 @@ void AOutlawsPlayer::Climbing(float Dt)
 				ReleaseGrab(true);
 			}
 		}
+		if (!OldAirCatch()) AirCatch(H, Dt, G, HandFrom, EyeFrom);
 		PrevGrip[H] = G;
 		PushDoors(H);
 	}
@@ -3305,7 +3313,7 @@ void AOutlawsPlayer::Climbing(float Dt)
 	}
 }
 
-bool AOutlawsPlayer::FindLedge(int32 Hand, FVector& OutGrabPoint, FVector& OutIn, FVector& OutTop, bool bLog) const
+bool AOutlawsPlayer::FindLedge(int32 Hand, FVector& OutGrabPoint, FVector& OutIn, FVector& OutTop, bool bLog, const FVector* HandAt, const FVector* EyeAt) const
 {
 	// (TryGrab's probe, on its own: the glow shows the same ledges the grip takes, user 2026-10-01)
 	const UWorld* World = GetWorld();
@@ -3313,14 +3321,14 @@ bool AOutlawsPlayer::FindLedge(int32 Hand, FVector& OutGrabPoint, FVector& OutIn
 	{
 		return false;
 	}
-	const FVector P = GripOf(Hand)->GetComponentLocation();
+	const FVector P = HandAt ? *HandAt : GripOf(Hand)->GetComponentLocation();
 	FCollisionQueryParams Q(SCENE_QUERY_STAT(OutlawsGrab), true, this);
 	if (const AOutlawsLevelActor* LQ = Level.Get()) LQ->IgnorePassedOverlaps(Q);     // (what the body walks through holds no ledge)
 	// a hand touching something solid, or within reach of it (user 2026-09-28: the grab was too precise): the wall is
 	// looked for out to 40 cm past the hand along the line from the eyes, and the hand snaps to the lip it finds
 	const bool bTouching = World->OverlapBlockingTestByChannel(P, FQuat::Identity, ECC_Visibility, FCollisionShape::MakeSphere(9.f), Q, PlayerNoPawns());
 	// which way is "into the ledge": from the eyes through the hand to the wall face
-	const FVector Eye = Camera->GetComponentLocation();
+	const FVector Eye = EyeAt ? *EyeAt : Camera->GetComponentLocation();
 	const FVector Dir = (P - Eye).GetSafeNormal();
 	FHitResult Wall;
 	const bool bWall = World->LineTraceSingleByChannel(Wall, Eye, P + Dir * 40.0, ECC_Visibility, Q, PlayerNoPawns())
@@ -3399,6 +3407,12 @@ bool AOutlawsPlayer::TryGrab(int32 Hand)
 	{
 		return false;
 	}
+	TakeLedge(Hand, Gp, In, TopAt);
+	return true;
+}
+
+void AOutlawsPlayer::TakeLedge(int32 Hand, const FVector& Gp, const FVector& In, const FVector& TopAt)
+{
 	const FVector P = GripOf(Hand)->GetComponentLocation();
 	GrabHand = Hand;
 	GrabPoint = Gp;
@@ -3411,7 +3425,68 @@ bool AOutlawsPlayer::TryGrab(int32 Hand)
 	M->Velocity = FVector::ZeroVector;
 	Pulse(Hand, 0.6f);
 	UE_LOG(LogOutlaws, Log, TEXT("OLRT VR grab (%s hand): ledge top z %.0f, hand z %.0f"), Hand == 0 ? TEXT("left") : TEXT("right"), LedgeTopZ, P.Z);
-	return true;
+}
+
+bool AOutlawsPlayer::OldAirCatch()
+{
+	static const bool bOld = OLFlags::Param(TEXT("OLOldAirCatch"));
+	return bOld;
+}
+
+void AOutlawsPlayer::AirCatch(int32 Hand, float Dt, float G, const FVector& HandFrom, const FVector& EyeFrom)
+{
+	// (REQ-AIRCATCH, user 4 Nov: jump + ledge grabs are hard to time; on foot is fine) a squeeze in the air runs the grip's chain
+	// once, so one a moment early ended in GripOnNothing and holding it did nothing.  Now that squeeze, while it stays held,
+	// takes the first ledge that comes in reach, looked for along the whole of the hand's path this frame so a fast fall or a
+	// hitch can't step over it.  FindLedge stays the only ledge test: same reach, same refusals (-OLOldAirCatch: as before).
+	// And a free hand gets a small tick when a ledge comes in its reach in the air (the glow can be off on the Graphics page,
+	// and looks only 20 times a second, so the tick asks for itself).
+	AirTickWait[Hand] = FMath::Max(0.f, AirTickWait[Hand] - Dt);
+	if (GetCharacterMovement()->MovementMode != MOVE_Falling || bSwimming || IsClimbing() || bDeadView || bMenuOpen)
+	{
+		// (landed, hanging, in the water: over.  The tick's "was in reach" left on: a ledge in reach on the first frame in the
+		// air is one the body just stepped off or let go of, not one coming)
+		bAirCatch[Hand] = false;
+		bAirLedge[Hand] = true;
+		return;
+	}
+	if (G < 0.4f) bAirCatch[Hand] = false;
+	if (HeldItem[Hand].IsValid() || HeldBottle[Hand] || bWheelHeld[Hand] || bSupport[Hand] || bToolSupport[Hand])
+	{
+		bAirCatch[Hand] = bAirLedge[Hand] = false;
+		return;
+	}
+	FVector Gp, In, TopAt;
+	if (bAirCatch[Hand])
+	{
+		// oldest first, every 10 cm (the 9 cm sphere and the eye's line at the hand each cover about that); a step past 1.5 m is
+		// a teleport or a recenter, not a path, and only the hand's place now counts
+		const FVector To = GripOf(Hand)->GetComponentLocation(), EyeTo = Camera->GetComponentLocation();
+		const double Len = HandFrom.IsZero() ? 0.0 : FVector::Dist(HandFrom, To);
+		const int32 Steps = Len > 150.0 ? 1 : FMath::Max(1, FMath::CeilToInt32(Len / 10.0));
+		for (int32 i = 1; i <= Steps; ++i)
+		{
+			const double A = double(i) / Steps;
+			const FVector At = i == Steps ? To : FMath::Lerp(HandFrom, To, A);
+			const FVector EyeAt = i == Steps ? EyeTo : FMath::Lerp(EyeFrom, EyeTo, A);
+			if (!FindLedge(Hand, Gp, In, TopAt, false, &At, &EyeAt)) continue;
+			UE_LOG(LogOutlaws, Log, TEXT("OLRT air catch: the %s hand, %d of %d along its %.0f cm this frame"), Hand == 0 ? TEXT("left") : TEXT("right"), i, Steps, Len);
+			TakeLedge(Hand, Gp, In, TopAt);
+			bGripUsed[Hand] = true;          // (as the chain's take: an unlit stick stays in the hand when this grip lets go)
+			bAirCatch[0] = bAirCatch[1] = false;
+			return;
+		}
+		bAirLedge[Hand] = false;
+		return;
+	}
+	const bool bNear = FindLedge(Hand, Gp, In, TopAt, false);
+	if (bNear && !bAirLedge[Hand] && AirTickWait[Hand] <= 0.f)
+	{
+		Pulse(Hand, 0.15f);
+		AirTickWait[Hand] = 0.3f;
+		++AirTicks;
+	}
+	bAirLedge[Hand] = bNear;
 }
 
 void AOutlawsPlayer::ReleaseGrab(bool bFling)

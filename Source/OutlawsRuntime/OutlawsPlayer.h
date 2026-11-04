@@ -813,7 +813,8 @@ private:
 	double WheelHeldSince[2] = { 0.0, 0.0 };    // real time the wheel button went down (a tap reloads, Classic)
 	void PressBReleased();
 	void PressYReleased();
-	/** A grip on nothing: does nothing (the jump is the right stick up, the items are used from the wheel). */
+	/** A grip on nothing: does nothing (the jump is the right stick up, the items are used from the wheel), except in the
+	 *  air, where it stays live while it is held (REQ-AIRCATCH: AirCatch). */
 	void GripOnNothing(int32 Hand);
 	// a physical jump: the head rising fast from standing height
 	float PrevHeadZ = -1.f;
@@ -956,8 +957,9 @@ private:
 	};
 	bool PreviewGrab(int32 Hand, FGrabPick& Out);
 	void UpdateGrabGlow(float Dt);
-	/** The ledge the hand would take (TryGrab's probe): the lip to hang from, into the ledge, the top's point. */
-	bool FindLedge(int32 Hand, FVector& OutGrabPoint, FVector& OutIn, FVector& OutTop, bool bLog) const;
+	/** The ledge the hand would take (TryGrab's probe): the lip to hang from, into the ledge, the top's point.  HandAt, EyeAt:
+	 *  asked for a point on the hand's way there (REQ-AIRCATCH) instead of where they are now. */
+	bool FindLedge(int32 Hand, FVector& OutGrabPoint, FVector& OutIn, FVector& OutTop, bool bLog, const FVector* HandAt = nullptr, const FVector* EyeAt = nullptr) const;
 	/** If it glows you can grab it (user 2026-10-01): a ledge in reach gets a white band along its lip, a door or switch
 	 *  a thin white frame where the hand would push; one strip mesh a hand, in world space. */
 	void UpdateSurfaceGlow(int32 Hand, bool bOn);
@@ -2029,6 +2031,17 @@ private:
 	void Swimming();
 	void Climbing(float Dt);
 	bool TryGrab(int32 Hand);
+	/** Hangs the body by Hand from the ledge FindLedge gave (TryGrab's second half). */
+	void TakeLedge(int32 Hand, const FVector& Gp, const FVector& In, const FVector& TopAt);
+	/** (REQ-AIRCATCH) a squeeze on nothing in the air, still held, takes the first ledge along the hand's path; a free hand gets
+	 *  a small tick when a ledge comes in reach in the air.  HandFrom, EyeFrom: where they were last frame. */
+	void AirCatch(int32 Hand, float Dt, float G, const FVector& HandFrom, const FVector& EyeFrom);
+	static bool OldAirCatch();
+	bool bAirCatch[2] = { false, false };       // this hand's squeeze on nothing in the air, still held
+	bool bAirLedge[2] = { false, false };       // a ledge in this hand's reach in the air last frame
+	float AirTickWait[2] = { 0.f, 0.f };        // till this hand's next tick may come
+	int32 AirTicks = 0;                         // ticks given (-OLAirCatchProbe counts them)
+	FVector PrevEyeWorld = FVector::ZeroVector;
 	bool TryHold(int32 Hand);
 	void ReleaseHeld(int32 Hand);
 	bool TryHandUse(int32 Hand);
