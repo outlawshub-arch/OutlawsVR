@@ -47,6 +47,18 @@ namespace
 		static const bool bOld = OLFlags::Param(TEXT("OLOldCreditsBg"));
 		return bOld;
 	}
+
+	// REQ-CREDITSEND (the user 4 Nov): the movie goes to its last frame under the roll, half a second short of its end, where
+	// the file's last frames are all alike; -OLOldCreditsEnd: a second and a half short.  The fade to black at the roll's end
+	constexpr double CreditsHoldMargin = 0.5, CreditsHoldMarginOld = 1.5;
+	constexpr float CreditsFadeSeconds = 3.f;
+	constexpr float CreditsMovieStallSeconds = 2.f;      // (a movie whose end never comes, seen 6 Oct: held where it stands)
+
+	bool OldCreditsEnd()
+	{
+		static const bool bOld = OLFlags::Param(TEXT("OLOldCreditsEnd"));
+		return bOld;
+	}
 }
 
 double AOutlawsMovieScreen::CreditsLookScale() const
@@ -70,7 +82,7 @@ void AOutlawsMovieScreen::SetUpCreditsLook(const OutlawsFormats::FLafFont* Font)
 	}
 }
 
-void AOutlawsMovieScreen::ArmCredits(const TArray<FOutlawsCreditLine>& Lines, const OutlawsFormats::FLafFont* Font, double StartAt, double HoldAt)
+void AOutlawsMovieScreen::ArmCredits(const TArray<FOutlawsCreditLine>& Lines, const OutlawsFormats::FLafFont* Font, double StartAt, double HoldAt, bool bFadeEnd)
 {
 	CreditLines = Lines;
 	while (CreditLines.Num() > 0 && CreditLines.Last().Text.IsEmpty()) CreditLines.Pop();     // (no wait after the last name)
@@ -78,6 +90,7 @@ void AOutlawsMovieScreen::ArmCredits(const TArray<FOutlawsCreditLine>& Lines, co
 	SetUpCreditsLook(Font);
 	CreditsStartAt = StartAt;
 	CreditsHoldAt = FMath::Max(HoldAt, StartAt);
+	bCreditsFadeEnd = bFadeEnd;
 	bCredits = true;
 	UE_LOG(LogOutlaws, Log, TEXT("OLRT credits armed: %d lines (Outlaws VR %d, the original %d), the roll from %.1f s of the movie, its picture held at %.1f s, %.0f s long"),
 		CreditLines.Num(), CreditsLineCount(0), CreditsLineCount(1), CreditsStartAt, CreditsHoldAt, CreditsSeconds());
@@ -173,15 +186,31 @@ bool AOutlawsMovieScreen::TickCredits(float DeltaSeconds)
 	}
 	if (!bCreditsHeld && Player)
 	{
-		// held before the movie's last fade to black: a second and a half short of its end at the latest
+		// held on the movie's last frame: short of its end at the latest, as the end's own event may clear the picture
 		const double Length = Player->GetDuration().GetTotalSeconds();
-		const double HoldAt = Length > 1.0 ? FMath::Min(CreditsHoldAt, Length - 1.5) : CreditsHoldAt;
+		const double Margin = OldCreditsEnd() ? CreditsHoldMarginOld : CreditsHoldMargin;
+		const double HoldAt = Length > 1.0 ? FMath::Min(CreditsHoldAt, Length - Margin) : CreditsHoldAt;
 		if (GetTime() >= HoldAt) HoldCreditsPicture(TEXT("its hold point"));
 	}
 	CreditsAge += DeltaSeconds;
 	if (CrawlCanvas) CrawlCanvas->UpdateResource();
 	if (CreditsAge >= CreditsSeconds())
 	{
+		if (bCreditsFadeEnd && Player)
+		{
+			// (REQ-CREDITSEND) the words are gone: the movie plays on to its hold if the roll beat it there, the picture fades
+			if (!bCreditsHeld)
+			{
+				const double T = GetTime();
+				StallFor = FMath::IsNearlyEqual(T, LastTime, 0.001) ? StallFor + DeltaSeconds : 0.f;
+				LastTime = T;
+				if (StallFor > CreditsMovieStallSeconds) HoldCreditsPicture(TEXT("the movie stopped"));
+				return true;
+			}
+			if (CreditsFade == 0.f) UE_LOG(LogOutlaws, Log, TEXT("OLRT credits: the words are gone (%.0f s), the picture fades to black at %.1f s of the movie"), CreditsAge, GetTime());
+			CreditsFade = FMath::Min(1.f, CreditsFade + DeltaSeconds / CreditsFadeSeconds);
+			if (CreditsFade < 1.f) return true;
+		}
 		UE_LOG(LogOutlaws, Log, TEXT("OLRT credits over (%.0f s)"), CreditsAge);
 		Finish();
 	}
@@ -243,6 +272,13 @@ void AOutlawsMovieScreen::DrawCredits(UCanvas* C, int32 Width, int32 Height)
 		FCanvasTileItem Bg(FVector2D::ZeroVector, CrawlBack->GetResource(), FVector2D(Width, Height), CrawlBackUV0, CrawlBackUV1, FLinearColor::White);
 		Bg.BlendMode = SE_BLEND_Opaque;
 		C->DrawItem(Bg);
+	}
+	if (CreditsFade > 0.f)
+	{
+		// (REQ-CREDITSEND) the held picture going to black, a sheet of it over the canvas: the words have gone by now
+		FCanvasTileItem Black(FVector2D::ZeroVector, FVector2D(Width, Height), FLinearColor(0.f, 0.f, 0.f, CreditsFade));
+		Black.BlendMode = SE_BLEND_Translucent;
+		C->DrawItem(Black);
 	}
 	if (!CrawlAtlas && !CrawlFont) return;
 	const double S = Height / CreditsLayoutH;

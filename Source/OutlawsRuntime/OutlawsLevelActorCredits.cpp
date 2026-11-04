@@ -5,6 +5,8 @@
 // it), never shipped.  Both in the original's layout: "~" a heading, a plain line a name, an empty line a line of space.
 // A missing or unreadable credits.txt leaves that part out, with nothing waiting in its place.  The usual skip ends the roll;
 // it then goes on as the ending always did (StartNextLevel: single player to the main menu; co-op as before, below).
+// REQ-CREDITSEND (the user 4 Nov): over the movie the words run off the top, the picture fades to black on its last frame
+// (the movie plays on to it if the roll ended first), and only then the main menu.
 //
 // Co-op: each machine rolls its own credits on its own screen after its own copy of the movie; nothing new goes over the
 // network.  A skip is the movies' skip (either player's skip ends it for both, UOutlawsCoop::NoteMovieSkip), and when the
@@ -18,6 +20,7 @@
 #include "OutlawsPlayer.h"
 #include "OutlawsEnemy.h"
 #include "OutlawsMovieScreen.h"
+#include "OutlawsCoop.h"
 #include "OutlawsLab.h"
 #include "OutlawsFormats.h"
 #include "OutlawsTextures.h"
@@ -36,11 +39,13 @@
 
 namespace
 {
-	// the ride-off movie's times (rae.mp4, 128 s): the cut to James riding into the sunset at 76 s; the night held at 125 s,
-	// before the last fade to black.  Another movie on that line: the roll from its 76th second (or on the black after it, if
-	// it is shorter), its picture held 1.5 s before its end.
-	constexpr double CreditsRollFrom = 76.0;
-	constexpr double CreditsHoldFrom = 125.0;
+	// the ride-off movie's times (rae.mp4, 128 s): REQ-CREDITSEND (the user 4 Nov, their frame at 1:19): the roll starts at 79 s,
+	// James riding away with the sun going down behind his head and the sky open (the frame's sun matches rae.mp4 best at 79.0,
+	// after the cut at 76 s); the picture held at 127.5 s, its last frames: the movie has no fade to black, it ends on the
+	// starry night, still from 126.9 s.  Another movie on that line: the roll from its 79th second (or on the black after it,
+	// if it is shorter), its picture held half a second before its end.  -OLOldCreditsEnd: from the cut at 76 s, held at 125 s
+	constexpr double CreditsRollFrom = 79.0, CreditsRollFromOld = 76.0;
+	constexpr double CreditsHoldFrom = 127.5, CreditsHoldFromOld = 125.0;
 	constexpr int32 CreditsPartGap = 6;              // empty lines between the two parts
 
 	// the original's credits.txt layout, a line at a time: "~" a heading, a plain line a name, an empty line a line of space
@@ -131,7 +136,10 @@ void AOutlawsLevelActor::ArmEndCredits(const FString& MovieName)
 	OutlawsFormats::FLafFont Font;
 	TArray<uint8> FontBytes;
 	const bool bFont = AssetsRef && AssetsRef->Get(TEXT("mf3s.laf"), FontBytes) && OutlawsFormats::DecodeLaf(FontBytes, Font);
-	Movie->ArmCredits(Lines, bFont ? &Font : nullptr, CreditsRollFrom, CreditsHoldFrom);
+	// (REQ-CREDITSEND) co-op keeps its ending: the roll's end closes the screen at once and the host ends the session
+	static const bool bOldEnd = OLFlags::Param(TEXT("OLOldCreditsEnd"));
+	Movie->ArmCredits(Lines, bFont ? &Font : nullptr, bOldEnd ? CreditsRollFromOld : CreditsRollFrom, bOldEnd ? CreditsHoldFromOld : CreditsHoldFrom,
+		!bOldEnd && !UOutlawsCoop::IsActive(this));
 	// the original's credits music (credits.msc) once the picture is held and the movie's own sound is over
 	Movie->OnCreditsHeld.AddWeakLambda(this, [this]() { StartMusic(TEXT("credits.msc")); });
 }
@@ -233,6 +241,7 @@ void AOutlawsLevelActor::TickCreditsTest(float Dt)
 {
 	static int32 Step = 0, Passes = 0, Fails = 0;
 	static double T = 0.0, Mark = 0.0, SkipAt = 0.0, RollAt = 0.0, HeldAt = 0.0;
+	static bool bFadeSeen = false;
 	static FString Mode;
 	if (Step < 0) return;
 	if (Mode.IsEmpty())
@@ -268,6 +277,13 @@ void AOutlawsLevelActor::TickCreditsTest(float Dt)
 	};
 	const bool bNatural = Mode == TEXT("natural");
 	const bool bNoOrig = Mode == TEXT("noorig");
+	const bool bOldEnd = OLFlags::Param(TEXT("OLOldCreditsEnd"));
+	// (REQ-CREDITSEND) the picture held on the movie's last frames (-OLOldCreditsEnd: at 125 s)
+	auto CheckHeldAt = [&]()
+	{
+		const double Want = bOldEnd ? CreditsHoldFromOld : CreditsHoldFrom;
+		Check(FMath::Abs(Movie->GetTime() - Want) < 0.6, FString::Printf(TEXT("the picture held at %.2f s of the movie (%.1f wanted)"), double(Movie->GetTime()), Want));
+	};
 	switch (Step)
 	{
 	case 0:
@@ -352,6 +368,10 @@ void AOutlawsLevelActor::TickCreditsTest(float Dt)
 		}
 		RollAt = T;
 		Check(true, TEXT("the roll starts over the movie as James rides off"));
+		{
+			const double Want = bOldEnd ? CreditsRollFromOld : CreditsRollFrom;
+			Check(FMath::Abs(Movie->GetTime() - Want) < 0.6, FString::Printf(TEXT("it starts at %.2f s of the movie (%.1f wanted)"), double(Movie->GetTime()), Want));
+		}
 		Mark = T;
 		Step = 12;
 		return;
@@ -366,10 +386,11 @@ void AOutlawsLevelActor::TickCreditsTest(float Dt)
 		Mark = T;
 		if (bNoOrig)
 		{
-			// the last of our lines just under the top: with nothing after it the roll ends as it goes, and the menu is up at once
+			// the last of our lines just under the top: with nothing after it the roll ends as it goes, ahead of the movie
+			// (REQ-CREDITSEND: which plays on to its end; -OLOldCreditsEnd: the menu is up at once)
 			Movie->SeekCredits(Movie->CreditsLineCount(0) - 1, 0.1f);
 			SkipAt = T;
-			Step = 30;
+			Step = Movie->CreditsFadeArmed() ? 31 : 30;
 			return;
 		}
 		Movie->SeekCredits(Movie->CreditsFirstLine(0), 0.12f);
@@ -391,6 +412,7 @@ void AOutlawsLevelActor::TickCreditsTest(float Dt)
 			return;
 		}
 		Check(true, TEXT("the picture held near the movie's end, the roll going on"));
+		CheckHeldAt();
 		Movie->SeekCredits(Movie->CreditsLineCount(0) - 3, 0.25f);
 		Mark = T;
 		Step = 15;
@@ -454,12 +476,34 @@ void AOutlawsLevelActor::TickCreditsTest(float Dt)
 		}
 		Done();
 		return;
+	case 31:
+		// (REQ-CREDITSEND) the roll ended first: the movie goes on with no words to its last frame, the fade, the menu
+		if (!Movie || bFrontEnd) { Check(false, TEXT("the movie plays on after the roll's end")); Done(); return; }
+		if (Movie->CreditsAgeNow() < Movie->CreditsSeconds()) return;
+		Check(Movie->IsPlaying() && !Movie->IsCreditsHeld(), FString::Printf(TEXT("the roll over at %.1f s of the movie, which plays on (Finish did not cut it)"), double(Movie->GetTime())));
+		HeldAt = 0.0;
+		Mark = T;
+		Step = 32;
+		return;
+	case 32:
+		if (!Movie || bFrontEnd) { Check(false, TEXT("the picture held at its last frame after the roll's end")); Done(); return; }
+		if (!Movie->IsCreditsHeld())
+		{
+			if (T - Mark > 70.0) { Check(false, TEXT("the picture held at its last frame after the roll's end")); Done(); }
+			return;
+		}
+		HeldAt = T;
+		CheckHeldAt();
+		Shot(TEXT("2_held"));
+		Step = 43;
+		return;
 	case 40:
 		// natural: no seeks, no skip: held at its point, then rolled to the end, then the main menu
 		if (!bFrontEnd && Movie && Movie->IsCreditsHeld() && HeldAt == 0.0)
 		{
 			HeldAt = T;
 			UE_LOG(LogOutlaws, Display, TEXT("OLSHOT credits natural: the picture held %.1f s after the roll began"), T - RollAt);
+			CheckHeldAt();
 			Mark = T;
 			Step = 41;
 			return;
@@ -469,11 +513,27 @@ void AOutlawsLevelActor::TickCreditsTest(float Dt)
 	case 41:
 		if (T - Mark < 2.0) return;
 		Shot(TEXT("2_held"));
+		Step = bOldEnd ? 42 : 43;
+		return;
+	case 43:
+		// (REQ-CREDITSEND) the words gone, the held picture going to black, then black, then the menu
+		if (bFrontEnd || !Movie) { Step = 42; return; }
+		if (Movie->CreditsFadeNow() < 0.45f) return;
+		bFadeSeen = true;
+		Check(Movie->CreditsAgeNow() >= Movie->CreditsSeconds(), FString::Printf(TEXT("the fade starts after the last line: roll %.1f of %.1f s"), Movie->CreditsAgeNow(), Movie->CreditsSeconds()));
+		Shot(TEXT("3_fade"));
+		Step = 44;
+		return;
+	case 44:
+		if (bFrontEnd || !Movie) { Step = 42; return; }
+		if (Movie->CreditsFadeNow() < 0.93f) return;
+		Shot(TEXT("4_black"));
 		Step = 42;
 		return;
 	case 42:
 		if (!bFrontEnd) return;
 		Check(HeldAt > 0.0, TEXT("the picture was held at its point"));
+		Check(bOldEnd ? !bFadeSeen : bFadeSeen, bOldEnd ? TEXT("old ending (-OLOldCreditsEnd): no fade, the roll's end closes the screen") : TEXT("the held picture faded to black before the menu"));
 		Check(true, FString::Printf(TEXT("the roll ran to its end (%.0f s from its start) and the main menu followed"), T - RollAt));
 		Done();
 		return;
@@ -520,6 +580,7 @@ void AOutlawsLevelActor::TickCreditsTest(float Dt)
 		return;
 	case 54:
 		if (T - Mark < 1.0) return;
+		Check(!Movie->CreditsFadeArmed(), TEXT("no end fade with no movie (the sunset path, Extras > Credits): the roll's end closes the screen as it did"));
 		Done();
 		return;
 	default:

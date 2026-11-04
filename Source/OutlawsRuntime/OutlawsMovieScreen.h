@@ -94,9 +94,10 @@ public:
 
 	/** (REQ-CREDITS, OutlawsMovieScreenCredits.cpp) the end credits, rolled flat up the picture in the crawl's look (mf3s.laf,
 	 *  black shadow): ArmCredits before Play, and the roll starts over the movie at StartAt s (James riding off into the
-	 *  sunset), the picture held at HoldAt s (before the movie's fade) while the roll goes on; PlayCredits rolls them with no
-	 *  movie.  The screen finishes when the last line has gone over the top, or on a skip. */
-	void ArmCredits(const TArray<FOutlawsCreditLine>& Lines, const OutlawsFormats::FLafFont* Font, double StartAt, double HoldAt);
+	 *  sunset), the picture held at HoldAt s (its last frame) while the roll goes on; PlayCredits rolls them with no
+	 *  movie.  The screen finishes when the last line has gone over the top, or on a skip.  (REQ-CREDITSEND) bFadeEnd: after
+	 *  the last line the movie plays on to its hold if it has not got there, the picture fades to black, then it finishes. */
+	void ArmCredits(const TArray<FOutlawsCreditLine>& Lines, const OutlawsFormats::FLafFont* Font, double StartAt, double HoldAt, bool bFadeEnd = false);
 	/** (BUG-CREDITSBG) with no movie the roll goes over Backdrop as the crawl's does (the Marshal Training sunset, bHdBackdrop
 	 *  its wide one), not the black (-OLOldCreditsBg: the black). */
 	void PlayCredits(const TArray<FOutlawsCreditLine>& Lines, const OutlawsFormats::FLafFont* Font, const FVector& Eye, const FVector& Forward,
@@ -108,6 +109,8 @@ public:
 	bool IsCreditsHeld() const { return bCreditsHeld; }
 	float CreditsSeconds() const { return float(CreditsRunPx() / CreditsSpeed()); }
 	float CreditsAgeNow() const { return CreditsAge; }
+	bool CreditsFadeArmed() const { return bCreditsFadeEnd; }
+	float CreditsFadeNow() const { return CreditsFade; }      // (REQ-CREDITSEND) 0 the picture, 1 black
 	/** (tests) the roll moved so line Line's baseline sits BaselineFrac down the picture; the movie moved to Seconds. */
 	void SeekCredits(int32 Line, float BaselineFrac);
 	void SeekMovie(float Seconds);
@@ -242,8 +245,10 @@ private:
 	bool bCreditsRolling = false;
 	bool bCreditsHeld = false;         // the movie's picture stopped where it is (or no movie)
 	bool bCreditsSkipped = false;
+	bool bCreditsFadeEnd = false;      // (REQ-CREDITSEND) the roll's end fades the held picture to black first
 	double CreditsStartAt = 0.0, CreditsHoldAt = 0.0;
 	float CreditsAge = 0.f;
+	float CreditsFade = 0.f;
 	TArray<FOutlawsCreditLine> CreditLines;
 	void SetUpCreditsLook(const OutlawsFormats::FLafFont* Font);
 	void StartCreditsRoll();
