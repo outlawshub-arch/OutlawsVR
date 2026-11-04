@@ -1,7 +1,7 @@
 // REQ-SKYTHRU (user 3 Nov, snapshot 2026-11-03_19-19-59, zekes: "walls around the outer regions of the level that have a teal color
 // that's supposed to be transparent ... there isn't anything behind those walls, so the teal should be showing as the sky texture
 // behind it"): -OLShots -OLLevel=<zekes|nuketown|...> -OLNoFrontEnd [-OLNativeMaps=<dir>] -OLSkyThruProbe [-OLOldSkyWalls]
-// [-OLDeviceProfile=Quest2].  In zekes from the snapshot's spot and look, in another level before the biggest wall of the class (a
+// [-OLDeviceProfile=Quest2] [-OLSkyThruWall=<n>] [-OLSkyThruPitch=<degrees>].  In zekes from the snapshot's spot and look, in another level before the biggest wall of the class (a
 // level without one: where it starts), three shots of the same view: the walls whole (their mask off: the old teal), the walls
 // hidden (the dome behind them), the walls as built (skythru_<level>_<whole|bare|new>.png in Saved\OLShots).  The texels the mask
 // opens are the pixels whole and new disagree on: their teal has to be gone from the new shot, and they have to show what the bare
@@ -198,8 +198,9 @@ OL_SHOT_TEST(OLSkyThruProbe, 2160)
 		}
 		else
 		{
-			// before the biggest wall that a place 8 m in front of it can see; -OLSkyThruWall=<n>: the next biggest but n, for a level
-			// whose biggest wall has few clear texels; -OLSkyThruPitch=<degrees>: the view tipped to that, as a walker sees the wall
+			// before the biggest wall that a place 8 m in front of it can see; -OLSkyThruWall=<n>: the n-th after it of the walls with
+			// such a place (the last if there are fewer), for a level whose biggest wall opens nothing in view (civlwar2: 1);
+			// -OLSkyThruPitch=<degrees>: the view tipped to that, as a walker sees the wall
 			Look = GetControlRotation();
 			struct FSpot { double Area; FVector Feet; FRotator Turn; };
 			TArray<FSpot> Spots;
@@ -328,7 +329,7 @@ OL_SHOT_TEST(OLSkyThruProbe, 2160)
 				// filtered: a texel's edge is a ramp a texel wide, up to 6 pixels of these shots from 8 m, and a pixel on it is part wall
 				// and part sky, so it can't match the bare shot, which has no wall (civlwar1 with the sky still: 18.7 a channel over all
 				// that changed, 0.8 with 6 pixels peeled off every edge).  Clear of that rim the sky has to match, on the same limit; on
-				// the rim the pixel has to have gone toward it (the worst measured: 91%)
+				// the rim the pixel has to have gone toward it (the worst of the levels' runs: civlwar1, 97.8%)
 				TArray<uint8> Inner, Peel;
 				Inner.SetNumZeroed(New.Num());
 				int32 Changed = 0;
