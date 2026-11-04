@@ -68,6 +68,7 @@ public:
 	float HandCardFade() const { return HandFade; }
 	bool HandCardShown() const;
 	bool HandCardSolid() const { return bHandSolid; }
+	bool HandCardFadeIsReal() const;          // (the see-through material has the Opacity the fade sets: without it the fade sets nothing)
 	FVector HandCardCentre() const;
 	bool SkipBarShown() const;
 #if WITH_OUTLAWS_TESTS

@@ -1,7 +1,8 @@
 // REQ-HANDCARDFADE's and REQ-HANDCARDHOLD's probes, the score card on the hand through the hideout's end cutscene, the headset's
 // rules: -OLShots -OLNoFrontEnd -OLLevel=hideout.
 // -OLHandCardFadeProbe [-OLOldHandCardFade]: nothing at 0.5 s, half up at 1.5 s, all up and solid at 2.5 s (a shot at each,
-// handcard_05.png, handcard_15.png, handcard_25.png), late counts in the middle of the fade do not start it again.
+// handcard_05.png, handcard_15.png, handcard_25.png, and handcard_125, _19 and _21 for the fade's shape and the swap to the solid
+// material at 2 s), late counts in the middle of the fade do not start it again.
 // -OLHandCardFadeProbe=short: a movie that ends at 1.2 s, in the fade: it goes cleanly.
 // -OLOldHandCardFade: all up at 0.5 s, as before.
 // -OLHandCardHoldProbe [-OLOldHandCardHold]: the other hand's button does nothing, the card hand's tap hides and shows it, a long
@@ -28,6 +29,9 @@ namespace OutlawsHandCardProbeLocal
 	int32 Stage = 0, Passes = 0, Fails = 0, Sub = 0, CardHand = -1, Free = -1;
 	float StageT = 0.f, LastFade = 0.f, HeldFor = 0.f;
 	bool bLate = false;
+	uint32 ExtraShots = 0;
+	const float ExtraAt[3] = { 1.25f, 1.9f, 2.1f };
+	const TCHAR* const ExtraName[3] = { TEXT("handcard_125.png"), TEXT("handcard_19.png"), TEXT("handcard_21.png") };
 
 	void Check(bool bOk, const FString& What)
 	{
@@ -63,6 +67,7 @@ OL_SHOT_TEST(OLHandCardFadeProbe, 2460)
 	const bool bShown = M && M->HandCardShown();
 	auto Say = [&]() { return FString::Printf(TEXT("%.2f s in: fade %.2f, shown %d, solid %d"), Age, Fade, bShown ? 1 : 0, M && M->HandCardSolid() ? 1 : 0); };
 	StageT += Dt;
+	if (M && Stage >= 3 && Stage <= 5 && ExtraShots < UE_ARRAY_COUNT(ExtraAt) && Age >= ExtraAt[ExtraShots]) Shot(ExtraName[ExtraShots++]);
 	switch (Stage)
 	{
 	case 0:
@@ -93,7 +98,7 @@ OL_SHOT_TEST(OLHandCardFadeProbe, 2460)
 		return;
 	case 3:
 		if (Age < 1.5f) return;
-		if (!bOld) Check(bShown && Fade > 0.35f && Fade < 0.65f && !M->HandCardSolid(), FString::Printf(TEXT("half way through its second's fade: %s"), *Say()));
+		if (!bOld) Check(bShown && Fade > 0.35f && Fade < 0.65f && !M->HandCardSolid() && M->HandCardFadeIsReal(), FString::Printf(TEXT("half way through its second's fade: %s, the material takes it %d"), *Say(), M->HandCardFadeIsReal() ? 1 : 0));
 		Shot(TEXT("handcard_15.png"));
 		LastFade = Fade;
 		M->TestLateCounts();

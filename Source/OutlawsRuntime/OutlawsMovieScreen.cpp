@@ -1040,6 +1040,12 @@ void AOutlawsMovieScreen::ToggleHandCard()
 	UE_LOG(LogOutlaws, Log, TEXT("OLRT the score card is %s by a tap"), bCardHiddenThisRun ? TEXT("hidden") : TEXT("shown"));
 }
 
+bool AOutlawsMovieScreen::HandCardFadeIsReal() const
+{
+	float Value = 0.f;
+	return HandFadeMid && HandFadeMid->GetScalarParameterValue(FHashedMaterialParameterInfo(TEXT("Opacity")), Value);
+}
+
 bool AOutlawsMovieScreen::HandCardWithin(const FVector& Hand, float Cm) const
 {
 	if (!bHandCard || !HandPlane || HandFade <= 0.f) return false;
@@ -1151,8 +1157,10 @@ void AOutlawsMovieScreen::RefreshHandCard()
 			StatsMids.Add(M);
 			HandSolidMid = M;
 		}
-		// (REQ-HANDCARDFADE: the wrist's see-through picture, already on the headset)
-		if (UMaterialInterface* Fading = LoadObject<UMaterialInterface>(nullptr, TEXT("/Game/Outlaws/Runtime/M_OLR_WristIcon.M_OLR_WristIcon")))
+		// (REQ-HANDCARDFADE: an unlit see-through material with the Tex and Opacity this needs, already on the headset.  Not the wrist's
+		// M_OLR_WristIcon, as first: it has no Opacity, so the fade's value went nowhere and the card came up whole at 1 s; its
+		// first shot showed that on 5 Nov)
+		if (UMaterialInterface* Fading = LoadObject<UMaterialInterface>(nullptr, TEXT("/Game/Outlaws/Runtime/M_OLR_HeldGhost.M_OLR_HeldGhost")))
 		{
 			HandFadeMid = UMaterialInstanceDynamic::Create(Fading, this);
 			HandFadeMid->SetTextureParameterValue(TEXT("Tex"), HandCanvas);
