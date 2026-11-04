@@ -490,8 +490,9 @@ void UOutlawsCoop::TickHostBlastRifleTest(double Now, AOutlawsLevelActor* L, AOu
 			if (Now < TestAt) return;
 			L->bInvincible = false;
 			Check(WatchPlayer.Rise > 100.0, FString::Printf(TEXT("that stick on the host's player, on the bot's spot: %s"), *WatchPlayer.Say()));
-			// (the flight, from the same spot: the speed is a tick's sample, a low roof or a wall takes it in a frame, and what stops the
-			// player's taller body can leave the bot's flying: at least the player's rise, no more than the launch carries, 3130 cm)
+			// (the flight, from the same spot: the speed is a tick's sample, a low roof or a wall takes it in a frame, and one launch rises
+			// less on the desktop player here, 4.59 g, than on a bot, 1 g (a headset's player, 1.5 g, in between): at least the player's
+			// rise, no more than the launch carries at 1 g, 3130 cm)
 			Check(bOldPush ? WatchBot.Rise < 60.0 : WatchBot.Rise >= WatchPlayer.Rise - FMath::Max(120.0, WatchPlayer.Rise * 0.4) && WatchBot.Rise <= 3300.0,
 				FString::Printf(TEXT("that stick on a live bot: %s%s (the player's: %s)"), *WatchBot.Say(), bOldPush ? TEXT(", -OLOldBotPush") : TEXT(""), *WatchPlayer.Say()));
 			if (B) B->Health = 10.f;
@@ -581,8 +582,9 @@ void UOutlawsCoop::OnBlastRifleTestStep(const FString& Step, int32 Arg, AOutlaws
 	}
 	if (Step == TEXT("brback"))
 	{
-		// (the pulls) 2.5 m off the body as drawn here, on a clear side, facing it: at the 1.2 m of the hold step's "near" a rifle's
-		// muzzle is already at the body and turning the bore onto the spot swings it past
+		// (the pulls) 2.5 m off the body as drawn here, on a clear side, on its floor, facing it: the hold step's "near" keeps the
+		// shooter's own height, and with a bot on another floor a real shot, from the muzzle, stops in the level (the jobs' shots
+		// from the eye never ask the level)
 		const AOutlawsRemotePlayer* R = PuppetOf(Arg);
 		if (!R) return;
 		const FVector Mid = R->ShownBody();
@@ -597,7 +599,7 @@ void UOutlawsCoop::OnBlastRifleTestStep(const FString& Step, int32 Arg, AOutlaws
 			Flat = Try;
 			break;
 		}
-		P->SetActorLocation(Mid + Flat * 250.0 + FVector(0.0, 0.0, P->GetActorLocation().Z - Mid.Z), false, nullptr, ETeleportType::TeleportPhysics);
+		P->SetActorLocation(Mid + Flat * 250.0 + FVector(0.0, 0.0, 60.0), false, nullptr, ETeleportType::TeleportPhysics);
 		if (AController* Ct = P->GetController()) Ct->SetControlRotation((-Flat).Rotation());
 		return;
 	}
