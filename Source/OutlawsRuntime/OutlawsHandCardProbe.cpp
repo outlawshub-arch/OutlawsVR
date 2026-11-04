@@ -16,6 +16,7 @@
 #include "OutlawsMovieScreen.h"
 #include "OutlawsFlags.h"
 #include "OutlawsShotTests.h"
+#include "Camera/CameraComponent.h"
 #include "HAL/PlatformMisc.h"
 #include "Misc/Paths.h"
 #include "UnrealClient.h"
@@ -74,6 +75,8 @@ OL_SHOT_TEST(OLHandCardFadeProbe, 2460)
 	case 1:
 		if (!bPlaying || !M) return;
 		UE_LOG(LogOutlaws, Display, TEXT("OLSHOT handcard the movie is up: %s"), *Say());
+		// (the card's hand before the eye, so the shots have it, over the picture)
+		if (Camera) ScoreCardFrame()->SetWorldLocation(Camera->GetComponentLocation() + Camera->GetForwardVector() * 48.0 - FVector::UpVector * 24.0);
 		Stage = 2;
 		return;
 	case 2:
