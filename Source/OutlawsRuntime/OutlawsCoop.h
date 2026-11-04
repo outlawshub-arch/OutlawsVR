@@ -1253,6 +1253,8 @@ public:
 	int32 MatchHitsDealtSoFar() const { return MatchHitsDealt; }
 	static bool SweepAtPlayers(AOutlawsLevelActor* L, const FVector& A, const FVector& B, float Damage, const TCHAR* Kind, FVector& OutAt);
 	static int32 BlastAtPlayers(AOutlawsLevelActor* L, const FVector& Where, float RadiusCm, float Damage);
+	/** BUG-BLASTMISS: (a match's host) a blast throws the live bots in its reach as it throws a player (OutlawsCoopBots.cpp). */
+	static void BlastThrowsBots(AOutlawsLevelActor* L, const FVector& From, float RadiusCm, float Damage);
 	/** A match whose blasts the host deals (another machine's blast does not hurt this player directly). */
 	static bool BlastsDealtByHost(const UObject* Context);
 	/** M4: this machine's player said a taunt: to the other players (OutlawsCoopMatchExtras.cpp). */

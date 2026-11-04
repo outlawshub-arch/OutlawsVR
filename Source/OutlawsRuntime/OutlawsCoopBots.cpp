@@ -848,6 +848,31 @@ void UOutlawsCoop::BotPellet(AOutlawsEnemy* E, float Damage, const FVector& At, 
 	OnMatchHit(E->CoopSelf, LevelEpoch(), E->CoopTarget, Damage, At, From);
 }
 
+void UOutlawsCoop::BlastThrowsBots(AOutlawsLevelActor* L, const FVector& From, float RadiusCm, float Damage)
+{
+	// (BUG-BLASTMISS, the user's answer of 4 Nov) a blast throws a live match bot at the push a player gets (Explode's own player
+	// and AOutlawsPlayer::BlastThrow, the user's ask of 29 Sep: the same reach, falloff and clear line, 360 cm/s a point, 0.7 up,
+	// 5200 at most).  Only the host has the bots' bodies; every blast of the match comes through its Explode, a client's stick
+	// too (told here, bCoopRemoteBlast), and the clients see the flight in the bot's pose.  As a player's own stick throws it,
+	// a bot's does.  Knock's quarter is the stagger of a living bad guy's, so x4.  -OLOldBotPush: no push, as before
+	static const bool bOld = OLFlags::Param(TEXT("OLOldBotPush"));
+	UOutlawsCoop* C = L ? Get(L) : nullptr;
+	if (bOld || !C || !C->IsHost() || !C->IsMatch() || !C->bLevelBuilt || RadiusCm <= 0.f) return;
+	const double R = RadiusCm;
+	for (const FBot& B : C->Bots)
+	{
+		AOutlawsEnemy* E = B.Brain.Get();
+		if (!E || B.bDead || E->IsDead()) continue;
+		const FVector Mid = E->GetActorLocation();
+		const double D = FVector::Dist(From, Mid);
+		if (D >= R || !L->CanSee(From, Mid, E)) continue;
+		const float Dealt = float(Damage * (D <= R * 0.25 ? 1.0 : FMath::Square(FMath::Max(0.0, (R - D) / (0.75 * R)))));
+		if (Dealt <= 0.f) continue;
+		E->Knock(Mid - From, Dealt * 4.f, true);
+		UE_LOG(LogOutlawsAI, Log, TEXT("OLBOT %s thrown by a blast %.0f cm off: %.2f points"), *B.Name, D, Dealt);
+	}
+}
+
 void UOutlawsCoop::BotHurt(int32 Who, float Damage, const FVector& At, const FVector& From, int32 Shooter)
 {
 	FBot* B = FindBot(Who);

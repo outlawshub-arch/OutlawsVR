@@ -1170,6 +1170,7 @@ void AOutlawsLevelActor::Explode(const FVector& Where)
 	// (BUG-DYNTHROW) a bad guy's stick: the bad guys it kills are no one's (the end panels, the achievements), the badge no part of it
 	const float BlastScale = bEnemyBlast ? 1.f : PlayerDamageScale();
 	if (!bCoopRemote) UOutlawsCoop::BlastAtPlayers(this, From, float(R), BlastDamage * BlastScale);     // (a match: the other players in reach)
+	UOutlawsCoop::BlastThrowsBots(this, From, float(R), BlastDamage);     // (BUG-BLASTMISS: a match's host: the live bots in reach, any machine's blast)
 	FOutlawsStatsScope BlastBy(bEnemyBlast ? EOutlawsStatsBy::Nobody : EOutlawsStatsBy::Me, true);      // (the level's end panels: a blast's kills are dynamite kills)
 	int32 BlastKills = 0;                                      // (REQ-EXTRAS dynamite3: the bad guys this one blast killed)
 	for (const TWeakObjectPtr<AOutlawsEnemy>& Wk : Enemies)
