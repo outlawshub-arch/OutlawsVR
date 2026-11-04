@@ -340,9 +340,15 @@ void UOutlawsCoop::Initialize(FSubsystemCollectionBase& Collection)
 		bAuto = bAutoReady = bWorldTest = true;
 		TestOnly = TEXT("mptntpick");
 	}
+	if (OLFlags::Param(TEXT("OLPauseCharProbe")))
+	{
+		// (REQ-PAUSECHAR's two-machine probe: OutlawsPauseCharProbe.cpp; the host starts the match itself)
+		bAuto = bAutoReady = bWorldTest = true;
+		TestOnly = TEXT("pausechar");
+	}
 	// REQ-MPLOBBY: the lobby's start rule, off where a test starts the match itself (M1's Death Match test presses Start the game)
 	bLobbyRuleOff = OLFlags::Param(TEXT("OLMpNoLobbyRule")) || TestOnly == TEXT("dm") || TestOnly == TEXT("killfeed") || TestOnly == TEXT("remotefx") || TestOnly == TEXT("flicknet")
-		|| TestOnly == TEXT("mplethal") || TestOnly == TEXT("mptntpick");
+		|| TestOnly == TEXT("mplethal") || TestOnly == TEXT("mptntpick") || TestOnly == TEXT("pausechar");
 	OLFlags::Value(TEXT("OLLobbyEnterAfter"), LobbyEnterAfter);
 	bLobbyEnterAfterPeer = OLFlags::Param(TEXT("OLLobbyEnterAfterPeer"));
 	OLFlags::Value(TEXT("OLLobbyShot"), LobbyShotName);

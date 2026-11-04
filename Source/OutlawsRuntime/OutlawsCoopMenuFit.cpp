@@ -9,6 +9,7 @@
 #include "OutlawsMenuDoc.h"
 #include "OutlawsBuildInfo.h"
 #include "OutlawsDeathmatch.h"
+#include "OutlawsFlags.h"
 #include "Engine/NetConnection.h"
 #include "GameFramework/PlayerController.h"
 
@@ -136,6 +137,25 @@ void UOutlawsCoop::PausePageLines(TArray<FString>& Out) const
 	}
 }
 
+bool UOutlawsCoop::OldPauseChar()
+{
+	static const bool bOld = OLFlags::Param(TEXT("OLOldPauseChar"));
+	return bOld;
+}
+
+bool UOutlawsCoop::MatchNeedsPlayersRow(const AOutlawsPlayer* P)
+{
+	// REQ-PAUSECHAR: the Players page's own in a match: the team switch, and each other person's ping and mute (not on the wheel's
+	// card, the mute nowhere else while playing).  With no one else and no teams it has nothing the card, Tab and the lobby don't
+	const UOutlawsCoop* C = IsActive(P) ? Get(P) : nullptr;
+	if (!C) return false;
+	if (IsTeamMatch(P)) return true;
+	TArray<FPlayerRow> Rows;
+	C->PlayerRows(Rows);
+	const int32 Me = C->MyIndex();
+	return Rows.ContainsByPredicate([Me](const FPlayerRow& R) { return R.Who != Me; });
+}
+
 void UOutlawsCoop::BuildPausePage(AOutlawsPlayer* P, OutlawsMenu::FPage& Page)
 {
 	// REQ-PAUSETIDY's Players page: the match's rows (the Scoreboard, the character, the team), then the other players, each
@@ -154,7 +174,7 @@ void UOutlawsCoop::BuildPausePage(AOutlawsPlayer* P, OutlawsMenu::FPage& Page)
 	if (FOutlawsMpCharacter::bMatchMenu)
 	{
 		Add(EItemKind::Action, TEXT("Scoreboard"), TEXT("coop:scoreboard"));                    // (M1: the match's frag table, up until closed)
-		Add(EItemKind::Link, TEXT("Switch character"), FString(), TEXT("#character"));          // (M1: worn from the next spawn)
+		if (OldPauseChar()) Add(EItemKind::Link, TEXT("Switch character"), FString(), TEXT("#character"));      // (M1: worn from the next spawn; REQ-PAUSECHAR: a row up now, on the pause menu)
 		if (IsTeamMatch(P)) Add(EItemKind::Action, MyTeam(P) == 1 ? TEXT("Team: Red (join Blue)") : TEXT("Team: Blue (join Red)"), TEXT("coop:team"));
 	}
 	TArray<FPlayerRow> Rows;

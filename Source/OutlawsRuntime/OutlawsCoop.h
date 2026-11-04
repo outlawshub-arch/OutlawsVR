@@ -1269,6 +1269,11 @@ public:
 	 *  (the score screen at a match's end keeps its table).  -OLOldWheelScore: the pause menu's table as before, none under the
 	 *  wheel. */
 	static bool OldWheelScore();
+	/** REQ-PAUSECHAR (user 3 Nov): in a match the pause menu's Players row is Change character, straight to the character page.
+	 *  -OLOldPauseChar: Players there as before, with Switch character on its page. */
+	static bool OldPauseChar();
+	/** REQ-PAUSECHAR: whether a match keeps a Players row under Options: its page holds what nothing else in reach does. */
+	static bool MatchNeedsPlayersRow(const AOutlawsPlayer* P);
 	/** REQ-WHEELSCORE: the wheel's card (made the first time, then kept), shown with the wheel and its rows looked at twice a
 	 *  second, or hidden (bShow false); null with no match (or -OLOldWheelScore). The wheel places it (AOutlawsPlayer::PlaceWheelScore). */
 	static class AOutlawsFragTablePanel* WheelScoreCard(AOutlawsPlayer* P, bool bShow);
@@ -1734,6 +1739,9 @@ private:
 	// ---- BUG-MPTNTPICK's probe (-OLMpTntPickProbe on a host and its client; OutlawsMpTntPickProbe.cpp) ----
 	void TickHostTntPickTest(double Now, AOutlawsLevelActor* L, AOutlawsPlayer* P);
 	void OnTntPickTestStep(const FString& Step, int32 Arg, AOutlawsLevelActor* L, AOutlawsPlayer* P);
+	// ---- REQ-PAUSECHAR's probe (-OLPauseCharProbe on a host and its client; OutlawsPauseCharProbe.cpp) ----
+	void TickHostPauseCharTest(double Now, AOutlawsLevelActor* L, AOutlawsPlayer* P);
+	void OnPauseCharTestStep(const FString& Step, int32 Arg, AOutlawsLevelActor* L, AOutlawsPlayer* P);
 	// ---- REQ-KILLFEED (OutlawsCoopKillFeed.cpp) ----
 	/** The host: a death's kill line to every machine (and this one). */
 	void SayKill(int32 Killer, int32 Victim, EOutlawsObit Kind);

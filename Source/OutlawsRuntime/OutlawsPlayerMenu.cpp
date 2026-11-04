@@ -934,8 +934,8 @@ bool AOutlawsPlayer::ShowMenuPage(const FString& File, bool bPush)
 	if (File == TEXT("main_game.rml"))
 	{
 		// REQ-PAUSETIDY (user 2026-10-08: the pause page in multiplayer scrolled): the remaster's rows in their order, then
-		// ours: Start the game under Resume (the host's warm-up), Players > before Options (co-op or a match: the Scoreboard,
-		// the character, the team, the session's lines and Mute), Cheats > before Exit once a whole turn has shown it
+		// ours: Start the game under Resume (the host's warm-up), Players > before Options (co-op: the session's lines and Mute;
+		// a match, REQ-PAUSECHAR below: Change character > there), Cheats > before Exit once a whole turn has shown it
 		// (REQ-NOUNSTUCK, user 2026-10-27: the Unstuck row and the Tools page it shared with Cheats are gone; the rescue
 		// itself is automatic, OutlawsPlayerUnstuck.cpp)
 		using namespace OutlawsMenu;
@@ -982,12 +982,24 @@ bool AOutlawsPlayer::ShowMenuPage(const FString& File, bool bPush)
 		}
 		if (UOutlawsCoop::IsActive(this) || FOutlawsMpCharacter::bMatchMenu)
 		{
+			// REQ-PAUSECHAR (user 3 Nov: "drop the players button in multiplayer pause menu, since we can see the scorecard below the
+			// weapon wheel now. And we should just have a change character button instead to replace it"): in a match Players' place
+			// is Change character, straight to the character page.  A Players row stays under Options only while its page holds what
+			// nothing else in reach does (UOutlawsCoop::MatchNeedsPlayersRow: the team switch, the other people's pings and mutes).
+			// The story co-op has no card and keeps Players where it was; -OLOldPauseChar: a match too
+			const bool bChangeChar = FOutlawsMpCharacter::bMatchMenu && !UOutlawsCoop::OldPauseChar();
 			FItem I;
 			I.Kind = EItemKind::Link;
-			I.Label = TEXT("Players");
-			I.Target = TEXT("#cooppause");
+			I.Label = bChangeChar ? TEXT("Change character") : TEXT("Players");
+			I.Target = bChangeChar ? TEXT("#character") : TEXT("#cooppause");
 			const int32 Opt = Page->Items.IndexOfByPredicate([](const FItem& It) { return It.Target.Equals(TEXT("options.rml"), ESearchCase::IgnoreCase); });
 			Page->Items.Insert(I, Opt != INDEX_NONE ? Opt : FMath::Max(0, Page->Items.Num() - 1));
+			if (bChangeChar && UOutlawsCoop::MatchNeedsPlayersRow(this))
+			{
+				I.Label = TEXT("Players");
+				I.Target = TEXT("#cooppause");
+				Page->Items.Insert(I, Opt != INDEX_NONE ? Opt + 2 : FMath::Max(0, Page->Items.Num() - 1));
+			}
 		}
 		if (OutlawsMpHost::Flow().GetState() == FOutlawsMatchFlow::EState::WarmUp)
 		{
@@ -2075,7 +2087,8 @@ void AOutlawsPlayer::MenuActivate(int32 Hand, int32 Index)
 			if (Ch)
 			{
 				FOutlawsMpCharacter::SetLocalChoice(Ch->Short);
-				MenuToastText(FOutlawsMpCharacter::bMatchMenu ? FString::Printf(TEXT("%s from your next spawn"), Ch->Name) : FString::Printf(TEXT("Character: %s"), Ch->Name));
+				const FString FromNext = FString::Printf(TEXT("%s from your next spawn"), Ch->Name);
+				MenuToastText(!FOutlawsMpCharacter::bMatchMenu ? FString::Printf(TEXT("Character: %s"), Ch->Name) : UOutlawsCoop::OldPauseChar() ? FromNext : TEXT("You'll be ") + FromNext);      // (REQ-PAUSECHAR)
 				RedrawMenu();
 			}
 			return;
@@ -5365,7 +5378,13 @@ void UOutlawsCoop::PauseTidyTestTick(AOutlawsPlayer* P, float Dt)
 	}
 	case 10:
 		if (Has(TEXT("#cooppause"))) { P->ShowMenuPage(TEXT("#cooppause"), true); NextAt = T + 1.0f; ++Step; }
-		else { FitCheck(false, FString::Printf(TEXT("%s: the pause page has Players"), *Mode)); Step = 16; }
+		else
+		{
+			// (REQ-PAUSECHAR: a match with no one else and no teams has no Players row, its page nothing of its own to show)
+			const bool bNoNeed = FOutlawsMpCharacter::bMatchMenu && !UOutlawsCoop::OldPauseChar() && !UOutlawsCoop::MatchNeedsPlayersRow(P);
+			FitCheck(bNoNeed, FString::Printf(TEXT("%s: the pause page has Players%s"), *Mode, bNoNeed ? TEXT(" or no need of it") : TEXT("")));
+			Step = 16;
+		}
 		return;
 	case 11:
 	{
