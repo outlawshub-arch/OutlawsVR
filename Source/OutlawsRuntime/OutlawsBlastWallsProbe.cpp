@@ -133,13 +133,21 @@ OL_SHOT_TEST(OLBlastWallsProbe, 1800)
 	static int32 Passes = 0, Fails = 0, Case = 0;
 	static float Wait = 0.f, WatchTo = 0.f;
 	static double WallR = 15.0, Radius = 50.0;
-	static bool bStick = false, bMoved = false;
+	static bool bStick = false, bMoved = false, bSankFirst = false;
 	static TArray<FBlastWall> Here;
 	static TArray<double> Start;
 	static FVector StickLast = FVector::ZeroVector;
 	if (!L || ShotStep < 0) return;
 	const bool bOld = OLFlags::Param(TEXT("OLOldBlastWalls"));
+	// (BUG-SEWERGATE) the spot in front of the wall lies over water (the sector there has the water's sector VADJOINed under it):
+	// let go there a stick sinks to the bed and goes off in the water's sector, so that wall is run twice, the stick left to
+	// sink (it stays, as the original's list: only ADJOIN and DADJOIN), then held at the spot until it goes off (it fires)
 	const FOutlawsInfRuntime* Inf = L->DebugInf();
+	auto OverWater = [Inf](const FBlastWall& B)
+	{
+		const FOutlawsSector* At = Inf ? Inf->Live.SectorAt(B.In.X, B.In.Y + 0.5, B.In.Z) : nullptr;
+		return At && Inf->Live.Sectors.IsValidIndex(At->VAdjoin) && (Inf->Live.Sectors[At->VAdjoin].Flags & OutlawsFlags::Water) != 0;
+	};
 	auto Check = [](bool bOk, const FString& What)
 	{
 		UE_LOG(LogOutlaws, Display, TEXT("OLSHOT blastwalls check %s: %s"), bOk ? TEXT("PASS") : TEXT("FAIL"), *What);
@@ -310,12 +318,24 @@ OL_SHOT_TEST(OLBlastWallsProbe, 1800)
 	{
 		const FBlastWall& B = Here[Case / 2];
 		const bool bIn = Case % 2 == 1;
-		if (const FThrown* T = LastStick()) { StickLast = T->Pos; return; }
+		const bool bHeld = bIn && bSankFirst;
+		if (FThrown* T = LastStick())
+		{
+			if (bHeld)
+			{
+				T->Pos = FOutlawsGeometry::ToUE(FVector2D(B.In.X, B.In.Z), B.In.Y + 0.2);
+				T->Vel = FVector::ZeroVector;
+				if (AActor* Ac = T->Actor.Get()) Ac->SetActorLocation(T->Pos);
+			}
+			StickLast = T->Pos;
+			return;
+		}
 		if (WatchTo <= 0.f) WatchTo = ShotTime + 3.f;
 		const TArray<int32> Es = ClientElevators(*Inf, B.Trigger);
 		for (int32 j = 0; j < Es.Num() && j < Start.Num(); ++j) bMoved |= Inf->Elevators[Es[j]].Target >= 0 || FMath::Abs(Inf->Elevators[Es[j]].Current - Start[j]) > 0.01;
 		if (ShotTime < WatchTo) return;
-		const bool bWant = bIn && !bOld && B.Gate < WallR;     // (the cannons: not, as (0))
+		const bool bSinks = bIn && !bHeld && OverWater(B);
+		const bool bWant = bIn && !bOld && B.Gate < WallR && !bSinks;     // (the cannons: not, as (0); a stick sunk under the wall's water: not)
 		// (where it went off, the sector there, the wall's sector's corners from it as the level stands now, the trigger armed)
 		const FVector Bl = FOutlawsGeometry::ToOutlaws(StickLast);
 		const FOutlawsSector* At = Inf->Live.SectorAt(Bl.X, Bl.Y + 0.5, Bl.Z);
@@ -323,9 +343,10 @@ OL_SHOT_TEST(OLBlastWallsProbe, 1800)
 		const FOutlawsSector& Ws = Inf->Live.Sectors[B.Sector];
 		for (const FVector2D& V : Ws.Verts) Sum += Oct(V, FVector2D(Bl.X, Bl.Z));
 		Check(bMoved == bWant && Es.Num() > 0, FString::Printf(TEXT("(1) %s %s #%s: a lit stick set down %s (%.2f units from the wall's ends on average; it went off at x %.2f y %.2f z %.2f in sector %d, the wall's sector %d's corners %.2f off on average, the trigger %s): its %d client(s) %s"),
-			*L->LevelName, *B.Name, *B.Id, bIn ? TEXT("in front of it") : TEXT("out of reach"), bIn ? B.InD : B.OutD, Bl.X, Bl.Y, Bl.Z, At ? At->Index : -1, B.Sector, Sum / FMath::Max(1, Ws.Verts.Num()),
+			*L->LevelName, *B.Name, *B.Id, bSinks ? TEXT("in front of it, over the water, left to sink") : bHeld ? TEXT("in front of it, held over the water") : bIn ? TEXT("in front of it") : TEXT("out of reach"), bIn ? B.InD : B.OutD, Bl.X, Bl.Y, Bl.Z, At ? At->Index : -1, B.Sector, Sum / FMath::Max(1, Ws.Verts.Num()),
 			Inf->Triggers[B.Trigger].bMaster ? TEXT("armed") : TEXT("not armed"), Es.Num(), bMoved ? TEXT("moved (it fired)") : TEXT("stayed")));
-		++Case;
+		bSankFirst = bSinks;                // (BUG-SEWERGATE: the same wall again, held; a SINGLE trigger fires once, so this order)
+		if (!bSankFirst) ++Case;
 		Wait = ShotTime + 0.5f;
 		ShotStep = 1;
 		return;

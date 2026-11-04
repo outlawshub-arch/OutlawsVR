@@ -1116,18 +1116,24 @@ void FOutlawsInfRuntime::BlastWallEvents(int32 Own, double X, double Z, double R
 	// the exe's flat distance, |dx| + |dz| less half the smaller [EXE 0x1402de1a2..0x1402de1f1]
 	auto Oct = [X, Z](const FVector2D& V) { const double Dx = FMath::Abs(V.X - X), Dz = FMath::Abs(V.Y - Z); return Dx + Dz - 0.5 * FMath::Min(Dx, Dz); };
 	// the sectors round it: Own, then on through the open walls while a sector's plan lies within 100 units of the blast
-	// (the exe's list: 36 rays of 100 units from each of the sector's openings, at most 512 sectors [EXE 0x1402ddb8c..0x1402ddc9a])
+	// (the exe's list: 36 rays of 100 units from each of the sector's openings, at most 512 sectors [EXE 0x1402ddb8c..0x1402ddc9a];
+	// BUG-SEWERGATE: on through a wall's ADJOIN and its DADJOIN, the wall's +0x78 and +0x88 [EXE 0x1402ddd40, 0x1402ddd75,
+	// 0x1402de4d0, 0x1402de52d], never a sector's VADJOIN: a stick that sank into the water under a sector goes off in the
+	// water's sector and tells the walls above it nothing, in the original as here)
 	TArray<int32> Round = { Own };
 	TSet<int32> Seen = { Own };
 	for (int32 k = 0; k < Round.Num() && Round.Num() < 512; ++k)
 	{
 		for (const FOutlawsWall& W : Live.Sectors[Round[k]].Walls)
 		{
-			if (!Live.Sectors.IsValidIndex(W.Adjoin) || Seen.Contains(W.Adjoin)) continue;
-			Seen.Add(W.Adjoin);
-			FBox2D B(ForceInit);
-			for (const FVector2D& V : Live.Sectors[W.Adjoin].Verts) B += V;
-			if (B.bIsValid && B.ComputeSquaredDistanceToPoint(FVector2D(X, Z)) <= 100.0 * 100.0) Round.Add(W.Adjoin);
+			for (const int32 Next : { W.Adjoin, W.DAdjoin })
+			{
+				if (!Live.Sectors.IsValidIndex(Next) || Seen.Contains(Next)) continue;
+				Seen.Add(Next);
+				FBox2D B(ForceInit);
+				for (const FVector2D& V : Live.Sectors[Next].Verts) B += V;
+				if (B.bIsValid && B.ComputeSquaredDistanceToPoint(FVector2D(X, Z)) <= 100.0 * 100.0) Round.Add(Next);
+			}
 		}
 	}
 	// a sector whose corners lie within Radius on average [EXE 0x1402de1fa..0x1402de20e], then each wall of it whose two
