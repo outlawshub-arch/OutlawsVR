@@ -6,7 +6,8 @@
 //     The bots hold their fire.  1. The hits to kill, measured through the game's own calls: rifle, revolver, shotgun (all its
 //     pellets) at head/chest, mid and edge, the host on a bot (12 kills a cell; 1010 health and "dead" at 1000, so no respawn
 //     between them) and on the client (a real kill a cell from full health).  2. The client's own shots, decided on the host: on a
-//     bot and on the host, the rifle with no rifle in its hands not doubled.  3. REQ-MPLETHAL's scoped head shot kills, the host's
+//     bot and on the host, the rifle with no rifle in its hands not doubled, and real trigger pulls through FireGun (the client's and
+//     the host's, rifle and revolver at the chest: the other jobs start at ShotAtPlayers).  3. REQ-MPLETHAL's scoped head shot kills, the host's
 //     and the client's.  4. A blast: the throw on the host's player, the same on a bot from the host's stick and from the
 //     client's (the client watches the bot's body it draws); a blast on a player stays 12.
 //   co-op's story, two machines: -OLCoopAuto -OLCoopHost -OLCoopLevel=<lv> -OLBlastRifleProbe [-OLOldBlastPlayer] and -OLCoopAuto
@@ -28,6 +29,7 @@
 #include "OutlawsShotTests.h"
 #include "Camera/CameraComponent.h"
 #include "Components/CapsuleComponent.h"
+#include "Components/StaticMeshComponent.h"
 #include "Engine/World.h"
 #include "GameFramework/CharacterMovementComponent.h"
 #include "HAL/PlatformMisc.h"
@@ -163,6 +165,18 @@ void UOutlawsCoop::TickHostBlastRifleTest(double Now, AOutlawsLevelActor* L, AOu
 		P->SetActorLocation(Eye - FVector(0.0, 0.0, 30.0), false, nullptr, ETeleportType::TeleportPhysics);
 		return Eye;
 	};
+	auto StandFar = [&](const FVector& From)
+	{
+		// (the spawn furthest off: out of a shot or a blast meant for someone else)
+		double Best = -1.0;
+		FVector Far = P->GetActorLocation();
+		for (const FOutlawsDmSpawn& Sp : Dm.GetSpawns())
+		{
+			const double D = FVector::Dist(Sp.Location, From);
+			if (D > Best) { Best = D; Far = Sp.Location; }
+		}
+		P->SetActorLocation(Far, false, nullptr, ETeleportType::TeleportPhysics);
+	};
 	if (!IsMatch())
 	{
 		// ---- co-op's story: the pair stand together, one blast between them; items 2 to 4 have nothing to act on
@@ -187,7 +201,7 @@ void UOutlawsCoop::TickHostBlastRifleTest(double Now, AOutlawsLevelActor* L, AOu
 			L->Explode(P->GetActorLocation() - FVector(0.0, 0.0, 60.0));
 			Check(FMath::IsNearlyEqual(100.f - L->GetHealth(), Want, 0.3f), FString::Printf(TEXT("co-op: the host loses %.2f to a blast at its feet (want %.0f)"), 100.f - L->GetHealth(), Want));
 			TestStep = 2392;
-			TestAt = Now + 2.0;
+			TestAt = Now + 0.7;             // (the blast's alone: its throw's landing, a 12.5 m drop, takes a point of its own after that)
 			return;
 		case 2392:
 		{
@@ -253,7 +267,8 @@ void UOutlawsCoop::TickHostBlastRifleTest(double Now, AOutlawsLevelActor* L, AOu
 		TestStep = 2340;
 		return;
 
-	// 1. the table on a bot: 1010 health, "dead" at 1000, up to 30 hits a second (the host's own limit is 40)
+	// 1. the table on a bot: 1010 health, "dead" at 1000, up to 18 hits a second (the host's own limit is 40, its second not this one's:
+	// two of these can fall in one of its, a refused pellet is a hit too few)
 	case 2340:
 	{
 		const FGun& G = Guns[Cell / 3];
@@ -262,7 +277,7 @@ void UOutlawsCoop::TickHostBlastRifleTest(double Now, AOutlawsLevelActor* L, AOu
 		const AOutlawsRemotePlayer* R = PuppetOf(BotIds[0]);
 		if (!B || B->bDead || !R) return;
 		if (Wall - SecondAt >= 1.0) { SecondAt = Wall; Spent = 0; }
-		if (Spent + G.Pellets > 30) return;
+		if (Spent + G.Pellets > 18) return;
 		if (Count == 0) B->Health = 1010.f;
 		const FVector Eye = StandBeside(R->ShownBody());
 		Fire(this, L, Eye, BotIds[0], G, S);
@@ -332,8 +347,11 @@ void UOutlawsCoop::TickHostBlastRifleTest(double Now, AOutlawsLevelActor* L, AOu
 	// 2. the client's own shots, decided here: rifle in the hands, then none
 	case 2360:
 	{
-		struct FShotJob { int32 Cell; int32 Target; bool bHold; };     // Target: 0 a bot, 1 the host
-		static const FShotJob Jobs[] = { { 0, 0, true }, { 1, 0, true }, { 2, 0, true }, { 3, 0, true }, { 0, 1, true }, { 2, 1, true }, { 0, 0, false } };
+		// Target: 0 a bot, 1 the host.  Pull: a real trigger pull through FireGun, 1 the client's, 2 the host's (rifle and revolver at the
+		// chest: the gun held first, as a hand holds it; no shotgun, its +-4 degrees have no one spot, and the pellets take the same way)
+		struct FShotJob { int32 Cell; int32 Target; bool bHold; int32 Pull; };
+		static const FShotJob Jobs[] = { { 0, 0, true, 0 }, { 1, 0, true, 0 }, { 2, 0, true, 0 }, { 3, 0, true, 0 }, { 0, 1, true, 0 }, { 2, 1, true, 0 }, { 0, 0, false, 0 },
+			{ 0, 0, true, 1 }, { 3, 0, true, 1 }, { 0, 1, true, 1 }, { 3, 1, true, 1 }, { 0, 0, true, 2 }, { 3, 0, true, 2 } };
 		if (Job >= int32(UE_ARRAY_COUNT(Jobs))) { TestStep = 2370; Phase = 0; return; }
 		const FShotJob& J = Jobs[Job];
 		const FGun& G = Guns[J.Cell / 3];
@@ -347,8 +365,17 @@ void UOutlawsCoop::TickHostBlastRifleTest(double Now, AOutlawsLevelActor* L, AOu
 		}
 		if (Phase == 1)
 		{
-			TestSayTo(Client, TEXT("ml:near"), Who);
-			TestSayTo(Client, FString::Printf(TEXT("ml:hold:%d"), J.bHold ? 1 : 0), Who);
+			const FString Hold = FString::Printf(TEXT("hold:%d"), J.Pull != 0 && !G.bRifle ? 0 : J.bHold ? 1 : 0);
+			if (J.Pull == 2)
+			{
+				OnBlastRifleTestStep(TEXT("brback"), Who, L, P);
+				OnLethalTestStep(Hold, 0, L, P);
+			}
+			else
+			{
+				TestSayTo(Client, J.Pull != 0 ? TEXT("ml:brback") : TEXT("ml:near"), Who);
+				TestSayTo(Client, TEXT("ml:") + Hold, Who);
+			}
 			TestAt = Now + 1.5;
 			Phase = 2;
 			return;
@@ -359,14 +386,16 @@ void UOutlawsCoop::TickHostBlastRifleTest(double Now, AOutlawsLevelActor* L, AOu
 			if (J.Target == 1) L->TestSetHealth(100.f);
 			else B->Health = 1010.f;
 			Before = J.Target == 1 ? 100.f : 1010.f;
-			TestSayTo(Client, TEXT("ml:brshot"), J.Cell * 16 + Who);
+			if (J.Pull == 2) OnBlastRifleTestStep(TEXT("brpull"), J.Cell * 16 + Who, L, P);
+			else TestSayTo(Client, J.Pull == 1 ? TEXT("ml:brpull") : TEXT("ml:brshot"), J.Cell * 16 + Who);
 			TestAt = Now + 1.0;
 			Phase = 3;
 			return;
 		}
 		const float Lost = Before - (J.Target == 1 ? L->GetHealth() : B->Health);
 		const float Each = G.Base * (J.bHold ? WantEach(G, S) : (Old(TEXT("OLOldHitLocation")) ? 1.f : S.Mult)) * MatchDamageFor(Who, 1.f);
-		Check(Lost >= Each * 0.89f && Lost <= Each * 1.11f, FString::Printf(TEXT("the client's %s at %s on the %s%s: %.2f taken, want %.2f +-10%%"), G.Name, S.Name, WhoWord(Who), J.bHold ? TEXT("") : TEXT(", no rifle in its hands"), Lost, Each));
+		Check(Lost >= Each * 0.89f && Lost <= Each * 1.11f, FString::Printf(TEXT("the %s's %s%s at %s on the %s%s: %.2f taken, want %.2f +-10%%"), J.Pull == 2 ? TEXT("host") : TEXT("client"), G.Name, J.Pull != 0 ? TEXT(", a real trigger pull,") : TEXT(""),
+			S.Name, WhoWord(Who), J.bHold ? TEXT("") : TEXT(", no rifle in its hands"), Lost, Each));
 		if (B) B->Health = 10.f;
 		L->TestSetHealth(10.f);
 		++Job;
@@ -390,6 +419,7 @@ void UOutlawsCoop::TickHostBlastRifleTest(double Now, AOutlawsLevelActor* L, AOu
 			FVector At;
 			const bool bHit = UOutlawsCoop::ShotAtPlayers(L, Eye, Head + Flat * 300.0, 2.f, At, true, true);
 			Check(bHit && B0->bDead, FString::Printf(TEXT("the host's scoped head shot on a bot of 10 health: %s, health %.1f"), bHit ? TEXT("a hit") : TEXT("a miss"), B0->Health));
+			if (const AOutlawsRemotePlayer* R1 = PuppetOf(BotIds[1])) StandFar(R1->ShownBody());     // (not in the client's line: the spawns differ a run)
 			TestSayTo(Client, TEXT("ml:near"), BotIds[1]);
 			TestSayTo(Client, TEXT("ml:hold:1"), BotIds[1]);
 			TestAt = Now + 1.5;
@@ -425,14 +455,7 @@ void UOutlawsCoop::TickHostBlastRifleTest(double Now, AOutlawsLevelActor* L, AOu
 			if (!E || B->bDead) return;
 			B->Health = 1010.f;
 			// (the host well away: this blast is the bot's)
-			double Best = -1.0;
-			FVector Far = P->GetActorLocation();
-			for (const FOutlawsDmSpawn& Sp : Dm.GetSpawns())
-			{
-				const double D = FVector::Dist(Sp.Location, E->GetActorLocation());
-				if (D > Best) { Best = D; Far = Sp.Location; }
-			}
-			P->SetActorLocation(Far, false, nullptr, ETeleportType::TeleportPhysics);
+			StandFar(E->GetActorLocation());
 			BlastSpot = E->GetActorLocation();
 			BlastStick = StickBeside(L, BlastSpot, E->GetCapsuleComponent()->GetScaledCapsuleHalfHeight(), 150.0, E);
 			WatchBot.Begin(BlastSpot);
@@ -467,8 +490,9 @@ void UOutlawsCoop::TickHostBlastRifleTest(double Now, AOutlawsLevelActor* L, AOu
 			if (Now < TestAt) return;
 			L->bInvincible = false;
 			Check(WatchPlayer.Rise > 100.0, FString::Printf(TEXT("that stick on the host's player, on the bot's spot: %s"), *WatchPlayer.Say()));
-			// (the flight, from the same spot: the speed is a tick's sample, a low roof or a wall takes it in a frame)
-			Check(bOldPush ? WatchBot.Rise < 60.0 : FMath::Abs(WatchBot.Rise - WatchPlayer.Rise) <= FMath::Max(120.0, WatchPlayer.Rise * 0.4),
+			// (the flight, from the same spot: the speed is a tick's sample, a low roof or a wall takes it in a frame, and what stops the
+			// player's taller body can leave the bot's flying: at least the player's rise, no more than the launch carries, 3130 cm)
+			Check(bOldPush ? WatchBot.Rise < 60.0 : WatchBot.Rise >= WatchPlayer.Rise - FMath::Max(120.0, WatchPlayer.Rise * 0.4) && WatchBot.Rise <= 3300.0,
 				FString::Printf(TEXT("that stick on a live bot: %s%s (the player's: %s)"), *WatchBot.Say(), bOldPush ? TEXT(", -OLOldBotPush") : TEXT(""), *WatchPlayer.Say()));
 			if (B) B->Health = 10.f;
 			Phase = 4;
@@ -500,7 +524,14 @@ void UOutlawsCoop::TickHostBlastRifleTest(double Now, AOutlawsLevelActor* L, AOu
 		{
 			// a blast on a player in a match: 12, the client's and the host's
 			const AOutlawsRemotePlayer* R = PuppetOf(Client);
-			if (!R || ClientDead()) return;
+			const FOutlawsDmPlayer* D = Dm.Find(Client);
+			if (ClientDead())
+			{
+				// (the stick on a bot reached it, at 10 health: the spawns differ a run; back up first, past the protection)
+				if (Now >= TestAt) { TestSayTo(Client, TEXT("ml:respawn"), 0); TestAt = Now + 8.0; }
+				return;
+			}
+			if (!R || !D || !D->bAlive || Wall <= D->ProtectedUntil + 0.3) return;
 			Before = ClientHealth();
 			StandBeside(R->ShownBody());
 			L->TestSetHealth(100.f);            // (the host stands in this one too)
@@ -546,6 +577,54 @@ void UOutlawsCoop::OnBlastRifleTestStep(const FString& Step, int32 Arg, AOutlaws
 		const int32 C = Arg / 16, Who = Arg % 16;
 		const int32 Hits = Fire(this, L, Eye, Who, Guns[C / 3], Spots[C % 3]);
 		UE_LOG(LogOutlaws, Display, TEXT("OLSHOT blastrifle client: its %s at %s on the %s: %d of %d pellets on the body"), Guns[C / 3].Name, Spots[C % 3].Name, WhoWord(Who), Hits, Guns[C / 3].Pellets);
+		return;
+	}
+	if (Step == TEXT("brback"))
+	{
+		// (the pulls) 2.5 m off the body as drawn here, on a clear side, facing it: at the 1.2 m of the hold step's "near" a rifle's
+		// muzzle is already at the body and turning the bore onto the spot swings it past
+		const AOutlawsRemotePlayer* R = PuppetOf(Arg);
+		if (!R) return;
+		const FVector Mid = R->ShownBody();
+		FVector Flat = (P->GetActorLocation() - Mid).GetSafeNormal2D();
+		if (Flat.IsNearlyZero()) Flat = FVector::ForwardVector;
+		FCollisionQueryParams Q(SCENE_QUERY_STAT(OutlawsBlastRifleBack), true, P);
+		for (int32 i = 0; i < 8; ++i)
+		{
+			const FVector Try = Flat.RotateAngleAxis(45.0 * i, FVector::UpVector);
+			FHitResult Hit;
+			if (P->GetWorld()->LineTraceSingleByChannel(Hit, Mid, Mid + Try * 320.0, ECC_Visibility, Q)) continue;
+			Flat = Try;
+			break;
+		}
+		P->SetActorLocation(Mid + Flat * 250.0 + FVector(0.0, 0.0, P->GetActorLocation().Z - Mid.Z), false, nullptr, ETeleportType::TeleportPhysics);
+		if (AController* Ct = P->GetController()) Ct->SetControlRotation((-Flat).Rotation());
+		return;
+	}
+	if (Step == TEXT("brpull"))
+	{
+		// a real trigger pull: the hold step's gun held in both hands (the rifle's one-handed scatter of 2 degrees would leave the
+		// chest's third at this range), its bore on the spot, and FireGun as a hand's trigger reaches it
+		const int32 C = Arg / 16, Who = Arg % 16;
+		const FGun& G = Guns[C / 3];
+		const FSpotAim& S = Spots[C % 3];
+		const AOutlawsRemotePlayer* R = PuppetOf(Who);
+		const int32 Hand = P->LeftDominant() ? 0 : 1;
+		if (!R) { UE_LOG(LogOutlaws, Display, TEXT("OLSHOT blastrifle %s: the %s is not drawn here"), IsHost() ? TEXT("host") : TEXT("client"), WhoWord(Who)); return; }
+		const FVector Mid = R->ShownBody();
+		const FVector Flat = (Mid - Eye).GetSafeNormal2D();
+		P->Mag[Hand] = 6;
+		P->FireCooldown[Hand] = 0.f;
+		P->TutorialTestAimGun(Hand, Mid + FVector::CrossProduct(FVector::UpVector, Flat) * S.Across * BodyRadius + FVector(0.0, 0.0, S.Up));
+		const int32 Sent = MatchHitsSent;
+		P->TestSetTwoHand(Hand, true);
+		P->FireGun(Hand, false);
+		P->TestSetTwoHand(Hand, false);
+		// (where it went: the tracer sits halfway along the shot, the spark at its end)
+		const FVector Spark = P->SparkFx[Hand] ? P->SparkFx[Hand]->GetComponentLocation() : FVector::ZeroVector;
+		const FVector Muzzle = P->TracerFx[Hand] ? P->TracerFx[Hand]->GetComponentLocation() * 2.0 - Spark : FVector::ZeroVector;
+		UE_LOG(LogOutlaws, Display, TEXT("OLSHOT blastrifle %s: its real pull, weapon %d, at the %s: %d rounds left, %d hits sent; muzzle %.0f cm off the body, the shot's end %.0f cm off it"),
+			IsHost() ? TEXT("host") : TEXT("client"), P->Equipped[Hand], WhoWord(Who), P->Mag[Hand], MatchHitsSent - Sent, FVector::Dist(Muzzle, Mid), FVector::Dist(Spark, Mid));
 		return;
 	}
 	if (Step == TEXT("brscoped"))

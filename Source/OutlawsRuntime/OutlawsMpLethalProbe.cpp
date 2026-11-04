@@ -118,7 +118,8 @@ namespace OutlawsMpLethalProbeLocal
 		const FVector Feet = R->ShownBody() - FVector(0.0, 0.0, Half);
 		const AOutlawsSpriteActor* Spr = R->ShownSprite();
 		const double Tall = Spr && Spr->DrawnHeightCm() > 50.0 ? Spr->DrawnHeightCm() : 2.0 * Half;
-		Out = Feet + FVector(0.0, 0.0, !bHead ? Tall * 0.55 : bScoped ? Tall * 0.94 : FMath::Min(Tall * 0.94, 2.0 * Half - 3.0));
+		// (REQ-RIFLEMP: the body's aim above the waist whatever the figure: a short figure's 0.55 falls under it, x1 not the x1.5 wanted)
+		Out = Feet + FVector(0.0, 0.0, !bHead ? FMath::Max(Tall * 0.55, Half + 10.0) : bScoped ? Tall * 0.94 : FMath::Min(Tall * 0.94, 2.0 * Half - 3.0));
 		UE_LOG(LogOutlawsCoop, Log, TEXT("OLSHOT mplethal aim at the %s: figure %.0f cm, capsule %.0f, %.0f up"), UOutlawsCoop::WhoWord(Who), Tall, 2.0 * Half, Out.Z - Feet.Z);
 		return true;
 	}
