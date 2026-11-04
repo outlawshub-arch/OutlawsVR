@@ -148,7 +148,7 @@ OL_SHOT_TEST(OLMapAuthorProbe, 2424)
 			Name.RemoveFromStart(TEXT("> "));
 			CustomTags += Rows[i].Contains(TEXT("(custom)")) ? 1 : 0;
 			// (a row is a map's short name and nothing else: Dead By Dawn keeps its own "By", the author is what has to go)
-			Bys += Maps.ContainsByPredicate([&Name](const FOutlawsMpMap& X) { return X.Name == Name; }) ? 0 : 1;
+			Bys += Maps.ContainsByPredicate([&Name](const FOutlawsMpMap& X) { return X.Name == Name || OutlawsMpHost::MapTitle(X.File) == Name; }) ? 0 : 1;      // (a stock map's Name is the remaster's string key until the page puts its title in)
 			OutOfOrder += i > 0 && Name.ToLower() < Last ? 1 : 0;
 			const FOutlawsMpMap* M = Maps.FindByPredicate([&Name](const FOutlawsMpMap& X) { return Name.StartsWith(X.Name); });
 			const bool bCustomRow = M && M->bCustom;

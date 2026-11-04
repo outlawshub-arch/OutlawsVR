@@ -791,6 +791,7 @@ void UOutlawsCoop::ResetSession()
 	Lobby.Reset();
 	FMemory::Memzero(LobbyTeam);
 	bEnterPressed = false;
+	bMapAuthorSaid = false;
 	MutedBits = 0;
 	SentMic = -1;
 	LobbyOpenTryAt = 0.0;

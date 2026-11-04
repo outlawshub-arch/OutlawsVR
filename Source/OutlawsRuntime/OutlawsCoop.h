@@ -2170,6 +2170,8 @@ private:
 	uint8 LobbyTeam[8] = {};
 	/** this player pressed Enter Game (a joiner then joins the host's level; Enter is one-way). */
 	bool bEnterPressed = false;
+	/** (REQ-MAPAUTHOR) the first match's white line with the map's author has gone up here. */
+	bool bMapAuthorSaid = false;
 	/** per-player mute (the lobby's and the pause Players page's rows), one bit per player index; per session, never saved. */
 	uint32 MutedBits = 0;
 	int8 SentMic = -1;

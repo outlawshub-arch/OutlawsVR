@@ -256,11 +256,6 @@ void UOutlawsCoop::EnterGame(AOutlawsPlayer* P, int32 Team)
 	UE_LOG(LogOutlawsCoop, Log, TEXT("OLCOOP lobby: the %s enters the game%s (%s)"), WhoWord(MyIndex()), Team == 1 ? TEXT(" on the red team") : Team == 2 ? TEXT(" on the blue team") : TEXT(""),
 		S->StartSerial == 0 ? TEXT("before the start: it goes in with the host's Start") : IsHost() ? TEXT("into the host's level") : TEXT("it asks the host for its game"));
 	SetReady(true);                                           // (the host's own runs here at once)
-	// (REQ-MAPAUTHOR) the first match has no "Next match" line: who made the map goes up in white as the player goes in
-	if (IsMatch() && S->MatchCycle == 0 && OutlawsMpHost::MapTitleBy(S->MapName) != OutlawsMpHost::MapTitle(S->MapName))
-	{
-		if (AOutlawsLevelActor* L = FindLevel()) L->Notify(MatchLineFor(S->MatchClass, S->MapName, S->RandomBits, true), 5.f);
-	}
 	// (REQ-MPLOBBY b: a joiner whose next-match level is built behind its lobby goes straight in, as the host does)
 	const bool bBuiltHere = IsClient() && bLevelBuilt && StartedSerial == S->StartSerial;
 	if (IsHost() || bBuiltHere) P->CoopCloseMenu();
@@ -413,6 +408,16 @@ void UOutlawsCoop::TickLobby(double Now, AOutlawsCoopSession* S, AOutlawsPlayer*
 {
 	if (!S) return;
 	TickLobbyBody(P);
+	// (REQ-MAPAUTHOR) the first match has no "Next match" line: who made the map goes up in white as this player goes in, once.
+	// Here, not in EnterGame: the host starts with Start and never passes it, and a joiner's Enter can come long before the start
+	if (!bMapAuthorSaid && IsMatch() && S->MatchCycle == 0 && StartedSerial > 0 && bLevelBuilt && !InLobbyHere())
+	{
+		bMapAuthorSaid = true;
+		if (OutlawsMpHost::MapTitleBy(S->MapName) != OutlawsMpHost::MapTitle(S->MapName))
+		{
+			if (AOutlawsLevelActor* L = FindLevel()) L->Notify(MatchLineFor(S->MatchClass, S->MapName, S->RandomBits, true), 5.f);
+		}
+	}
 	// (REQ-LOBBYREDO: the HUD's "Waiting for players" line off while the lobby page is up: its state line says the same)
 	const bool bPageUp = !OutlawsLobbyPage::Old() && P && P->CoopMenuPage() == TEXT("#cooplobby");
 	// (REQ-WHEELSCORE follow-up, user 3 Nov: and while the pause menu or the wheel's scorecard is up: the line, fixed 10 degrees
