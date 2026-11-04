@@ -59,6 +59,13 @@ namespace
 	}
 }
 
+float AOutlawsPlayer::MpHostSpeedDial(const FOutlawsMpHostOptions& O) const
+{
+	// (REQ-MPSPEED: the Host Game row's value, the host's own setting until it is stepped)
+	const AOutlawsLevelActor* L = Level.Get();
+	return AOutlawsLevelActor::ClampGameSpeed(O.MoveDial > 0.f ? O.MoveDial : L ? L->GameSpeed : 0.5f);
+}
+
 void AOutlawsPlayer::MpHostPrefill(const FOutlawsMpHostOptions& In)
 {
 	// (REQ-MPLOBBY b: the next match's page starts from the last match's settings; "Random each match" stays Random)
@@ -167,6 +174,8 @@ void AOutlawsPlayer::BuildMpHostPage(const FString& File, OutlawsMenu::FPage& Pa
 	const bool bCaptures = O.GameClass == EOutlawsGameClass::CaptureTheFlag;
 	Row(EItemKind::Select, bCaptures ? Loc(TEXT("$m_local_7115"), TEXT("Captures")) : Loc(TEXT("$m_local_7111"), TEXT("Kills")), TEXT("mphost_score"),
 		O.ScoreLimit > 0 ? FString::FromInt(O.ScoreLimit) : Loc(TEXT("$m_unlimited"), TEXT("Unlimited")));
+	// (REQ-MPSPEED, user 4 Nov: one movement speed for the match, the steps of Options' row; it starts at the host's own setting)
+	if (!OLFlags::Param(TEXT("OLOldMpSpeed"))) Row(EItemKind::Select, TEXT("Movement speed"), TEXT("mphost_speed"), FString::Printf(TEXT("%d%%"), FMath::RoundToInt(MpHostSpeedDial(O) * 200.f)));
 	if (OutlawsMpHost::BotsAllowed(O.GameClass) || O.bRandomClass)
 	{
 		// (REQ-MPBOTS: Death Match and Team Play; Bots and Bot count are one row now: Off, 1..N)
@@ -277,6 +286,7 @@ void AOutlawsPlayer::MpHostPress(const FString& Name)
 	else if (Name == TEXT("mphost_teams")) O.bTeams = !O.bTeams;
 	else if (Name == TEXT("mphost_cheats")) O.bAllowCheats = !O.bAllowCheats;
 	else if (Name == TEXT("mphost_lethal")) O.bLethalBlows = !O.bLethalBlows;     // (REQ-MPLETHAL)
+	else if (Name == TEXT("mphost_speed")) O.MoveDial = OutlawsMenu::StepNumber(MpHostSpeedDial(O), AOutlawsLevelActor::MinGameSpeed, AOutlawsLevelActor::MaxGameSpeed, 0.05f);     // (REQ-MPSPEED)
 	else if (Name == TEXT("mphost_bots"))
 	{
 		// Off, 1 .. Max Players - 1 (REQ-TRIGGERSTEP: a number row)
@@ -449,6 +459,22 @@ void AOutlawsPlayer::MpHostShotTick()
 		Back.Load();
 		Check(Back.Describe() == O.Describe(), FString::Printf(TEXT("the options saved and read back alike (%s)"), *Back.Describe()));
 		Check(O.MaxPlayers == FMath::Min(4, Cap) && O.bFriendlyFire, TEXT("max players 4, friendly fire on (More options)"));
+		if (OLFlags::Param(TEXT("OLOldMpSpeed")))
+		{
+			Check(Index(TEXT("mphost_speed")) == INDEX_NONE, TEXT("-OLOldMpSpeed: no Movement speed row"));
+		}
+		else if (const AOutlawsLevelActor* LS = Level.Get())
+		{
+			// (REQ-MPSPEED) from the host's own setting, Options' steps; its dial and the file's keys untouched
+			const float Own = LS->GameSpeed, Dial0 = MpHostSpeedDial(O);
+			const bool bRow = Index(TEXT("mphost_speed")) != INDEX_NONE;
+			Check(bRow && FMath::IsNearlyEqual(Dial0, AOutlawsLevelActor::ClampGameSpeed(Own), 0.001f), FString::Printf(TEXT("Movement speed starts at the host's own %.0f %% (row there %d)"), Own * 200.f, bRow ? 1 : 0));
+			const bool bTop = Dial0 >= AOutlawsLevelActor::MaxGameSpeed - 0.001f;
+			if (bRow) Press(TEXT("mphost_speed"));
+			Check(bRow && FMath::IsNearlyEqual(O.MoveDial, bTop ? AOutlawsLevelActor::MinGameSpeed : Dial0 + 0.05f, 0.001f) && LS->GameSpeed == Own && !AOutlawsLevelActor::ReadSettings().Contains(TEXT("MpHostMoveDial")),
+				FString::Printf(TEXT("a press steps it %.0f -> %.0f %%, own dial %.0f %%, nothing saved"), Dial0 * 200.f, O.MoveDial * 200.f, LS->GameSpeed * 200.f));
+			O.MoveDial = 0.f;
+		}
 		Press(TEXT("mphost_maps"));
 		const int32 NumMaps = HostMenu().Maps.Num();
 		int32 NumCustom = 0;

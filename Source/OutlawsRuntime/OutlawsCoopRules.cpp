@@ -21,6 +21,7 @@
 // None of this runs in single player: the level actor and the player call in only when UOutlawsCoop::IsActive.
 #include "OutlawsCoop.h"
 #include "OutlawsRuntime.h"
+#include "OutlawsFlags.h"
 #include "OutlawsLevelActor.h"
 #include "OutlawsPlayer.h"
 #include "OutlawsEnemy.h"
@@ -653,6 +654,27 @@ FString UOutlawsCoop::DeathPrompt(bool bVR)
 
 // ---- the movement speed settings (user 2026-10-02) ----------------------------------------------------------------------
 
+float UOutlawsCoop::HeldMoveDial(const AOutlawsLevelActor* L)
+{
+	// REQ-MPSPEED (user 4 Nov: "the host picks ONE movement speed for the match", every player held to it, greyed in the menus; matches
+	// only, in co-op each player keeps their own).  As REQ-MPLETHAL the host decides: its dial goes out on the session, so a late
+	// joiner has it, and a client's own dial or claim counts for nothing (TickPace).  Each player's GameSpeed stays theirs, unwritten.
+	// The row not stepped: the host's own dial, fixed here as the match begins.  -OLOldMpSpeed: each player's own, the row hidden
+	static const bool bOld = OLFlags::Param(TEXT("OLOldMpSpeed"));
+	AOutlawsCoopSession* S = GetSession();
+	if (bOld || !S || !IsMatch()) return -1.f;
+	if (!IsHost()) return S->MatchMoveDial > 0.f ? AOutlawsLevelActor::ClampGameSpeed(S->MatchMoveDial) : -1.f;
+	if (MatchOptions.MoveDial <= 0.f) MatchOptions.MoveDial = L->GameSpeed;
+	const float Dial = AOutlawsLevelActor::ClampGameSpeed(MatchOptions.MoveDial);
+	if (S->MatchMoveDial != Dial)
+	{
+		S->MatchMoveDial = Dial;
+		S->ForceNetUpdate();
+		UE_LOG(LogOutlawsCoop, Log, TEXT("OLMATCH movement speed: every player held to %.0f %% (the host's own dial %.0f %%)"), Dial * 200.f, L->GameSpeed * 200.f);
+	}
+	return Dial;
+}
+
 void UOutlawsCoop::TickPace()
 {
 	// each player's pace (the speed setting, or the teleport pace) told through its link when it changes; both machines
@@ -660,6 +682,8 @@ void UOutlawsCoop::TickPace()
 	// and lifts at the slower (each player's own body keeps its own)
 	AOutlawsLevelActor* L = FindLevel();
 	if (!L || !L->HasActorBegunPlay()) return;           // (its settings, the speed among them, are read at its BeginPlay)
+	L->HeldGameSpeed = HeldMoveDial(L);
+	const bool bHeld = L->HeldGameSpeed >= 0.f;          // (REQ-MPSPEED: one pace for all, whatever a link claims)
 	const float Mine = L->Pace();
 	if (AOutlawsCoopLink* MyLink = GetLink(MyIndex()); MyLink && !FMath::IsNearlyEqual(Mine, SentPace, 1e-4f))
 	{
@@ -673,7 +697,7 @@ void UOutlawsCoop::TickPace()
 	FString Each;
 	for (const AOutlawsCoopLink* K : Links)
 	{
-		const float Pc = K->PlayerIndex == MyIndex() ? Mine : K->Pace;
+		const float Pc = bHeld || K->PlayerIndex == MyIndex() ? Mine : K->Pace;
 		if (Pc <= 0.f) continue;
 		Paces.Add(Pc);
 		Each += FString::Printf(TEXT("%s%s %.3f"), Each.IsEmpty() ? TEXT("") : TEXT(", "), RuleWho(K->PlayerIndex), Pc);

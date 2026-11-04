@@ -81,6 +81,11 @@ public:
 	static constexpr float MinGameSpeed = 0.2f;
 	static constexpr float MaxGameSpeed = 0.75f;
 	static float ClampGameSpeed(float Dial) { return FMath::Clamp(Dial, MinGameSpeed, MaxGameSpeed); }
+	/** REQ-MPSPEED (user 4 Nov): in a match, the dial every player is held to, the host's Host Game row (UOutlawsCoop::TickPace sets
+	 *  it from the session); -1: none, this player's own.  GameSpeed stays this player's, and the settings file keeps that, so it
+	 *  is there untouched after the match. */
+	float HeldGameSpeed = -1.f;
+	float DialInForce() const { return HeldGameSpeed >= 0.f ? HeldGameSpeed : GameSpeed; }
 	/** The bad guys never drop below this pace however low the slider goes (user 2026-09-29: 30 %):
 	 *  a comfort-speed player still gets enemies that move and shoot like enemies. */
 	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Outlaws")
@@ -103,8 +108,8 @@ public:
 	}
 	/** The quickest pace any player's dial gives (what a co-op host takes from a client). */
 	static float MaxPace() { return SpeedFromDial(MaxGameSpeed) * 0.5f; }
-	/** The pace the player moves at: the dial's speed, or a half while teleporting. */
-	float Pace() const { return bTeleportPace ? 0.5f : SpeedFromDial(GameSpeed) * 0.5f; }
+	/** The pace the player moves at: the dial's speed, or a half while teleporting; the match's dial over either (REQ-MPSPEED). */
+	float Pace() const { return HeldGameSpeed >= 0.f ? SpeedFromDial(HeldGameSpeed) * 0.5f : bTeleportPace ? 0.5f : SpeedFromDial(GameSpeed) * 0.5f; }
 	/** The pace the bad guys move at: the player's, but never under EnemyPaceFloor. */
 	float EnemyPace() const { return FMath::Max(CoopEnemyPaceBase >= 0.f ? CoopEnemyPaceBase : Pace(), FMath::Clamp(EnemyPaceFloor, 0.1f, 1.f)) * CoopPaceScale; }
 	/** Co-op: the bad guys 1.5 times as quick in a session (user 2026-10-02: "kind of like if you turned up walking speed");

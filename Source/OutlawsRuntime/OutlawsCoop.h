@@ -461,6 +461,10 @@ public:
 	int32 MatchCycle = 0;
 	UPROPERTY(Replicated)
 	uint8 RandomBits = 0;
+	/** REQ-MPSPEED: the movement speed dial (AOutlawsLevelActor::GameSpeed) the host holds every player of the match to; here so a
+	 *  late joiner has it.  0: none (co-op, -OLOldMpSpeed). */
+	UPROPERTY(Replicated)
+	float MatchMoveDial = 0.f;
 };
 
 /** M1 hardening: every kind of message a player sends the host, each with its own rate limit (OutlawsCoopGuard.cpp). */
@@ -1747,6 +1751,9 @@ private:
 	// ---- REQ-PAUSECHAR's probe (-OLPauseCharProbe on a host and its client; OutlawsPauseCharProbe.cpp) ----
 	void TickHostPauseCharTest(double Now, AOutlawsLevelActor* L, AOutlawsPlayer* P);
 	void OnPauseCharTestStep(const FString& Step, int32 Arg, AOutlawsLevelActor* L, AOutlawsPlayer* P);
+	void TickHostMpSpeedTest(double Now, AOutlawsLevelActor* L, AOutlawsPlayer* P);        // (REQ-MPSPEED: OutlawsMpSpeedProbe.cpp)
+	void TickClientMpSpeedTest(double Now, AOutlawsLevelActor* L, AOutlawsPlayer* P);
+	void OnMpSpeedTestStep(const FString& Step, int32 Arg, AOutlawsLevelActor* L, AOutlawsPlayer* P);
 	// ---- REQ-KILLFEED (OutlawsCoopKillFeed.cpp) ----
 	/** The host: a death's kill line to every machine (and this one). */
 	void SayKill(int32 Killer, int32 Victim, EOutlawsObit Kind);
@@ -1855,6 +1862,7 @@ private:
 	void BotDrive(FBot& B, AOutlawsLevelActor* L, double Now);
 	TArray<FBot> Bots;
 	int32 LaunchBots = -1, LaunchBotSkill = -1;  // -OLMpBots=<n> -OLMpBotSkill=<0..2>
+	float LaunchMoveShown = 0.f;                 // -OLMpMoveSpeed=<as the row shows it, 40..150> (REQ-MPSPEED: a test's Host Game row)
 	int32 BotPickups = 0, BotRespawns = 0;
 	int32 BotPickupTrips = 0;                    // (the test: the times a bot set out for a pickup it had a way to)
 	FBot* FindBot(int32 Who);
@@ -2449,6 +2457,8 @@ private:
 	void NameplateCheck(bool bOk, const FString& What);
 	/** Decision 6: each player's pace told through its link; the bad guys at the average, the timed doors at the slower. */
 	void TickPace();
+	/** REQ-MPSPEED: the dial this machine's player is held to now, -1 none (OutlawsCoopRules.cpp). */
+	float HeldMoveDial(const AOutlawsLevelActor* L);
 	float SentPace = -1.f;
 	FString LoggedPace;
 	float CoopSpeedArg = -1.f;                   // -OLCoopSpeed=<slider value>: this instance's speed setting (tests; never written)

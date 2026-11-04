@@ -84,6 +84,7 @@ void AOutlawsCoopSession::GetLifetimeReplicatedProps(TArray<FLifetimeProperty>& 
 	DOREPLIFETIME(AOutlawsCoopSession, bBetweenMatches);
 	DOREPLIFETIME(AOutlawsCoopSession, MatchCycle);
 	DOREPLIFETIME(AOutlawsCoopSession, RandomBits);
+	DOREPLIFETIME(AOutlawsCoopSession, MatchMoveDial);
 	DOREPLIFETIME(AOutlawsCoopSession, MaxPlayers);
 	DOREPLIFETIME(AOutlawsCoopSession, Connected);
 	DOREPLIFETIME(AOutlawsCoopSession, Level);
@@ -346,9 +347,15 @@ void UOutlawsCoop::Initialize(FSubsystemCollectionBase& Collection)
 		bAuto = bAutoReady = bWorldTest = true;
 		TestOnly = TEXT("pausechar");
 	}
+	if (OLFlags::Param(TEXT("OLMpSpeedProbe")) || OLFlags::ValueIs(TEXT("OLMpSpeedProbe"), TEXT("coop")))
+	{
+		// (REQ-MPSPEED's probe: OutlawsMpSpeedProbe.cpp; a match's host starts it itself, -OLMpSpeedProbe=coop a co-op pair's)
+		bAuto = bAutoReady = bWorldTest = true;
+		TestOnly = TEXT("mpspeed");
+	}
 	// REQ-MPLOBBY: the lobby's start rule, off where a test starts the match itself (M1's Death Match test presses Start the game)
 	bLobbyRuleOff = OLFlags::Param(TEXT("OLMpNoLobbyRule")) || TestOnly == TEXT("dm") || TestOnly == TEXT("killfeed") || TestOnly == TEXT("remotefx") || TestOnly == TEXT("flicknet")
-		|| TestOnly == TEXT("mplethal") || TestOnly == TEXT("mptntpick") || TestOnly == TEXT("pausechar");
+		|| TestOnly == TEXT("mplethal") || TestOnly == TEXT("mptntpick") || TestOnly == TEXT("pausechar") || TestOnly == TEXT("mpspeed");
 	OLFlags::Value(TEXT("OLLobbyEnterAfter"), LobbyEnterAfter);
 	bLobbyEnterAfterPeer = OLFlags::Param(TEXT("OLLobbyEnterAfterPeer"));
 	OLFlags::Value(TEXT("OLLobbyShot"), LobbyShotName);
@@ -407,6 +414,7 @@ void UOutlawsCoop::Initialize(FSubsystemCollectionBase& Collection)
 	if (OLFlags::Param(TEXT("OLMpRandomTest"))) RunRandomTest();
 #endif
 	OLFlags::Value(TEXT("OLMpBots"), LaunchBots);              // (REQ-MPBOTS: a test's bots, -OLMpBotSkill=<0..2>)
+	OLFlags::Value(TEXT("OLMpMoveSpeed"), LaunchMoveShown);    // (REQ-MPSPEED: a test's Host Game row)
 	OLFlags::Value(TEXT("OLMpBotSkill"), LaunchBotSkill);
 	// the Host Game page's Start (OutlawsMpHost::Host) hosts through the session
 	{
@@ -814,6 +822,7 @@ void UOutlawsCoop::ResetSession()
 	{
 		L->CoopEnemyPaceBase = -1.f;
 		L->CoopWaitPace = -1.f;
+		L->HeldGameSpeed = -1.f;                     // (REQ-MPSPEED: this player's own dial again)
 		L->CoopExtras.Reset();                       // (2026-10-02: a session's extra bad guys never reach single player)
 		L->CoopExtrasLevel.Reset();
 		L->CoopExtrasDifficulty = -1;
@@ -956,6 +965,7 @@ void UOutlawsCoop::OnLevelBeginPlay(AOutlawsLevelActor* Level)
 			if (LaunchMatchCheats >= 0) O.bAllowCheats = LaunchMatchCheats != 0;     // (BUG-ALLOWCHEATS)
 			if (LaunchMatchFrags >= 0) O.ScoreLimit = LaunchMatchFrags;
 			if (LaunchMatchMinutes >= 0) O.TimeLimitMinutes = LaunchMatchMinutes;
+			if (LaunchMoveShown > 0.f) O.MoveDial = LaunchMoveShown / 200.f;
 			O.MaxPlayers = TestMaxPlayers > 0 ? FMath::Clamp(TestMaxPlayers, 2, OutlawsMpHost::MaxPlayersCap()) : OutlawsMpHost::MaxPlayersCap();
 			// (it starts itself once that many people are in, the host counted, bots not; 3 unless -OLMpStartWhen= says, 0 the host starts it)
 			O.StartWhen = LaunchStartWhen >= 0 ? LaunchStartWhen : 3;
@@ -1526,7 +1536,7 @@ void UOutlawsCoop::Tick(float DeltaTime)
 	if (!W || !W->IsGameWorld() || bExitRequested) return;
 	const double Now = FPlatformTime::Seconds();
 #if WITH_OUTLAWS_TESTS
-	if (IsTestRun() && Now - GStartTime > (TestOnly == TEXT("mplethal") ? AutoGiveUpAfter + 480.0 : AutoGiveUpAfter))     // (REQ-MPLETHAL's probe: its rounds take longer)
+	if (IsTestRun() && Now - GStartTime > (TestOnly == TEXT("mplethal") || TestOnly == TEXT("mpspeed") ? AutoGiveUpAfter + 480.0 : AutoGiveUpAfter))     // (REQ-MPLETHAL's probe: its rounds take longer)
 	{
 		Summary(TEXT("gave up: the test did not finish in time"));
 		QuitForTest();
@@ -1831,7 +1841,7 @@ void UOutlawsCoop::Tick(float DeltaTime)
 		Summary(TEXT("done"));
 		QuitForTest();
 	}
-	if (bWorldTest && bLevelBuilt && !bSummaryDone && Now - LevelBuiltAt > (TestOnly == TEXT("mplethal") ? AutoWorldTestGiveUp + 450.0 : AutoWorldTestGiveUp))
+	if (bWorldTest && bLevelBuilt && !bSummaryDone && Now - LevelBuiltAt > (TestOnly == TEXT("mplethal") || TestOnly == TEXT("mpspeed") ? AutoWorldTestGiveUp + 450.0 : AutoWorldTestGiveUp))
 	{
 		Summary(TEXT("the world test did not finish in time"));
 		QuitForTest();

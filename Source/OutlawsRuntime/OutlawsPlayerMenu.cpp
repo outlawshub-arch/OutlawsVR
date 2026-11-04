@@ -501,10 +501,12 @@ bool AOutlawsPlayer::ShowMenuPage(const FString& File, bool bPush)
 		{
 			Add(EItemKind::Select, TEXT("Movement follows"), TEXT("vr_movefollow"), { TEXT("Head"), TEXT("Dominant hand"), TEXT("Off hand") });
 			Add(EItemKind::Range, TEXT("Movement speed (bad guys too)"), TEXT("vr_speed"), {});
+			// (REQ-MPSPEED) in a match the host's speed, greyed: "Movement speed 70% (set by host)" (MenuRowText)
+			if (const AOutlawsLevelActor* LH = Level.Get(); LH && LH->HeldGameSpeed >= 0.f) Page->Items.Last().Classes = TEXT("disabled");
 			// (BUG-SPEEDWARN, user 15 Oct: the warning was a toast over the prompts) its own row in the small font, under the
 			// speed, while the speed is over the old 30 %; the page is built again as it comes or goes
 			const AOutlawsLevelActor* LS = Level.Get();
-			if (LS && LS->GameSpeed > SpeedWarnOver) Add(EItemKind::Heading, TEXT("Higher movement speeds can induce VR sickness.\nMake sure you start slow, and increase this at your own risk!"), TEXT("vr_speedwarn"), {});
+			if (LS && LS->DialInForce() > SpeedWarnOver) Add(EItemKind::Heading, TEXT("Higher movement speeds can induce VR sickness.\nMake sure you start slow, and increase this at your own risk!"), TEXT("vr_speedwarn"), {});
 		}
 		Add(EItemKind::Select, TEXT("Turning"), TEXT("vr_turn"), { TEXT("Snap"), TEXT("Smooth") });
 		Add(EItemKind::Heading, TEXT("Hands"), TEXT(""), {});
@@ -1411,6 +1413,10 @@ FString AOutlawsPlayer::MenuRowText(int32 Index) const
 	case EItemKind::Range:
 	{
 		if (I.Name == TEXT("r_gamma")) return FString::Printf(TEXT("%s:  %s"), *I.Label, *OutlawsDeviceProfile::GammaText());
+		if (const AOutlawsLevelActor* LH = Level.Get(); LH && LH->HeldGameSpeed >= 0.f && I.Name == TEXT("vr_speed"))
+		{
+			return FString::Printf(TEXT("Movement speed %d%% (set by host)"), FMath::RoundToInt(LH->HeldGameSpeed * 200.f));      // (REQ-MPSPEED)
+		}
 		if (const float* Live = LiveSetting(I.Name))
 		{
 			// (the movement speed reads as twice its number: its 0.5 is "100 %", the default; user 2026-10-02)
@@ -1665,6 +1671,8 @@ void AOutlawsPlayer::DrawMenuCanvas(UCanvas* C, int32 Width, int32 Height)
 		if (RowText.StartsWith(TEXT("Movement speed")))
 		{
 			if (AOutlawsLevelActor* LS = Level.Get()) Speed = LS->GameSpeed;
+			// (REQ-MPSPEED: the Host Game row's number is the match's, not this player's own)
+			if (MenuPage->Items.IsValidIndex(Item) && MenuPage->Items[Item].Name == TEXT("mphost_speed")) Speed = FCString::Atof(*RowText.RightChop(RowText.Find(TEXT(":")) + 1)) / 200.f;
 		}
 		int32 Colon = INDEX_NONE;
 		if (Speed > 0.605f && RowText.FindLastChar(TEXT(':'), Colon))
@@ -1831,6 +1839,20 @@ bool AOutlawsPlayer::VrSpeedMenuTestPress()
 	{
 		if (MenuPage->Items[i].Name != TEXT("vr_speed")) continue;
 		MenuActivate(0, i);
+		return true;
+	}
+	return false;
+}
+
+bool AOutlawsPlayer::MenuPageTestRow(const FString& File, const FString& Name, FString& OutText, bool& bOutGrey)
+{
+	if (!bMenuOpen) OpenMenu(false);
+	if (!bMenuOpen || !ShowMenuPage(File, false) || !MenuPage) return false;
+	for (int32 i = 0; i < MenuPage->Items.Num(); ++i)
+	{
+		if (MenuPage->Items[i].Name != Name) continue;
+		OutText = MenuRowText(i);
+		bOutGrey = MenuPage->Items[i].Classes.Contains(TEXT("disabled"));
 		return true;
 	}
 	return false;

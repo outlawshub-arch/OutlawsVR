@@ -234,7 +234,9 @@ OL_SHOT_TEST(OLJumpReachProbe, 1710)
 	const FVector UeDir = (FOutlawsGeometry::ToUE(Dir.X, 0.0, Dir.Y) - FOutlawsGeometry::ToUE(0.0, 0.0, 0.0)).GetSafeNormal2D();
 	if (Step == 0)
 	{
-		L->GameSpeed = C.Dial;
+		// (REQ-MPSPEED: -OLJumpReachHeld: each dial the host's, held over a player's own 150 %: the same reaches)
+		if (OLFlags::Param(TEXT("OLJumpReachHeld"))) { L->GameSpeed = AOutlawsLevelActor::MaxGameSpeed; L->HeldGameSpeed = C.Dial; }
+		else L->GameSpeed = C.Dial;
 		if (OwnShare < 0.f) OwnShare = JumpBoostShareNow();       // (the player's own: the default, or -OLJumpBoostShare)
 		JumpBoostShare = C.Share >= 0.f ? C.Share : OwnShare;
 		if (C.bSlide)

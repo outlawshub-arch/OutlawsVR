@@ -620,7 +620,11 @@ void UOutlawsCoop::BotSpawn(int32 Who, const FVector& At, float Yaw)
 	E->GetCapsuleComponent()->SetCollisionResponseToChannel(ECC_Visibility, ECR_Ignore);
 	E->GetCapsuleComponent()->SetCollisionResponseToChannel(ECC_GameTraceChannel2, ECR_Ignore);     // (the FENCE walls hold bad guys, not players)
 	// the character's feet and nerve, a little under a player's; the aim worse than the bad guys' best
-	const float RunU = St.VelMax * 0.8f * (Skill == 0 ? 0.9f : 1.f);
+	float RunU = St.VelMax * 0.8f * (Skill == 0 ? 0.9f : 1.f);
+	// REQ-MPSPEED (user 4 Nov: "with multiplayer, bots should just match the top movement speeds set by the host"): a match's bot
+	// tops out at a player's full run at the match's speed, whatever its skill (skill keeps the aim and the rest); the host's own
+	// dial when the row was left alone.  A bot's body has no pace of its own (a CoopSelf runs at 1).  -OLOldMpSpeed: its feet as above
+	if (const float Held = HeldMoveDial(L); Held >= 0.f) RunU = GetDefault<AOutlawsPlayer>()->VRRunSpeed * AOutlawsLevelActor::SpeedFromDial(Held) * 0.5f / float(UnitCmB);
 	E->Def.RunSpeed = RunU;
 	E->Def.WalkSpeed = RunU * 0.8f;
 	E->Def.Health = BotHealthMax;

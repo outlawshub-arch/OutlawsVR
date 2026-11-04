@@ -1842,6 +1842,8 @@ public:
 	void CheatsMenuTestClose() { if (bMenuOpen) CloseMenu(); }
 	/** (tests, BUG-SPEEDCAP) Options > VR opened and the Movement speed row pressed, as a hand would (the menu stays open); false: no such row. */
 	bool VrSpeedMenuTestPress();
+	/** (tests, REQ-MPSPEED) the page File opened, its row Name as shown and whether it is greyed (the menu stays open); false: no such row. */
+	bool MenuPageTestRow(const FString& File, const FString& Name, FString& OutText, bool& bOutGrey);
 private:
 	bool bScopeTestNeedsItem = false;
 	bool bScopeNoItemLogged = false;
@@ -2333,6 +2335,7 @@ public:
 	void CoopOpenPage(const FString& File, bool bPush = false) { if (!bMenuOpen) OpenMenu(true); if (bMenuOpen) ShowMenuPage(File, bPush); }
 	/** REQ-MPLOBBY (b): the Host Game page filled with these options (the last match's, for the next one); not saved. */
 	static void MpHostPrefill(const struct FOutlawsMpHostOptions& O);
+	float MpHostSpeedDial(const struct FOutlawsMpHostOptions& O) const;
 	/** REQ-MPLOBBY (b)'s fit check: a title page's lines and rows as last drawn (view units, 1920 x 1080). */
 	FBox2D CoopFrontInk() const { return FrontInk; }
 	/** REQ-MPLOBBY (c)'s fit check: the open page as last drawn sits on the panel (a sheet page: every row on the sheet, clear

@@ -56,6 +56,9 @@ struct OUTLAWSRUNTIME_API FOutlawsMpHostOptions
 	/** REQ-MPLETHAL (user 3 Nov): two punches kill, a knife's stab or throw kills, a scoped rifle head shot kills (the host
 	 *  decides; UOutlawsCoop::LethalBlowDamage).  "Lethal melee and scoped headshots", on by default. */
 	bool bLethalBlows = true;
+	/** REQ-MPSPEED (user 4 Nov): the movement speed dial (AOutlawsLevelActor::GameSpeed) every player of the match is held to.  0: the
+	 *  row not stepped, the host's own dial (UOutlawsCoop::HeldMoveDial).  Never saved: the page starts at the host's own setting. */
+	float MoveDial = 0.f;
 	/** M1 (user 2026-10-03: "make passwords optional"): empty, anyone may join; else a joiner must give it. */
 	FString Password;
 	/** M2: Secret Document played red against blue (each team's base its capture point); else free-for-all. */
