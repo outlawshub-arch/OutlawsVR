@@ -50,6 +50,7 @@
 //   float REQ-TUTCARDFLOAT: a new card's first seconds, stage by stage (phase 30 below)
 //   doors REQ-TUTDOORS: the pair by name, a push on each, Back shuts them (phase 31 below)
 //   fan   REQ-TUTFAN: its station, and a hand really swiped past the hammer (phase 32 below)
+//   grabfist  REQ-TUTGRABFIST: the other hand given a lit stick, a knife, the lantern, the revolver (phase 33 below)
 // Prints "OLTUT test check PASS|FAIL: ..." and "OLTUT test RESULT ...".  Screenshots: Saved/OLShots/ol_tut_<name>.png.
 
 #include "OutlawsLevelActor.h"
@@ -110,6 +111,11 @@ namespace OutlawsTutorialLocal
 	bool OldTutFan()
 	{
 		static const bool bOld = OLFlags::Param(TEXT("OLOldTutFan"));
+		return bOld;
+	}
+	bool OldTutGrabFist()
+	{
+		static const bool bOld = OLFlags::Param(TEXT("OLOldTutGrabFist"));
 		return bOld;
 	}
 }
@@ -645,9 +651,32 @@ void AOutlawsLevelActor::TickTutorial(float Dt)
 			break;
 		case Door: if (!OldTutDoors()) ShutDoors(); break;
 		case Lantern: if (bReset && bLampOn) ToggleLamp(); break;
-		case Grab: ManFor(0, bReset); break;
+		case Grab:
+			ManFor(0, bReset);
+			// REQ-TUTGRABFIST (user 2026-11-04: "On the tutorial step where it tells you to grab an enemy with your non-dominant hand,
+			// it should switch that hand to fist automatically to prevent any confusion"): the hand the line names (OnOff) emptied
+			// whichever way the card came up, Next, Back or a skip: Equip's own way, as the wheel's bare hand does it, the rounds
+			// kept, a tool or the lantern put away, a lit fuse out and the stick still in the count.  One controller: that one hand
+			// is the grab's and the gun's, as before
+			if (One < 0 && !OldTutGrabFist() && (P->Equipped[OffH] >= 0 || !P->HeldTool[OffH].IsEmpty()))
+			{
+				UE_LOG(LogOutlaws, Log, TEXT("OLTUT the grab card: the %s hand put away what it held (weapon %d, tool \"%s\")"), OffH == 0 ? TEXT("left") : TEXT("right"), P->Equipped[OffH], *P->HeldTool[OffH]);
+				P->Equip(OffH, -1);
+				P->Pulse(OffH, 0.2f);
+			}
+			break;
 		case Punch: ManFor(0, false); break;
-		case GrabShoot: ManFor(1, bReset); break;
+		case GrabShoot:
+			ManFor(1, bReset);
+			// (REQ-TUTGRABFIST: the revolver put away from that hand is the one this card shoots with: back in the main hand, its
+			// rounds with it, if neither hand has it now)
+			if (One < 0 && !OldTutGrabFist() && P->Equipped[DomH] != RevolverIdx && P->Equipped[OffH] != RevolverIdx)
+			{
+				if (const int32* Rounds = P->SavedMag.Find(OffH * 16 + RevolverIdx)) P->SavedMag.Add(DomH * 16 + RevolverIdx, *Rounds);
+				P->Equip(DomH, RevolverIdx);
+				UE_LOG(LogOutlaws, Log, TEXT("OLTUT the grab and shoot card: the revolver back in the main hand, %d rounds"), P->Mag[DomH]);
+			}
+			break;
 		case Fight: ManFor(2, bReset); ManFor(3, bReset); break;
 		case Heal:
 			if (Health > 6.f)
@@ -1314,9 +1343,136 @@ void AOutlawsLevelActor::TickTutorialTest(float Dt)
 		T.Tries = 0;
 		T.LastStep = 1;
 		T.bGoodSeen = false;
-		T.Phase = Mode == TEXT("float") ? 30 : Mode == TEXT("doors") ? 31 : Mode == TEXT("fan") ? 32 : 4;
+		T.Phase = Mode == TEXT("float") ? 30 : Mode == TEXT("doors") ? 31 : Mode == TEXT("fan") ? 32 : Mode == TEXT("grabfist") ? 33 : 4;
 		T.At = Now + 1.5;
 		return;
+	}
+	case 33:
+	{
+		// REQ-TUTGRABFIST (-OLTutorialTest=grabfist): the card before the grab, the other hand given something, Next: a lit stick,
+		// a knife, the lantern; each out of that hand, nothing dropped or spent, the fuse out, the main hand untouched; Back into
+		// the card from the punch does the same; the revolver in that hand with the main hand bare: gone from it at the grab, in
+		// the main hand with its rounds at grab_shoot.  -OLOneController= and -OLOldTutGrabFist: the hand keeps what it holds
+		FOutlawsTutorialRun& R = *TutorialRun;
+		AOutlawsTutorialCard* C = R.CardActor.Get();
+		if (!C) { Check(false, TEXT("grabfist: the card is there")); Finish(); return; }
+		const FString Id = TutorialCardId();
+		const int32 One = P->OneHand();
+		const int32 DomH = One >= 0 ? One : P->LeftDominant() ? 0 : 1;
+		const int32 OffH = One >= 0 ? One : 1 - DomH;
+		T.At = Now + 0.05;
+		if (Now - T.CardSeen > 60.0) { Check(false, FString::Printf(TEXT("grabfist: stuck at step %d on %s"), T.Job, *Id)); Finish(); return; }
+		auto Bare = [&](const TCHAR* What)
+		{
+			Check(P->Equipped[OffH] < 0 && P->HeldTool[OffH].IsEmpty() && R.Line.Contains(OffH == 0 ? TEXT("left") : TEXT("right")),
+				FString::Printf(TEXT("%s: the hand the card names is empty (weapon %d, tool \"%s\"): \"%s\""), What, P->Equipped[OffH], *P->HeldTool[OffH], *R.Line));
+		};
+		auto MainKept = [&](const TCHAR* What)
+		{
+			Check(P->Equipped[DomH] == RevolverIdx && P->Mag[DomH] == 5, FString::Printf(TEXT("%s: the main hand untouched (weapon %d, %d rounds)"), What, P->Equipped[DomH], P->Mag[DomH]));
+		};
+		switch (T.Job)
+		{
+		case 0:
+			if (Id != TEXT("lantern")) { C->Pick(1); T.At = Now + 0.15; return; }
+			if (One >= 0 || OLFlags::Param(TEXT("OLOldTutGrabFist")))
+			{
+				P->Equip(OffH, KnifeIdx);
+				C->Pick(1);
+				T.Job = 1;
+				return;
+			}
+			P->Equip(DomH, RevolverIdx);
+			P->Mag[DomH] = 5;
+			P->Equip(OffH, DynamiteIdx);
+			P->bFuseLit[OffH] = true;
+			P->Fuse[OffH] = 4.5f;
+			T.Tries = P->Thrown.Num();
+			C->Pick(1);
+			T.Job = 2;
+			return;
+		case 1:
+			if (Id != TEXT("grab")) return;
+			Check(P->Equipped[OffH] == KnifeIdx, FString::Printf(TEXT("%s: the hand keeps its knife (weapon %d)"), One >= 0 ? TEXT("one controller") : TEXT("old"), P->Equipped[OffH]));
+			Finish();
+			return;
+		case 2:
+			if (Id != TEXT("grab")) return;
+			Bare(TEXT("a lit stick"));
+			Check(!P->bFuseLit[OffH] && Counts.FindRef(TEXT("idynam")) == 2 && P->Thrown.Num() == T.Tries, FString::Printf(TEXT("the fuse is out, the stick not lost (%d in the count, %d thrown)"), Counts.FindRef(TEXT("idynam")), P->Thrown.Num() - T.Tries));
+			MainKept(TEXT("a lit stick"));
+			C->Pick(0);
+			T.Job = 3;
+			return;
+		case 3:
+			if (Id != TEXT("lantern")) return;
+			P->Equip(OffH, KnifeIdx);
+			C->Pick(1);
+			T.Job = 4;
+			return;
+		case 4:
+			if (Id != TEXT("grab")) return;
+			Bare(TEXT("a knife"));
+			Check(Counts.FindRef(TEXT("iknife")) == 2, FString::Printf(TEXT("both knives still counted (%d)"), Counts.FindRef(TEXT("iknife"))));
+			C->Pick(0);
+			T.Job = 5;
+			return;
+		case 5:
+			if (Id != TEXT("lantern")) return;
+			P->ToggleGear(OffH, TEXT("ilantern"));
+			Check(P->HeldTool[OffH] == TEXT("ilantern"), TEXT("the lantern in that hand"));
+			T.Tries = Counts.FindRef(TEXT("ioil"));
+			C->Pick(1);
+			T.Job = 6;
+			return;
+		case 6:
+			if (Id != TEXT("grab")) return;
+			Bare(TEXT("the lantern"));
+			Check(Counts.FindRef(TEXT("ioil")) == T.Tries, FString::Printf(TEXT("the oil kept (%d)"), Counts.FindRef(TEXT("ioil"))));
+			MainKept(TEXT("the lantern"));
+			C->Pick(1);
+			T.Job = 7;
+			return;
+		case 7:
+			if (Id != TEXT("punch")) return;
+			P->Equip(OffH, KnifeIdx);
+			C->Pick(0);
+			T.Job = 8;
+			return;
+		case 8:
+			if (Id != TEXT("grab")) return;
+			Bare(TEXT("Back into the card"));
+			C->Pick(0);
+			T.Job = 9;
+			return;
+		case 9:
+			if (Id != TEXT("lantern")) return;
+			P->Equip(DomH, -1);
+			P->Equip(OffH, RevolverIdx);
+			P->Mag[OffH] = 4;
+			C->Pick(1);
+			T.Job = 10;
+			return;
+		case 10:
+			if (Id != TEXT("grab")) return;
+			Bare(TEXT("the revolver"));
+			Check(P->Equipped[DomH] < 0, TEXT("the main hand left alone, bare"));
+			C->Pick(1);
+			T.Job = 11;
+			return;
+		case 11:
+			if (Id != TEXT("punch")) return;
+			C->Pick(1);
+			T.Job = 12;
+			return;
+		case 12:
+			if (Id != TEXT("grab_shoot")) return;
+			Check(P->Equipped[DomH] == RevolverIdx && P->Mag[DomH] == 4 && P->Equipped[OffH] < 0, FString::Printf(TEXT("grab_shoot: the revolver in the main hand with its rounds (weapon %d, %d rounds), the other hand free"), P->Equipped[DomH], P->Mag[DomH]));
+			Finish();
+			return;
+		default:
+			return;
+		}
 	}
 	case 32:
 	{
@@ -2216,6 +2372,13 @@ void AOutlawsLevelActor::TickTutorialTest(float Dt)
 			const int32 m = Id == TEXT("grab") ? 0 : 1;
 			AOutlawsEnemy* E = R.Men[m].Get();
 			if (!E) { Check(false, FString::Printf(TEXT("%s: the bad guy is there"), *Id)); Finish(); return; }
+			// (REQ-TUTGRABFIST: the lantern from the card before is out of that hand; one controller keeps today's path)
+			if (Id == TEXT("grab") && One < 0 && !T.Shot.Contains(TEXT("grab_hand")))
+			{
+				T.Shot.Add(TEXT("grab_hand"));
+				Check(OLFlags::Param(TEXT("OLOldTutGrabFist")) || (P->Equipped[OffH] < 0 && P->HeldTool[OffH].IsEmpty() && R.Line.Contains(OffH == 0 ? TEXT("left") : TEXT("right"))),
+					FString::Printf(TEXT("grab: the hand the card names is empty (weapon %d, tool \"%s\"): \"%s\""), P->Equipped[OffH], *P->HeldTool[OffH], *R.Line));
+			}
 			if (P->GrabbedEnemy[0].Get() != E && P->GrabbedEnemy[1].Get() != E)
 			{
 				if (!R.bFrozen[m]) { T.At = Now + 0.5; return; }            // (he comes, then holds still)
