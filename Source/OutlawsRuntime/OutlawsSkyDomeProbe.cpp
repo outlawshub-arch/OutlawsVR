@@ -265,6 +265,27 @@ OL_SHOT_TEST(OLSkyDomeProbe, 2155)
 			if (D.bOverBlue && W->FeatureLevel > ERHIFeatureLevel::ES3_1)
 			{
 				Check(Mean.X >= 60.0 && Mean.Z - Mean.Y >= 40.0, FString::Printf(TEXT("the PC's overhead colour a clear blue, not cyan: the up view's mean %.0f %.0f %.0f (want red 60 or more, blue over green by 40 or more)"), Mean.X, Mean.Y, Mean.Z));
+				// (user 4 Nov ~21:4x: "yes scale those rows too") the rows under it read as the picture does: the horizon shot's sky,
+				// its top two fifths, not blown to white (43% with the top colour alone scaled; the picture itself none), and no pale
+				// cyan at the soft edge (bright with its red far under its green: 2% then; the picture none)
+				TArray<FColor> Hz;
+				int32 Hw = 0, Hh = 0, Seen = 0, White = 0, Cyan = 0;
+				if (ShotPixels(FPaths::ProjectSavedDir() / TEXT("OLShots") / Tag + TEXT("_horizon.png"), Hz, Hw, Hh))
+				{
+					for (int32 y = 0; y < Hh * 2 / 5; ++y)
+					{
+						for (int32 x = 0; x < Hw; ++x)
+						{
+							const FColor& C = Hz[y * Hw + x];
+							++Seen;
+							if (C.R >= 250 && C.G >= 250 && C.B >= 250) ++White;
+							if (C.G >= 200 && int32(C.G) - int32(C.R) >= 90) ++Cyan;
+						}
+					}
+				}
+				const double WhitePc = 100.0 * White / FMath::Max(1, Seen), CyanPc = 100.0 * Cyan / FMath::Max(1, Seen);
+				Check(Seen > 0 && WhitePc < 2.0, FString::Printf(TEXT("the PC's rows not blown to white: %.1f%% of the horizon shot's sky near white (want under 2)"), WhitePc));
+				Check(Seen > 0 && CyanPc < 0.2, FString::Printf(TEXT("no pale cyan fringe on the PC: %.2f%% of the horizon shot's sky (want under 0.2)"), CyanPc));
 			}
 			else if (D.bOverBlue)
 			{

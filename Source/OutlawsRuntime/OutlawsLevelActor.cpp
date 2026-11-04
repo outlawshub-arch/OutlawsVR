@@ -1404,14 +1404,21 @@ void AOutlawsLevelActor::Build()
 			SkySurfaceMid->SetScalarParameterValue(TEXT("Wrap"), bTiles ? 1.f : 0.f);
 			SkySurfaceMid->SetScalarParameterValue(TEXT("LandV"), LandV);
 			SkySurfaceMid->SetScalarParameterValue(TEXT("LandDrop"), LandDrop);
-			FLinearColor DomeTop = bLand ? Look.Over : Look.Top;      // (a pale land sky: its bluest row, armad, SkyLookPcx)
-			// (REQ-SKYPCBLUE, user 4 Nov ~18:4x: "give PC its own blue") that row goes in as it is on the headset, which has no tone
-			// step.  On the PC the sky is an unlit emissive under the fixed exposure (about 2.6x, frostbi's and isla's tops read so) and
-			// the tonemapper's gamut expansion (a bright saturated colour pushed out of sRGB: its red goes under 0 and clips), which take
-			// 92 183 255 to pure cyan, 0 255 255: the PC's own value, down by what it will be lifted by and with more of its red kept,
-			// lands on the row's colour on the screen.  -OLOldSkyBlue: no bOverBlue, the top rows' colour as landed
-			if (bLand && Look.bOverBlue && GetWorld()->FeatureLevel > ERHIFeatureLevel::ES3_1) DomeTop *= FLinearColor(0.633f, 0.382f, 0.383f);
+			const FLinearColor DomeTop = bLand ? Look.Over : Look.Top;      // (a pale land sky: its bluest row, armad, SkyLookPcx)
 			SkySurfaceMid->SetVectorParameterValue(TEXT("FadeColour"), DomeTop);
+			// (REQ-SKYPCBLUE, user 4 Nov ~18:4x: "give PC its own blue", ~21:4x: "yes scale those rows too") that row and the picture go
+			// in as they are on the headset, which has no tone step.  On the PC the sky is an unlit emissive under the fixed exposure
+			// (about 2.6x, frostbi's and isla's tops read so) and the tonemapper's gamut expansion (a bright saturated colour pushed out
+			// of sRGB: its red goes under 0 and clips), which take 92 183 255 to pure cyan, 0 255 255, the rows under it to white and
+			// their soft edge to a pale cyan.  The material's PC pin alone (the feature switch's Default, the headset's pin never reads
+			// them) takes the whole picture and the row toward their grey (PcPicSat, what the expansion will push back out) and down by
+			// the exposure (PcPicScale), so they land on their own colours on the screen.  -OLOldSkyBlue: no bOverBlue, the top rows'
+			// colour as landed and no scale
+			if (bLand && Look.bOverBlue && GetWorld()->FeatureLevel > ERHIFeatureLevel::ES3_1)
+			{
+				SkySurfaceMid->SetVectorParameterValue(TEXT("PcPicScale"), FLinearColor(0.378f, 0.385f, 0.4f));
+				SkySurfaceMid->SetScalarParameterValue(TEXT("PcPicSat"), 0.82f);
+			}
 			// the dome shows the same picture the same way, so it and the sky surfaces meet seamlessly
 			if (SkyMesh) SkyMesh->SetMaterial(0, SkySurfaceMid);
 			UE_LOG(LogOutlaws, Log, TEXT("OLRT sky %s %dx%d: %s (band %.1f, seam %.1f, rows %.1f), %.0f up the dome"), *SkyStem, SkyInfo.W, SkyInfo.H,
