@@ -3816,6 +3816,19 @@ bool AOutlawsPlayer::CheatScopeTestUp() const
 }
 #endif // WITH_OUTLAWS_TESTS
 
+void AOutlawsPlayer::ScopeOffTheEye()
+{
+	if (ScopeView && ScopeView->IsVisible())
+	{
+		ScopeView->SetVisibility(false);
+		ScopeCapture->bCaptureEveryFrame = false;
+		for (const TWeakObjectPtr<UPrimitiveComponent>& P : ScopeUninked) if (P.IsValid()) P->SetRenderCustomDepth(true);
+		ScopeUninked.Reset();
+		UE_LOG(LogOutlaws, Log, TEXT("OLRT scope down"));
+	}
+	bScopeAimSet = false;
+}
+
 void AOutlawsPlayer::UpdateScope()
 {
 	OL_PERF_SCOPE("Player: scope");
@@ -3862,15 +3875,7 @@ void AOutlawsPlayer::UpdateScope()
 	}
 	if (Look < 0)
 	{
-		if (ScopeView && ScopeView->IsVisible())
-		{
-			ScopeView->SetVisibility(false);
-			ScopeCapture->bCaptureEveryFrame = false;
-			for (const TWeakObjectPtr<UPrimitiveComponent>& P : ScopeUninked) if (P.IsValid()) P->SetRenderCustomDepth(true);
-			ScopeUninked.Reset();
-			UE_LOG(LogOutlaws, Log, TEXT("OLRT scope down"));
-		}
-		bScopeAimSet = false;
+		ScopeOffTheEye();
 		// (BUG-STUTTER2) made with the level, not on the first raise
 		if (!ScopeCapture && L && !L->IsFrontEnd() && !L->IsRebuildPending() && !OLFlags::Param(TEXT("OLNoPrebuild"))) EnsureScopeRig(L);
 		return;

@@ -1877,6 +1877,8 @@ private:
 	bool bScopeAimSet = false;
 	float WalkTestLeft = 0.f;          // -OLWalkTest: walking forward while above zero
 	void UpdateScope();
+	/** The picture off the eye and its capture stopped (UpdateScope with no hand up, and BUG-DEADSCOPE at a death) */
+	void ScopeOffTheEye();
 	/** (BUG-STUTTER2) the scope's target, capture and picture made once a level is up and one capture drawn behind the
 	 *  load's dark (the first raise on the Quest made them: a 218 ms render-thread stall); kept for the session */
 	void EnsureScopeRig(class AOutlawsLevelActor* L);

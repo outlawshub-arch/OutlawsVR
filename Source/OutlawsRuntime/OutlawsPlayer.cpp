@@ -4980,6 +4980,15 @@ void AOutlawsPlayer::RequestRespawn(bool bFromAutosave)
 	AOutlawsLevelActor* L = Level.Get();
 	if (!bDeadView || DeathTime < 1.f || !L)
 	{
+	// (BUG-DEADSCOPE, user 4 Nov) the scope comes off the eye with the body: UpdateScope lies behind the death view's early
+	// return in Tick, so a player killed scoped kept that eye on a picture nothing steered any more, the capture running,
+	// until the respawn.  Every death comes through here, story, co-op and match, and every way back through ResetForLevel,
+	// after which UpdateScope runs as ever.  -OLOldDeadScope: it stayed
+	if (!OLFlags::Param(TEXT("OLOldDeadScope")))
+	{
+		bScoped[0] = bScoped[1] = false;
+		ScopeOffTheEye();
+	}
 		return;
 	}
 	if (UOutlawsCoop::IsActive(this))

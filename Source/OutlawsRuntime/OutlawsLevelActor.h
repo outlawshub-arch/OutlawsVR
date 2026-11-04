@@ -1491,6 +1491,7 @@ public:
 	void TestSetHealth(float Points) { Health = Points; }      // (tests: BUG-DYNTHROW's probe takes its blasts on a deep pool)
 	FVector SettleLookAt = FVector::ZeroVector;     // (a test aid: the 3D item SettleItemModels moved most, -OLSettleLook)
 	void SetArmour(int32 Points) { Armour = FMath::Max(0, Points); }
+	void TestRevive(float Points) { bDead = false; DeathTimer = 0.f; Health = Points; }      // (tests: BUG-DEADSCOPE's: what UOutlawsCoop::OnRevive sets)
 	/** The level as it stands (the INF's live copy), for the held map. */
 	const class FOutlawsLevel* LiveLevel() const;
 	float OilBurn = 0.f;
