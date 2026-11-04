@@ -2245,7 +2245,11 @@ void AOutlawsLevelActor::BeginPlay()
 		&& !OLFlags::Has(TEXT("OLExtrasLayoutProbe"))     // (BUG-ACHIEVBOX: the Extras pages, from the title menu)
 		&& !OLFlags::Has(TEXT("OLMenuOverlayProbe"))      // (REQ-LEGACYKPF: the title pages shot)
 		&& !OLFlags::ValueIs(TEXT("OLBackClickTest"), TEXT("extras"))      // (REQ-NOUNLOCKABLES: Back on the Extras pages, from the title)
-		&& !OLFlags::HasValue(TEXT("OLTitleLoadTest"));     // (REQ-TITLEMENU: the title menu tested)
+		&& !OLFlags::HasValue(TEXT("OLTitleLoadTest"))      // (REQ-TITLEMENU: the title menu tested)
+		// (BUG-LATEJOIN: a co-op host or a joiner run with -OLShots built a level of its own at once, so the title menu and then
+		// the lobby page never came, and -OLCoopAuto's or -OLLobbyEnterAfter's Enter, which wait for that page, never went; such
+		// a run comes in through the title and the lobby as a player does, its shot test running behind them)
+		&& !OLFlags::Has(TEXT("OLCoopJoin")) && !OLFlags::Param(TEXT("OLCoopHost"));
 	UWorld* GameWorld = GetWorld();
 	if (bBuildOnBeginPlay && GameWorld && GameWorld->IsGameWorld() && FOutlawsAssets::CanAskForInstall() && FOutlawsAssets::FindInstallRoot(InstallPath).IsEmpty())
 	{
