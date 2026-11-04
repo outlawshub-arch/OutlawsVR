@@ -349,6 +349,7 @@ void AOutlawsPlayer::CloseMenu()
 	for (int32 H = 0; H < 2; ++H)
 	{
 		bTriggerArmed[H] = false;
+		TapKept[H] = 0.f;
 		PrevHandPos[H] = GripOf(H)->GetComponentLocation() - GetActorLocation();
 		PrevHandWorld[H] = GripOf(H)->GetComponentLocation();
 		HandVelocity[H] = HandWorldVel[H] = FVector::ZeroVector;

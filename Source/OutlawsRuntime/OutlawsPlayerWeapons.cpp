@@ -1,6 +1,7 @@
 // AOutlawsPlayer, weapons half: the VR weapon wheel and the placeholder guns held in the hands.
 #include "OutlawsBeacon.h"
 #include "OutlawsFlags.h"
+#include "HAL/IConsoleManager.h"
 #include "OutlawsItem3d.h"
 #include "OutlawsTutorialCard.h"
 #include "OutlawsPlayer.h"
@@ -166,6 +167,28 @@ namespace
 			1, 0.f, 1, false, 2, TEXT("gknife.3do"), 30.f },
 	};
 	constexpr int32 NumWeapons = UE_ARRAY_COUNT(GWeapons);
+	// BUG-TRIGGERTAP (user 2026-11-04, after a Quest test: "I want to have each trigger push be a new shot, but I just want it
+	// to feel snappier"; trial: half the time): the seconds between aimed shots, one tunable a gun, over the table's 0.5 (5 frames
+	// of fire chor at 10 fps for every character; only Sanchez's revolver is quicker, 18 fps, 0.28 s).  The gatling, the fan and
+	// the throwables keep the table.  -OLOldTriggerTap: the table, a press inside the cycle lost, the trigger re-armed under 0.3
+	TAutoConsoleVariable<float> CVarCycleRevolver(TEXT("ol.vr.CycleRevolver"), 0.25f, TEXT("Seconds between the revolver's aimed shots (the table's 0.5); never under the fan's 0.2."));
+	TAutoConsoleVariable<float> CVarCycleRifle(TEXT("ol.vr.CycleRifle"), 0.25f, TEXT("Seconds between the rifle's shots (the table's 0.5)."));
+	TAutoConsoleVariable<float> CVarCycleShotgun(TEXT("ol.vr.CycleShotgun"), 0.25f, TEXT("Seconds between the shotgun's shots (the table's 0.5)."));
+	TAutoConsoleVariable<float> CVarCycleDouble(TEXT("ol.vr.CycleDouble"), 0.25f, TEXT("Seconds between the double barrel's shots (the table's 0.5)."));
+	TAutoConsoleVariable<float> CVarCycleSawed(TEXT("ol.vr.CycleSawed"), 0.25f, TEXT("Seconds between the sawed-off's shots (the table's 0.5)."));
+	TAutoConsoleVariable<float> CVarTriggerRearm(TEXT("ol.vr.TriggerRearm"), 0.5f, TEXT("A gun's trigger let back under this re-arms it (past 0.7 fires; was 0.3).  The throwables keep 0.3."));
+	bool OldTriggerTap()
+	{
+		static const bool bOld = OLFlags::Param(TEXT("OLOldTriggerTap"));
+		return bOld;
+	}
+	float AimedCycle(int32 Wi)
+	{
+		const FWeaponDef& W = GWeapons[Wi];
+		const TAutoConsoleVariable<float>* const Tune[] = { &CVarCycleRevolver, &CVarCycleRifle, &CVarCycleShotgun, &CVarCycleDouble, &CVarCycleSawed };
+		if (OldTriggerTap() || Wi >= UE_ARRAY_COUNT(Tune)) return W.Cycle;
+		return FMath::Max(Tune[Wi]->GetValueOnGameThread(), FMath::Max(W.FanCycle, 0.05f));      // (fanning stays at least as quick as tapping)
+	}
 	// the revolver's cylinder and its six rounds, split out of the model (islands inside the cylinder's
 	// box) so it can swing out on its crane: model space (right-hand gun), cm
 	struct FCylinderDef { const TCHAR* Obj; FVector Centre; FVector Pivot; FVector OutDir; float Chamber; };
@@ -2686,6 +2709,7 @@ void AOutlawsPlayer::Equip(int32 Hand, int32 Weapon)
 		// other hand does not hold (the 6-stick kit threw 8: a free one drawn into each hand)
 		if (GWeapons[Equipped[Hand]].Throw > 0 && !OldThrowCount()) Mag[Hand] = ThrowableForHand(Hand, Equipped[Hand]) ? 1 : 0;
 		FireCooldown[Hand] = 0.f;
+		TapKept[Hand] = 0.f;                 // (BUG-TRIGGERTAP: a press kept for the gun put down goes with it)
 		RecoilPitch[Hand] = 0.f;
 		RecoilKick[Hand] = 0.f;
 		ReloadTimer[Hand] = 0.f;
@@ -2894,6 +2918,7 @@ void AOutlawsPlayer::UpdateGuns(float Dt)
 	for (int32 H = 0; H < 2; ++H)
 	{
 		FireCooldown[H] = FMath::Max(0.f, FireCooldown[H] - Dt);
+		TapKept[H] = FMath::Max(0.f, TapKept[H] - Dt);
 		// effects fade
 		if (FxLeft[H] > 0.f && !(Level.IsValid() && Level->bFlash3DHold))      // (REQ-MUZZLEFLASH3D: a test holds the flash for its picture)
 		{
@@ -3174,9 +3199,10 @@ void AOutlawsPlayer::UpdateGuns(float Dt)
 		}
 		// (fanned shots find their man by the view, the gun itself stays where the hand holds it)
 		FanActive[H] = FMath::Max(0.f, FanActive[H] - Dt);
-		// trigger: one shot per pull (pull past 0.7, re-armed under 0.3)
+		// trigger: one shot per pull (pull past 0.7, re-armed under ol.vr.TriggerRearm, BUG-TRIGGERTAP: a quick tap lets the
+		// trigger back only part of the way; a throwable's under 0.3, as ever)
 		const float T = Axis(H == 0 ? TEXT("OLVR_LeftTrigger") : TEXT("OLVR_RightTrigger"));
-		if (T < 0.3f)
+		if (T < (W.Throw > 0 || OldTriggerTap() ? 0.3f : FMath::Clamp(CVarTriggerRearm.GetValueOnGameThread(), 0.3f, 0.65f)))
 		{
 			bTriggerArmed[H] = true;
 		}
@@ -3186,6 +3212,13 @@ void AOutlawsPlayer::UpdateGuns(float Dt)
 		{
 			if (T < 0.3f && GetWorld()->GetTimeSeconds() - DeathDropAt[H] >= SmashTriggerFloor) bDeathDropTrigger[H] = false;
 			else bTriggerArmed[H] = false;
+		}
+		// BUG-TRIGGERTAP: the press kept from inside the cycle (below), its one shot the moment the cycle ends, trigger held or
+		// not; gone if the hand has since stopped being able to shoot
+		if (TapKept[H] > 0.f && FireCooldown[H] <= 0.f)
+		{
+			TapKept[H] = 0.f;
+			if (W.Throw == 0 && !bWheelHeld[H] && !bPutAway && !bDeathDropTrigger[H] && !bBugChord) FireGun(H, false);
 		}
 		if (W.Throw > 0)
 		{
@@ -3202,7 +3235,10 @@ void AOutlawsPlayer::UpdateGuns(float Dt)
 		else if (T > 0.7f && (bTriggerArmed[H] || (W.bAuto && !bDeathDropTrigger[H])) && !bWheelHeld[H] && !bPutAway)
 		{
 			bTriggerArmed[H] = false;
-			FireGun(H, false);
+			// BUG-TRIGGERTAP: a press inside the cycle is not lost: kept, one at most (the chance lasts the cycle and a breath, in
+			// case this hand's update is passed by when it ends); -OLOldTriggerTap: FireGun refuses it, the press gone
+			if (FireCooldown[H] > 0.f && !W.bAuto && !OldTriggerTap()) TapKept[H] = FireCooldown[H] + 0.1f;
+			else FireGun(H, false);
 		}
 		UpdateFan(H, bPutAway);
 		// reload: the reload button loads a round at a time from the reserve (the hold-to-body reload is
@@ -7156,7 +7192,7 @@ void AOutlawsPlayer::UpdateGunParts(int32 Hand, float Dt)
 	{
 		HammerMesh[Hand]->SetVisibility(bShow);
 		const FWeaponDef& W = GWeapons[Wi];
-		const float Cycle = FMath::Max(0.05f, W.FanCycle > 0.f ? FMath::Min(W.FanCycle, W.Cycle) : W.Cycle);
+		const float Cycle = FMath::Max(0.05f, W.FanCycle > 0.f ? FMath::Min(W.FanCycle, AimedCycle(Wi)) : AimedCycle(Wi));
 		const bool bReady = Mag[Hand] > 0 && FireCooldown[Hand] < Cycle * 0.6f;
 		HammerCock[Hand] = bReady ? FMath::FInterpConstantTo(HammerCock[Hand], 1.f, Dt, 9.f) : FMath::Min(HammerCock[Hand], Mag[Hand] > 0 ? 1.f : 0.f);
 		HammerPivot[Hand]->SetRelativeRotation(FRotator(-32.0 * (1.0 - HammerCock[Hand]), 0.0, 0.0));   // fallen = the spur forward
@@ -7166,7 +7202,7 @@ void AOutlawsPlayer::UpdateGunParts(int32 Hand, float Dt)
 		// the rifle's lever worked after each shot (user 2026-09-28): down and forward through the first 45% of the
 		// fire cycle, back up by 85%; the hammer re-cocks as it closes
 		LeverMesh[Hand]->SetVisibility(bShow);
-		const float Cycle = FMath::Max(0.05f, GWeapons[Wi].Cycle);
+		const float Cycle = FMath::Max(0.05f, AimedCycle(Wi));
 		const float T = FireCooldown[Hand] > 0.f ? FMath::Clamp(1.f - FireCooldown[Hand] / Cycle, 0.f, 1.f) : 1.f;
 		const float Open = T < 0.45f ? FMath::InterpEaseOut(0.f, 1.f, T / 0.45f, 2.f) : FMath::InterpEaseInOut(1.f, 0.f, FMath::Clamp((T - 0.45f) / 0.4f, 0.f, 1.f), 2.f);
 		LeverPivot[Hand]->SetRelativeRotation(FRotator(48.0 * Open, 0.0, 0.0));   // the loop's rear swings down
@@ -7766,7 +7802,7 @@ void AOutlawsPlayer::FireGun(int32 Hand, bool bFan)
 	CylSpinTarget[Hand] += Cylinder().Chamber;       // cocking turns the cylinder a chamber
 	if (W.bAuto && !bCrankShot) GatCrankAngle += 60.f;   // the gatling's crank comes round a sixth with each shot
 	if (W.bAuto) OutlawsAchievements::NoteGatlingFired(L);   // (REQ-EXTRAS)
-	FireCooldown[Hand] = bFan ? W.FanCycle : W.Cycle;
+	FireCooldown[Hand] = bFan ? W.FanCycle : AimedCycle(Wi);
 	HammerCock[Hand] = 0.f;                          // the hammer falls
 	// the shot: along the barrel, with the weapon's aim variance (fanning is wilder)
 	float V = bFan ? W.Variance + 1.0f : W.Variance;

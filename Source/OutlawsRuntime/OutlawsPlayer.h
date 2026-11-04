@@ -845,6 +845,9 @@ private:
 	float RecoilPitch[2] = { 0.f, 0.f };
 	FRotator GunBaseRot[2];
 	bool bTriggerArmed[2] = { true, true };
+	// BUG-TRIGGERTAP: a press that came inside the gun's cycle, kept for its one shot at the cycle's end: the seconds it stays
+	// good, 0 = none
+	float TapKept[2] = { 0.f, 0.f };
 	// REQ-SMASHTRIGGER: a held bad guy died in this hand and dropped out of it: no shot from it till its trigger is let
 	// go, SmashTriggerFloor after the drop at the soonest
 	bool bDeathDropTrigger[2] = { false, false };
