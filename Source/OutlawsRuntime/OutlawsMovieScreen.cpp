@@ -309,7 +309,11 @@ void AOutlawsMovieScreen::Tick(float DeltaSeconds)
 			RefreshStats();
 		}
 	}
-	if (bHandCard) PlaceHandCard();
+	if (bHandCard)
+	{
+		FadeHandCard(DeltaSeconds);
+		PlaceHandCard();
+	}
 	if (Player && Player->IsPlaying()) bStarted = true;
 	if (Player && PictureAspect <= 0.f) FitPicture();      // (REQ-MOVIE43)
 	// the screen follows the viewer round, as the pause menu and the wheel do: once the head has turned
@@ -994,7 +998,90 @@ namespace
 	constexpr float HandCardHead = 7.f;        // cm: the name, the level, the rule under them
 	constexpr float HandCardRow = 2.3f;        // cm a row (the text 0.8 of it: a cap height near 1 cm, about 1.3 degrees at 45 cm)
 	constexpr float HandCardPxPerCm = 24.f;
+	constexpr float HandCardWait = 1.f;        // (REQ-HANDCARDFADE) seconds into the movie it starts to come up
+	constexpr float HandCardFadeUp = 1.f;      // and how long it takes
+	constexpr float HandCardTapFade = 0.2f;    // (REQ-HANDCARDHOLD) a tap's hide or show
+	bool OldHandCardFade() { static const bool bOld = OLFlags::Param(TEXT("OLOldHandCardFade")); return bOld; }
+	bool OldHandCardHold() { static const bool bOld = OLFlags::Param(TEXT("OLOldHandCardHold")); return bOld; }
+	float HandCardFoot() { return OldHandCardHold() ? 1.f : 1.7f; }      // cm under the rows (REQ-HANDCARDHOLD: with its line of help)
 }
+
+bool AOutlawsMovieScreen::bCardHiddenThisRun = false;
+
+void AOutlawsMovieScreen::FadeHandCard(float Dt)
+{
+	// (REQ-HANDCARDFADE, the user's play notes, 4 Nov: on the hand at once as the cutscene played, the left hand in front of the
+	// face holding a two-handed gun covered its start: "It should fade in after a second on my hand and take a second to fade
+	// in") by the movie's own clock, so late counts (co-op) redraw it and leave the fade where it is; a movie over sooner
+	// takes the card with it, part way up.  -OLOldHandCardFade: up at once
+	const bool bWant = (OldHandCardHold() || !bCardHiddenThisRun) && (OldHandCardFade() || Age >= HandCardWait);
+	const float Seconds = bHandTapped ? HandCardTapFade : OldHandCardFade() ? 0.f : HandCardFadeUp;
+	HandFade = Seconds > 0.f ? FMath::FInterpConstantTo(HandFade, bWant ? 1.f : 0.f, Dt, 1.f / Seconds) : (bWant ? 1.f : 0.f);
+	if (!HandPlane) return;
+	const bool bSolid = HandFade >= 1.f || !HandFadeMid;
+	if (bSolid != bHandSolid)
+	{
+		bHandSolid = bSolid;
+		HandPlane->SetMaterial(0, bSolid ? HandSolidMid.Get() : HandFadeMid.Get());
+	}
+	if (!bSolid && HandFade != HandFadeShown)
+	{
+		HandFadeShown = HandFade;
+		HandFadeMid->SetScalarParameterValue(TEXT("Opacity"), HandFade);
+	}
+	const bool bSeen = HandFade > 0.f;
+	if (HandPlane->IsVisible() != bSeen) HandPlane->SetVisibility(bSeen);
+}
+
+void AOutlawsMovieScreen::ToggleHandCard()
+{
+	bCardHiddenThisRun = !bCardHiddenThisRun;
+	bHandTapped = true;
+	UE_LOG(LogOutlaws, Log, TEXT("OLRT the score card is %s by a tap"), bCardHiddenThisRun ? TEXT("hidden") : TEXT("shown"));
+}
+
+bool AOutlawsMovieScreen::HandCardWithin(const FVector& Hand, float Cm) const
+{
+	if (!bHandCard || !HandPlane || HandFade <= 0.f) return false;
+	// the card's nearest point: across it and up it to its edge, then out of its face
+	const FVector Off = HandPlane->GetComponentQuat().UnrotateVector(Hand - HandPlane->GetComponentLocation());
+	const double Dx = FMath::Max(FMath::Abs(Off.X) - HandSize.X * 0.5, 0.0), Dy = FMath::Max(FMath::Abs(Off.Y) - HandSize.Y * 0.5, 0.0);
+	return Dx * Dx + Dy * Dy + Off.Z * Off.Z < Cm * Cm;
+}
+
+void AOutlawsMovieScreen::HandCardMoved()
+{
+	if (HandCanvas) HandCanvas->UpdateResource();
+}
+
+bool AOutlawsMovieScreen::HandCardShown() const
+{
+	return bHandCard && HandPlane && HandPlane->IsVisible();
+}
+
+FVector AOutlawsMovieScreen::HandCardCentre() const
+{
+	return HandPlane ? HandPlane->GetComponentLocation() : FVector::ZeroVector;
+}
+
+bool AOutlawsMovieScreen::SkipBarShown() const
+{
+	return BarFill && BarFill->IsVisible();
+}
+
+#if WITH_OUTLAWS_TESTS
+void AOutlawsMovieScreen::TestLateCounts()
+{
+	// (as the other machine's counts arriving: the card drawn again, its look changed)
+	HandShown.Sub += TEXT(" ");
+	RefreshHandCard();
+}
+
+FString AOutlawsMovieScreen::DescribeHandCard() const
+{
+	return FString::Printf(TEXT("age %.2f, fade %.2f, solid %d, tapped %d"), Age, HandFade, bHandSolid ? 1 : 0, bHandTapped ? 1 : 0);
+}
+#endif
 
 bool AOutlawsMovieScreen::UseHandCard() const
 {
@@ -1028,7 +1115,7 @@ void AOutlawsMovieScreen::RefreshHandCard()
 	// single player: the rows in two columns; co-op: a head row and a row for each player
 	const int32 Lines = Card.bTable ? Card.Cells.Num() + 1 : (Card.Rows.Num() + 1) / 2;
 	const float Step = FMath::Min(HandCardRow, 28.f / float(FMath::Max(1, Lines)));
-	HandSize = FVector2D(HandCardW, HandCardHead + Step * float(Lines) + 1.f);
+	HandSize = FVector2D(HandCardW, HandCardHead + Step * float(Lines) + HandCardFoot());
 	const int32 PxW = FMath::RoundToInt(HandSize.X * HandCardPxPerCm), PxH = FMath::RoundToInt(HandSize.Y * HandCardPxPerCm);
 	if (!HandCanvas)
 	{
@@ -1062,11 +1149,19 @@ void AOutlawsMovieScreen::RefreshHandCard()
 			M->SetTextureParameterValue(TEXT("Tex"), HandCanvas);
 			HandPlane->SetMaterial(0, M);
 			StatsMids.Add(M);
+			HandSolidMid = M;
+		}
+		// (REQ-HANDCARDFADE: the wrist's see-through picture, already on the headset)
+		if (UMaterialInterface* Fading = LoadObject<UMaterialInterface>(nullptr, TEXT("/Game/Outlaws/Runtime/M_OLR_WristIcon.M_OLR_WristIcon")))
+		{
+			HandFadeMid = UMaterialInstanceDynamic::Create(Fading, this);
+			HandFadeMid->SetTextureParameterValue(TEXT("Tex"), HandCanvas);
 		}
 	}
 	HandShown = Card;
 	bHandCard = true;
-	HandPlane->SetVisibility(true);
+	if (OldHandCardFade() && OldHandCardHold()) HandFade = 1.f;
+	HandPlane->SetVisibility(HandFade > 0.f);
 	HandCanvas->UpdateResource();
 	PlaceHandCard();
 	UE_LOG(LogOutlaws, Log, TEXT("OLRT hand card (%s hand, %s, %.0f x %.0f cm, rows %.1f cm): %s"), Pl && Pl->ScoreCardHand() == 0 ? TEXT("left") : TEXT("right"),
@@ -1137,8 +1232,17 @@ void AOutlawsMovieScreen::DrawHandCard(UCanvas* C, int32 Width, int32 Height)
 	Box(1.5f * D, 6.3f * D, W - 3.f * D, 3.f, Brass);
 	const float Top = HandCardHead * D, Inner = W - 2.f * D, X0 = 1.f * D;
 	const int32 Lines = P.bTable ? P.Cells.Num() + 1 : (P.Rows.Num() + 1) / 2;
-	const float Step = (H - Top - 1.f * D) / float(FMath::Max(1, Lines));
+	const float Step = (H - Top - HandCardFoot() * D) / float(FMath::Max(1, Lines));
 	const float TextH = Step * 0.8f;
+	// (REQ-HANDCARDHOLD) one small line under the rows: the button of the hand that holds it, and the pass with two hands
+	if (!OldHandCardHold())
+	{
+		if (const AOutlawsPlayer* Pl = Cast<AOutlawsPlayer>(UGameplayStatics::GetPlayerPawn(this, 0)))
+		{
+			const FString Help = FString::Printf(TEXT("%s hides it%s"), Pl->ScoreCardHand() == 0 ? TEXT("X") : TEXT("A"), Pl->OneHand() < 0 ? TEXT(". Grip it with the other hand to pass it") : TEXT(""));
+			Text(StatsSmallFont, Help, W * 0.5f, H - 1.05f * D, 1, Faded, W - 3.f * D, 0.9f * D);
+		}
+	}
 	if (!P.bTable)
 	{
 		// two columns, the label from the left, the number to the right; every other row on a faint band

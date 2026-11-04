@@ -2619,9 +2619,20 @@ public:
 	UPROPERTY(Transient)
 	TObjectPtr<UOutlawsGlyphPlate> HudPlate;
 	FString GlyphTestPrompt;                     // (the test: the death plate shows this instead)
-	/** (REQ-HANDSCORE) The hand that holds the cutscene's score card (0 left, 1 right): the one controller's, else the off hand (the map's). */
-	int32 ScoreCardHand() const { return OneHand() >= 0 ? OneHand() : (LeftDominant() ? 1 : 0); }
+	/** (REQ-HANDSCORE) The hand that holds the cutscene's score card (0 left, 1 right): the one controller's, else the hand it was
+	 *  last passed to (REQ-HANDCARDHOLD), else the off hand (the map's). */
+	int32 ScoreCardHand() const { return OneHand() >= 0 ? OneHand() : ScoreCardPassed >= 0 ? ScoreCardPassed : (LeftDominant() ? 1 : 0); }
 	USceneComponent* ScoreCardFrame() const { return FrameOf(ScoreCardHand()); }
+	/** (REQ-HANDCARDHOLD, OutlawsPlayerMovieCard.cpp) the hand the card was passed to, for this run of the game (-1: not passed). */
+	static int32 ScoreCardPassed;
+	/** (REQ-HANDCARDHOLD) during a movie: the card hand's tap hides or shows the card, the free hand's grip at it takes it. */
+	void UpdateMovieCard(float Dt, class AOutlawsLevelActor* LM);
+	/** What is held now is no tap and no take: a movie's start, and the pause menu's. */
+	void ResetMovieCardButtons();
+	float MovieCardTap[2] = { -1.f, -1.f };         // X, A: seconds down in this movie; -1 up, -2 down since before it
+	bool bMovieGripDown[2] = { false, false };      // each grip as of the last frame
+	bool bMovieGripTook[2] = { false, false };      // the grip that took the card, until it lets go: no hold to skip
+	float MovieHoldWait = 0.f;                      // (REQ-HANDCARDHOLD) seconds something has been held, for the skip's start delay
 	/** No fall damage until this world time (a level placing the player is not a fall). */
 	void GrantFallGrace(double Until) { FallGraceUntil = FMath::Max(FallGraceUntil, Until); }
 	/** (user 2026-10-02) The wheel up, a grip on the slot that hand's laser points at drops one of it in front of the player

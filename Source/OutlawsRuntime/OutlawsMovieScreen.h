@@ -57,6 +57,23 @@ public:
 	bool bPaused = false;
 	/** The first second of a movie cannot be skipped (user 2026-09-27). */
 	bool CanSkip() const { return Age >= 1.f; }
+	float GetAge() const { return Age; }
+	/** (REQ-HANDCARDHOLD) the score card in the hand: there is one in this movie; a tap's hide or show; the hand this near it;
+	 *  it changed hands (its one line of help names the button). */
+	bool HasHandCard() const { return bHandCard; }
+	void ToggleHandCard();
+	bool HandCardWithin(const FVector& Hand, float Cm) const;
+	void HandCardMoved();
+	// (tests) how far up it is 0..1, seen, solid (the picture's material, the fade over), the card's middle, the skip's bar shown
+	float HandCardFade() const { return HandFade; }
+	bool HandCardShown() const;
+	bool HandCardSolid() const { return bHandSolid; }
+	FVector HandCardCentre() const;
+	bool SkipBarShown() const;
+#if WITH_OUTLAWS_TESTS
+	void TestLateCounts();
+	FString DescribeHandCard() const;
+#endif
 	/** How long a button has been held toward the skip (0 = none): the screen says to keep holding, with a bar that
 	 *  fills (Buttons held: its speed, shown as x2, x3...). */
 	void SetSkipHold(float Held, float Need, int32 Buttons = 1);
@@ -209,9 +226,21 @@ private:
 	TObjectPtr<UCanvasRenderTarget2D> HandCanvas;
 	UPROPERTY(Transient)
 	TObjectPtr<UStaticMeshComponent> HandPlane;
+	// (REQ-HANDCARDFADE) up a second into the movie, over a second, on a see-through copy; the picture's solid material once it is
+	// all up (the tone it takes behind the pause menu is that one's).  (REQ-HANDCARDHOLD) hidden and shown by a tap, more quickly
+	UPROPERTY(Transient)
+	TObjectPtr<UMaterialInstanceDynamic> HandSolidMid;
+	UPROPERTY(Transient)
+	TObjectPtr<UMaterialInstanceDynamic> HandFadeMid;
+	float HandFade = 0.f;                            // 0 gone .. 1 all up
+	float HandFadeShown = -1.f;                      // (what the fade's material last had)
+	bool bHandSolid = true;
+	bool bHandTapped = false;                        // a tap in this movie: the short fade from here on
+	static bool bCardHiddenThisRun;                  // hidden by a tap: for this run of the game, in memory only
 	bool UseHandCard() const;
 	void RefreshHandCard();
 	void PlaceHandCard();
+	void FadeHandCard(float Dt);
 	UFUNCTION()
 	void DrawHandCard(UCanvas* C, int32 Width, int32 Height);
 

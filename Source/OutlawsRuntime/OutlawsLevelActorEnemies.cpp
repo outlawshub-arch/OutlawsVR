@@ -937,6 +937,11 @@ bool AOutlawsLevelActor::IsMoviePlaying() const
 	return Movie && Movie->IsPlaying();
 }
 
+AOutlawsMovieScreen* AOutlawsLevelActor::GetMovieScreen() const
+{
+	return Movie;
+}
+
 void AOutlawsLevelActor::SkipMovie()
 {
 	if (UOutlawsCoop::IsActive(this)) UOutlawsCoop::NoteMovieSkip(this);     // (co-op: it ends for both)

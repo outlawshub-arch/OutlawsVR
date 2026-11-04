@@ -339,6 +339,8 @@ public:
 		FVector& OutAt) const;
 	/** A story movie is on the screen (between levels): the player only watches, a trigger skips. */
 	bool IsMoviePlaying() const;
+	/** (REQ-HANDCARDHOLD) the movie's screen, for the score card in the hand; null when none. */
+	class AOutlawsMovieScreen* GetMovieScreen() const;
 	void SkipMovie();
 	/** The movie held behind the pause menu, and toned as the world is there (user 2026-10-01). */
 	void PauseMovie(bool bPause, float Tone);

@@ -1880,6 +1880,7 @@ void AOutlawsPlayer::Tick(float Dt)
 		UpdateMenu(Dt);
 		UpdateScreenFx(Dt);
 		LM->PauseMovie(true, BackdropTone);
+		ResetMovieCardButtons();           // (REQ-HANDCARDHOLD: a button let go behind the menu is no tap on the movie)
 #if WITH_OUTLAWS_TESTS
 		if (ShotTime >= 0.f) ShotTest(Dt);
 #endif
@@ -1887,14 +1888,24 @@ void AOutlawsPlayer::Tick(float Dt)
 	}
 	if (AOutlawsLevelActor* LM = Level.Get(); LM && LM->IsMoviePlaying())
 	{
-		if (!bMovieHidden) HideForMovie(true);
+		if (!bMovieHidden)
+		{
+			HideForMovie(true);
+			ResetMovieCardButtons();
+		}
+		UpdateMovieCard(Dt, LM);             // (REQ-HANDCARDHOLD: OutlawsPlayerMovieCard.cpp)
 		// watching the story movie: nothing else. Any button or trigger held for 3 s skips it, never in its
 		// first second; the screen says to keep holding, with a bar (user 2026-09-27); each more button held fills it
-		// faster (two: twice as fast; user 2026-09-28)
+		// faster (two: twice as fast; user 2026-09-28).  (REQ-HANDCARDHOLD, user 4 Nov: "we should maybe give that a half second
+		// delay or a split second delay") nothing counts and no bar shows until something has been held half a second, so a tap
+		// or a pass flashes nothing; the bar's own 2.5 s keeps the whole hold at 3.  The grip that took the card counts for
+		// nothing until it lets go.  -OLOldHandCardHold: from the first frame, 3 s
+		static const bool bOldHold = OLFlags::Param(TEXT("OLOldHandCardHold"));
 		const int32 NumHeld = (Axis(TEXT("OLVR_LeftTrigger")) > 0.5f ? 1 : 0) + (Axis(TEXT("OLVR_RightTrigger")) > 0.5f ? 1 : 0)
-			+ (Axis(TEXT("OLVR_LeftGrip")) > 0.5f ? 1 : 0) + (Axis(TEXT("OLVR_RightGrip")) > 0.5f ? 1 : 0) + FMath::CountBits(uint64(FaceHeld & 15));
-		constexpr float Need = 3.f;
-		MovieHold = NumHeld > 0 && LM->CanSkipMovie() ? MovieHold + Dt * NumHeld : 0.f;
+			+ (Axis(TEXT("OLVR_LeftGrip")) > 0.5f && !bMovieGripTook[0] ? 1 : 0) + (Axis(TEXT("OLVR_RightGrip")) > 0.5f && !bMovieGripTook[1] ? 1 : 0) + FMath::CountBits(uint64(FaceHeld & 15));
+		const float Need = bOldHold ? 3.f : 2.5f;
+		MovieHoldWait = NumHeld > 0 ? MovieHoldWait + Dt : 0.f;
+		MovieHold = NumHeld > 0 && LM->CanSkipMovie() && (bOldHold || MovieHoldWait >= 0.5f) ? MovieHold + Dt * NumHeld : 0.f;
 		LM->SetMovieSkipHold(MovieHold, Need, NumHeld);
 		if (MovieHold >= Need)
 		{
@@ -1910,6 +1921,7 @@ void AOutlawsPlayer::Tick(float Dt)
 		return;
 	}
 	MovieHold = 0.f;
+	MovieHoldWait = 0.f;
 	if (bMovieHidden)
 	{
 		HideForMovie(false);
