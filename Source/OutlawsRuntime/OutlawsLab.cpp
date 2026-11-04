@@ -541,6 +541,14 @@ TArray<FOutlawsAssets::FNativeMap> FOutlawsAssets::ListNativeMaps(const FString&
 			}
 		}
 	}
+	// REQ-ASHIKA (the user 4 Nov: "take Nuketown out and replace it with Ashika"): a map no longer shipped, whose folder lingers
+	// on an updated install (a drop unzipped over an older one, the headset's folder: the installers add, they do not take
+	// away), is neither listed nor mounted.  This folder only: a copy in the player's own game folder stays their custom map
+	static const TCHAR* const NoLongerShipped[] = { TEXT("Nuketown") };
+	for (const TCHAR* Gone : NoLongerShipped)
+	{
+		if (Out.RemoveAll([Gone](const FNativeMap& M) { return M.Dir.Equals(Gone, ESearchCase::IgnoreCase); }) > 0) Via += FString::Printf(TEXT("; %s left out: no longer shipped"), Gone);
+	}
 	auto ByName = [](const FString& A, const FString& B) { return A.ToLower() < B.ToLower(); };
 	Out.Sort([&ByName](const FNativeMap& A, const FNativeMap& B) { return ByName(A.Dir, B.Dir); });
 	for (FNativeMap& M : Out)

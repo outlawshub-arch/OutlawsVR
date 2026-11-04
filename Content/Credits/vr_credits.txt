@@ -75,7 +75,7 @@ Armadillo: T4H_Dingle
 Barranca: WAW_Molycoat
 Longhorn Palace: Dog_Holliday
 ColdWar: T4H_WaRRioR
-Nuketown: SlyFrawst
+Ashika: T4H_Dingle
 Budville: WAW_Last1Stndin,
 with help from WAW_Molycoat
 Arizona Jim's Desert Oasis: Runaway_Jim,

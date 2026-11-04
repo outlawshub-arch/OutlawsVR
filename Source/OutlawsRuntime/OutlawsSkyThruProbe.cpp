@@ -1,6 +1,6 @@
 // REQ-SKYTHRU (user 3 Nov, snapshot 2026-11-03_19-19-59, zekes: "walls around the outer regions of the level that have a teal color
 // that's supposed to be transparent ... there isn't anything behind those walls, so the teal should be showing as the sky texture
-// behind it"): -OLShots -OLLevel=<zekes|nuketown|...> -OLNoFrontEnd [-OLNativeMaps=<dir>] -OLSkyThruProbe [-OLOldSkyWalls]
+// behind it"): -OLShots -OLLevel=<zekes|ashika|...> -OLNoFrontEnd [-OLNativeMaps=<dir>] -OLSkyThruProbe [-OLOldSkyWalls]
 // [-OLDeviceProfile=Quest2] [-OLSkyThruWall=<n>] [-OLSkyThruPitch=<degrees>].  In zekes from the snapshot's spot and look, in another level before the biggest wall of the class (a
 // level without one: where it starts), three shots of the same view: the walls whole (their mask off: the old teal), the walls
 // hidden (the dome behind them), the walls as built (skythru_<level>_<whole|bare|new>.png in Saved\OLShots).  The texels the mask
