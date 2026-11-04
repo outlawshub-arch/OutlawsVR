@@ -1624,6 +1624,10 @@ public:
 		FLinearColor Fade = FLinearColor::Black;
 	};
 	const FSkyDomeInfo& GetSkyDome() const { return SkyDome; }
+	/** BUG-TORCHZ (tests): the level's hung sprites as placed: the object's point, the bottom of its cell, its rows under its point. */
+	struct FTestHung { FString Name; TWeakObjectPtr<AActor> Actor; FVector Point = FVector::ZeroVector; double Bottom = 0.0, Hcm = 0.0; int32 CellH = 0, Ins = 0; bool bByName = false; };
+	const TArray<FTestHung>& GetTestHung() const { return TestHung; }
+	TArray<FTestHung> TestHung;
 	bool IsBetweenLevels() const { return !bFrontEnd && !bDead && !NextLevelName.IsEmpty() && (LevelEndTimer >= 0.f || (Movie != nullptr && !Inf)); }
 	bool SaveLevelOpening();
 	bool bPendingOpeningSave = false;
@@ -1784,14 +1788,14 @@ private:
 	UPROPERTY(Transient)
 	TObjectPtr<class UMaterialInstanceDynamic> SkySurfaceMid;
 
-	UPROPERTY(Transient)
-	TArray<TObjectPtr<UProceduralMeshComponent>> ObjectMeshes;
-
 	/** (REQ-SKYTHRU) the instances of M_OLR_WorldSkyThru: each takes the sky's picture and mapping from SkySurfaceMid (SyncSkyThru),
 	 *  and its turn and drift each tick. */
 	UPROPERTY(Transient)
 	TArray<TObjectPtr<class UMaterialInstanceDynamic>> SkyThruMids;
 	void SyncSkyThru(class UMaterialInstanceDynamic* Only = nullptr);
+
+	UPROPERTY(Transient)
+	TArray<TObjectPtr<UProceduralMeshComponent>> ObjectMeshes;
 
 	UPROPERTY(Transient)
 	TArray<TObjectPtr<AActor>> SpawnedActors;

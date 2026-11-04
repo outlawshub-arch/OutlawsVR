@@ -119,6 +119,8 @@ void AOutlawsLevelActor::Clear()
 	}
 	WorldMesh = WaterMesh = SkyMesh = SkySurfaceMesh = nullptr;
 	SkySurfaceMid = nullptr;
+	SkyThruMids.Reset();
+	TestHung.Reset();
 	for (UProceduralMeshComponent* M : MoverMeshes)
 	{
 		if (IsValid(M)) M->DestroyComponent();
@@ -1876,8 +1878,13 @@ void AOutlawsLevelActor::Build()
 			// hanging sprite without a negative HEIGHT (by name only: BOBCHAND, BOBLAMP, LANTERN1) keeps its top on it.
 			// -OLOldHangTop: the old rule, for before shots
 			static const bool bOldHangTop = OLFlags::Param(TEXT("OLOldHangTop"));
+			// BUG-TORCHZ (user 3 Nov, frostbi: "a z-axis issue with how we're placing objects"): that last rule was wrong too.  A
+			// sprite hung by its name alone (any '*TORCH*', OutlawsFormats::IsHanging) had its cell's top on its point, but the
+			// original draws it on its insertion point like the rest: frostbi's DRtorch stood a torch-length under the glow its
+			// map paints for it.  Every hung sprite goes on its insertion point.  -OLOldTorchZ: top on its point as before
+			static const bool bOldTorchZ = OLFlags::Param(TEXT("OLOldTorchZ"));
 			const int32 Cell0 = Atlas->Grid.Num() > 0 ? Atlas->Grid[0] : 0;
-			if (bNegHeight && !bOldHangTop && Atlas->CellH > 0 && Atlas->InsBottomPx.IsValidIndex(Cell0))
+			if ((bNegHeight || (bHang && !bOldTorchZ)) && !bOldHangTop && Atlas->CellH > 0 && Atlas->InsBottomPx.IsValidIndex(Cell0))
 			{
 				Loc.Z -= Atlas->InsBottomPx[Cell0] * Hcm / Atlas->CellH;
 				UE_LOG(LogOutlaws, Verbose, TEXT("OLRT %s hangs on its insertion point, %.1f cm over the old top-on-point place"), *O.Name, Loc.Z - (Pos.Z - Hcm));
@@ -1908,6 +1915,19 @@ void AOutlawsLevelActor::Build()
 			}
 			S->OutlawsName = O.Name;
 			S->OutlawsYaw = O.Yaw;
+			if (bHang)
+			{
+				// (BUG-TORCHZ, the tests' list)
+				FTestHung& Th = TestHung.AddDefaulted_GetRef();
+				Th.Name = O.Name;
+				Th.Actor = S;
+				Th.Point = Pos;
+				Th.Bottom = Loc.Z - 0.5;
+				Th.Hcm = Hcm;
+				Th.CellH = Atlas->CellH;
+				Th.Ins = Atlas->InsBottomPx.IsValidIndex(Cell0) ? Atlas->InsBottomPx[Cell0] : 0;
+				Th.bByName = !bNegHeight;
+			}
 			S->LightLevel = Light;
 			S->HomeSector = Sec->Index;            // (V1: the OB's own sector)
 			S->AtlasCols = Atlas->Cols;
