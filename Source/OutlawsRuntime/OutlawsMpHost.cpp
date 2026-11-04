@@ -146,6 +146,20 @@ const TCHAR* OutlawsMpHost::BotSkillLabel(int32 Skill)
 	return Skill <= 0 ? TEXT("Easy") : Skill >= 2 ? TEXT("Hard") : TEXT("Normal");
 }
 
+bool OutlawsMpHost::OldMapAuthor()
+{
+	static const bool bOld = OLFlags::Param(TEXT("OLOldMapAuthor"));
+	return bOld;
+}
+
+bool OutlawsMpHost::MapBefore(const FOutlawsMpMap& A, const FOutlawsMpMap& B)
+{
+	// REQ-MAPAUTHOR (the user 4 Nov: "I want it to feel seamless with the original fleet of levels, so maybe sort everything
+	// alphabetically"): one list by name, as each part of it sorted before; what tells the two apart stays on the map (bCustom)
+	if (OldMapAuthor() && A.bCustom != B.bCustom) return !A.bCustom;
+	return A.Name.ToLower() < B.Name.ToLower();
+}
+
 bool OutlawsMpHost::ParseRcm(const FString& Text, FOutlawsMpMap& Out, FString& Why)
 {
 	TArray<FString> Lines;
@@ -163,7 +177,16 @@ bool OutlawsMpHost::ParseRcm(const FString& Text, FOutlawsMpMap& Out, FString& W
 		}
 		Key = Key.TrimStartAndEnd().ToUpper();
 		Value = Value.TrimStartAndEnd();
-		if (Key == TEXT("NAME")) Out.Name = Value;
+		if (Key == TEXT("NAME"))
+		{
+			// REQ-MAPAUTHOR (the user 4 Nov: "to reduce fluff in the menu ... just show the map name here"): the maps' RCMs say who
+			// made them in the name ("Zeke's Cabins by Molycoat", "Dead By Dawn By Sleepy"): the name is what stands before the
+			// last " by "; the whole line stays for the white line as the map loads.  The map files are not changed, and the sync
+			// and the map update check go by the file and its stamp, never by this name
+			Out.Name = Out.FullName = Value;
+			const int32 By = OldMapAuthor() ? INDEX_NONE : Value.Find(TEXT(" by "), ESearchCase::IgnoreCase, ESearchDir::FromEnd);
+			if (By > 0 && !Value.Mid(By + 4).TrimStartAndEnd().IsEmpty()) Out.Name = Value.Left(By).TrimEnd();
+		}
 		else if (Key == TEXT("STORY")) bStory = true;
 		else if (Key == TEXT("MODES"))
 		{
@@ -296,7 +319,7 @@ void OutlawsMpHost::ListMaps(const FOutlawsAssets* Assets, TArray<FOutlawsMpMap>
 		}
 		Out.Add(M);
 	}
-	Out.Sort([](const FOutlawsMpMap& A, const FOutlawsMpMap& B) { return A.bCustom != B.bCustom ? !A.bCustom : A.Name.ToLower() < B.Name.ToLower(); });
+	Out.Sort([](const FOutlawsMpMap& A, const FOutlawsMpMap& B) { return MapBefore(A, B); });
 	UE_LOG(LogOutlaws, Log, TEXT("OLMPHOST maps: %d stock, %d custom (%d of them native; %d .rcm without a .lab skipped, %d unreadable, %d without their level)"), NumStock, Out.Num() - NumStock, NumNative, NoLab, Bad, NoLvt);
 }
 
@@ -331,6 +354,33 @@ bool OutlawsMpHost::Host(const FOutlawsMpHostOptions& Options)
 	return false;
 }
 
+namespace
+{
+	// (REQ-NATIVEMAPS part 1, user 2 Nov: the toast and the match line said "Capture The Flag on armad") a native map's RCM's
+	// NAME, read once from the native maps' folder (every machine that has the map, a joiner too, says the same)
+	const FOutlawsMpMap* NativeMapByFile(const FString& File)
+	{
+		static TMap<FString, FOutlawsMpMap> Natives;
+		static bool bNativeRead = false;
+		if (!bNativeRead)
+		{
+			bNativeRead = true;
+			const FString Root = FOutlawsAssets::NativeMapsRoot();
+			for (const FOutlawsAssets::FNativeMap& Map : FOutlawsAssets::ListNativeMaps(Root))     // (BUG-QUESTNATIVEMAPS)
+			{
+				const FString& D = Map.Dir;
+				for (const FString& F : Map.Rcms)
+				{
+					FString Text, Why;
+					FOutlawsMpMap M;
+					if (!Natives.Contains(F.ToLower()) && FFileHelper::LoadFileToString(Text, *(Root / D / F)) && OutlawsMpHost::ParseRcm(Text, M, Why)) Natives.Add(F.ToLower(), M);
+				}
+			}
+		}
+		return Natives.Find(File.ToLower());
+	}
+}
+
 FString OutlawsMpHost::MapTitle(const FString& File)
 {
 	// (the stock maps' English names, as the remaster's strings say them; a custom map by its file)
@@ -341,27 +391,14 @@ FString OutlawsMpHost::MapTitle(const FString& File)
 		{ TEXT("town_2p.rcm"), TEXT("Sanctuary") }, { TEXT("wilderns.rcm"), TEXT("Wilderness") } };
 	const FString* Nice = Names.Find(File.ToLower());
 	if (Nice) return *Nice;
-	// (REQ-NATIVEMAPS part 1, user 2 Nov: the toast and the match line said "Capture The Flag on armad") a native map by its
-	// RCM's NAME, read once from the native maps' folder (every machine that has the map, a joiner too, says the same)
-	static TMap<FString, FString> NativeNames;
-	static bool bNativeRead = false;
-	if (!bNativeRead)
-	{
-		bNativeRead = true;
-		const FString Root = FOutlawsAssets::NativeMapsRoot();
-		for (const FOutlawsAssets::FNativeMap& Map : FOutlawsAssets::ListNativeMaps(Root))     // (BUG-QUESTNATIVEMAPS)
-		{
-			const FString& D = Map.Dir;
-			for (const FString& F : Map.Rcms)
-			{
-				FString Text, Why;
-				FOutlawsMpMap M;
-				if (!NativeNames.Contains(F.ToLower()) && FFileHelper::LoadFileToString(Text, *(Root / D / F)) && ParseRcm(Text, M, Why)) NativeNames.Add(F.ToLower(), M.Name);
-			}
-		}
-	}
-	if (const FString* Native = NativeNames.Find(File.ToLower())) return *Native;
+	if (const FOutlawsMpMap* Native = NativeMapByFile(File)) return Native->Name;
 	return FPaths::GetBaseFilename(File);
+}
+
+FString OutlawsMpHost::MapTitleBy(const FString& File)
+{
+	const FOutlawsMpMap* Native = NativeMapByFile(File);
+	return Native ? Native->FullName : MapTitle(File);
 }
 
 bool OutlawsMpHost::RollMatch(const TArray<FOutlawsMpMap>& Maps, FOutlawsMpHostOptions& Out, const FString& LastMap, EOutlawsGameClass LastClass, FString& Said)

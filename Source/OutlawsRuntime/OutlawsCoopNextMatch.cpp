@@ -42,9 +42,9 @@ void UOutlawsCoop::HostEndGameFor(const UObject* Context)
 	if (UOutlawsCoop* C = Get(Context)) C->HostEndGame(TEXT("End game on the Host Game page"));
 }
 
-FString UOutlawsCoop::MatchLineFor(uint8 Class, const FString& MapFile, uint8 RandomBits)
+FString UOutlawsCoop::MatchLineFor(uint8 Class, const FString& MapFile, uint8 RandomBits, bool bWithAuthor)
 {
-	FString Game = OutlawsMpHost::ClassLabel(EOutlawsGameClass(FMath::Clamp<int32>(Class, 1, 6))), Map = OutlawsMpHost::MapTitle(MapFile);
+	FString Game = OutlawsMpHost::ClassLabel(EOutlawsGameClass(FMath::Clamp<int32>(Class, 1, 6))), Map = bWithAuthor ? OutlawsMpHost::MapTitleBy(MapFile) : OutlawsMpHost::MapTitle(MapFile);
 #if WITH_OUTLAWS_TESTS
 	// (BUG-LASTMATCHFIT: -OLLastMatchFitLong, the longest line a stock match can make, the longest game's name on the longest
 	// map's; -OLLastMatchFitLong=<title> on that map instead, a custom map's)
@@ -162,7 +162,8 @@ bool UOutlawsCoop::StartNextMatch(const FOutlawsMpHostOptions& Options, const TC
 	{
 		UE_LOG(LogOutlawsCoop, Log, TEXT("OLMATCH rotate: %s -> %s (%s, level %s)"), *WasMap, *Title, *Map->File, *LevelToStart);
 	}
-	SayToAll(FString::Printf(TEXT("Next match: %s"), *MatchLine()), 5.f);
+	// (REQ-MAPAUTHOR: the white line as the map loads says who it is from; the menus and the lobby only name it)
+	SayToAll(FString::Printf(TEXT("Next match: %s"), *MatchLineFor(S->MatchClass, S->MapName, S->RandomBits, true)), 5.f);
 	RequestStart(EOutlawsCoopStart::Lobby, LevelToStart);
 	UE_LOG(LogOutlawsCoop, Log, TEXT("OLMATCH next: match %d set up by %s: %s (level %s, serial %d; %s); everyone back in the lobby, the start rule runs again"), S->MatchCycle + 1, Who,
 		*MatchLine(), *LevelToStart, S->StartSerial, *MatchOptions.Describe());

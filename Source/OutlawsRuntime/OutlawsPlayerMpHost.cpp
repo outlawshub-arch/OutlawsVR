@@ -44,10 +44,12 @@ namespace
 		const FString Root = FOutlawsAssets::FindInstallRoot(FString());
 		const TSharedPtr<FOutlawsAssets> A = Root.IsEmpty() ? nullptr : FOutlawsAssets::GetShared(Root);
 		OutlawsMpHost::ListMaps(A.Get(), M.Maps);
-		// (no map chosen yet, or one no longer there: the first that plays Death Match)
+		// (no map chosen yet, or one no longer there: the first that plays Death Match; REQ-MAPAUTHOR: of the stock ones, as it
+		// was when they came first in the list, a joiner has those)
 		if (!FindMap(M.Options.MapFile) && M.Maps.Num() > 0)
 		{
-			const FOutlawsMpMap* Dm = M.Maps.FindByPredicate([](const FOutlawsMpMap& X) { return X.Allows(EOutlawsGameClass::DeathMatch); });
+			const FOutlawsMpMap* Dm = M.Maps.FindByPredicate([](const FOutlawsMpMap& X) { return !X.bCustom && X.Allows(EOutlawsGameClass::DeathMatch); });
+			if (!Dm) Dm = M.Maps.FindByPredicate([](const FOutlawsMpMap& X) { return X.Allows(EOutlawsGameClass::DeathMatch); });
 			M.Options.MapFile = (Dm ? *Dm : M.Maps[0]).File;
 		}
 		M.Options.Clamp(FindMap(M.Options.MapFile));
@@ -104,11 +106,12 @@ void AOutlawsPlayer::BuildMpHostPage(const FString& File, OutlawsMenu::FPage& Pa
 		const FString S = MenuSource->Loc(TEXT("$") + Map.Name.Mid(1));
 		if (!S.IsEmpty() && !S.StartsWith(TEXT("$"))) { Map.Name = S; bRenamed = true; }
 	}
-	if (bRenamed) M.Maps.Sort([](const FOutlawsMpMap& A, const FOutlawsMpMap& B) { return A.bCustom != B.bCustom ? !A.bCustom : A.Name.ToLower() < B.Name.ToLower(); });
+	if (bRenamed) M.Maps.Sort([](const FOutlawsMpMap& A, const FOutlawsMpMap& B) { return OutlawsMpHost::MapBefore(A, B); });
 	Page.File = File;
 	if (File == TEXT("#mphost:maps"))
 	{
-		// the map list (the remaster's Locations): the stock maps, then the custom ones in the game folder; each with the game
+		// the map list (the remaster's Locations): the stock maps and the community and custom ones, one list by name
+		// (REQ-MAPAUTHOR: no tag, no author; -OLOldMapAuthor: the stock ones first, "(custom)" on the others); each with the game
 		// classes it allows (REQ-LOBBYTIDY: titled MAP, as the Host Game row that opens it reads "Map:")
 		Page.Title = TEXT("MAP");
 		{
@@ -123,7 +126,7 @@ void AOutlawsPlayer::BuildMpHostPage(const FString& File, OutlawsMenu::FPage& Pa
 		{
 			FItem I;
 			I.Kind = EItemKind::Action;
-			I.Label = FString::Printf(TEXT("%s%s%s  [%s]"), !O.bRandomMap && Map.File == O.MapFile ? TEXT("> ") : TEXT(""), *Map.Name, Map.bCustom ? TEXT("  (custom)") : TEXT(""), *Map.ModesText());
+			I.Label = FString::Printf(TEXT("%s%s%s  [%s]"), !O.bRandomMap && Map.File == O.MapFile ? TEXT("> ") : TEXT(""), *Map.Name, Map.bCustom && OutlawsMpHost::OldMapAuthor() ? TEXT("  (custom)") : TEXT(""), *Map.ModesText());
 			I.Name = TEXT("mphost_map:") + Map.File;
 			Page.Items.Add(I);
 		}

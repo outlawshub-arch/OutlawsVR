@@ -1733,7 +1733,7 @@ private:
 	void ScoreLines(TArray<FString>& Out) const;
 	/** "Death Match on Dry Gulch" with what was rolled ("(random map)"), from the session. */
 	FString MatchLine() const;
-	static FString MatchLineFor(uint8 Class, const FString& MapFile, uint8 RandomBits);
+	static FString MatchLineFor(uint8 Class, const FString& MapFile, uint8 RandomBits, bool bWithAuthor = false);
 	void GoToNextLobby(AOutlawsPlayer* P, const TCHAR* Why);
 	void TickNextTest(double Now, AOutlawsCoopSession* S, AOutlawsPlayer* P);
 	void LeaveForHostEnd(const TCHAR* Why);

@@ -256,6 +256,11 @@ void UOutlawsCoop::EnterGame(AOutlawsPlayer* P, int32 Team)
 	UE_LOG(LogOutlawsCoop, Log, TEXT("OLCOOP lobby: the %s enters the game%s (%s)"), WhoWord(MyIndex()), Team == 1 ? TEXT(" on the red team") : Team == 2 ? TEXT(" on the blue team") : TEXT(""),
 		S->StartSerial == 0 ? TEXT("before the start: it goes in with the host's Start") : IsHost() ? TEXT("into the host's level") : TEXT("it asks the host for its game"));
 	SetReady(true);                                           // (the host's own runs here at once)
+	// (REQ-MAPAUTHOR) the first match has no "Next match" line: who made the map goes up in white as the player goes in
+	if (IsMatch() && S->MatchCycle == 0 && OutlawsMpHost::MapTitleBy(S->MapName) != OutlawsMpHost::MapTitle(S->MapName))
+	{
+		if (AOutlawsLevelActor* L = FindLevel()) L->Notify(MatchLineFor(S->MatchClass, S->MapName, S->RandomBits, true), 5.f);
+	}
 	// (REQ-MPLOBBY b: a joiner whose next-match level is built behind its lobby goes straight in, as the host does)
 	const bool bBuiltHere = IsClient() && bLevelBuilt && StartedSerial == S->StartSerial;
 	if (IsHost() || bBuiltHere) P->CoopCloseMenu();

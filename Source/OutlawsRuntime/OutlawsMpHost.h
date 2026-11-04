@@ -26,7 +26,8 @@ enum class EOutlawsGameClass : uint8
 struct OUTLAWSRUNTIME_API FOutlawsMpMap
 {
 	FString File;             // the RCM's file name, lower case (fort.rcm, bourbon.rcm)
-	FString Name;             // its NAME: line (Fort de Chiens)
+	FString Name;             // its NAME: line (Fort de Chiens), without its " by <author>" (REQ-MAPAUTHOR)
+	FString FullName;         // (REQ-MAPAUTHOR) the NAME: line whole (Zeke's Cabins by Molycoat), for the white line as the map loads
 	FString Level;            // the STORY's LEVEL (fort)
 	FString Lab;              // a custom map's LAB (full path); empty for a stock map
 	uint8 Modes = 0;          // bit (class - 1) per allowed game class
@@ -96,9 +97,13 @@ namespace OutlawsMpHost
 	OUTLAWSRUNTIME_API bool IsClassOn(EOutlawsGameClass C);
 	/** An RCM's text: NAME, MODES, the STORY's LEVEL.  False (with why) when it has no level. */
 	OUTLAWSRUNTIME_API bool ParseRcm(const FString& Text, FOutlawsMpMap& Out, FString& Why);
-	/** The stock maps (every .rcm the LABs hold whose level's .lvt they hold too: BUG-BUNKERS) then the custom ones
-	 *  (Root\NAME.rcm beside a NAME.lab); a map whose RCM does not read is logged and left out, never fatal. */
+	/** The stock maps (every .rcm the LABs hold whose level's .lvt they hold too: BUG-BUNKERS) and the custom ones
+	 *  (Root\NAME.rcm beside a NAME.lab), in MapBefore's order; a map whose RCM does not read is logged and left out, never fatal. */
 	OUTLAWSRUNTIME_API void ListMaps(const FOutlawsAssets* Assets, TArray<FOutlawsMpMap>& Out);
+	/** (REQ-MAPAUTHOR) the list's order: one list by name, whatever the case (-OLOldMapAuthor: the stock maps, then the custom ones). */
+	OUTLAWSRUNTIME_API bool MapBefore(const FOutlawsMpMap& A, const FOutlawsMpMap& B);
+	/** -OLOldMapAuthor: the "by <author>" in the name, the (custom) tag and the two-part order, as before REQ-MAPAUTHOR. */
+	OUTLAWSRUNTIME_API bool OldMapAuthor();
 	/** (BUG-QUESTNATIVEMAPS) -OLNativeMapsListProbe, any build (Shipping too): a second into the run, a line a native map (its
 	 *  LAB's size, its RCM, NAME and modes), a RESULT line, then the game quits (OutlawsNativeMapsListProbe.cpp).  The module's
 	 *  start calls it; nothing without the flag. */
@@ -109,6 +114,9 @@ namespace OutlawsMpHost
 	/** A map's English name for the lines every machine shows (the stock maps' names as the remaster says them; a native map
 	 *  by its RCM's NAME, REQ-NATIVEMAPS; a player's own custom map by its file). */
 	OUTLAWSRUNTIME_API FString MapTitle(const FString& File);
+	/** (REQ-MAPAUTHOR) MapTitle with who made it, a native map's whole NAME line (Zeke's Cabins by Molycoat): the white line as a
+	 *  map loads; the menus and every other line say MapTitle. */
+	OUTLAWSRUNTIME_API FString MapTitleBy(const FString& File);
 	/** REQ-MPLOBBY (b), decision 4: the map and the game of the next match when either is "Random each match" (the flags stay
 	 *  set; MapFile and GameClass take the roll).  A random map comes from the stock maps that allow the game (a custom map is
 	 *  never rolled: a joiner may not have it); a random game from the games the map allows and this build offers; both
