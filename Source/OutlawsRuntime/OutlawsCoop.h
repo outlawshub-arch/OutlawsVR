@@ -1102,16 +1102,19 @@ public:
 	static void NoteBreak(AOutlawsLevelActor* L, int32 Hand, bool bOpen, int32 Shells, const FVector& Breech, const FVector& Vel, int32 Loads = 0);
 	/** The pickup number of the stick of dynamite whose actor is Owner (-1: none known). */
 	static int32 StickIdOf(const AOutlawsLevelActor* L, const AActor* Owner);
-	// ---- milestone 8: saves (OutlawsCoopSaves.cpp).  The host saves in single player's format (its autosave, since R7, to
-	// coop_autosave.json; the pause menu's Save Game into the slot chosen) with the client's own state as an optional
+	// ---- milestone 8: saves (OutlawsCoopSaves.cpp).  The host saves in single player's format (its autosave, since
+	// REQ-COOPSAVES, to its mode's usual file; the pause menu's Save Game into the slot chosen) with the client's own state as an optional
 	// "player2" block; a load in a session goes to both: the host puts the save back, the client takes its world from the
 	// save's JSON sent in parts ----
 	/** R8: the host's start-of-level autosave waits (true) while a connected partner has not built this level or told its
 	 *  kit yet (a slow link: the save would carry no player2), for at most 10 s after the level was built here. */
 	static bool HoldStartAutosave(AOutlawsLevelActor* L);
-	/** SaveGame in a session: the client never saves (false); the host saves where single player would, its autosave
-	 *  (slot -1) turned into the co-op autosave (slot -2, R7). */
+	/** SaveGame in a session: the client never saves (false); the host saves where single player would, its autosave to its
+	 *  mode's usual file (REQ-COOPSAVES); a match never autosaves.  -OLOldCoopSaves: every autosave to slot -2 (R7). */
 	static bool MaySave(AOutlawsLevelActor* L, int32& Slot);
+	/** REQ-COOPSAVES: -OLOldCoopSaves: the co-op autosave of its own (slot -2), Host Game on the Co-op page and the level
+	 *  page's Campaign and Continue rows, as before. */
+	static bool OldCoopSaves();
 	/** SaveGame in a session, its JSON made: the client's last reported state added as "player2". */
 	static void AddPlayer2(AOutlawsLevelActor* L, class FJsonObject& O);
 	static void NoteSaved(AOutlawsLevelActor* L, int32 Slot, int32 Bytes);
@@ -1369,7 +1372,8 @@ private:
 	int32 LobbyShotStep = 0;
 	double LobbyShotAt = 0.0;
 	void TickLobbyShots(double Now, class AOutlawsPlayer* P);
-	bool IsTestRun() const { return !LobbyShotPrefix.IsEmpty() || bAuto || bMenuTest || !LeaveTestWho.IsEmpty() || SoloLoadSlot != -100 ||!ExtrasSurveyDir.IsEmpty() || !HorseTestTag.IsEmpty() || CoopBenchSec > 0.f; }
+	bool IsTestRun() const { return !LobbyShotPrefix.IsEmpty() || bAuto || bMenuTest || !LeaveTestWho.IsEmpty() || SoloLoadSlot != -100 ||!ExtrasSurveyDir.IsEmpty() || !HorseTestTag.IsEmpty() || CoopBenchSec > 0.f || bCsMenuRun; }
+	bool bCsMenuRun = false;                     // -OLCoopSavesMenu (REQ-COOPSAVES: OutlawsCoopSavesProbe.cpp)
 	static void Shot(const FString& Name);
 	FString LevelToStart = TEXT("hideout");
 
@@ -2032,6 +2036,19 @@ private:
 	// some armour); the host skips to another level by the menu's row (MenuLevelChange, the Jump start); each machine's pockets
 	// are the same after it
 	void TickSkipInvTest(double Now, AOutlawsLevelActor* L, AOutlawsPlayer* P);
+	// REQ-COOPSAVES's tests (OutlawsCoopSavesProbe.cpp): -OLCoopTest=coopsaves on a host and its client, -OLCoopSavesMenu the pages
+	void TickCoopSavesTest(double Now, AOutlawsLevelActor* L, AOutlawsPlayer* P);
+	void OnCoopSavesTestStep(const FString& Step, int32 Arg, AOutlawsLevelActor* L, AOutlawsPlayer* P);
+	void TickCoopSavesMenu(double Now, AOutlawsPlayer* P);
+	FString CsState(const AOutlawsLevelActor* L) const;
+	static FString CsGiveKit(AOutlawsLevelActor* L);
+	void CsCheck(bool bOk, const FString& What);
+	void CsCheckAutosave(int32 Want, const FString& Level, bool bOpening);
+	void CsResult();
+	int32 CsvStep = 0, CsvFails = 0, CsvPasses = 0, CsMenuStep = 0, CsMenuWait = 0;
+	double CsvAt = 0.0, CsMenuAt = 0.0;
+	FString CsAll, CsNext, CsMenuLevel;
+	TMap<int32, FString> CsBefore;
 	int32 SiStep = 0, SiFails = 0, SiPasses = 0;
 	double SiAt = 0.0;
 	FString SiFull;
@@ -2549,6 +2566,7 @@ private:
 	FString TestLightsPrint(AOutlawsLevelActor* L) const;     // (BUG-LIGHTSAVE: the sector lights, which TestWorldPrint leaves out)
 	int32 LobbyLoadSlot = -100;                  // host: the lobby's Start loads this save (-100: a new game)
 	bool bResumeChosen = false;                  // host: the lobby's Resume Game picked before both were ready
+	bool bLevelsHistorical = false;              // the level page's campaign: REQ-COOPSAVES's Story or Historical Missions page
 	bool bTestResume = false;                    // -OLCoopLoad=resume: the test picks the lobby's Resume Game row
 	double FirstLobbyAt = 0.0;
 	bool bStartAloneFromSave = false;          // (R11: HostFromSave's lobby starts at once, alone)

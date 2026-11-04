@@ -2526,7 +2526,7 @@ void AOutlawsLevelActor::TickTutorialTest(float Dt)
 			{ TEXT("Historical Missions"), TEXT("#missions"), nullptr, nullptr, nullptr },
 			{ TEXT(""), TEXT("#newgame"), nullptr, nullptr, nullptr },
 			{ TEXT("Multiplayer"), TEXT("#coopmulti"), TEXT("Co-op | Competitive | Back"), TEXT("MULTIPLAYER"), TEXT("mpmenu_multiplayer") },
-			{ TEXT("Co-op"), TEXT("#coop"), TEXT("Host Game | Join Game | Back"), TEXT("CO-OP"), TEXT("mpmenu_coop") },
+			{ TEXT("Co-op"), TEXT("#coop"), TEXT("New Game | Load Game | Join Game | Back"), TEXT("CO-OP"), TEXT("mpmenu_coop") },       // (REQ-COOPSAVES)
 			{ TEXT("Join Game"), TEXT("#coopjoin"), nullptr, TEXT("JOIN A CO-OP GAME"), TEXT("mpmenu_join_coop") },
 			{ TEXT(""), TEXT("#coop"), nullptr, nullptr, nullptr },
 			{ TEXT("Back"), TEXT("#coopmulti"), nullptr, nullptr, nullptr },

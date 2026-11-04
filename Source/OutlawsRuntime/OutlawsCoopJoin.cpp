@@ -178,26 +178,35 @@ void UOutlawsCoop::TickJoinFor(double Now, int32 Who)
 	AOutlawsPlayer* P = LocalPlayer();
 	FString Text;
 	int32 NumEnemies = 0, NumPickups = 0;
-	if (!L || !P || !L->BuildSaveText(P, Text, NumEnemies, NumPickups)) return;
+	// (REQ-COOPSAVES: the Marshal session goes with the host's game, so a late joiner has its stamps and score too)
+	if (!L || !P || !L->BuildSaveText(P, Text, NumEnemies, NumPickups, L->bHom && !OldCoopSaves())) return;
 	// the joiner's own kit (N1: its block by its name, else its number): what it last told this host (a player back after a
-	// drop, or a loaded save's block for it), else the co-op autosave's for this level
+	// drop, or a loaded save's block for it), else the block in this level's autosave
 	const bool bOwn = !PlayerJsonFor(Who).IsEmpty();
 	FString P2From = bOwn ? FString(TEXT("the player's own, as last told")) : FString(TEXT("none (the start kit)"));
 	Text = SaveTextFor(Text, Who);
-	if (!bOwn)
+	if (!bOwn && (OldCoopSaves() || !IsMatch()))        // (REQ-COOPSAVES: a match has no autosave: its late joiner the start kit)
 	{
-		FString AutoText;
-		TSharedPtr<FJsonObject> Auto, O;
-		if (FFileHelper::LoadFileToString(AutoText, *AOutlawsLevelActor::SavePath(-2)) && ParseJoinJson(AutoText, Auto)
-			&& Auto->GetStringField(TEXT("level")).Equals(L->LevelName, ESearchCase::IgnoreCase) && ParseJoinJson(Text, O))
+		// REQ-COOPSAVES: the mode's autosave, where a co-op host's now goes, then an old co-op autosave of this level
+		TArray<int32, TInlineAllocator<2>> Slots;
+		if (!OldCoopSaves()) Slots.Add(L->ResolveAutosave(-1));
+		Slots.Add(-2);
+		for (const int32 Slot : Slots)
 		{
-			const TSharedPtr<FJsonObject> Block = SaveBlockFor(*Auto, Who);
-			if (Block.IsValid())
+			FString AutoText;
+			TSharedPtr<FJsonObject> Auto, O;
+			if (FFileHelper::LoadFileToString(AutoText, *AOutlawsLevelActor::SavePath(Slot)) && ParseJoinJson(AutoText, Auto)
+				&& Auto->GetStringField(TEXT("level")).Equals(L->LevelName, ESearchCase::IgnoreCase) && ParseJoinJson(Text, O))
 			{
-				O->SetObjectField(TEXT("player2"), Block);
-				Text.Reset();
-				FJsonSerializer::Serialize(O.ToSharedRef(), TJsonWriterFactory<TCHAR, TCondensedJsonPrintPolicy<TCHAR>>::Create(&Text));
-				P2From = TEXT("the co-op autosave's");
+				const TSharedPtr<FJsonObject> Block = SaveBlockFor(*Auto, Who);
+				if (Block.IsValid())
+				{
+					O->SetObjectField(TEXT("player2"), Block);
+					Text.Reset();
+					FJsonSerializer::Serialize(O.ToSharedRef(), TJsonWriterFactory<TCHAR, TCondensedJsonPrintPolicy<TCHAR>>::Create(&Text));
+					P2From = Slot == -2 ? TEXT("the co-op autosave's") : TEXT("this level's autosave's");
+					break;
+				}
 			}
 		}
 	}
@@ -657,9 +666,11 @@ void UOutlawsCoop::TickHostLateJoinTest(double Now, AOutlawsLevelActor* L, AOutl
 	if (!S || Now < TestAt) return;
 	const bool bEnd = TestOnly == TEXT("latejoinend");
 	// (REQ-AUTOSAVESLOTS: every single-player autosave, each mode's file)
+	// (REQ-COOPSAVES: the old co-op file is the one that must not move now; -OLOldCoopSaves: those)
 	auto Hash = []()
 	{
 		FString H;
+		if (!OldCoopSaves()) return LexToString(FMD5Hash::HashFile(*AOutlawsLevelActor::SavePath(-2)));
 		for (int32 a : { int32(AOutlawsLevelActor::AutosaveStory), int32(AOutlawsLevelActor::AutosaveHom), int32(AOutlawsLevelActor::AutosaveHandful), int32(AOutlawsLevelActor::AutosaveCustom) })
 			H += LexToString(FMD5Hash::HashFile(*AOutlawsLevelActor::SavePath(a))) + TEXT(" ");
 		return H;
@@ -670,6 +681,7 @@ void UOutlawsCoop::TickHostLateJoinTest(double Now, AOutlawsLevelActor* L, AOutl
 	case 0:
 		if (L->bNeedPlace || L->IsRebuildPending()) return;
 		TestLjAutoHash = Hash();
+		if (OLFlags::Param(TEXT("OLCoopSavesRejoin"))) L->StartSaveDelay = -1.f;       // (REQ-COOPSAVES: this level's autosave stays the one the joiner's block is in)
 		L->bInvincible = true;
 		UE_LOG(LogOutlawsCoop, Log, TEXT("OLCOOP test: latejoin: the host plays %s alone: extra bad guys for %d players, %d listed; nobody connected %d"), *L->LevelName, S->Players,
 			S->Extras.Num(), S->bClientConnected ? 0 : 1);
@@ -800,10 +812,12 @@ void UOutlawsCoop::TickHostLateJoinTest(double Now, AOutlawsLevelActor* L, AOutl
 		return;
 	case 510:
 	{
-		// 8: the autosaves: the co-op one written, single player's untouched
-		const AOutlawsLevelActor::FSaveInfo Co = AOutlawsLevelActor::ReadSaveInfo(-2);
-		UE_LOG(LogOutlawsCoop, Log, TEXT("OLCOOP test: latejoin: coop_autosave.json %s; autosave.json unchanged %s"), Co.bEmpty ? TEXT("NOT WRITTEN") : *FString::Printf(TEXT("written (%s)"), *Co.Name),
-			Hash() == TestLjAutoHash ? TEXT("yes") : TEXT("NO"));
+		// 8: the autosaves: this mode's written, the old co-op file untouched (REQ-COOPSAVES; -OLOldCoopSaves: the co-op one
+		// written, single player's untouched)
+		const int32 Slot = OldCoopSaves() ? -2 : L->ResolveAutosave(-1);
+		const AOutlawsLevelActor::FSaveInfo Co = AOutlawsLevelActor::ReadSaveInfo(Slot);
+		UE_LOG(LogOutlawsCoop, Log, TEXT("OLCOOP test: latejoin: %s %s; %s unchanged %s"), *FPaths::GetCleanFilename(AOutlawsLevelActor::SavePath(Slot)), Co.bEmpty ? TEXT("NOT WRITTEN") : *FString::Printf(TEXT("written (%s)"), *Co.Name),
+			OldCoopSaves() ? TEXT("autosave.json") : TEXT("coop_autosave.json"), Hash() == TestLjAutoHash ? TEXT("yes") : TEXT("NO"));
 		TestSay(TEXT("quit"));
 		TestStep = 100;
 		TestAt = Now + 1.5;

@@ -1,9 +1,10 @@
 // Story co-op (tools/olue/COOP_DESIGN.md), milestone 8: saves.  Only the host saves, in the same format as single player (user
 // 2026-10-02: "co op saves should perhaps be interchangeable"): the pause menu's Save Game writes the slot the host picks, so a
-// game started in either can be carried on in the other; since R7 (user 2026-10-03) the host's autosave is a file of its own,
-// coop_autosave.json, never single player's autosave.json.  Each co-op save carries
+// game started in either can be carried on in the other; since REQ-COOPSAVES (user 4 Nov) the host's autosave goes to its
+// mode's usual file (AOutlawsLevelActor::AutosaveSlotOf); R7's coop_autosave.json is no longer written and an old one stays
+// loadable.  Each co-op save carries
 // the client's own state as a "player2" block, which a single-player load ignores.  A load in a session (the host's pause
-// menu, or the lobby's Continue row) goes to both: each machine builds the save's level from its own files,
+// menu, or Co-op's Load Game) goes to both: each machine builds the save's level from its own files,
 // the host puts the save back as single player does, and the client takes the save's world (bad guys, pickups, props,
 // glass, walls, dynamite, doors) from the save's JSON, sent to it in parts, and its own player from "player2" (or, from a
 // save without one, a copy of the host's weapons and ammo and no keys), standing beside the host.
@@ -12,6 +13,7 @@
 // (-OLLoadTest=<slot>) only reports.
 #include "OutlawsCoop.h"
 #include "OutlawsRuntime.h"
+#include "OutlawsFlags.h"
 #include "OutlawsLevelActor.h"
 #include "OutlawsPlayer.h"
 #include "OutlawsEnemy.h"
@@ -70,11 +72,29 @@ bool UOutlawsCoop::MaySave(AOutlawsLevelActor* L, int32& Slot)
 {
 	UOutlawsCoop* C = Get(L);
 	if (!C || !C->IsHost()) return false;          // (the client's game is the host's to save)
-	// R7 (user 2026-10-03: "an autosave should still work. In a separate co-op autosave"): the host's autosave goes to
-	// coop_autosave.json, never single player's autosave.json; Save Game's slots as before.  (REQ-AUTOSAVESLOTS: nor any mode's
-	// single-player autosave, the one a level of its resolves to)
-	if (AOutlawsLevelActor::IsAutosaveSlot(Slot)) Slot = -2;
+	// R7 (user 2026-10-03: "an autosave should still work. In a separate co-op autosave"): the host's autosave went to
+	// coop_autosave.json, with no word of what kind of session it was: a match's host wrote its map there too (the user's
+	// co-op autosave holding competitive maps).  -OLOldCoopSaves: as it was
+	if (OldCoopSaves())
+	{
+		if (AOutlawsLevelActor::IsAutosaveSlot(Slot)) Slot = -2;
+		return true;
+	}
+	// REQ-COOPSAVES (user 4 Nov: "the host should just have it save in their usual slot for story mode if they're playing
+	// story mode"): the mode's own autosave, which the caller has resolved (AutosaveSlotOf), Save Game's slots as ever; a
+	// competitive match never autosaves, in any slot
+	if (C->IsMatch() && AOutlawsLevelActor::IsAutosaveSlot(Slot))
+	{
+		UE_LOG(LogOutlawsCoop, Log, TEXT("OLCOOP no autosave in a match"));
+		return false;
+	}
 	return true;
+}
+
+bool UOutlawsCoop::OldCoopSaves()
+{
+	static const bool bOld = OLFlags::Param(TEXT("OLOldCoopSaves"));
+	return bOld;
 }
 
 bool UOutlawsCoop::HoldStartAutosave(AOutlawsLevelActor* L)
@@ -293,6 +313,35 @@ bool UOutlawsCoop::RequestLoad(int32 Slot)
 	S->LoadName = SlotName(Slot);
 	S->StartKind = uint8(EOutlawsCoopStart::Load);
 	if (AOutlawsLevelActor* LR = FindLevel()) LR->ReadRandoSave(*O);    // (REQ-COOPRANDO: the save's run and attempt, for the session)
+	if (AOutlawsLevelActor* LH = FindLevel(); LH && !OldCoopSaves())
+	{
+		// REQ-COOPSAVES: the save's Marshal session, as a single-player load takes it (LoadGame), and for every player with
+		// this start: the block where the save has one (any save made in a session), a fresh session for an older save in
+		// the office (Marshal Training from the lobby is one), none for anything else (the story, a Handful mission)
+		const TSharedPtr<FJsonObject>* Hs = nullptr;
+		if (O->TryGetObjectField(TEXT("hom_save"), Hs) && Hs && Hs->IsValid())
+		{
+			LH->ReadHomCarry(**Hs);
+		}
+		else if (Lv == TEXT("office") && !LH->bHom)
+		{
+			LH->bHom = true;
+			LH->HomGameScore = LH->HomTotalGold = LH->HomTotalKills = LH->HomTotalWounds = LH->HomTotalBounty = 0;
+			LH->HomPorchEvents.Reset();
+			LH->HomResultText.Reset();
+			LH->HomMission.Reset();
+			LH->HomReturnSector.Reset();
+		}
+		else if (Lv != TEXT("office"))
+		{
+			LH->bHom = false;
+		}
+		S->bHom = LH->bHom;
+		S->HomMission = LH->bHom ? LH->HomMission : FString();
+		S->HomBack = LH->bHom ? LH->HomReturnSector : FString();
+		UE_LOG(LogOutlawsCoop, Log, TEXT("OLCOOP the save's Marshal session: %s"), LH->bHom ? *FString::Printf(TEXT("on (mission %s, back to %s, score %d, %d outlaws done)"),
+			LH->HomMission.IsEmpty() ? TEXT("none") : *LH->HomMission, LH->HomReturnSector.IsEmpty() ? TEXT("none") : *LH->HomReturnSector, LH->HomGameScore, LH->HomPorchEvents.Num()) : TEXT("none"));
+	}
 	PrepareExtras(S, Lv, S->SpawnDifficulty);    // (2026-10-02: the extra bad guys for the save's level, with the start)
 	++S->StartSerial;
 	S->ForceNetUpdate();
@@ -365,6 +414,14 @@ void UOutlawsCoop::BeginLoad(AOutlawsLevelActor* L, const FString& Level, int32 
 	L->bFrontEnd = false;
 	L->bMovieToMenu = false;
 	L->Difficulty = static_cast<EOutlawsDifficulty>(FMath::Clamp(Difficulty, 0, 2));
+	if (S && IsClient() && !OldCoopSaves())
+	{
+		// (REQ-COOPSAVES: the host's Marshal session with a load or a late join, as with every other start; its stamps and
+		// score come with the save, FinishSnapshotApply)
+		L->bHom = S->bHom;
+		L->HomMission = S->HomMission;
+		L->HomReturnSector = S->HomBack;
+	}
 	// (R7: a late join builds the host's level as the host built it, the snapshot's own spawn difficulty)
 	L->PendingSpawnDifficulty = bJoinApply && JoinSpawnDifficulty >= 0 ? JoinSpawnDifficulty : S && S->SpawnDifficulty >= 0 ? S->SpawnDifficulty : FMath::Clamp(Difficulty, 0, 2);
 	const TSharedPtr<FJsonObject> O = IsHost() ? SnapObj : nullptr;
@@ -652,6 +709,9 @@ void UOutlawsCoop::FinishSnapshotApply(AOutlawsLevelActor* L, AOutlawsPlayer* P,
 		HostAt = JsonVec(**HostPl);
 		Yaw = float((*HostPl)->GetNumberField(TEXT("yaw")));
 	}
+	// (REQ-COOPSAVES: the save's Marshal session here too: the office's stamps on the next way back, the game score)
+	const TSharedPtr<FJsonObject>* HomCarry = nullptr;
+	if (!OldCoopSaves() && O->TryGetObjectField(TEXT("hom_save"), HomCarry) && HomCarry && HomCarry->IsValid()) L->ReadHomCarry(**HomCarry);
 	const TSharedPtr<FJsonObject>* P2 = nullptr;
 	FString How;
 	if (bJoinApply)

@@ -2201,6 +2201,12 @@ void AOutlawsPlayer::MenuActivate(int32 Hand, int32 Index)
 			const int32 Slot = FCString::Atoi(*I.Name.Mid(5));
 			const bool bEmpty = !SlotsShown.IsValidIndex(Index) || SlotsShown[Index].bEmpty;
 			PendingSaveSlot = Slot;
+			if (!bSave && MenuStack.Num() > 0 && (MenuStack.Last() == TEXT("#coop") || MenuStack.Last() == TEXT("#coopcampaign")))
+			{
+				// (REQ-COOPSAVES: opened from Co-op's Load Game: the save is the co-op session's, not this player's alone)
+				if (!bEmpty) UOutlawsCoop::MenuAction(this, FString::Printf(TEXT("coop:loadslot:%d"), Slot));
+				return;
+			}
 			if (bSave && bEmpty)
 			{
 				AOutlawsLevelActor* L = Level.Get();

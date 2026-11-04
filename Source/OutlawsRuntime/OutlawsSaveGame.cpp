@@ -126,7 +126,8 @@ bool AOutlawsLevelActor::DeathSave(int32& OutSlot) const
 
 FString AOutlawsLevelActor::SavePath(int32 Slot)
 {
-	// (-2: a co-op host's own autosave, user 2026-10-03: "in a separate co-op autosave"; -3 .. -5: REQ-AUTOSAVESLOTS's modes)
+	// (-2: a co-op host's own autosave, user 2026-10-03: "in a separate co-op autosave", read but no longer written since
+	// REQ-COOPSAVES; -3 .. -5: REQ-AUTOSAVESLOTS's modes)
 	const TCHAR* Auto = Slot == -2 ? TEXT("coop_autosave.json") : Slot == AutosaveHom ? TEXT("autosave_hom.json") : Slot == AutosaveHandful ? TEXT("autosave_handful.json")
 		: Slot == AutosaveCustom ? TEXT("autosave_custom.json") : TEXT("autosave.json");
 	return FPaths::ProjectSavedDir() / TEXT("OutlawsSaves") / (Slot < 0 ? FString(Auto) : FString::Printf(TEXT("slot%d.json"), Slot));
@@ -148,7 +149,9 @@ int32 AOutlawsLevelActor::AutosaveSlotOf(const FString& Level)
 
 const TCHAR* AOutlawsLevelActor::AutosaveModeName(int32 Slot)
 {
-	return Slot == AutosaveHom ? TEXT("Historical") : Slot == AutosaveHandful ? TEXT("Handful") : Slot == AutosaveCustom ? TEXT("Custom") : Slot == -2 ? TEXT("Co-op") : TEXT("Story");
+	// (REQ-COOPSAVES: the file co-op no longer writes, on the Load page under a name that says so)
+	if (Slot == -2) return UOutlawsCoop::OldCoopSaves() ? TEXT("Co-op") : TEXT("Old co-op");
+	return Slot == AutosaveHom ? TEXT("Historical") : Slot == AutosaveHandful ? TEXT("Handful") : Slot == AutosaveCustom ? TEXT("Custom") : TEXT("Story");
 }
 
 void AOutlawsLevelActor::GetAutosaves(TArray<int32>& Out)
@@ -254,11 +257,12 @@ int32 AOutlawsLevelActor::LevelPicture(const FString& Level)
 
 bool AOutlawsLevelActor::SaveLevelOpening()
 {
-	// (co-op: the host's goes to its own co-op autosave, R7; the client never saves)
+	// (co-op: the host's goes to that mode's autosave, REQ-COOPSAVES; the client never saves)
 	const bool bCoop = UOutlawsCoop::IsActive(this);
 	int32 Slot = AutosaveSlotOf(NextLevelName);       // (REQ-AUTOSAVESLOTS: the next level's mode's autosave)
 	// (REQ-TUTORIAL, REQ-PERFTESTMODE: nothing saved)
-	if (!IsBetweenLevels() || (bCoop && !UOutlawsCoop::MaySave(this, Slot)) || bTutorial || OutlawsPerfTest::IsOn())
+	// (REQ-COOPSAVES: nor in a joined world whose session has just ended here: it is someone else's game)
+	if (!IsBetweenLevels() || (bCoop && !UOutlawsCoop::MaySave(this, Slot)) || bTutorial || OutlawsPerfTest::IsOn() || GetNetMode() == NM_Client)
 	{
 		return false;
 	}
@@ -327,14 +331,22 @@ bool AOutlawsLevelActor::SaveGame(int32 Slot)
 	}
 	if (UOutlawsCoop::IsActive(this) && !UOutlawsCoop::MaySave(this, Slot))
 	{
-		return false;              // (co-op: only the host saves; its autosave to its own file, R7)
+		return false;              // (co-op: only the host saves; its autosave to its mode's file, REQ-COOPSAVES; a match never)
+	}
+	if (GetNetMode() == NM_Client)
+	{
+		// (REQ-COOPSAVES: a joined world whose session has just ended here, the frame before its travel home, is still someone
+		// else's game: nothing of it goes into this player's own files)
+		UE_LOG(LogOutlaws, Log, TEXT("OLRT save %d: not in a joined game"), Slot);
+		return false;
 	}
 	FString Text;
 	int32 NumEnemies = 0, NumPickups = 0;
 	// (REQ-AUTOSAVESLOTS: the Historical Missions autosave carries the Marshal session; user 2 Nov evening: a slot saved during
 	// one carries it too, so loading it goes back into the session as the autosave does; a save outside one carries none)
+	// (REQ-COOPSAVES: a co-op host's slot save the same, now that a load in a session takes it back)
 	static const bool bOldAutosave = OLFlags::Param(TEXT("OLOldAutosave"));
-	const bool bHomSave = bHom && (Slot == AutosaveHom || (Slot >= 0 && !bOldAutosave && !UOutlawsCoop::IsActive(this)));
+	const bool bHomSave = bHom && (Slot == AutosaveHom || (Slot >= 0 && !bOldAutosave && (!UOutlawsCoop::IsActive(this) || !UOutlawsCoop::OldCoopSaves())));
 	if (!BuildSaveText(P, Text, NumEnemies, NumPickups, bHomSave))
 	{
 		return false;

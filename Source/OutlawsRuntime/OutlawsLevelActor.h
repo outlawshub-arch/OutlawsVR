@@ -1597,8 +1597,8 @@ public:
 	// ---- saves and autosave (OutlawsSaveGame.cpp): Saved/OutlawsSaves/slot<n>.json and autosave.json ----
 	enum { NumSaveSlots = 10 };
 	struct FSaveInfo { int32 Slot = -1; bool bEmpty = true; FString Level; FString Name; FString GameTime; FString Stamp; };
-	/** Slot 0 .. NumSaveSlots - 1, -1 for the autosave (the story's), -2 for a co-op host's own autosave (coop_autosave.json,
-	 *  R7), -3 .. -5 for the other modes' autosaves (REQ-AUTOSAVESLOTS). */
+	/** Slot 0 .. NumSaveSlots - 1, -1 for the autosave (the story's), -2 for a co-op host's own autosave of before REQ-COOPSAVES
+	 *  (coop_autosave.json, R7: read, no longer written), -3 .. -5 for the other modes' autosaves (REQ-AUTOSAVESLOTS). */
 	static FString SavePath(int32 Slot);
 	/** REQ-AUTOSAVESLOTS (user 2 Nov): one single-player autosave a mode, none writing over another's: the story's
 	 *  autosave.json (-1), Historical Missions' autosave_hom.json (-3: the office, its five missions and its ranked doors'

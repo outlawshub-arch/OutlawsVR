@@ -909,6 +909,7 @@ void UOutlawsCoop::TickTest(double Now)
 	else if (TestOnly == TEXT("allowcheats")) TickAllowCheatsTest(Now, L, P);       // (BUG-ALLOWCHEATS: OutlawsCoopCheats.cpp; the host and its client each)
 	else if (TestOnly == TEXT("cheatscope")) TickCheatScopeTest(Now, L, P);         // (REQ-CHEATSCOPE: OutlawsCoopCheatScope.cpp; the host and its client each)
 	else if (TestOnly == TEXT("skipinv")) TickSkipInvTest(Now, L, P);                   // (BUG-SKIPLEVELINV: OutlawsCoopSkipInv.cpp; the host and its client each)
+	else if (TestOnly == TEXT("coopsaves")) TickCoopSavesTest(Now, L, P);               // (REQ-COOPSAVES: OutlawsCoopSavesProbe.cpp; the host and its client each)
 	else if (TestOnly == TEXT("levelcarry")) TickLevelCarryTest(Now, L, P);             // (BUG-LEVELCARRY: OutlawsLevelCarryTest.cpp; the host and its client each)
 	else if (TestOnly == TEXT("unlock")) TickUnlockTest(Now, L, P);                 // (REQ-UNLOCKS: OutlawsUnlocksTest.cpp; the host and its client each)
 	else if (TestOnly == TEXT("bossend")) TickBossEndTest(Now, L, P);               // (BUG-RANCHDOOR, BUG-DRDEATHANIM: OutlawsCoopBossEnd.cpp; each)
@@ -1418,6 +1419,10 @@ void UOutlawsCoop::OnTestStep(const FString& Step, int32 Arg)
 	else if (Step.StartsWith(TEXT("lj:")))
 	{
 		OnLateJoinTestStep(Step.Mid(3), Arg, L, P);  // (R7, a late join: OutlawsCoopJoin.cpp)
+	}
+	else if (Step.StartsWith(TEXT("cs:")))
+	{
+		OnCoopSavesTestStep(Step.Mid(3), Arg, L, P); // (REQ-COOPSAVES: OutlawsCoopSavesProbe.cpp)
 	}
 	else if (Step.StartsWith(TEXT("wd:")))
 	{

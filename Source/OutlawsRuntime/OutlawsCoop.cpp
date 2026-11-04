@@ -465,6 +465,9 @@ void UOutlawsCoop::Initialize(FSubsystemCollectionBase& Collection)
 		else LobbyLoadSlot = SlotOf(Ld);
 	}
 	if (OLFlags::Value(TEXT("OLLoadTest"), Ld) && !Ld.IsEmpty()) SoloLoadSlot = SlotOf(Ld);
+#if WITH_OUTLAWS_TESTS
+	bCsMenuRun = OLFlags::HasValue(TEXT("OLCoopSavesMenu"));
+#endif
 	// 2026-10-02 decision 6's test: -OLCoopSpeed=<the movement speed slider's value, 0.2..0.75> for this instance's session only
 	// (the settings file keeps the player's own)
 	FString Sp;
@@ -1330,7 +1333,7 @@ void UOutlawsCoop::StartGame(bool bAlone)
 			UE_LOG(LogOutlawsCoop, Log, TEXT("OLCOOP lobby: the %s is still in the lobby at the start: it joins when it enters"), WhoWord(K->PlayerIndex));
 		}
 	}
-	if (LobbyLoadSlot != -100 && RequestLoad(LobbyLoadSlot)) return;       // (milestone 8: a save for both: the lobby's Continue, or -OLCoopLoad)
+	if (LobbyLoadSlot != -100 && RequestLoad(LobbyLoadSlot)) return;       // (milestone 8: a save for both: Co-op's Load Game, or -OLCoopLoad)
 	S->Level = LevelToStart;
 	S->Difficulty = int32(L->Difficulty);
 	S->StartKind = uint8(EOutlawsCoopStart::Lobby);
@@ -1575,6 +1578,7 @@ void UOutlawsCoop::Tick(float DeltaTime)
 #if WITH_OUTLAWS_TESTS
 	if (bAuto && IsDropoutTest()) TickDropoutTest(Now);
 	if (bAuto && IsPauseTest()) TickPauseTest(Now);
+	if (bCsMenuRun) TickCoopSavesMenu(Now, P);   // (REQ-COOPSAVES: OutlawsCoopSavesProbe.cpp)
 	if (CoopBenchSec > 0.f) TickCoopBench(Now);
 	if (Mode == EOutlawsCoopMode::None && bLaunchPending && LaunchAt > 0.0 && Now >= LaunchAt && !MenuWalk.IsEmpty())
 	{
@@ -1795,7 +1799,9 @@ void UOutlawsCoop::Tick(float DeltaTime)
 			TArray<FString> Rows;
 			for (const OutlawsMenu::FItem& I : Page.Items) Rows.Add(I.Label);
 			UE_LOG(LogOutlawsCoop, Log, TEXT("OLCOOP test: the host's lobby rows: %s"), *FString::Join(Rows, TEXT(" | ")));
-			MenuAction(P, TEXT("coop:resume"));
+			// (REQ-COOPSAVES: as Load Game's rows pick them: an old co-op autosave if there is one, else the newest autosave)
+			const int32 Resume = AOutlawsLevelActor::ReadSaveInfo(-2).bEmpty ? AOutlawsLevelActor::NewestAutosave() : -2;
+			MenuAction(P, OldCoopSaves() ? FString(TEXT("coop:resume")) : FString::Printf(TEXT("coop:loadslot:%d"), Resume));
 			bTestResume = false;
 		}
 		if (FirstLobbyAt == 0.0 && P && P->IsMenuOpen()) FirstLobbyAt = Now;
@@ -1926,14 +1932,15 @@ void UOutlawsCoop::TickLobbyShots(double Now, AOutlawsPlayer* P)
 	switch (LobbyShotStep++)
 	{
 	case 0: Snap(TEXT("main")); break;
-	case 1: MenuAction(P, TEXT("coop:campaign")); break;
+	// (REQ-COOPSAVES: the Level row's page of the two campaigns; -OLOldCoopSaves: the Campaign row and the New Game of old)
+	case 1: MenuAction(P, OldCoopSaves() ? TEXT("coop:campaign") : TEXT("coop:level")); break;
 	case 2: Snap(TEXT("historical")); break;
-	case 3: MenuAction(P, TEXT("coop:newgame")); break;
+	case 3: MenuAction(P, OldCoopSaves() ? TEXT("coop:newgame") : TEXT("coop:historical")); break;
 	case 4: Snap(TEXT("levels_historical")); break;
 	case 5: MenuAction(P, TEXT("coop:pick:icecaves")); break;      // (REQ-HMCAREER: a Handful mission; the five only through Marshal Training)
 	case 6: Snap(TEXT("historical_picked")); break;
-	case 7: MenuAction(P, TEXT("coop:campaign")); break;
-	case 8: MenuAction(P, TEXT("coop:newgame")); break;
+	case 7: MenuAction(P, OldCoopSaves() ? TEXT("coop:campaign") : TEXT("coop:level")); break;
+	case 8: MenuAction(P, OldCoopSaves() ? TEXT("coop:newgame") : TEXT("coop:story")); break;
 	case 9: Snap(TEXT("levels_main")); break;
 	case 10: MenuAction(P, TEXT("coop:pick:hideout")); break;
 	case 11: P->CoopShowPage(TEXT("#coophostopts"), true); break;
@@ -2048,7 +2055,8 @@ void UOutlawsCoop::TickMenuWalk(AOutlawsPlayer* P, double Now)
 	if (Now < MenuWalkAt) return;
 	MenuWalkAt = Now + 1.0;
 	const bool bComp = MenuWalk == TEXT("comp");
-	const TCHAR* Labels[] = { TEXT("New Game"), TEXT("Multiplayer"), bComp ? TEXT("Competitive") : TEXT("Co-op"), bLaunchHost ? TEXT("Host Game") : TEXT("Join Game") };
+	const bool bCoopNew = bLaunchHost && !bComp && !OldCoopSaves();    // (REQ-COOPSAVES: Co-op's way in as a host is its New Game)
+	const TCHAR* Labels[] = { TEXT("New Game"), TEXT("Multiplayer"), bComp ? TEXT("Competitive") : TEXT("Co-op"), bCoopNew ? TEXT("New Game") : bLaunchHost ? TEXT("Host Game") : TEXT("Join Game") };
 	auto Said = [&](const FString& What, bool bOk)
 	{
 		UE_LOG(LogOutlawsCoop, Log, TEXT("OLCOOP menu walk %s: %s %s (now on %s)"), *MenuWalk, *What, bOk ? TEXT("ok") : TEXT("FAILED"), *P->CoopMenuPage());
@@ -2060,7 +2068,22 @@ void UOutlawsCoop::TickMenuWalk(AOutlawsPlayer* P, double Now)
 		const bool bOk = P->TutorialTestPressLabel(L);
 		Said(FString::Printf(TEXT("%s pressed"), L), bOk);
 		if (!bOk) { bLaunchPending = false; return; }
-		if (++MenuWalkStep == 4 && bLaunchHost && !bComp) bLaunchPending = false;      // (co-op's Host Game hosts at once)
+		if (++MenuWalkStep == 4 && bLaunchHost && !bComp && !bCoopNew) bLaunchPending = false;      // (co-op's Host Game hosts at once)
+		return;
+	}
+	if (bCoopNew)
+	{
+		// (REQ-COOPSAVES) New Game > Story, then the launch's level: the session opens on it
+		if (MenuWalkStep++ == 4)
+		{
+			const bool bOk = P->TutorialTestPressLabel(TEXT("Story"));
+			Said(TEXT("Story pressed"), bOk);
+			if (!bOk) bLaunchPending = false;
+			return;
+		}
+		Said(FString::Printf(TEXT("%s picked on the level page"), *LevelToStart), P->CoopMenuPage() == TEXT("#cooplevels"));
+		MenuAction(P, TEXT("coop:pick:") + LevelToStart);
+		bLaunchPending = false;
 		return;
 	}
 	if (bLaunchHost)
@@ -2123,6 +2146,17 @@ void UOutlawsCoop::BuildMenuPage(AOutlawsPlayer* P, const FString& File, Outlaws
 		I.Target = Target;
 		Page.Items.Add(I);
 	};
+	// REQ-COOPSAVES: the normal Load page from a co-op page (a row picked there is a save for the session: the Load page's own
+	// rows, AOutlawsPlayer::MenuActivate), greyed out with no save at all as the title's is
+	auto LoadRow = [&Page](const TCHAR* Label)
+	{
+		FItem I;
+		I.Kind = EItemKind::Link;
+		I.Label = Label;
+		I.Target = TEXT("load_game.rml");
+		if (!AOutlawsPlayer::AnySaveToLoad()) I.Classes = TEXT("disabled");
+		Page.Items.Add(I);
+	};
 	// REQ-MPMENU: a Back row under each of the Multiplayer pages, up one level (not a "coop:" name: the menu's own Back)
 	auto Back = [&Page](const TCHAR* Name)
 	{
@@ -2144,9 +2178,31 @@ void UOutlawsCoop::BuildMenuPage(AOutlawsPlayer* P, const FString& File, Outlaws
 	else if (File == TEXT("#coop"))
 	{
 		Page.Title = TEXT("CO-OP");
-		Act(TEXT("Host Game"), TEXT("coop:host"));
+		if (OldCoopSaves())
+		{
+			Act(TEXT("Host Game"), TEXT("coop:host"));
+		}
+		else
+		{
+			// REQ-COOPSAVES (user 4 Nov: "When they choose co-op, they should have the option for new game or load game"): the
+			// host's two ways in; the session opens with the level or the save chosen, the lobby next
+			Link(TEXT("New Game"), TEXT("#coopcampaign"));
+			LoadRow(TEXT("Load Game"));
+		}
 		Link(TEXT("Join Game"), TEXT("#coopjoin"));
 		Back(TEXT("coopmenu_back"));
+	}
+	else if (File == TEXT("#coopcampaign"))
+	{
+		// REQ-COOPSAVES (user 4 Nov: "co-op should be allowed for any type of missions, whether it be story mode or historical
+		// missions"): the campaign as a page of its own, then its levels; from the lobby's Level row (a session already
+		// open) it can take a save instead
+		const bool bHosting = C && C->IsHost();
+		Page.Title = bHosting ? TEXT("LEVEL") : TEXT("NEW GAME");
+		Act(TEXT("Story"), TEXT("coop:story"));
+		Act(TEXT("Historical Missions"), TEXT("coop:historical"));
+		if (bHosting) LoadRow(TEXT("Load Game"));
+		Back(TEXT("coopcampaign_back"));
 	}
 	else if (File == TEXT("#coopcomp"))
 	{
@@ -2222,17 +2278,24 @@ void UOutlawsCoop::BuildMenuPage(AOutlawsPlayer* P, const FString& File, Outlaws
 	{
 		// REQ-COOPLOBBY / REQ-LOBBYTIDY: the campaign, Continue (the co-op autosave, when it is this campaign's), then the
 		// campaign's levels in story order; a pick is a New Game there
-		const bool bHist = C->IsHistorical();
-		Page.Title = TEXT("LEVEL");
-		Act(FString::Printf(TEXT("Campaign: %s"), bHist ? TEXT("Historical Missions") : TEXT("Main Game")), TEXT("coop:campaign"));
-		FString Saved;
-		if (C->CampaignAutosave(Saved)) Act(FString::Printf(TEXT("%sContinue: %s"), C->LobbyLoadSlot == -2 ? TEXT("> ") : TEXT(""), *Saved), TEXT("coop:resume"));
+		// (REQ-COOPSAVES: the campaign comes from the page before, Story or Historical Missions, and the rows above the
+		// levels are gone: any save is Load Game's.  -OLOldCoopSaves: the two rows)
+		const bool bOld = OldCoopSaves();
+		const bool bHist = bOld ? C->IsHistorical() : C->bLevelsHistorical;
+		Page.Title = bOld ? TEXT("LEVEL") : bHist ? TEXT("HISTORICAL MISSIONS") : TEXT("STORY");
+		if (bOld)
+		{
+			Act(FString::Printf(TEXT("Campaign: %s"), bHist ? TEXT("Historical Missions") : TEXT("Main Game")), TEXT("coop:campaign"));
+			FString Saved;
+			if (C->CampaignAutosave(Saved)) Act(FString::Printf(TEXT("%sContinue: %s"), C->LobbyLoadSlot == -2 ? TEXT("> ") : TEXT(""), *Saved), TEXT("coop:resume"));
+		}
 		TArray<FString> Names, Labels;
 		C->CampaignLevels(bHist, Names, Labels);
 		for (int32 i = 0; i < Names.Num(); ++i)
 		{
 			Act(FString::Printf(TEXT("%s%s"), C->LobbyLoadSlot == -100 && Names[i] == C->LevelToStart ? TEXT("> ") : TEXT(""), *Labels[i]), TEXT("coop:pick:") + Names[i]);
 		}
+		if (!bOld) Back(TEXT("cooplevels_back"));
 	}
 	else if (File == TEXT("#coophostopts") && C)
 	{
@@ -2366,7 +2429,31 @@ void UOutlawsCoop::MenuAction(AOutlawsPlayer* P, const FString& Name)
 	}
 	else if (Name == TEXT("coop:level"))
 	{
+		P->CoopShowPage(OldCoopSaves() ? TEXT("#cooplevels") : TEXT("#coopcampaign"), true);       // (REQ-COOPSAVES: Story or Historical Missions first)
+	}
+	else if (Name == TEXT("coop:story") || Name == TEXT("coop:historical"))
+	{
+		C->bLevelsHistorical = Name == TEXT("coop:historical");  // (REQ-COOPSAVES: nothing changes until a level is picked)
 		P->CoopShowPage(TEXT("#cooplevels"), true);
+	}
+	else if (Name.StartsWith(TEXT("coop:loadslot:")))
+	{
+		// REQ-COOPSAVES (user 4 Nov: "they should be able to load any save when they're choosing to host a co-op game"): a row of
+		// the Load page, opened from Co-op: the session opens if it is not open yet, and the lobby's Start loads this save
+		// for everyone (RequestLoad), so friends can gather first
+		const int32 Slot = FCString::Atoi(*Name.Mid(14));
+		const AOutlawsLevelActor::FSaveInfo Info = AOutlawsLevelActor::ReadSaveInfo(Slot);
+		if (Info.bEmpty) return;
+		const bool bHosting = C->IsHost();
+		if (!bHosting) C->Host();
+		C->LobbyLoadSlot = Slot;                 // (after Host, whose session reset clears it)
+		C->bResumeChosen = true;
+		UE_LOG(LogOutlawsCoop, Log, TEXT("OLCOOP lobby: Load Game: %s (%s, %s) chosen: Start loads it"), *FPaths::GetCleanFilename(AOutlawsLevelActor::SavePath(Slot)), *Info.Name, *Info.Level);
+		if (bHosting)
+		{
+			P->CoopMenuBack();                   // (the Load page, then its Level page: the lobby again)
+			P->CoopMenuBack();
+		}
 	}
 	else if (Name.StartsWith(TEXT("coop:mute:")))
 	{
@@ -2400,7 +2487,19 @@ void UOutlawsCoop::MenuAction(AOutlawsPlayer* P, const FString& Name)
 		C->LobbyLoadSlot = -100;
 		C->bResumeChosen = false;
 		UE_LOG(LogOutlawsCoop, Log, TEXT("OLCOOP lobby: New Game at %s (%s)"), *C->LevelToStart, C->IsHistorical() ? TEXT("Historical Missions") : TEXT("Main Game"));
-		P->CoopMenuBack();
+		if (OldCoopSaves())
+		{
+			P->CoopMenuBack();
+		}
+		else if (C->IsHost())
+		{
+			P->CoopMenuBack();                   // (REQ-COOPSAVES: from the lobby's Level row: the level page, then the campaign's)
+			P->CoopMenuBack();
+		}
+		else
+		{
+			C->Host();                           // (REQ-COOPSAVES: Co-op > New Game: the session opens on the level picked, the lobby next)
+		}
 	}
 	else if (Name == TEXT("coop:back"))
 	{

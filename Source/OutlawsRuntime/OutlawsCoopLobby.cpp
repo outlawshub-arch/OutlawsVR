@@ -112,6 +112,12 @@ void UOutlawsCoop::LobbyView(const FString& File, OutlawsLobbyPage::FView& V) co
 		FString Saved;
 		const bool bCont = CampaignAutosave(Saved) && LobbyLoadSlot == -2;
 		V.Level = bCont ? FString::Printf(TEXT("Continue (%s)"), *Saved) : CampaignLevelTitle(LevelToStart);
+		if (!OldCoopSaves() && LobbyLoadSlot != -100)
+		{
+			// (REQ-COOPSAVES: the save chosen on Load Game, whichever: Start loads it for everyone)
+			const AOutlawsLevelActor::FSaveInfo Chosen = AOutlawsLevelActor::ReadSaveInfo(LobbyLoadSlot);
+			V.Level = FString::Printf(TEXT("Load %s"), Chosen.Name.IsEmpty() ? *CampaignLevelTitle(Chosen.Level) : *Chosen.Name);
+		}
 		V.State.Add(!S || !S->bClientConnected ? FString(TEXT("Waiting for friends to join"))
 			: FString(TEXT("Start Game takes in everyone who has entered")));
 		V.State.Add(FString::Printf(TEXT("Bad guys x%.2f%s"), BadGuysMultiplier(), IsBadGuysAuto() ? TEXT(" (Auto)") : TEXT("")));
