@@ -41,10 +41,10 @@ namespace OutlawsJumpWallLocal
 		double Lean = 0.0;      // Slope: the wall's pitch, degrees (+: its top over the body)
 		double High = 0.0;      // LowWall, Lip, StepDown, StepUp: its top over the floor, cm
 		float Dial = 0.5f;
-		double Far = 0.0;       // Ledge: the take-off to the hit, cm (0: Run)
+		double Far = 0.0;       // Ledge: the take-off to the hit, cm (0: RunUp)
 	};
 	constexpr double MinLen = 40.0, Depth = 19.0, Room = 12.0;     // units: the wall 12 m long, 5.7 m free in front, 3.6 m high
-	constexpr double Run = 220.0;      // cm from the take-off to the hit (0.3 s or so: on the rise)
+	constexpr double RunUp = 220.0;      // cm from the take-off to the hit (0.3 s or so: on the rise)
 	constexpr double LateRun = 520.0;  // the same on the way down
 	constexpr double BandOff = 150.0;  // cm off the wall: the line of the jumps along it
 	constexpr double LedgeHigh = 240.0;   // cm over the floor (the mill's walkway lip)
@@ -269,7 +269,7 @@ OL_SHOT_TEST(OLJumpWallProbe, 2410)
 			Way = In * FMath::Cos(Rad) + Tan * FMath::Sin(Rad);
 			const FVector At = WallMid - In * 150.0 + FVector(0.0, 0.0, LedgeHigh * 0.5);
 			AddBox(At, FRotator(0.0, In.Rotation().Yaw, 0.0), FVector(100.0, 1000.0, LedgeHigh * 0.5));     // (long: the stick stays held along it)
-			From = FVector(At.X, At.Y, FloorZ) - In * (100.0 + R) - Way * (C.Far > 0.0 ? C.Far : Run);
+			From = FVector(At.X, At.Y, FloorZ) - In * (100.0 + R) - Way * (C.Far > 0.0 ? C.Far : RunUp);
 			Equip(0, -1);
 			Equip(1, -1);
 			bSupport[0] = bSupport[1] = false;
@@ -311,7 +311,7 @@ OL_SHOT_TEST(OLJumpWallProbe, 2410)
 				AddBox(At, FRotator(C.Lean, In.Rotation().Yaw, 0.0), FVector(20.0, 400.0, 300.0));
 				Mid = FVector(At.X, At.Y, FloorZ) - In * 20.0;
 			}
-			From = Mid - In * R - Way * (C.Kind == EWallKind::Late || C.Kind == EWallKind::LowWall ? LateRun : C.Kind == EWallKind::WallApex ? 130.0 : Run);
+			From = Mid - In * R - Way * (C.Kind == EWallKind::Late || C.Kind == EWallKind::LowWall ? LateRun : C.Kind == EWallKind::WallApex ? 130.0 : RunUp);
 		}
 		From.Z = FloorZ + Half + 2.0;
 		const FRotator Face(0.0, Way.Rotation().Yaw, 0.0);
