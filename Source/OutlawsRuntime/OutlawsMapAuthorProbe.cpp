@@ -129,7 +129,7 @@ OL_SHOT_TEST(OLMapAuthorProbe, 2424)
 		// (4) the page: the rows as they read, Random each match first
 		TArray<FString> Rows;
 		if (MenuPage) for (const OutlawsMenu::FItem& I : MenuPage->Items) if (I.Name.StartsWith(TEXT("mphost_map:")) && I.Name != TEXT("mphost_map:*")) Rows.Add(I.Label);
-		int32 Tags = 0, Bys = 0, OutOfOrder = 0, Mixes = 0;
+		int32 CustomTags = 0, Bys = 0, OutOfOrder = 0, Mixes = 0;
 		FString Last;
 		bool bLastCustom = false;
 		for (int32 i = 0; i < Rows.Num(); ++i)
@@ -138,7 +138,7 @@ OL_SHOT_TEST(OLMapAuthorProbe, 2424)
 			const int32 Modes = Name.Find(TEXT("  ["));
 			if (Modes != INDEX_NONE) Name.LeftInline(Modes);
 			Name.RemoveFromStart(TEXT("> "));
-			Tags += Rows[i].Contains(TEXT("(custom)")) ? 1 : 0;
+			CustomTags += Rows[i].Contains(TEXT("(custom)")) ? 1 : 0;
 			Bys += Name.Contains(TEXT(" by "), ESearchCase::IgnoreCase) ? 1 : 0;
 			OutOfOrder += i > 0 && Name.ToLower() < Last ? 1 : 0;
 			const FOutlawsMpMap* M = Maps.FindByPredicate([&Name](const FOutlawsMpMap& X) { return Name.StartsWith(X.Name); });
@@ -148,8 +148,8 @@ OL_SHOT_TEST(OLMapAuthorProbe, 2424)
 			Last = Name.ToLower();
 		}
 		UE_LOG(LogOutlaws, Display, TEXT("OLSHOT mapauthor rows: %s"), *FString::Join(Rows, TEXT(" | ")).Left(1500));
-		if (bOld) Check(Rows.Num() == Maps.Num() && Tags > 0 && Mixes == 1, FString::Printf(TEXT("old: %d rows, %d (custom) tags, the stock maps then the rest"), Rows.Num(), Tags));
-		else Check(Rows.Num() == Maps.Num() && Tags == 0 && Bys == 0 && OutOfOrder == 0 && Mixes > 1, FString::Printf(TEXT("the page: %d rows, %d tags, %d authors, %d out of order, stock and community mixed (%d changes)"), Rows.Num(), Tags, Bys, OutOfOrder, Mixes));
+		if (bOld) Check(Rows.Num() == Maps.Num() && CustomTags > 0 && Mixes == 1, FString::Printf(TEXT("old: %d rows, %d (custom) tags, the stock maps then the rest"), Rows.Num(), CustomTags));
+		else Check(Rows.Num() == Maps.Num() && CustomTags == 0 && Bys == 0 && OutOfOrder == 0 && Mixes > 1, FString::Printf(TEXT("the page: %d rows, %d tags, %d authors, %d out of order, stock and community mixed (%d changes)"), Rows.Num(), CustomTags, Bys, OutOfOrder, Mixes));
 		Picture(TEXT("menu"));
 		StageAt = Now;
 		Stage = 2;
