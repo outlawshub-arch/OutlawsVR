@@ -1234,6 +1234,19 @@ void FOutlawsInfRuntime::SetFromHost(int32 Index, double Value, int32 Stop, int3
 	}
 }
 
+void FOutlawsInfRuntime::BackToFirstStop(int32 Index)
+{
+	if (!Elevators.IsValidIndex(Index)) return;
+	FOutlawsElevator& E = Elevators[Index];
+	if (E.Target >= 0 && OnLoopSound) if (const FString* S2 = ClassOf(E).Sounds.Find(2)) OnLoopSound(*S2, E, false);
+	E.Stop = 0;
+	E.Target = -1;
+	E.bWaiting = false;
+	E.WaitLeft = 0.0;
+	E.Current = StopValue(E, 0);
+	Apply(E);
+}
+
 void FOutlawsInfRuntime::RequiredObjects(TSet<int32>& Out) const
 {
 	for (const FOutlawsInfItem& It : Inf.Items)

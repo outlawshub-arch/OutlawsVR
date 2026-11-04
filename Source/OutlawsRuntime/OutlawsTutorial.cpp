@@ -19,7 +19,8 @@
 //  11 climb           the crates, by their top edge (one hand is enough)
 //  12 jump            a crouch (the turning stick held down, or the body) and a jump (pushed up, or a dip and rise), both
 //                     waited for; one controller: the jump
-//  13 door            the street's nearest door, pushed open by hand (left out when the level has none near)
+//  13 door            the two front doors of the building by the well, across the street from the jail (REQ-TUTDOORS), each
+//                     pushed open by hand; not found: the street's nearest door (left out when the level has none near)
 //  14 lantern         the lantern from the other hand's wheel, lit
 //  15 grab            a bad guy rushes in and holds still (frozen) until a hand takes him (a gun hand too)
 //  16 punch           the other hand's fist
@@ -46,6 +47,7 @@
 //         then Historical Missions > Ice Caves > Good builds the Handful mission (no tutorial; REQ-HMCAREER: the five
 //         original missions only through Marshal Training, -OLHmCareerTest)
 //   float REQ-TUTCARDFLOAT: a new card's first seconds, stage by stage (phase 30 below)
+//   doors REQ-TUTDOORS: the pair by name, a push on each, Back shuts them (phase 31 below)
 // Prints "OLTUT test check PASS|FAIL: ..." and "OLTUT test RESULT ...".  Screenshots: Saved/OLShots/ol_tut_<name>.png.
 
 #include "OutlawsLevelActor.h"
@@ -95,6 +97,13 @@ namespace OutlawsTutorialLocal
 	constexpr int32 NumBottles = 5;
 	// the line the front menu shows once a finished tutorial is back at it
 	FString GToast;
+	// (REQ-TUTDOORS) the door card is about the pair (TutorialCardLines has no run to look at)
+	bool GTwoDoors = false;
+	bool OldTutDoors()
+	{
+		static const bool bOld = OLFlags::Param(TEXT("OLOldTutDoors"));
+		return bOld;
+	}
 }
 
 struct FOutlawsTutorialRun
@@ -121,7 +130,10 @@ struct FOutlawsTutorialRun
 	FVector BottleAt[OutlawsTutorialLocal::NumBottles];
 	TWeakObjectPtr<AActor> Box;              // the pickup card's box of bullets
 	int32 DoorSector = -1;                   // the door card's door (its master sector), -1: none near
+	int32 DoorSector2 = -1;                  // (REQ-TUTDOORS) the pair's other leaf, -1: one door
 	FVector DoorAt = FVector::ZeroVector;    // its middle at the floor
+	FVector DoorOut = FVector::ZeroVector;   // the way out from it, to the side the player comes from
+	FVector DoorArrow = FVector::ZeroVector; // what the arrow floats over
 	float TurnSum = 0.f, LastYaw = 0.f;
 	bool bCrouchSeen = false, bJumpSeen = false;   // (the jump card's two actions)
 	float JumpHead0 = 0.f;
@@ -221,6 +233,12 @@ void AOutlawsLevelActor::TutorialCardLines(const AOutlawsPlayer* P, const FStrin
 		Hint = One >= 0 ? TEXT("Or dip down and spring up.") : TEXT("You can also crouch for real, and jump with a quick dip and rise.");
 		break;
 	case Door:
+		if (GTwoDoors)
+		{
+			Line = One >= 0 ? FString(TEXT("Walk to the two doors under the arrow and push each one open with your hand."))
+				: FString(TEXT("Walk to the two doors under the arrow and push each one open with either hand."));
+			break;
+		}
 		Line = One >= 0 ? FString(TEXT("Walk to the door under the arrow and push it open with your hand."))
 			: FString(TEXT("Walk to the door under the arrow and push it open with either hand."));
 		break;
@@ -483,10 +501,9 @@ void AOutlawsLevelActor::TickTutorial(float Dt)
 		R.Box = SpawnGroundItem(TEXT("gamboxb"), R.BoxAt);
 		UE_LOG(LogOutlaws, Log, TEXT("OLTUT the box of bullets at %s (%s)"), *R.BoxAt.ToCompactString(), R.Box.IsValid() ? *R.Box->GetName() : TEXT("not made"));
 	};
-	auto DoorOpen = [&R, this]() -> bool
+	auto LeafOpen = [this](int32 Sector) -> bool
 	{
-		if (R.DoorSector < 0 || !Inf) return true;
-		const TArray<int32>* Es = Inf->ElevatorsBySector.Find(R.DoorSector);
+		const TArray<int32>* Es = Inf->ElevatorsBySector.Find(Sector);
 		if (!Es) return true;
 		for (int32 e : *Es)
 		{
@@ -494,6 +511,28 @@ void AOutlawsLevelActor::TickTutorial(float Dt)
 			if ((E.IsMorph() || E.Class == EOutlawsInfClass::MoveCeiling) && (E.Stop != 0 || E.Target >= 0)) return true;
 		}
 		return false;
+	};
+	// (REQ-TUTDOORS: the pair's leaves are two elevators, each its own push: done when both have been)
+	auto DoorOpen = [&]() -> bool
+	{
+		if (R.DoorSector < 0 || !Inf) return true;
+		return LeafOpen(R.DoorSector) && (R.DoorSector2 < 0 || LeafOpen(R.DoorSector2));
+	};
+	// (REQ-TUTDOORS) shut again for the card, however it came up: Back, or a Next onto doors the player has already opened.  A
+	// held-open door stays open for good otherwise and the card would tick at once.  Nothing else opens them: the level's other
+	// bad guys sleep through the tutorial, the card's own have not come yet, and the INF has no trigger or key on them
+	auto ShutDoors = [&]()
+	{
+		for (const int32 Sector : { R.DoorSector, R.DoorSector2 })
+		{
+			const TArray<int32>* Es = Sector >= 0 ? Inf->ElevatorsBySector.Find(Sector) : nullptr;
+			if (!Es) continue;
+			for (int32 e : *Es)
+			{
+				const FOutlawsElevator& E = Inf->Elevators[e];
+				if ((E.IsMorph() || E.Class == EOutlawsInfClass::MoveCeiling) && (E.Stop != 0 || E.Target >= 0 || E.bWaiting)) Inf->BackToFirstStop(e);
+			}
+		}
 	};
 	auto KillMan = [&R, this](int32 m)
 	{
@@ -564,6 +603,7 @@ void AOutlawsLevelActor::TickTutorial(float Dt)
 			R.bCrouchSeen = R.bJumpSeen = false;
 			R.JumpHead0 = P->HeadHeight();
 			break;
+		case Door: if (!OldTutDoors()) ShutDoors(); break;
 		case Lantern: if (bReset && bLampOn) ToggleLamp(); break;
 		case Grab: ManFor(0, bReset); break;
 		case Punch: ManFor(0, false); break;
@@ -692,8 +732,56 @@ void AOutlawsLevelActor::TickTutorial(float Dt)
 		R.FightA = At(1700.0, -250.0);
 		R.FightB = At(1800.0, 300.0);
 		for (FVector* V : { &R.ManFrom, &R.FightA, &R.FightB }) { double Z = V->Z; if (Floor(*V, Z)) V->Z = Z; }
+		// REQ-TUTDOORS (user 2026-11-04: "the tutorial takes me to open a jail cell door in the jail to open. i think it should take
+		// us to open the two front doors on the opposite side of the street at the building next to the water well"): sectors
+		// COURTHOUSEDOOR01 and 02 (the octagon beside that building is the well, its shaft 34 units down), named, not searched
+		// for.  Each leaf is its own MORPH_SPIN2 elevator, no key, opened by a nudge from outside (EVENT_MASK 32), and their floors
+		// stand at 10.25: a leaf is the wall under that raised floor, so the search below, within 150 cm of the start's floor,
+		// passes them over, and the middle of the pair at the floor is read off the ground in front of them
+		GTwoDoors = false;
+		if (!OldTutDoors())
+		{
+			FVector Leaf[2];
+			int32 Found = 0;
+			for (const TCHAR* Name : { TEXT("COURTHOUSEDOOR01"), TEXT("COURTHOUSEDOOR02") })
+			{
+				for (const FOutlawsElevator& E : Inf->Elevators)
+				{
+					if (!E.IsMorph() || E.Sectors.Num() == 0 || !Inf->Live.Sectors.IsValidIndex(E.Sectors[0])) continue;
+					const FOutlawsSector& Sec = Inf->Live.Sectors[E.Sectors[0]];
+					if (!Sec.Name.Equals(Name, ESearchCase::IgnoreCase) || E.Stop != 0 || E.Target >= 0 || E.bTerminated || !E.bMasterOn || Sec.Verts.Num() < 3) continue;
+					FVector2D C(0.0, 0.0);
+					for (const FVector2D& V : Sec.Verts) C += V;
+					C /= double(Sec.Verts.Num());
+					Leaf[Found] = FOutlawsGeometry::ToUE(C, 0.0);
+					(Found == 0 ? R.DoorSector : R.DoorSector2) = E.Sectors[0];
+					++Found;
+					break;
+				}
+			}
+			if (Found == 2)
+			{
+				const FVector Mid = (Leaf[0] + Leaf[1]) * 0.5, Across = (Leaf[1] - Leaf[0]).GetSafeNormal2D();
+				R.DoorOut = FVector(Across.Y, -Across.X, 0.0);
+				if (FVector::DotProduct(R.DoorOut, S - Mid) < 0.0) R.DoorOut = -R.DoorOut;
+				double Z = S.Z;
+				Floor(FVector(Mid.X, Mid.Y, S.Z) + R.DoorOut * 120.0, Z);
+				R.DoorAt = FVector(Mid.X, Mid.Y, Z);
+				// (out past the frame, a leaf's face being set back from it, and over the door's top)
+				R.DoorArrow = R.DoorAt + R.DoorOut * 60.0 + FVector(0.0, 0.0, 290.0);
+				GTwoDoors = true;
+				UE_LOG(LogOutlaws, Log, TEXT("OLTUT the door card's doors: sectors %d and %d (%s, %s), the pair's middle at %s, %.0f cm from the start"), R.DoorSector, R.DoorSector2,
+					*Inf->Live.Sectors[R.DoorSector].Name, *Inf->Live.Sectors[R.DoorSector2].Name, *R.DoorAt.ToCompactString(), FVector::Dist2D(R.DoorAt, S));
+			}
+			else
+			{
+				R.DoorSector = R.DoorSector2 = -1;
+				UE_LOG(LogOutlaws, Warning, TEXT("OLTUT the two front doors are not in this level (%d of 2 found): the nearest door"), Found);
+			}
+		}
 		// the door card's door: the street's nearest shut door (a swinging or sliding leaf, MORPH_*, or a rising one) on the
 		// start's level, within 35 m; none, and the card is left out
+		if (!GTwoDoors)
 		{
 			double BestD = 3500.0;
 			for (const FOutlawsElevator& E : Inf->Elevators)
@@ -709,6 +797,8 @@ void AOutlawsLevelActor::TickTutorial(float Dt)
 				const double D = FVector::Dist2D(W, S);
 				if (D < BestD && FMath::Abs(W.Z - S.Z) < 150.0) { BestD = D; R.DoorSector = E.Sectors[0]; R.DoorAt = W; }
 			}
+			R.DoorOut = (S - R.DoorAt).GetSafeNormal2D();
+			R.DoorArrow = R.DoorAt + FVector(0.0, 0.0, 250.0);
 			UE_LOG(LogOutlaws, Log, TEXT("OLTUT the door card's door: %s"), R.DoorSector >= 0 ? *FString::Printf(TEXT("sector %d (%s) at %s, %.0f cm from the start"), R.DoorSector,
 				*Inf->Live.Sectors[R.DoorSector].Name, *R.DoorAt.ToCompactString(), BestD) : TEXT("none within 35 m: the card is left out"));
 		}
@@ -805,7 +895,7 @@ void AOutlawsLevelActor::TickTutorial(float Dt)
 		case TakeKnife: case ThrowKnife: Over = R.KnifePost + FVector(0.0, 0.0, 190.0); break;
 		case TakeDynamite: case ThrowDynamite: Over = R.Barrel + FVector(0.0, 0.0, 130.0); break;
 		case Climb: Over = R.Crates + FVector(0.0, 0.0, 165.0); break;
-		case Door: Over = R.DoorAt + FVector(0.0, 0.0, 250.0); break;
+		case Door: Over = R.DoorArrow; break;
 		case Horse: Over = R.HorseAt + FVector(0.0, 0.0, 230.0); break;
 		default: break;
 		}
@@ -1174,9 +1264,185 @@ void AOutlawsLevelActor::TickTutorialTest(float Dt)
 		T.Tries = 0;
 		T.LastStep = 1;
 		T.bGoodSeen = false;
-		T.Phase = Mode == TEXT("float") ? 30 : 4;
+		T.Phase = Mode == TEXT("float") ? 30 : Mode == TEXT("doors") ? 31 : 4;
 		T.At = Now + 1.5;
 		return;
+	}
+	case 31:
+	{
+		// REQ-TUTDOORS (-OLTutorialTest=doors): Next up to the door card; the pair by name, the well beside it, the arrow, clear
+		// ground there and on to the next stations, a shot from the street; a hand on each leaf finds it (DoorAtHand); one push
+		// leaves the card waiting, the second does it, each leaf's way blocked till it opens; Back into the card shuts them, and a
+		// Next onto a leaf opened early too.  -OLOldTutDoors: the jail cell, the old line, no more
+		FOutlawsTutorialRun& R = *TutorialRun;
+		AOutlawsTutorialCard* C = R.CardActor.Get();
+		if (!C) { Check(false, TEXT("doors: the card is there")); Finish(); return; }
+		const FString Id = TutorialCardId();
+		T.At = Now + 0.05;
+		if (Now - T.CardSeen > 60.0) { Check(false, FString::Printf(TEXT("doors: stuck at step %d on %s"), T.Job, *Id)); Finish(); return; }
+		auto LeafAt = [this](int32 Sector) -> FVector
+		{
+			const FOutlawsSector& Sec = Inf->Live.Sectors[Sector];
+			FVector2D Cn(0.0, 0.0);
+			for (const FVector2D& V : Sec.Verts) Cn += V;
+			return FOutlawsGeometry::ToUE(Cn / double(FMath::Max(1, Sec.Verts.Num())), 0.0);
+		};
+		auto Shut = [this](int32 Sector) -> bool
+		{
+			const TArray<int32>* Es = Inf->ElevatorsBySector.Find(Sector);
+			if (!Es) return false;
+			for (int32 e : *Es)
+			{
+				const FOutlawsElevator& E = Inf->Elevators[e];
+				if (E.IsMorph() && (E.Stop != 0 || E.Target >= 0 || FMath::Abs(E.Current) > 0.01)) return false;
+			}
+			return true;
+		};
+		// the street's side of a leaf to inside the room, at a hand's height: true when a leaf (or anything) stands in the way
+		auto Blocked = [&](int32 Sector) -> bool
+		{
+			const FVector L0 = LeafAt(Sector) + FVector(0.0, 0.0, R.DoorAt.Z + 130.0);
+			FHitResult H;
+			FCollisionQueryParams Q(SCENE_QUERY_STAT(OutlawsTutLeaf), true, P);
+			return World->LineTraceSingleByChannel(H, L0 + R.DoorOut * 25.0, L0 - R.DoorOut * 60.0, ECC_Visibility, Q);
+		};
+		switch (T.Job)
+		{
+		case 0:
+			if (Id != TEXT("door")) { C->Pick(1); T.At = Now + 0.15; return; }
+			T.Job = 1;
+			T.At = Now + 0.4;
+			return;
+		case 1:
+		{
+			const FString Name1 = R.DoorSector >= 0 ? Inf->Live.Sectors[R.DoorSector].Name : FString();
+			const FString Name2 = R.DoorSector2 >= 0 ? Inf->Live.Sectors[R.DoorSector2].Name : FString();
+			if (OLFlags::Param(TEXT("OLOldTutDoors")))
+			{
+				Check(Name1.StartsWith(TEXT("JAILDOOR")) && R.DoorSector2 < 0 && R.Line.Contains(TEXT("the door under the arrow")), FString::Printf(TEXT("old: the jail cell (%s), one door: \"%s\""), *Name1, *R.Line));
+				Finish();
+				return;
+			}
+			Check(Name1 == TEXT("COURTHOUSEDOOR01") && Name2 == TEXT("COURTHOUSEDOOR02"), FString::Printf(TEXT("the pair by name (%s, %s)"), *Name1, *Name2));
+			Check(R.Line.Contains(TEXT("two doors")) && C->GetLine() == R.Line, FString::Printf(TEXT("the card says doors: \"%s\""), *C->GetLine()));
+			Check(Shut(R.DoorSector) && Shut(R.DoorSector2) && !C->IsGood(), TEXT("both shut, the card waiting"));
+			// (the well: the level's deep shaft, under -30, beside the pair)
+			double WellD = 1e9;
+			for (const FOutlawsSector& Sec : Inf->Live.Sectors)
+			{
+				if (Sec.Floor.Y > -30.0 || Sec.Verts.Num() == 0) continue;
+				WellD = FMath::Min(WellD, FVector::Dist2D(FOutlawsGeometry::ToUE(Sec.Verts[0], 0.0), R.DoorAt));
+			}
+			Check(WellD < 1200.0, FString::Printf(TEXT("the well is beside them, %.0f cm off"), WellD));
+			const FVector Over = R.Arrow.IsValid() ? R.Arrow->GetActorLocation() : FVector::ZeroVector;
+			Check(R.Arrow.IsValid() && !R.Arrow->IsHidden() && FVector::Dist2D(Over, R.DoorAt) < 80.0 && Over.Z > R.DoorAt.Z + 300.0, FString::Printf(TEXT("the arrow over the middle of the pair (%s, the pair %s)"), *Over.ToCompactString(), *R.DoorAt.ToCompactString()));
+			Check(FMath::Abs(R.DoorAt.Z - R.Start.Z) < 30.0, FString::Printf(TEXT("the pair's foot is on the street's ground (z %.0f, the start %.0f)"), R.DoorAt.Z, R.Start.Z));
+			// the walk there from the crates' foot, and on to the lantern's and the grab's ground: nothing in the way at the knees
+			const FVector Knee(0.0, 0.0, 60.0);
+			FCollisionQueryParams Q(SCENE_QUERY_STAT(OutlawsTutWalk), true, P);
+			FHitResult H;
+			const FVector Door = R.DoorAt + R.DoorOut * 150.0 + Knee, Crate = R.Crates + (R.DoorAt - R.Crates).GetSafeNormal2D() * 130.0 + Knee;
+			Check(!World->LineTraceSingleByChannel(H, Crate, Door, ECC_Visibility, Q), FString::Printf(TEXT("the street is clear from the crates to the doors (%.0f cm)"), FVector::Dist2D(Crate, Door)));
+			Check(!World->LineTraceSingleByChannel(H, Door, R.ManFrom + Knee, ECC_Visibility, Q), FString::Printf(TEXT("and from the doors to where the grab's man comes from (%.0f cm)"), FVector::Dist2D(Door, R.ManFrom)));
+			PutFeet(R.DoorAt + R.DoorOut * 800.0, R.DoorAt);
+			Face(R.DoorAt);
+			T.At = Now + 0.6;
+			T.Job = 2;
+			return;
+		}
+		case 2:
+			Shot(TEXT("doors_far"));
+			T.At = Now + 0.4;
+			T.Job = 3;
+			return;
+		case 3:
+			PutFeet(R.DoorAt + R.DoorOut * 75.0, R.DoorAt);
+			Face(R.DoorAt);
+			T.At = Now + 0.6;
+			T.Job = 4;
+			return;
+		case 4:
+		{
+			Shot(TEXT("doors_near"));
+			Check(Blocked(R.DoorSector) && Blocked(R.DoorSector2), TEXT("each leaf shut stands in the way"));
+			// a fist at each leaf's face, from the eyes
+			for (const int32 Sector : { R.DoorSector, R.DoorSector2 })
+			{
+				const FVector Eye = Cam();
+				const FVector Hand = LeafAt(Sector) + FVector(0.0, 0.0, R.DoorAt.Z + 130.0) + R.DoorOut * 12.0;
+				bool bClosed = false;
+				const int32 Got = DoorAtHand(Eye, Hand, bClosed);
+				Check(Got == Sector && bClosed, FString::Printf(TEXT("a hand at leaf %d finds it, shut (%d, %d)"), Sector, Got, bClosed ? 1 : 0));
+			}
+			Check(PushDoorSector(R.DoorSector), TEXT("the first leaf takes the push"));
+			T.At = Now + 1.8;
+			T.Job = 5;
+			return;
+		}
+		case 5:
+			Check(!C->IsGood() && !Shut(R.DoorSector) && Shut(R.DoorSector2), TEXT("one leaf open: the card still waits"));
+			Check(!Blocked(R.DoorSector) && Blocked(R.DoorSector2), TEXT("that leaf's way is clear, the other's is not"));
+			Shot(TEXT("doors_one"));
+			T.At = Now + 0.4;
+			T.Job = 6;
+			return;
+		case 6:
+			Check(PushDoorSector(R.DoorSector2), TEXT("the second leaf takes the push"));
+			T.At = Now + 1.8;
+			T.Job = 7;
+			return;
+		case 7:
+			Check(C->IsGood(), TEXT("both open: done, the tick and Good."));
+			Check(!Blocked(R.DoorSector) && !Blocked(R.DoorSector2), TEXT("both ways clear"));
+			PutFeet(R.DoorAt + R.DoorOut * 240.0, R.DoorAt);
+			Face(R.DoorAt);
+			T.At = Now + 0.6;
+			T.Job = 8;
+			return;
+		case 8:
+			Shot(TEXT("doors_both"));
+			C->Pick(1);
+			T.At = Now + 0.4;
+			T.Job = 9;
+			return;
+		case 9:
+			if (Id != TEXT("lantern")) return;
+			Check(!Shut(R.DoorSector) && !Shut(R.DoorSector2), TEXT("the doors stay open behind the next card"));
+			C->Pick(0);
+			T.Job = 10;
+			return;
+		case 10:
+			if (Id != TEXT("door")) return;
+			Check(Shut(R.DoorSector) && Shut(R.DoorSector2) && !C->IsGood(), TEXT("Back into the card: both shut again at once, the card waiting"));
+			T.At = Now + 0.6;
+			T.Job = 11;
+			return;
+		case 11:
+			Check(!C->IsGood() && Blocked(R.DoorSector) && Blocked(R.DoorSector2), TEXT("and solid: no tick by itself"));
+			Shot(TEXT("doors_back"));
+			C->Pick(0);
+			T.At = Now + 0.3;
+			T.Job = 12;
+			return;
+		case 12:
+			// (a leaf opened while another card is up, a Next onto it)
+			if (Id != TEXT("jump")) return;
+			PushDoorSector(R.DoorSector);
+			T.At = Now + 0.5;
+			T.Job = 13;
+			return;
+		case 13:
+			C->Pick(1);
+			T.Job = 14;
+			return;
+		case 14:
+			if (Id != TEXT("door")) return;
+			Check(Shut(R.DoorSector) && Shut(R.DoorSector2) && !C->IsGood(), TEXT("Next onto a leaf caught moving: shut for the card, not a free tick"));
+			Finish();
+			return;
+		default:
+			return;
+		}
 	}
 	case 30:
 	{
@@ -1663,10 +1929,16 @@ void AOutlawsLevelActor::TickTutorialTest(float Dt)
 		}
 		else if (Id == TEXT("door"))
 		{
-			// walked up to the door (on the start's side of it), the hand's push
-			const FVector Out = (R.Start - R.DoorAt).GetSafeNormal2D();
-			if (Try == 1) { PutFeet(R.DoorAt + Out * 140.0, R.DoorAt); T.At = Now + 0.6; }
-			else if (Try >= 2)
+			// walked up to the door (on the start's side of it), the hand's push; REQ-TUTDOORS: a push for each leaf of the pair
+			if (Try == 1) { PutFeet(R.DoorAt + R.DoorOut * 140.0, R.DoorAt); T.At = Now + 0.6; }
+			else if (Try == 3 && R.DoorSector2 >= 0)
+			{
+				Check(!C->IsGood(), TEXT("door: one leaf open leaves the card waiting for the other"));
+				const bool bOk = PushDoorSector(R.DoorSector2);
+				UE_LOG(LogOutlaws, Display, TEXT("OLTUT test: the hand's push on the other leaf (sector %d): %s"), R.DoorSector2, bOk ? TEXT("it moves") : TEXT("nothing"));
+				T.At = Now + 1.0;
+			}
+			else if (Try == 2 || (Try > 3 && R.DoorSector2 < 0))
 			{
 				const bool bOk = PushDoorSector(R.DoorSector);
 				UE_LOG(LogOutlaws, Display, TEXT("OLTUT test: the hand's push on the door (sector %d): %s"), R.DoorSector, bOk ? TEXT("it moves") : TEXT("nothing"));

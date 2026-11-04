@@ -204,6 +204,8 @@ public:
 	/** The client: one elevator as the host has it.  A move both are making toward the same stop keeps its own easing
 	 *  unless the host's value is more than a quarter second of travel away (no step back for the network's lag). */
 	void SetFromHost(int32 Index, double Value, int32 Stop, int32 Target, bool bWaiting, bool bTerminated, bool bMasterOn);
+	/** REQ-TUTDOORS: one elevator back at its first stop at once, nothing queued (the tutorial's door card set up again). */
+	void BackToFirstStop(int32 Index);
 
 private:
 	bool ForwardEvent(int32 Sector, int32 Wall, uint32 Event);
