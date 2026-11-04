@@ -837,7 +837,7 @@ void UOutlawsCoop::BotFired(AOutlawsEnemy* E, const FVector& Muzzle)
 	if (B->Weapon != 0 && B->Ammo[G.AmmoType] < G.Rounds) B->NextChooseAt = 0.0;
 }
 
-void UOutlawsCoop::BotPellet(AOutlawsEnemy* E, float Damage, const FVector& At, const FVector& From)
+void UOutlawsCoop::BotPellet(AOutlawsEnemy* E, float Damage, const FVector& At, const FVector& From, uint8 Spot)
 {
 	if (!E || !IsHost() || E->CoopSelf < 0) return;
 	if (!BotFoe(E->CoopSelf, E->CoopTarget))
@@ -846,7 +846,10 @@ void UOutlawsCoop::BotPellet(AOutlawsEnemy* E, float Damage, const FVector& At, 
 		return;
 	}
 	const FBot* B = FindBot(E->CoopSelf);        // (REQ-RIFLEMP: a bot's rifle as a player's, gun 1)
-	OnMatchHit(E->CoopSelf, LevelEpoch(), E->CoopTarget, Damage, At, From, false, uint8(B && B->Weapon == 1 ? EOutlawsMatchBlow::RifleShot : EOutlawsMatchBlow::Plain));
+	// (REQ-RIFLEMP: the spot goes to the host's steps as a player's shot's does; -OLOldHitLocation: on the damage first, as before)
+	static const bool bOldSpot = OLFlags::Param(TEXT("OLOldHitLocation"));
+	OnMatchHit(E->CoopSelf, LevelEpoch(), E->CoopTarget, bOldSpot ? Damage * OutlawsHitSpot::Unpack(Spot) : Damage, At, From, false,
+		uint8(B && B->Weapon == 1 ? EOutlawsMatchBlow::RifleShot : EOutlawsMatchBlow::Plain), bOldSpot ? 0 : Spot);
 }
 
 void UOutlawsCoop::BlastThrowsBots(AOutlawsLevelActor* L, const FVector& From, float RadiusCm, float Damage)

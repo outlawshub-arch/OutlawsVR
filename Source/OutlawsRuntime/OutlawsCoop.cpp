@@ -329,9 +329,11 @@ void UOutlawsCoop::Initialize(FSubsystemCollectionBase& Collection)
 		bAuto = bAutoReady = bWorldTest = true;
 		TestOnly = TEXT("flicknet");
 	}
-	if (OLFlags::Param(TEXT("OLMpLethalProbe")) && !OLFlags::ValueIs(TEXT("OLMpLethalProbe"), TEXT("story")))
+	if ((OLFlags::Param(TEXT("OLMpLethalProbe")) && !OLFlags::ValueIs(TEXT("OLMpLethalProbe"), TEXT("story")))
+		|| (OLFlags::Param(TEXT("OLBlastRifleProbe")) && !OLFlags::ValueIs(TEXT("OLBlastRifleProbe"), TEXT("story"))))
 	{
-		// (REQ-MPLETHAL's two-machine probe: OutlawsMpLethalProbe.cpp; the host starts the match itself)
+		// (REQ-MPLETHAL's two-machine probe: OutlawsMpLethalProbe.cpp; the host starts the match itself; BUG-BLASTMISS and
+		// REQ-RIFLEMP's, OutlawsBlastRifleProbe.cpp, runs on the same test)
 		bAuto = bAutoReady = bWorldTest = true;
 		TestOnly = TEXT("mplethal");
 	}

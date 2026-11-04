@@ -94,7 +94,11 @@ namespace OutlawsMpLethalProbeLocal
 	/** The blows the rule wants (bOld: the old numbers). */
 	int32 WantBlows(int32 Kind, bool bOld, bool bBare, float Mult, int32 Armour)
 	{
-		const int32 Was = OldBlows(KindDamage[Kind] * Mult, Armour);
+		// (REQ-RIFLEMP: a shot here goes on the body's axis above the waist, x1.5; the scoped one is the rifle's, doubled.  Its
+		// unscoped "head" and "body" shots are no rifle's: the probe calls ShotAtPlayers with a plain 2)
+		const bool bShot = Kind == Scoped || Kind == Head || Kind == Body;
+		const float Where = (bShot && !OLFlags::Param(TEXT("OLOldHitLocation")) ? 1.5f : 1.f) * (Kind == Scoped && !OLFlags::Param(TEXT("OLOldRifleMp")) ? 2.f : 1.f);
+		const int32 Was = OldBlows(KindDamage[Kind] * Mult * Where, Armour);
 		if (bOld || bBare) return Was;
 		switch (Kind)
 		{
@@ -169,6 +173,7 @@ static bool OLLethalBlow(UOutlawsCoop* C, AOutlawsLevelActor* L, AOutlawsPlayer*
 void UOutlawsCoop::TickHostLethalTest(double Now, AOutlawsLevelActor* L, AOutlawsPlayer* P)
 {
 	using namespace OutlawsMpLethalProbeLocal;
+	if (OLFlags::Param(TEXT("OLBlastRifleProbe"))) { TickHostBlastRifleTest(Now, L, P); return; }     // (OutlawsBlastRifleProbe.cpp)
 	FOutlawsMatchFlow& F = OutlawsMpHost::Flow();
 	const bool bOld = OLFlags::Param(TEXT("OLOldMpLethal"));
 	const double Wall = FPlatformTime::Seconds();
@@ -429,6 +434,7 @@ void UOutlawsCoop::TickHostLethalTest(double Now, AOutlawsLevelActor* L, AOutlaw
 void UOutlawsCoop::OnLethalTestStep(const FString& Step, int32 Arg, AOutlawsLevelActor* L, AOutlawsPlayer* P)
 {
 	using namespace OutlawsMpLethalProbeLocal;
+	if (Step.StartsWith(TEXT("br"))) { OnBlastRifleTestStep(Step, Arg, L, P); return; }     // (OutlawsBlastRifleProbe.cpp; its other steps are these)
 	const int32 Hand = P->LeftDominant() ? 0 : 1;
 	if (Step == TEXT("respawn"))
 	{

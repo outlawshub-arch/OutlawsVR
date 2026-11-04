@@ -68,10 +68,10 @@ private:
 
 // ---- the links ------------------------------------------------------------------------------------------------------------
 
-void AOutlawsCoopLink::ServerPlayerHit_Implementation(int32 Epoch, int32 Victim, float Damage, FVector_NetQuantize10 At, FVector_NetQuantize10 From, bool bBlast, uint8 Blow)
+void AOutlawsCoopLink::ServerPlayerHit_Implementation(int32 Epoch, int32 Victim, float Damage, FVector_NetQuantize10 At, FVector_NetQuantize10 From, bool bBlast, uint8 Blow, uint8 Spot)
 {
 	if (!Admit(EOLGate::PlayerHit, Finite(Damage, 1000.f) && Finite(At) && Finite(From))) return;
-	if (UOutlawsCoop* C = UOutlawsCoop::Get(this)) C->OnMatchHit(PlayerIndex, Epoch, Victim, Damage, At, From, bBlast, Blow <= uint8(EOutlawsMatchBlow::RifleShot) ? Blow : 0);
+	if (UOutlawsCoop* C = UOutlawsCoop::Get(this)) C->OnMatchHit(PlayerIndex, Epoch, Victim, Damage, At, From, bBlast, Blow <= uint8(EOutlawsMatchBlow::RifleShot) ? Blow : 0, Spot);
 }
 
 void AOutlawsCoopLink::ServerMatchRespawn_Implementation(int32 Epoch)
@@ -538,6 +538,7 @@ bool UOutlawsCoop::ShotAtPlayers(AOutlawsLevelActor* L, const FVector& From, con
 	int32 Best = -1;
 	double BestT = Len;
 	FVector BestP = FVector::ZeroVector;
+	uint8 Spot = 0;
 	for (int32 Who = 0; Who < MaxPlayers; ++Who)
 	{
 		if (Who == C->MyIndex()) continue;
@@ -562,6 +563,7 @@ bool UOutlawsCoop::ShotAtPlayers(AOutlawsLevelActor* L, const FVector& From, con
 			BestT = T;
 			Best = Who;
 			BestP = P;
+			Spot = OutlawsHitSpot::Pack(FVector::Dist2D(P, Mid) / Radius, P.Z > Mid.Z);     // (REQ-RIFLEMP: where, as the body is drawn here)
 		}
 	}
 	if (Best < 0) return false;
@@ -572,8 +574,8 @@ bool UOutlawsCoop::ShotAtPlayers(AOutlawsLevelActor* L, const FVector& From, con
 	UE_LOG(LogOutlawsCoop, Log, TEXT("OLMATCH shot hits the %s at %.0f m for %.1f%s (%s)"), WhoWord(Best), BestT / 100.0, Damage, Blow == uint8(EOutlawsMatchBlow::ScopedHead) ? TEXT(", scoped, in the head") : bScoped ? TEXT(", scoped") : TEXT(""),
 		C->IsHost() ? TEXT("the host deals it") : TEXT("reported to the host"));
 	L->SpawnBlood(OutAt, Dir, 2);
-	if (C->IsHost()) C->OnMatchHit(0, C->LevelEpoch(), Best, Damage, OutAt, From, false, Blow);
-	else if (AOutlawsCoopLink* Mine = C->GetLink(C->MyIndex())) Mine->ServerPlayerHit(C->LevelEpoch(), Best, Damage, OutAt, From, false, Blow);
+	if (C->IsHost()) C->OnMatchHit(0, C->LevelEpoch(), Best, Damage, OutAt, From, false, Blow, Spot);
+	else if (AOutlawsCoopLink* Mine = C->GetLink(C->MyIndex())) Mine->ServerPlayerHit(C->LevelEpoch(), Best, Damage, OutAt, From, false, Blow, Spot);
 	return true;
 }
 
@@ -591,7 +593,7 @@ bool UOutlawsCoop::InDrawnHead(int32 Who, const FVector& P) const
 	return Up >= Tall * 0.875 && Up <= Tall + 8.0 && FVector::Dist2D(P, Feet) <= 18.0;
 }
 
-void UOutlawsCoop::OnMatchHit(int32 Shooter, int32 Epoch, int32 Victim, float Damage, const FVector& At, const FVector& From, bool bBlast, uint8 Blow)
+void UOutlawsCoop::OnMatchHit(int32 Shooter, int32 Epoch, int32 Victim, float Damage, const FVector& At, const FVector& From, bool bBlast, uint8 Blow, uint8 Spot)
 {
 	// (the host) checked, then dealt on the victim's machine (the host's own player here)
 	if (!IsHost() || !IsMatch() || !bMatchSetUp) return;
@@ -622,27 +624,37 @@ void UOutlawsCoop::OnMatchHit(int32 Shooter, int32 Epoch, int32 Victim, float Da
 	const float Lethal = LethalBlowDamage(Shooter, Victim, Blow, At, ShooterAt);
 	const bool bPastPlate = Lethal > 0.f;
 	if (!bPastPlate && MatchRifleDoubles(Shooter, Blow)) Damage *= 2.f;      // (REQ-RIFLEMP: here, so the host's is the one that counts)
-	Damage = bPastPlate ? Lethal : MatchDamageFor(Victim, Damage);
+	// (REQ-RIFLEMP, the user's answer of 4 Nov) a shot on a player's body, every gun: x1.5 in the middle third above the waist, x1 in
+	// the middle two thirds, x0.5 at the edges, as a bad guy's shot (AOutlawsEnemy) and a bot's already were; ours dealt it flat.  The
+	// shooter reports the offset as it draws the body, the host turns it into the number, and the steps run the original's way:
+	// the plate, then the location and the DAMAGE_MULTIPLIER on what got past it (a victim's LocationMult; a bot wears no plate).  A
+	// fist, a knife, a blast and a thrown thing have no spot and stay the multiplier, then the plate.  A shotgun's pellets each
+	// report their own (the original sums a frame's and takes their average's place, 0x1400d17a0).  -OLOldHitLocation: flat for a
+	// player's shot, the multiplier before the plate
+	static const bool bOldSpot = OLFlags::Param(TEXT("OLOldHitLocation"));
+	const bool bSpot = Spot != 0 && !bPastPlate && !bOldSpot;
+	const float AfterPlate = bSpot ? OutlawsHitSpot::Unpack(Spot) * MatchDamageFor(Victim, 1.f) : 1.f;
+	if (!bSpot) Damage = bPastPlate ? Lethal : MatchDamageFor(Victim, Damage);
 	LastAttacker[Victim] = Shooter;
 	LastAttackAt[Victim] = Now;
 	LastAttackBlast[Victim] = bBlast;
 	++MatchHitsDealt;
-	UE_LOG(LogOutlawsCoop, Log, TEXT("OLMATCH hit: the %s struck the %s for %.1f%s%s"), WhoWord(Shooter), WhoWord(Victim), Damage, bBlast ? TEXT(" (dynamite)") : TEXT(""), bPastPlate ? TEXT(" (past the plate)") : TEXT(""));
+	UE_LOG(LogOutlawsCoop, Log, TEXT("OLMATCH hit: the %s struck the %s for %.1f%s%s (x%.2f past the plate)"), WhoWord(Shooter), WhoWord(Victim), Damage, bBlast ? TEXT(" (dynamite)") : TEXT(""), bPastPlate ? TEXT(" (past the plate)") : TEXT(""), AfterPlate);
 	if (Victim == 0)
 	{
 		if (AOutlawsLevelActor* L = FindLevel())
 		{
 			L->SetHurtSource(From);
-			L->DamagePlayer(Damage, 1.f, bPastPlate);
+			L->DamagePlayer(Damage, AfterPlate, bPastPlate);
 		}
 	}
 	else if (IsBot(Victim))
 	{
-		BotHurt(Victim, Damage, At, From, Shooter);   // (REQ-MPBOTS: the host's own bot)
+		BotHurt(Victim, Damage * AfterPlate, At, From, Shooter);   // (REQ-MPBOTS: the host's own bot)
 	}
 	else
 	{
-		HurtOther(Damage, 1.f, bPastPlate, &From, -1, Victim);
+		HurtOther(Damage, AfterPlate, bPastPlate, &From, -1, Victim);
 	}
 }
 

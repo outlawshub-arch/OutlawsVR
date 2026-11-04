@@ -39,6 +39,16 @@ enum class EOutlawsMatchBlow : uint8
 	RifleShot = 5        // (REQ-RIFLEMP) any other shot of the rifle's, scoped or not: not a lethal blow, the host doubles it
 };
 
+/** REQ-RIFLEMP: where a shot struck a player's body, the original's location step [EXE 0x1400baa61..0x1400baad1] and its form on
+ *  the wire.  Across: how far off the body's axis, 0..1 of its radius; bHigh: above the waist.  A match's shooter reports it as a
+ *  Spot (ServerPlayerHit), 0 for a blow with no location; the host turns it into the multiplier. */
+namespace OutlawsHitSpot
+{
+	inline float Mult(double Across, bool bHigh) { return Across < 1.0 / 3.0 ? (bHigh ? 1.5f : 1.f) : Across < 2.0 / 3.0 ? 1.f : 0.5f; }
+	inline uint8 Pack(double Across, bool bHigh) { return uint8(1 + FMath::RoundToInt(FMath::Clamp(Across, 0.0, 1.0) * 99.0)) | (bHigh ? 0x80 : 0); }
+	inline float Unpack(uint8 Spot) { const int32 A = Spot & 0x7f; return A < 1 || A > 100 ? 1.f : Mult((A - 1) / 99.0, (Spot & 0x80) != 0); }
+}
+
 /**
  * Story co-op (tools/olue/COOP_DESIGN.md).  Two players, direct IP: the host runs the one map (L_Runtime) as a listen server
  * with AOutlawsCoopGameMode, the client travels to <ip>:7777.  Each machine builds every Outlaws level from its own LABs,
@@ -610,9 +620,10 @@ public:
 	FString Character;
 	/** The owner's shot struck player Victim (a pellet through its body as the owner's machine draws it): the host checks
 	 *  and deals it.  At: where it struck; From: the muzzle.  bBlast: the owner's dynamite (REQ-KILLFEED: "blew up").
-	 *  Blow: what struck (EOutlawsMatchBlow; REQ-MPLETHAL: the host decides what a fist, a knife or a scoped head shot does). */
+	 *  Blow: what struck (EOutlawsMatchBlow; REQ-MPLETHAL: the host decides what a fist, a knife or a scoped head shot does).
+	 *  Spot: where a shot struck the body as the owner draws it (OutlawsHitSpot, 0 none; REQ-RIFLEMP: the host decides). */
 	UFUNCTION(Server, Reliable)
-	void ServerPlayerHit(int32 Epoch, int32 Victim, float Damage, FVector_NetQuantize10 At, FVector_NetQuantize10 From, bool bBlast, uint8 Blow);
+	void ServerPlayerHit(int32 Epoch, int32 Victim, float Damage, FVector_NetQuantize10 At, FVector_NetQuantize10 From, bool bBlast, uint8 Blow, uint8 Spot);
 	/** The owner (dead) asks to come back. */
 	UFUNCTION(Server, Reliable)
 	void ServerMatchRespawn(int32 Epoch);
@@ -1745,9 +1756,13 @@ private:
 	/** A #coop page as drawn (the extent of its lines and rows): within the parchment, above the help line. */
 	static bool PageFits(AOutlawsPlayer* P, FString& Said);
 	void SetUpMatchLevel(AOutlawsLevelActor* L);
-	void OnMatchHit(int32 Shooter, int32 Epoch, int32 Victim, float Damage, const FVector& At, const FVector& From, bool bBlast = false, uint8 Blow = 0);
+	void OnMatchHit(int32 Shooter, int32 Epoch, int32 Victim, float Damage, const FVector& At, const FVector& From, bool bBlast = false, uint8 Blow = 0, uint8 Spot = 0);
 	/** REQ-RIFLEMP: (the host) this blow is a rifle shot and counts double (OutlawsCoopMatchStrikes.cpp). */
 	bool MatchRifleDoubles(int32 Shooter, uint8 Blow) const;
+	// ---- BUG-BLASTMISS + REQ-RIFLEMP's probe (-OLBlastRifleProbe on a host and its client; OutlawsBlastRifleProbe.cpp) ----
+	void TickHostBlastRifleTest(double Now, AOutlawsLevelActor* L, AOutlawsPlayer* P);
+	void OnBlastRifleTestStep(const FString& Step, int32 Arg, AOutlawsLevelActor* L, AOutlawsPlayer* P);
+	void TickClientBlastRifleTest(AOutlawsLevelActor* L);
 	// ---- REQ-MPLETHAL's probe (-OLMpLethalProbe on a host and its client; OutlawsMpLethalProbe.cpp) ----
 	void TickHostLethalTest(double Now, AOutlawsLevelActor* L, AOutlawsPlayer* P);
 	void OnLethalTestStep(const FString& Step, int32 Arg, AOutlawsLevelActor* L, AOutlawsPlayer* P);
@@ -1907,7 +1922,7 @@ public:
 	/** The brain's shot (AOutlawsEnemy::FireAtPlayer): seen and heard on every machine, the ammunition spent. */
 	void BotFired(AOutlawsEnemy* E, const FVector& Muzzle);
 	/** One of its pellets through its target's body: a hit in the match, judged by the host as a player's is. */
-	void BotPellet(AOutlawsEnemy* E, float Damage, const FVector& At, const FVector& From);
+	void BotPellet(AOutlawsEnemy* E, float Damage, const FVector& At, const FVector& From, uint8 Spot);
 	/** REQ-MPBOTS: while a bot's stick goes off on the host, the player credited with what the blast does (else -1). */
 	static int32 BlastShooter;
 	/** ... and what that blast would deal the host's own player (Explode leaves it to the match, credited to the bot). */

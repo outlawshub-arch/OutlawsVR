@@ -185,7 +185,7 @@ bool UOutlawsCoop::ReportStrike(AOutlawsLevelActor* L, int32 Victim, float Damag
 		: FCString::Strcmp(Kind, TEXT("a knife's jab")) == 0 ? EOutlawsMatchBlow::Stab
 		: FCString::Strcmp(Kind, TEXT("a thrown knife")) == 0 || FCString::Strcmp(Kind, TEXT("a bot's knife")) == 0 ? EOutlawsMatchBlow::ThrownKnife : EOutlawsMatchBlow::Plain;
 	if (IsHost()) OnMatchHit(Striker, LevelEpoch(), Victim, Damage, At, From, bBlast, uint8(Blow));
-	else if (AOutlawsCoopLink* Mine = GetLink(MyIndex())) Mine->ServerPlayerHit(LevelEpoch(), Victim, Damage, At, From, bBlast, uint8(Blow));
+	else if (AOutlawsCoopLink* Mine = GetLink(MyIndex())) Mine->ServerPlayerHit(LevelEpoch(), Victim, Damage, At, From, bBlast, uint8(Blow), 0);
 	return true;
 }
 

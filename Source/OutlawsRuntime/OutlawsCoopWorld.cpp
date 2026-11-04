@@ -858,7 +858,7 @@ void UOutlawsCoop::TickTest(double Now)
 	else if (IsHost() && TestOnly == TEXT("flicknet")) TickHostFlickNetTest(Now, L, P);   // (REQ-FLICKRELOAD: OutlawsCoopFlickTest.cpp)
 	else if (TestOnly == TEXT("flicknet")) return;
 	else if (IsHost() && TestOnly == TEXT("mplethal")) TickHostLethalTest(Now, L, P);    // (REQ-MPLETHAL: OutlawsMpLethalProbe.cpp)
-	else if (TestOnly == TEXT("mplethal")) return;
+	else if (TestOnly == TEXT("mplethal")) { TickClientBlastRifleTest(L); return; }     // (BUG-BLASTMISS's probe: what the client sees)
 	else if (IsHost() && TestOnly == TEXT("mptntpick")) TickHostTntPickTest(Now, L, P);    // (BUG-MPTNTPICK: OutlawsMpTntPickProbe.cpp)
 	else if (TestOnly == TEXT("mptntpick")) return;
 	else if (IsHost() && TestOnly == TEXT("pausechar")) TickHostPauseCharTest(Now, L, P);  // (REQ-PAUSECHAR: OutlawsPauseCharProbe.cpp)

@@ -1358,10 +1358,10 @@ void AOutlawsEnemy::FireAtPlayer()
 		// thirds, x0.5 at the edges, applied after the plate has taken its share (DamagePlayer)
 		const double Across = Miss / R;
 		const bool bHigh = OnBody.Z > Feet.Z + (Top.Z - Feet.Z) * 0.5;
-		const float Mult = Across < 1.0 / 3.0 ? (bHigh ? 1.5f : 1.f) : Across < 2.0 / 3.0 ? 1.f : 0.5f;
+		const float Mult = OutlawsHitSpot::Mult(Across, bHigh);
 		if (CoopSelf >= 0)
 		{
-			if (UOutlawsCoop* C = Coop.Get()) C->BotPellet(this, ShotDamage * Mult, OnBody, Gun);     // (REQ-MPBOTS: a match hit, the bot's kill)
+			if (UOutlawsCoop* C = Coop.Get()) C->BotPellet(this, ShotDamage, OnBody, Gun, OutlawsHitSpot::Pack(Across, bHigh));     // (REQ-MPBOTS: a match hit, the bot's kill)
 		}
 		else if (CoopTarget != 0)
 		{

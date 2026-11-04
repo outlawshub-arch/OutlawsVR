@@ -281,7 +281,8 @@ OL_SHOT_TEST(OLDynThrowProbe, 1510)
 			const float Dropped = HealthPrev - L->GetHealth();
 			const FVector From = L->LastEnemyBlastAt + FVector(0.0, 0.0, 20.0);
 			const double R = L->BlastRadiusCm(), Dd = FVector::Dist(From, GetActorLocation());
-			const double Want = Dd >= R ? 0.0 : 12.0 * (Dd <= R * 0.25 ? 1.0 : FMath::Square((R - Dd) / (0.75 * R)));
+			const double Point = OLFlags::Param(TEXT("OLOldBlastPlayer")) ? 12.0 : 6.0;     // (BUG-BLASTMISS: half on a player in the story)
+			const double Want = Dd >= R ? 0.0 : Point * (Dd <= R * 0.25 ? 1.0 : FMath::Square((R - Dd) / (0.75 * R)));
 			Check(FMath::IsNearlyEqual(L->LastEnemyFuse, T->Def.ThrowLife, 0.1f), FString::Printf(TEXT("%s: the stick goes off %.2f s after it left the hand (fuse %.2f s)"), *Lv, L->LastEnemyFuse, T->Def.ThrowLife));
 			Check(FVector::Dist2D(L->LastEnemyBlastAt, FeetAtThrow) < 250.0, FString::Printf(TEXT("%s: it went off by the player's feet: %.0f cm from them, %.0f cm from its mark"), *Lv,
 				FVector::Dist2D(L->LastEnemyBlastAt, FeetAtThrow), FVector::Dist2D(L->LastEnemyBlastAt, T->LastThrowMark)));
