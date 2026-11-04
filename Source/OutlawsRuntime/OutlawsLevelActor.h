@@ -681,6 +681,11 @@ public:
 	UPROPERTY(EditAnywhere, Category = "Outlaws|Assets")
 	TObjectPtr<UMaterialInterface> WorldMaskedSolidMaterial;
 
+	/** (REQ-SKYTHRU) M_OLR_World with the sky drawn over the wall's index-0 texels (MaskTex, the map's own 8-bit picture): the
+	 *  outer walls of sky sectors whose art has clear texels (tools\olue\skytorch\sky_thru_material.py). */
+	UPROPERTY(EditAnywhere, Category = "Outlaws|Assets")
+	TObjectPtr<UMaterialInterface> WorldSkyThruMaterial;
+
 	UPROPERTY(EditAnywhere, Category = "Outlaws|Assets")
 	TObjectPtr<UMaterialInterface> WaterMaterial;
 
@@ -1314,6 +1319,11 @@ public:
 	/** local.msg's line Id, or Fallback when the install has none. */
 	FString UserMessageOr(int32 Id, const TCHAR* Fallback) const { const FString* T = UserMessages.Find(Id); return T ? *T : FString(Fallback); }
 	int32 TestSectorCount() const;
+	/** REQ-SKYTHRU (tests): the walls' instances, their quads (four corners each, in the section's order, and a normal), and how they
+	 *  draw: 0 as built, 1 whole (their mask solid, the old look), 2 hidden. */
+	int32 TestSkyThruMids() const { return SkyThruMids.Num(); }
+	void TestSkyThruQuads(TArray<FVector>& OutCorners, TArray<FVector>& OutNormals) const;
+	void TestSkyThruLook(int32 Mode);
 	uint32 TestSectorFlags(int32 Sector) const;
 	/** REQ-EXTRAS: the level's secret sectors (SECFLAG1_SECRET_TAG, as UOutlawsStats::NoteSecret counts them). */
 	int32 SecretSectorCount() const;
@@ -1776,6 +1786,12 @@ private:
 
 	UPROPERTY(Transient)
 	TArray<TObjectPtr<UProceduralMeshComponent>> ObjectMeshes;
+
+	/** (REQ-SKYTHRU) the instances of M_OLR_WorldSkyThru: each takes the sky's picture and mapping from SkySurfaceMid (SyncSkyThru),
+	 *  and its turn and drift each tick. */
+	UPROPERTY(Transient)
+	TArray<TObjectPtr<class UMaterialInstanceDynamic>> SkyThruMids;
+	void SyncSkyThru(class UMaterialInstanceDynamic* Only = nullptr);
 
 	UPROPERTY(Transient)
 	TArray<TObjectPtr<AActor>> SpawnedActors;

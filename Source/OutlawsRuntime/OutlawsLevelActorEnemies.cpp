@@ -2683,7 +2683,7 @@ void AOutlawsLevelActor::SetStochastic(bool bOn)
 		FString Parent, Stem;
 		if (!Kv.Key.Split(TEXT("|"), &Parent, &Stem)) continue;
 		Parent.Split(TEXT("~"), &Parent, nullptr);          // (under water: "<parent>~w<chain>")
-		if (!(Parent == TEXT("M_OLR_World") || Parent == TEXT("M_OLR_WorldMasked"))) continue;
+		if (!(Parent == TEXT("M_OLR_World") || Parent == TEXT("M_OLR_WorldMasked") || Parent == TEXT("M_OLR_WorldSkyThru"))) continue;
 		const bool bNat = IsNaturalSurface(Stem);
 		Natural += bNat ? 1 : 0;
 		Kv.Value->SetScalarParameterValue(TEXT("Stochastic"), bOn && bNat ? 1.f : 0.f);
@@ -2754,6 +2754,7 @@ void AOutlawsLevelActor::SetHDTextures(bool bOn)
 		}
 	}
 	ApplyGradientSkyLook();         // (BUG-TRAINSKY8BIT: the dome's flat 8-bit sky, or the gradient)
+	SyncSkyThru();                  // (REQ-SKYTHRU: the sky's picture may have changed look; the walls' masks stay the 8-bit ones)
 	UE_LOG(LogOutlaws, Log, TEXT("OLRT remastered graphics %s (%d of %d textures have an HD version)"), bOn ? TEXT("on") : TEXT("off"), TexturesHd.Num(), TexturesLo.Num());
 }
 

@@ -14,6 +14,7 @@ struct FOutlawsTexInfo
 	bool bTopLeftMid = false;
 	bool bAtxStops = false;   // an ATX with STOPs: each wall runs its own program (INF NEXT_STOP / GOTO_STOP to the wall)
 	bool bAtxLoop = false;    // an ATX that loops on its own: every surface of the stem animates together
+	bool bClear = false;      // (REQ-SKYTHRU) the map's own 8-bit picture has index-0 texels, whatever HD art replaces it
 };
 
 /** One material's worth of triangles, in Unreal space (cm), unlit brightness in the vertex colour. */
@@ -28,6 +29,7 @@ struct OUTLAWSRUNTIME_API FOutlawsMeshSection
 	TArray<int32> Triangles;
 	int32 WaterGroup = -1;   // faces of an underwater sector: its body of water (the level tints their material)
 	int64 AtxWall = -1;      // a wall whose ATX texture stops: FOutlawsBuildFilter::Key of it (its material animates alone)
+	bool bSkyThru = false;   // (REQ-SKYTHRU) an outer wall of a sky sector: its index-0 texels show the sky (M_OLR_WorldSkyThru)
 	// (REQ-SECTORLIGHT) faces of a sector whose light an INF CHANGE_LIGHT moves: that elevator, the sector's AMBIENT less its
 	// master's, and the walls' LIGHT (0 for floors and ceilings), so the section's light is LightLevel(level + LightOff, LightWall)
 	int32 LightElev = -1, LightOff = 0, LightWall = 0;
@@ -156,5 +158,5 @@ struct OUTLAWSRUNTIME_API FOutlawsGeometry
 
 private:
 	void AddTo(TMap<FString, FOutlawsMeshSection>& Map, const FString& Tex, bool bMasked, const FVector* Pts, const FVector2D* UVs, int32 N, float Brightness, bool bReverse, bool bNoCollision = false, bool bSwirl = false, int32 WaterGroup = -1, int64 AtxWall = -1,
-		const FIntVector& Light = FIntVector(-1, 0, 0));
+		const FIntVector& Light = FIntVector(-1, 0, 0), bool bSkyThru = false);
 };

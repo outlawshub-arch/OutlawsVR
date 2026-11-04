@@ -280,10 +280,10 @@ namespace
 }
 
 void FOutlawsGeometry::AddTo(TMap<FString, FOutlawsMeshSection>& Map, const FString& Tex, bool bMasked, const FVector* Pts, const FVector2D* UVs, int32 N, float Brightness, bool bReverse, bool bNoCollision, bool bSwirl, int32 WaterGroup, int64 AtxWall,
-	const FIntVector& Light)
+	const FIntVector& Light, bool bSkyThru)
 {
 	const FString Key = FString(bNoCollision ? TEXT("~") : TEXT("")) + (bMasked ? Tex + TEXT("|m") : Tex) + (WaterGroup >= 0 ? FString::Printf(TEXT("|w%d"), WaterGroup) : FString())
-		+ (AtxWall >= 0 ? FString::Printf(TEXT("|x%lld"), AtxWall) : FString()) + (Light.X >= 0 ? FString::Printf(TEXT("|L%d,%d,%d"), Light.X, Light.Y, Light.Z) : FString());
+		+ (AtxWall >= 0 ? FString::Printf(TEXT("|x%lld"), AtxWall) : FString()) + (Light.X >= 0 ? FString::Printf(TEXT("|L%d,%d,%d"), Light.X, Light.Y, Light.Z) : FString()) + (bSkyThru ? TEXT("|s") : TEXT(""));
 	FOutlawsMeshSection* S = Map.Find(Key);
 	if (!S)
 	{
@@ -292,6 +292,7 @@ void FOutlawsGeometry::AddTo(TMap<FString, FOutlawsMeshSection>& Map, const FStr
 		S->bMasked = bMasked;
 		S->WaterGroup = WaterGroup;
 		S->AtxWall = AtxWall;
+		S->bSkyThru = bSkyThru;
 		S->LightElev = Light.X;
 		S->LightOff = Light.Y;
 		S->LightWall = Light.Z;
@@ -806,7 +807,14 @@ void FOutlawsGeometry::Build(const FOutlawsLevel& L, const TMap<FString, FOutlaw
 				}
 				// a wall whose ATX stops (a switch, a key slot) draws from a section of its own: its frames are its alone
 				const int64 AtxKey = TI.bAtxStops ? int64(FOutlawsBuildFilter::Key(S.Index, WallIndex)) : -1;
-				AddTo(World, TexStem, Bd.bMasked, Q, UV, 4, Bright(Lvl), bRev, Bd.Band == EBand::MidTex, false, WaterGroupOf(S.Index), AtxKey, LightOf(S.Index, W.Light));   // blockers below collide instead
+				// REQ-SKYTHRU (user 3 Nov, zekes' tree walls: "the teal should be showing as the sky texture behind it ... This is how
+				// it behaved in the original game"; this supersedes "keep the remaster look" of the same day, Glide-style see-through
+				// to the sky): an outer wall of a sky sector whose mid has index-0 texels draws in a section of its own, whose material
+				// draws the sky over those texels.  An indoor sector's walls keep their look.  -OLOldSkyWalls: as before
+				static const bool bOldSkyWalls = OLFlags::Param(TEXT("OLOldSkyWalls"));
+				const bool bSkyThru = !bOldSkyWalls && Bd.Band == EBand::Mid && W.Adjoin < 0 && (S.Flags & OutlawsFlags::ExtCeiling) && TI.bClear && !TI.bAtxStops && !TI.bAtxLoop;
+				AddTo(World, TexStem, Bd.bMasked, Q, UV, 4, Bright(Lvl), bRev, Bd.Band == EBand::MidTex, false, WaterGroupOf(S.Index), AtxKey, LightOf(S.Index, W.Light), bSkyThru);   // blockers below collide instead
+				if (bSkyThru) Stat(TEXT("wall_skythru"));
 				Stat(Bd.Band == EBand::Bot ? TEXT("wall_bot") : Bd.Band == EBand::Top ? TEXT("wall_top") : Bd.Band == EBand::Mid ? TEXT("wall_mid") : TEXT("wall_midtex"));
 			}
 

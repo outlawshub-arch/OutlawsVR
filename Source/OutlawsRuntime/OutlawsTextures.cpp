@@ -857,6 +857,7 @@ void OutlawsTextures::PrepareLevelTexture(const FOutlawsAssets& A, const FString
 				Img.H = Info.H = CH;
 			}
 		}
+		Info.bClear = Img.Indices.Contains(0);       // (REQ-SKYTHRU)
 	}
 	else
 	{

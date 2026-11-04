@@ -87,6 +87,7 @@ void AOutlawsLevelActor::LoadDefaultAssets()
 	LoadIfNull(WorldMaskedMaterial, TEXT("/Game/Outlaws/Runtime/M_OLR_WorldMasked.M_OLR_WorldMasked"));
 	LoadIfNull(WorldGlassMaterial, TEXT("/Game/Outlaws/Runtime/M_OLR_WorldGlass.M_OLR_WorldGlass"));
 	LoadIfNull(WorldMaskedSolidMaterial, TEXT("/Game/Outlaws/Runtime/M_OLR_WorldMaskedSolid.M_OLR_WorldMaskedSolid"));
+	LoadIfNull(WorldSkyThruMaterial, TEXT("/Game/Outlaws/Runtime/M_OLR_WorldSkyThru.M_OLR_WorldSkyThru"));
 	LoadIfNull(WaterMaterial, TEXT("/Game/Outlaws/Runtime/M_OLR_Water.M_OLR_Water"));
 	LoadIfNull(SkyMaterial, TEXT("/Game/Outlaws/Core/M_OL_Sky.M_OL_Sky"));
 	LoadIfNull(SpriteMaterial, TEXT("/Game/Outlaws/Core/M_OL_Sprite.M_OL_Sprite"));
@@ -710,7 +711,39 @@ UMaterialInstanceDynamic* AOutlawsLevelActor::MaterialFor(UMaterialInterface* Pa
 		}
 	}
 	Materials.Add(Key, MID);
+	if (Parent == WorldSkyThruMaterial)
+	{
+		// (REQ-SKYTHRU) its mask is the map's own 8-bit picture, whichever look Tex shows; a part built after the sky takes it at once
+		if (TObjectPtr<UTexture2D>* Lo = TexturesLo.Find(TexKey)) MID->SetTextureParameterValue(TEXT("MaskTex"), *Lo);
+		SkyThruMids.Add(MID);
+		SyncSkyThru(MID);
+	}
 	return MID;
+}
+
+void AOutlawsLevelActor::SyncSkyThru(UMaterialInstanceDynamic* Only)
+{
+	if (!SkySurfaceMid) return;
+	static const TCHAR* const Scalars[] = { TEXT("Repeats"), TEXT("RepV"), TEXT("Wrap"), TEXT("Spin"), TEXT("LandV"), TEXT("LandDrop"), TEXT("CloudOpacity"), TEXT("CloudH"),
+		TEXT("CloudSpin"), TEXT("CloudTiles"), TEXT("CloudMirror"), TEXT("CloudVOff"), TEXT("CloudVScale"), TEXT("CloudAspect") };
+	static const TCHAR* const Vectors[] = { TEXT("FadeColour"), TEXT("CloudWind") };
+	UTexture* SkyTex = nullptr;
+	SkySurfaceMid->GetTextureParameterValue(FName(TEXT("Tex")), SkyTex);
+	for (UMaterialInstanceDynamic* M : SkyThruMids)
+	{
+		if (!M || (Only && M != Only)) continue;
+		if (SkyTex) M->SetTextureParameterValue(TEXT("SkyTex"), SkyTex);
+		for (const TCHAR* N : Scalars)
+		{
+			float V = 0.f;
+			if (SkySurfaceMid->GetScalarParameterValue(FName(N), V)) M->SetScalarParameterValue(N, V);
+		}
+		for (const TCHAR* N : Vectors)
+		{
+			FLinearColor V;
+			if (SkySurfaceMid->GetVectorParameterValue(FName(N), V)) M->SetVectorParameterValue(N, V);
+		}
+	}
 }
 
 void AOutlawsLevelActor::InitAtx(FAtxState& A, const FString& Stem, int32 Sector, int32 Wall)
@@ -894,6 +927,7 @@ int32 AOutlawsLevelActor::AddSections(UProceduralMeshComponent* Mesh, const TMap
 			// see-through mid textures ('~') take the glass material: their alpha is their opacity
 			UMaterialInterface* Parent = S.bMasked ? Masked : Opaque;
 			if (S.bMasked && K.StartsWith(TEXT("~")) && WorldGlassMaterial && Masked == WorldMaskedMaterial) Parent = WorldGlassMaterial;
+			if (S.bSkyThru && WorldSkyThruMaterial && Opaque == WorldMaterial) Parent = WorldSkyThruMaterial;     // (REQ-SKYTHRU)
 			// under water (the builder grouped the faces its underwater sectors own): that water's tinted instance; the
 			// see-through mids too (BUG-WATERMIDTINT: bars under the water kept their own colours among tinted walls;
 			// M_OLR_WorldGlass has the world's OLWaterTint node since, tools\olue\ue_olue_glass_watertint.py)
@@ -1459,6 +1493,7 @@ void AOutlawsLevelActor::Build()
 				SetUpCloudLayer(!bLooked || Look.bTiles, SkyInfo.H > 0 ? float(SkyInfo.W) / float(SkyInfo.H) : 1.f);
 				SkyDome.bCloudLayer = true;
 			}
+			SyncSkyThru();      // (REQ-SKYTHRU: the outer walls' sky is this one)
 			if (G.SkyFaces.Triangles.Num() > 0)
 			{
 				SkySurfaceMesh = NewMeshComponent(TEXT("OutlawsSkySurfaces"), false);
@@ -2534,6 +2569,14 @@ void AOutlawsLevelActor::Tick(float DeltaSeconds)
 			CloudDrift.X = FMath::Frac(CloudDrift.X);
 			CloudDrift.Y = FMath::Frac(CloudDrift.Y);
 			SkySurfaceMid->SetVectorParameterValue(TEXT("CloudWind"), FLinearColor(float(CloudDrift.X), float(CloudDrift.Y), 0.f, 0.f));
+			// (REQ-SKYTHRU) the outer walls' sky turns and drifts with the dome
+			for (UMaterialInstanceDynamic* M : SkyThruMids)
+			{
+				if (!M) continue;
+				M->SetScalarParameterValue(TEXT("Spin"), FMath::DegreesToRadians(float(SkyMesh->GetComponentRotation().Yaw)));
+				M->SetScalarParameterValue(TEXT("CloudSpin"), CloudSpin);
+				M->SetVectorParameterValue(TEXT("CloudWind"), FLinearColor(float(CloudDrift.X), float(CloudDrift.Y), 0.f, 0.f));
+			}
 		}
 	}
 	if (bDead)
