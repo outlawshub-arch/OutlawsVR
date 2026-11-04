@@ -294,6 +294,7 @@ public:
 	bool DuckForProbe(float CrouchHalf = 0.f);
 	/** (the probe) his body standing again after a duck. */
 	void StandForProbe();
+	bool TestSeesTarget() const { return bSeen; }       // (BUG-UNDERWATERFIRE's probe: he still has the player in sight)
 	/** The boss appears here: seen, solid, and straight after the player. */
 	void Appear(const FVector& FeetLoc);
 	/** A taunt from its list whatever the rules (the boss's forced taunts), played at a place. */
@@ -593,6 +594,8 @@ private:
 	bool CoopTargetView(FVector& OutEye, FVector& OutFeet, float& OutRadius, float& OutHalf) const;
 	/** The player it is after is dead (single player: the level's own player). */
 	bool TargetDead(const AOutlawsLevelActor* L) const;
+	/** (BUG-UNDERWATERFIRE) The player it is after has its head under water: it holds fire, and goes on with the rest. */
+	bool TargetHeadUnder() const;
 	/** Host: the nearer of the two players, or the one it can see; bSay: logged even when it stays the same (an alert). */
 	void CoopChooseTarget(bool bSay = false);
 	friend class UOutlawsCoop;                    // (N1's party test asks a bad guy to choose among the players)

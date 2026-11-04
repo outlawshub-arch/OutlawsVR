@@ -161,6 +161,9 @@ struct FOutlawsCoopStats
 	/** 2026-10-02: this player's pause menu is open (the game goes on for the other; the bad guys leave this one be). */
 	UPROPERTY()
 	bool bInMenu = false;
+	/** BUG-UNDERWATERFIRE: this player's head is under water (the host's bad guys hold fire at it). */
+	UPROPERTY()
+	bool bHeadUnder = false;
 	/** BUG-STUCKGAP (user 2026-10-05: keys are never lost in co-op): the keys and puzzle pieces this player carries (one
 	 *  name per piece), and its last safe floor spot (bSafe: one is known): a player who leaves has them put back there. */
 	UPROPERTY()
@@ -266,6 +269,7 @@ struct FOutlawsCoopRemoteView
 	bool bValid = false;
 	bool bDead = false;
 	bool bAway = false;                     // (2026-10-02) in its pause menu: the bad guys leave it be
+	bool bHeadUnder = false;                // (BUG-UNDERWATERFIRE) its head under water: the bad guys hold fire
 	FVector Eye = FVector::ZeroVector;
 	FVector Feet = FVector::ZeroVector;
 	float Radius = 34.f;
@@ -1780,6 +1784,7 @@ private:
 	/** The host: a death's kill line to every machine (and this one). */
 	void SayKill(int32 Killer, int32 Victim, EOutlawsObit Kind);
 	/** Every machine: a death worded for this machine's player, into its kill feed. */
+	void TickUnderwaterFireCoopProbe(double Now, AOutlawsLevelActor* L, AOutlawsPlayer* P);    // (BUG-UNDERWATERFIRE: OutlawsUnderwaterFireCoopProbe.cpp)
 	void OnMatchKill(int32 Killer, int32 Victim, uint8 Kind, const FString& KillerName, const FString& VictimName);
 	TArray<FString> KillLinesSeen;               // (the test's: every line shown here)
 	void TickHostKillFeedTest(double Now, AOutlawsLevelActor* L, AOutlawsPlayer* P);

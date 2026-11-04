@@ -117,6 +117,25 @@ bool AOutlawsEnemy::TargetDead(const AOutlawsLevelActor* L) const
 	return L->IsPlayerDead();
 }
 
+bool AOutlawsEnemy::TargetHeadUnder() const
+{
+	// (BUG-UNDERWATERFIRE) the very flag the target's own air and filter go by (AOutlawsPlayer::UpdateBreath), so the two always
+	// agree: on the target's machine, a client's reaching the host with its stats (at most a tenth of a second late).  A bot
+	// as the target is never under: it has no head of its own to hold down.  -OLOldUnderwaterFire: they fire as ever
+	static const bool bOld = OLFlags::Param(TEXT("OLOldUnderwaterFire"));
+	if (bOld) return false;
+	if (CoopTarget != 0)
+	{
+		const UOutlawsCoop* C = Coop.Get();
+		const FOutlawsCoopRemoteView* V = C ? C->RemoteViewOf(CoopTarget) : nullptr;
+		return V && V->bHeadUnder;
+	}
+	const UWorld* World = GetWorld();
+	const APlayerController* PC = World ? World->GetFirstPlayerController() : nullptr;
+	const AOutlawsPlayer* P = PC ? Cast<AOutlawsPlayer>(PC->GetPawn()) : nullptr;
+	return P && P->IsHeadUnderwater();
+}
+
 bool AOutlawsEnemy::CoopRemoteNear(double Cm) const
 {
 	// (N1: any client's player)
@@ -538,6 +557,7 @@ void UOutlawsCoop::TickEnemies(double Now)
 			V.bAway = bMenuKeepsSafe && CL->Stats.Seq > 0 && CL->Stats.bInMenu;      // (2026-10-02: in its pause menu, out of harm)
 			V.bAway = V.bAway || CL->bAppPaused;     // (BUG-COOPTIMEOUT: its app paused, its place held: out of harm too)
 			V.bAway = V.bAway || PlayerInLobby(CL->PlayerIndex);     // (REQ-MPLOBBY: still in the lobby: not in the level yet)
+			V.bHeadUnder = CL->Stats.Seq > 0 && CL->Stats.bHeadUnder;  // (BUG-UNDERWATERFIRE: the bad guys hold fire)
 			if (const AOutlawsPlayer* P = LocalPlayer()) V.Radius = P->GetCapsuleComponent()->GetScaledCapsuleRadius();
 		}
 		TickIdleWatch(Now);                      // (BUG-BOSSIDLEHOST: who is idle, OutlawsCoopIdle.cpp)

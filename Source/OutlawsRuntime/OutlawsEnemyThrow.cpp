@@ -361,7 +361,8 @@ void AOutlawsLevelActor::TickEnemyThrown(float Dt)
 				float R = 0.f, H = 0.f;
 				if (E && E->PlayerView(Eye, Feet, R, H))
 				{
-					if (MeetsBody(Feet, Eye, R, F.Pos, To))
+					// (BUG-UNDERWATERFIRE: a knife in the air when the head went under flies on past them)
+					if (!E->TargetHeadUnder() && MeetsBody(Feet, Eye, R, F.Pos, To))
 					{
 						bStruck = true;
 						if (E->CoopTarget != 0)

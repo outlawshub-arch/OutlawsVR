@@ -693,10 +693,11 @@ void UOutlawsCoop::TickWorld(double Now)
 		if (S.bDead) S.DeathBy = L->DeathCause;     // (REQ-KILLFEED: a fall, its own dynamite: the host's kill line for it)
 		const AOutlawsPlayer* Me = LocalPlayer();
 		S.bInMenu = Me && Me->IsMenuOpen();          // (2026-10-02: the pause menu pauses nothing; the host's bad guys leave this player be)
+		S.bHeadUnder = Me && Me->IsHeadUnderwater();  // (BUG-UNDERWATERFIRE: the host's bad guys hold fire)
 		KeyItems(L, S.Keys);                         // (BUG-STUCKGAP: a player who leaves has its keys put back)
 		S.bSafe = Me && Me->SafeSpots.Num() > 0;
 		if (S.bSafe) S.SafeFeet = Me->SafeSpots.Last().Feet;
-		if (SentStats.Seq == 0 || !FMath::IsNearlyEqual(S.Health, SentStats.Health, 0.01f) || S.Armour != SentStats.Armour || S.bDead != SentStats.bDead || S.bInMenu != SentStats.bInMenu
+		if (SentStats.Seq == 0 || !FMath::IsNearlyEqual(S.Health, SentStats.Health, 0.01f) || S.Armour != SentStats.Armour || S.bDead != SentStats.bDead || S.bInMenu != SentStats.bInMenu || S.bHeadUnder != SentStats.bHeadUnder
 			|| S.Keys != SentStats.Keys || S.bSafe != SentStats.bSafe || FVector::Dist(S.SafeFeet, SentStats.SafeFeet) > 100.0)
 		{
 			S.Seq = SentStats.Seq + 1;
@@ -864,6 +865,7 @@ void UOutlawsCoop::TickTest(double Now)
 	else if (IsHost() && TestOnly == TEXT("pausechar")) TickHostPauseCharTest(Now, L, P);  // (REQ-PAUSECHAR: OutlawsPauseCharProbe.cpp)
 	else if (TestOnly == TEXT("pausechar")) return;
 	else if (TestOnly == TEXT("stickrest")) { TickStickRestTest(Now, L, P); return; }    // (REQ-STICKREST: OutlawsStickRestProbe.cpp)
+	else if (TestOnly == TEXT("uwfire")) { TickUnderwaterFireCoopProbe(Now, L, P); return; }    // (BUG-UNDERWATERFIRE: OutlawsUnderwaterFireCoopProbe.cpp; each)
 	else if (TestOnly == TEXT("mpspeed"))           // (REQ-MPSPEED: OutlawsMpSpeedProbe.cpp)
 	{
 		if (IsHost()) TickHostMpSpeedTest(Now, L, P); else TickClientMpSpeedTest(Now, L, P);

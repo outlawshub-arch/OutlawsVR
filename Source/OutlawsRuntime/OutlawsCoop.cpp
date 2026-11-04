@@ -343,6 +343,12 @@ void UOutlawsCoop::Initialize(FSubsystemCollectionBase& Collection)
 		bAuto = bAutoReady = bWorldTest = true;
 		TestOnly = TEXT("mptntpick");
 	}
+	if (OLFlags::ValueIs(TEXT("OLUnderwaterFireProbe"), TEXT("coop")))
+	{
+		// (BUG-UNDERWATERFIRE's co-op pair: OutlawsUnderwaterFireCoopProbe.cpp)
+		bAuto = bAutoReady = bWorldTest = true;
+		TestOnly = TEXT("uwfire");
+	}
 	if (OLFlags::Param(TEXT("OLPauseCharProbe")))
 	{
 		// (REQ-PAUSECHAR's two-machine probe: OutlawsPauseCharProbe.cpp; the host starts the match itself)

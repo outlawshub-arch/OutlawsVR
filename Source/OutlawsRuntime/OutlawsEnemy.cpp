@@ -1232,6 +1232,7 @@ void AOutlawsEnemy::StartShootMove()
 
 void AOutlawsEnemy::FireAtPlayer()
 {
+	if (TargetHeadUnder()) return;                // (BUG-UNDERWATERFIRE: a shot wound up as the head went under stays in the gun)
 	if (IsThrower() && !OldDynThrow())
 	{
 		ThrowAtPlayer();                          // (BUG-DYNTHROW: the shoot chor's EVENT(FIRE) lets the stick or the knife go)
@@ -2686,9 +2687,13 @@ void AOutlawsEnemy::Tick(float Dt)
 				double T = 0.0;
 				return TargetInThrowRange() && PlayerView(PEye, PFeet, PR, PH) && SolveThrow(PFeet, float(PEye.Z - PFeet.Z), 10, false, Hand, Vel, T, Mark);
 			};
-			const bool bMayAttack = (bSeen || bInReach) && bPlayer && !bVoiceOnly && Def.ShootChor >= 0 && Sub != SubShoot && Sub != SubShootMove
+			// (BUG-UNDERWATERFIRE, user 4 Nov: "They should cease fire if I'm underwater, but continue to shoot if I'm surfaced and
+			// bobbing on the surface of the water") no shot begins at a player whose head is under; his sight, his chase and
+			// his timer go on as ever, so he keeps after them, waits at the edge and fires when the head comes up
+			const bool bHoldFire = TargetHeadUnder();
+			const bool bMayAttack = (bSeen || bInReach) && bPlayer && !bVoiceOnly && !bHoldFire && Def.ShootChor >= 0 && Sub != SubShoot && Sub != SubShootMove
 				&& (!IsThrower() || (!OldDynThrow() && ThrowReaches()));
-			if (IsThrower() && !bMayAttack && !OldDynThrow() && bSeen && bPlayer)
+			if (IsThrower() && !bMayAttack && !bHoldFire && !OldDynThrow() && bSeen && bPlayer)
 			{
 				// (the log: a thrower in sight of the player who does not throw at his timer, and why)
 				float D = 0.f;
@@ -2871,7 +2876,7 @@ void AOutlawsEnemy::Tick(float Dt)
 			}
 			if (FireEvents(Def.ShootChor))
 			{
-				if (--BurstLeft > 0 && bSeen)
+				if (--BurstLeft > 0 && bSeen && !TargetHeadUnder())
 				{
 					SubTime = 0.f;
 					Play(Def.ShootChor, false);
