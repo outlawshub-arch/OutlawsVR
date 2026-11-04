@@ -55,21 +55,40 @@ namespace OutlawsBlastRifleProbeLocal
 	struct FWatch
 	{
 		FVector Start = FVector::ZeroVector;
-		double PeakSpeed = 0.0, Rise = 0.0, Carry = 0.0;
-		void Begin(const FVector& At) { Start = At; PeakSpeed = Rise = Carry = 0.0; }
+		double PeakSpeed = 0.0, Rise = 0.0, Carry = 0.0, LastAt = -1.0, LastVz = 0.0;
+		TArray<double> Pulls;
+		void Begin(const FVector& At) { Start = At; PeakSpeed = Rise = Carry = 0.0; LastAt = -1.0; Pulls.Reset(); }
 		void Note(const FVector& At, double Speed)
 		{
 			PeakSpeed = FMath::Max(PeakSpeed, Speed);
 			Rise = FMath::Max(Rise, double(At.Z - Start.Z));
 			Carry = FMath::Max(Carry, FVector::Dist2D(At, Start));
 		}
+		/** The upward speed a tick on the way up: what it loses a second is the gravity it flies under. */
+		void NoteUp(double At, double Vz)
+		{
+			if (LastAt >= 0.0 && At > LastAt && LastVz > 0.0 && Vz > 0.0) Pulls.Add((LastVz - Vz) / (At - LastAt) / 980.0);
+			LastAt = At;
+			LastVz = Vz;
+		}
+		/** The middle of those, in g (a roof's stop is one tick's wild one). */
+		double Gs() const
+		{
+			if (Pulls.Num() == 0) return 0.0;
+			TArray<double> Sorted = Pulls;
+			Sorted.Sort();
+			return Sorted[Sorted.Num() / 2];
+		}
 		FString Say() const { return FString::Printf(TEXT("%.0f cm/s at most, %.0f cm up, %.0f cm along"), PeakSpeed, Rise, Carry); }
 	};
 	FWatch WatchPlayer, WatchBot, WatchSeen;
 	FVector BlastSpot = FVector::ZeroVector, BlastStick = FVector::ZeroVector, BotLaunch = FVector::ZeroVector;
+	double BlastRoom = 0.0;
 	int32 SeenWho = -1;
-	bool bSeenOld = false;
-	double SeenUntil = 0.0;
+	bool bSeenOld = false, bSeenOpen = false;
+	double SeenUntil = 0.0, SeenRoom = 0.0;
+	/** A point-blank stick's throw under the headset's 1.5 g: 2477 cm/s up, so this high with nothing over it. */
+	constexpr double OpenRise = 2087.0;
 
 	void Check(bool bOk, const FString& What)
 	{
@@ -136,6 +155,29 @@ namespace OutlawsBlastRifleProbeLocal
 			if (Run > BestRun) { BestRun = Run; Best = Spot; }
 		}
 		return Best;
+	}
+	/** How high that throw goes from Mid, the stick at Stick: walls are slid along (the rise keeps), a roof ends it. */
+	double ThrowRoom(const UWorld* W, const FVector& Mid, const FVector& Stick, double Radius, double Half, const AActor* A, const AActor* B)
+	{
+		FCollisionQueryParams Q(SCENE_QUERY_STAT(OutlawsBlastRifleRoom), false, A);
+		Q.AddIgnoredActor(B);
+		FVector At = Mid;
+		FVector Vel = ((Mid - Stick).GetSafeNormal2D() + FVector(0.0, 0.0, 0.7)).GetSafeNormal() * 4320.0;
+		const double Dt = 1.0 / 30.0;
+		for (int32 i = 0; i < 90 && Vel.Z > 0.0; ++i)
+		{
+			Vel.Z -= 1470.0 * Dt;
+			FHitResult H;
+			if (!W->SweepSingleByChannel(H, At, At + Vel * Dt, FQuat::Identity, ECC_Pawn, FCollisionShape::MakeCapsule(Radius, Half), Q))
+			{
+				At += Vel * Dt;
+				continue;
+			}
+			if (H.bStartPenetrating || H.ImpactNormal.Z < -0.1) break;
+			At = H.Location;
+			Vel = FVector::VectorPlaneProject(Vel, H.ImpactNormal);
+		}
+		return At.Z - Mid.Z;
 	}
 }
 
@@ -454,10 +496,66 @@ void UOutlawsCoop::TickHostBlastRifleTest(double Now, AOutlawsLevelActor* L, AOu
 		{
 			if (!E || B->bDead) return;
 			B->Health = 1010.f;
+			E->Health = 1000.f;                 // (what its landing does is the bots' own rule, not this flight's)
+			// (the user, 4 Nov: "match the player's flight": measured where the whole rise has the room: of the spawns out of this
+			// blast's reach of everyone else, the tallest throw)
+			{
+				UWorld* W = L->GetWorld();
+				const double BotHalf = E->GetCapsuleComponent()->GetScaledCapsuleHalfHeight();
+				const double Radius = FMath::Max(double(E->GetCapsuleComponent()->GetScaledCapsuleRadius()), double(P->GetCapsuleComponent()->GetScaledCapsuleRadius()));
+				FCollisionQueryParams Q(SCENE_QUERY_STAT(OutlawsBlastRifleOpen), false, E);
+				Q.AddIgnoredActor(P);
+				auto ClearOfOthers = [&](const FVector& At)
+				{
+					for (const FBot& O : Bots)
+					{
+						const AOutlawsEnemy* Other = O.Brain.Get();
+						if (Other && Other != E && FVector::Dist(Other->GetActorLocation(), At) < 1700.0) return false;
+					}
+					const AOutlawsRemotePlayer* R = PuppetOf(Client);
+					return !R || FVector::Dist(R->ShownBody(), At) >= 1700.0;
+				};
+				BlastSpot = E->GetActorLocation();
+				BlastStick = StickBeside(L, BlastSpot, BotHalf, 150.0, E);
+				BlastRoom = -1.0;
+				int32 Tried = 0;
+				for (const FOutlawsDmSpawn& Sp : Dm.GetSpawns())
+				{
+					FHitResult Floor;
+					if (!W->LineTraceSingleByChannel(Floor, Sp.Location + FVector(0.0, 0.0, 100.0), Sp.Location - FVector(0.0, 0.0, 600.0), ECC_Visibility, Q)) continue;
+					const FVector Mid = FVector(Floor.ImpactPoint) + FVector(0.0, 0.0, BotHalf + 3.0);
+					if (!ClearOfOthers(Mid)) continue;
+					for (int32 a = 0; a < 8; ++a)
+					{
+						const FVector Stick = Mid + FRotator(0.0, 45.0 * a, 0.0).Vector() * 150.0 - FVector(0.0, 0.0, BotHalf - 10.0);
+						if (W->LineTraceTestByChannel(Stick + FVector(0.0, 0.0, 20.0), Mid, ECC_Visibility, Q)) continue;
+						const double Up = ThrowRoom(W, Mid, Stick, Radius, FMath::Max(BotHalf, Half), E, P);
+						++Tried;
+						if (Up > BlastRoom) { BlastRoom = Up; BlastSpot = Mid; BlastStick = Stick; }
+					}
+				}
+				UE_LOG(LogOutlaws, Display, TEXT("OLSHOT blastrifle the open spot: %d throws tried of %d spawns, the tallest has %.0f cm over it, at %s"), Tried, Dm.GetSpawns().Num(), BlastRoom, *BlastSpot.ToCompactString());
+				E->SetActorLocation(BlastSpot, false, nullptr, ETeleportType::TeleportPhysics);
+				E->GetCharacterMovement()->StopMovementImmediately();
+			}
 			// (the host well away: this blast is the bot's)
-			StandFar(E->GetActorLocation());
-			BlastSpot = E->GetActorLocation();
-			BlastStick = StickBeside(L, BlastSpot, E->GetCapsuleComponent()->GetScaledCapsuleHalfHeight(), 150.0, E);
+			StandFar(BlastSpot);
+			TestAt = Now + 0.6;
+			Phase = 10;
+			return;
+		}
+		case 10:
+			if (Now < TestAt) return;
+			if (!E) return;
+			BlastSpot = E->GetActorLocation();                 // (as it settled)
+			TestSayTo(Client, TEXT("ml:brwatch"), BotIds[2] + (bOldPush ? 100 : 0) + 1000 * int32(FMath::Max(0.0, BlastRoom)));
+			TestAt = Now + 0.3;
+			Phase = 11;
+			return;
+		case 11:
+		{
+			if (Now < TestAt) return;
+			if (!E) return;
 			WatchBot.Begin(BlastSpot);
 			L->Explode(BlastStick);
 			// (the push as BlastThrow sums it for a player: 360 cm/s a point, 12 points inside a quarter of the radius, 0.7 up)
@@ -469,33 +567,51 @@ void UOutlawsCoop::TickHostBlastRifleTest(double Now, AOutlawsLevelActor* L, AOu
 				Check(bOldPush ? BotLaunch.IsNearlyZero() : FVector::Dist(BotLaunch, Nominal) < 5.0, FString::Printf(TEXT("the bot's launch %.0f cm/s (up %.0f); the player's formula %.0f (up %.0f)%s"),
 					BotLaunch.Size(), BotLaunch.Z, Nominal.Size(), Nominal.Z, bOldPush ? TEXT(", -OLOldBotPush: none") : TEXT("")));
 			}
-			TestAt = Now + 2.0;
+			TestAt = Now + 4.5;
 			Phase = 3;
 			return;
 		}
 		case 3:
-			if (E) WatchBot.Note(E->GetActorLocation(), E->GetVelocity().Size());
+			if (E)
+			{
+				WatchBot.Note(E->GetActorLocation(), E->GetVelocity().Size());
+				WatchBot.NoteUp(L->GetWorld()->GetTimeSeconds(), E->GetVelocity().Z);
+			}
 			if (Now < TestAt) return;
-			// the player next: the same spot, the same stick
+			if (E)
+			{
+				Check(E->GetCharacterMovement()->IsMovingOnGround() && E->GetCharacterMovement()->GravityScale == 1.f,
+					FString::Printf(TEXT("the bot down again, its own gravity back: x%.2f, on the ground %d"), E->GetCharacterMovement()->GravityScale, E->GetCharacterMovement()->IsMovingOnGround() ? 1 : 0));
+			}
+			// the player next: the same spot, the same stick, in the headset's gravity (the probe's body is a desktop's, 4.59 g)
 			L->bInvincible = true;              // (the throw alone: a dead view is not thrown)
-			P->SetActorLocation(BlastSpot, false, nullptr, ETeleportType::TeleportPhysics);
+			P->BaseGravityScale = 1.5f;
+			P->SetActorLocation(BlastSpot + FVector(0.0, 0.0, Half - (E ? double(E->GetCapsuleComponent()->GetScaledCapsuleHalfHeight()) : Half)), false, nullptr, ETeleportType::TeleportPhysics);
 			P->GetCharacterMovement()->StopMovementImmediately();
-			WatchPlayer.Begin(BlastSpot);
+			TestAt = Now + 0.5;
+			Phase = 12;
+			return;
+		case 12:
+			// (settled first: UpdateGravity takes the headset's gravity on the body's next tick, and the launch's first frames at 4.59 g cost 50 to 120 cm of the rise)
+			if (Now < TestAt) return;
+			WatchPlayer.Begin(P->GetActorLocation());
 			L->Explode(BlastStick);
-			TestAt = Now + 2.0;
+			TestAt = Now + 4.5;
 			Phase = 9;
 			return;
 		case 9:
 			WatchPlayer.Note(P->GetActorLocation(), P->GetVelocity().Size());
+			WatchPlayer.NoteUp(L->GetWorld()->GetTimeSeconds(), P->GetVelocity().Z);
 			if (Now < TestAt) return;
 			L->bInvincible = false;
-			// (thrown at all: a roof over the bot's spot can leave the player's taller body no room to rise, the speed says it was thrown)
-			Check(WatchPlayer.Rise > 100.0 || WatchPlayer.PeakSpeed > 3000.0, FString::Printf(TEXT("that stick on the host's player, on the bot's spot: %s"), *WatchPlayer.Say()));
-			// (the flight, from the same spot: the speed is a tick's sample, a low roof or a wall takes it in a frame, and one launch rises
-			// less on the desktop player here, 4.59 g, than on a bot, 1 g (a headset's player, 1.5 g, in between): at least the player's
-			// rise, no more than the launch carries at 1 g, 3130 cm)
-			Check(bOldPush ? WatchBot.Rise < 60.0 : WatchBot.Rise >= WatchPlayer.Rise - FMath::Max(120.0, WatchPlayer.Rise * 0.4) && WatchBot.Rise <= 3300.0,
-				FString::Printf(TEXT("that stick on a live bot: %s%s (the player's: %s)"), *WatchBot.Say(), bOldPush ? TEXT(", -OLOldBotPush") : TEXT(""), *WatchPlayer.Say()));
+			P->BaseGravityScale = P->DesktopGravityScale;
+			// (thrown at all, and the measure itself: the headset's 1.5 g, as high as the spot has the room for)
+			Check(FMath::Abs(WatchPlayer.Gs() - 1.5) < 0.05 && WatchPlayer.Rise >= FMath::Min(BlastRoom, OpenRise) * 0.9, FString::Printf(TEXT("that stick on the host's player, on the bot's spot, at the headset's gravity: %s, %.2f g (the launch's rise there: %.0f cm)"), *WatchPlayer.Say(), WatchPlayer.Gs(), FMath::Min(BlastRoom, OpenRise)));
+			// (the flight: the same rise as the player's, within the bodies' tick of a sample, under the same measured gravity)
+			Check(bOldPush ? WatchBot.Rise < 60.0 : FMath::Abs(WatchBot.Rise - WatchPlayer.Rise) <= FMath::Max(40.0, WatchPlayer.Rise * 0.03) && FMath::Abs(WatchBot.Gs() - WatchPlayer.Gs()) < 0.05,
+				FString::Printf(TEXT("that stick on a live bot: %s, %.2f g%s (the player's: %s, %.2f g)"), *WatchBot.Say(), WatchBot.Gs(), bOldPush ? TEXT(", -OLOldBotPush") : TEXT(""), *WatchPlayer.Say(), WatchPlayer.Gs()));
+			Table.Add(FString::Printf(TEXT("the flight: the bot rises %.0f cm at %.2f g, the player %.0f cm at %.2f g (a point-blank stick: %.0f cm at 1.5 g; %.0f cm of room)%s"),
+				WatchBot.Rise, WatchBot.Gs(), WatchPlayer.Rise, WatchPlayer.Gs(), OpenRise, BlastRoom, bOldPush ? TEXT(", -OLOldBotPush") : TEXT("")));
 			if (B) B->Health = 10.f;
 			Phase = 4;
 			return;
@@ -656,6 +772,19 @@ void UOutlawsCoop::OnBlastRifleTestStep(const FString& Step, int32 Arg, AOutlaws
 		L->Explode(R->ShownBody() - FVector(0.0, 0.0, 40.0) + (Eye - R->ShownBody()).GetSafeNormal2D() * 100.0);
 		return;
 	}
+	if (Step == TEXT("brwatch"))
+	{
+		// (the host's stick on a bot in the open: what this machine shows of the flight; Arg: the bot, 100 for -OLOldBotPush, the room in thousands)
+		const AOutlawsRemotePlayer* R = PuppetOf(Arg % 100);
+		if (!R) return;
+		SeenWho = Arg % 100;
+		bSeenOld = Arg % 1000 >= 100;
+		bSeenOpen = true;
+		SeenRoom = double(Arg / 1000);
+		SeenUntil = FPlatformTime::Seconds() + 3.5;
+		WatchSeen.Begin(R->ShownBody());
+		return;
+	}
 }
 
 void UOutlawsCoop::TickClientBlastRifleTest(AOutlawsLevelActor* L)
@@ -664,6 +793,15 @@ void UOutlawsCoop::TickClientBlastRifleTest(AOutlawsLevelActor* L)
 	if (SeenWho < 0) return;
 	if (const AOutlawsRemotePlayer* R = PuppetOf(SeenWho)) WatchSeen.Note(R->ShownBody(), 0.0);
 	if (FPlatformTime::Seconds() < SeenUntil) return;
+	if (bSeenOpen)
+	{
+		const double Want = FMath::Min(SeenRoom, OpenRise);
+		Check(bSeenOld ? WatchSeen.Rise < 60.0 : WatchSeen.Rise >= Want * 0.85 && WatchSeen.Rise <= OpenRise * 1.1,
+			FString::Printf(TEXT("the client sees the host's stick throw a bot: %s%s (the launch's rise there: %.0f cm)"), *WatchSeen.Say(), bSeenOld ? TEXT(" (-OLOldBotPush on the host)") : TEXT(""), Want));
+		bSeenOpen = false;
+		SeenWho = -1;
+		return;
+	}
 	const bool bThrown = WatchSeen.Rise >= 30.0 || WatchSeen.Carry >= 60.0;
 	Check(bSeenOld ? !bThrown : bThrown, FString::Printf(TEXT("the client sees the bot's body after its stick: %s%s"), *WatchSeen.Say(), bSeenOld ? TEXT(" (-OLOldBotPush on the host)") : TEXT("")));
 	Result(TEXT("client"));

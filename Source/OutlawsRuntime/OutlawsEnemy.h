@@ -503,6 +503,9 @@ private:
 	double FullPaceUntil = 0.0;              // real seconds: a hit's reaction plays at full speed whatever the movement slider
 	bool bKnockFlight = false;               // thrown by a hit and not yet landed (flies at full speed too)
 	FVector PendingKnock = FVector::ZeroVector;   // this frame's hits, launched together
+	bool bKnockAsPlayer = false;             // (BUG-BLASTMISS) those hits hold a blast's throw of a live match bot (UOutlawsCoop::BlastThrowsBots)
+	bool bFlightAsPlayer = false;            // (BUG-BLASTMISS) that throw in the air: a thrown headset player's gravity till it lands
+	void TickFlightAsPlayer();
 	float LightCheck = 0.f;                        // next look at the sector light underfoot
 	/** Far-off watchers standing at their posts, bodies at rest and the dormant tick a few times a second (their
 	 *  movement too): 101 bad guys every frame were the Quest's second-biggest game-thread cost (OutlawsPerf). */

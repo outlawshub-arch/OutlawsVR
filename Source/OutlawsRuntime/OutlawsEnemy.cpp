@@ -1552,7 +1552,27 @@ void AOutlawsEnemy::Knock(const FVector& Dir, float Dealt, bool bBlast)
 		}
 	}
 	// every pellet adds; the sum goes out on the next tick (LaunchCharacter keeps only its last call)
-	PendingKnock = (PendingKnock + V * Speed).GetClampedToMaxSize(bBlast ? 5200.f : 3000.f);
+	// (BUG-BLASTMISS: a match bot's flinch in the throw's own frame, a client's stick's hit coming in after it, is no shot's cap on it:
+	// that throw went out at 3000, up 1720)
+	PendingKnock = (PendingKnock + V * Speed).GetClampedToMaxSize(bBlast || bKnockAsPlayer ? 5200.f : 3000.f);
+}
+
+void AOutlawsEnemy::TickFlightAsPlayer()
+{
+	// (BUG-BLASTMISS, the user of 4 Nov: "match the player's flight") a live match bot thrown by a blast falls as a thrown headset
+	// player does (AOutlawsPlayer::UpdateGravity: 1.5 g, times the sector's GRAVITY over townex's -60), not at its own 1 g: from
+	// point blank the same launch rises 20.9 m, not 31 m.  Its own gravity back when it is down (Landed reads the height from
+	// the speed under the gravity it fell with)
+	UCharacterMovementComponent* Move = GetCharacterMovement();
+	const AOutlawsLevelActor* L = Level.Get();
+	if (!bKnockFlight || !L)
+	{
+		bFlightAsPlayer = false;
+		Move->GravityScale = 1.f;
+		return;
+	}
+	const FVector Feet = GetActorLocation() - FVector(0.0, 0.0, GetCapsuleComponent()->GetScaledCapsuleHalfHeight());
+	Move->GravityScale = 1.5f * FMath::Clamp(-L->GravityAt(Feet) / 60.f, 0.f, 4.f);
 }
 
 bool AOutlawsEnemy::GNextHitMelee = false;
@@ -2367,6 +2387,7 @@ void AOutlawsEnemy::Tick(float Dt)
 			// landed: the living keep to their FENCE walls again (a hit carried them over one: they stay where it threw them)
 			if (!IsDead() && CoopSelf < 0) GetCapsuleComponent()->SetCollisionResponseToChannel(ECC_GameTraceChannel2, ECR_Block);     // (a match bot walks as a player)
 		}
+		if (bFlightAsPlayer) TickFlightAsPlayer();
 		const bool bReacting = FPlatformTime::Seconds() < FullPaceUntil || bKnockFlight;
 		// held or thrown, he goes at the player's hand's own speed (user 2026-10-02: a living one thrown flew in slow motion,
 		// at the bad guys' pace of 0.3, three times as long as a body or a rock)
@@ -2476,12 +2497,15 @@ void AOutlawsEnemy::Tick(float Dt)
 	if (!PendingKnock.IsNearlyZero())
 	{
 		UE_LOG(LogOutlawsAI, Log, TEXT("OLRT %s thrown at %.0f cm/s (up %.0f)"), *OutlawsName, PendingKnock.Size(), PendingKnock.Z);
-		LaunchCharacter(PendingKnock, false, false);
+		LaunchCharacter(PendingKnock, bKnockAsPlayer, bKnockAsPlayer);       // (BUG-BLASTMISS: as BlastThrow launches a player, the speed it had gone)
 		bKnockFlight = true;
+		bFlightAsPlayer = bFlightAsPlayer || bKnockAsPlayer;
+		if (bFlightAsPlayer) TickFlightAsPlayer();
 		// a hit's flight carries the living over a FENCE wall too (off the ledge it guards); back on landing
 		GetCapsuleComponent()->SetCollisionResponseToChannel(ECC_GameTraceChannel2, ECR_Ignore);
 		PendingKnock = FVector::ZeroVector;
 	}
+	bKnockAsPlayer = false;
 	UWorld* World = GetWorld();
 	AOutlawsLevelActor* L = Level.Get();
 	if (!World || !World->IsGameWorld() || !L)
