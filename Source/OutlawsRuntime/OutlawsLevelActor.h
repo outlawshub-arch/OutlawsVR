@@ -2690,6 +2690,7 @@ private:
 	TArray<TPair<int32, int32>> OverlapPairs;
 	TMap<int32, TArray<FOverlapPart>> OverlapParts;
 	TSet<int32> OverlapHidden;               // out of sight (and shots pass them)
+	TBitArray<> OverlapOffBits;              // (BUG-OBJOVERLAP) OverlapHidden by sector: the things in them go too (the sprites read it)
 	TSet<int32> OverlapIgnored;              // the body passes through them (a superset: some stay drawn)
 	/** An INF "ELEVATOR EXPLODE" sector (a plug in a passage: the cliff's cracked wall, the hideout's cattle pen, the
 	 *  wharf's warehouse wall...): its open faces and their mirrors stand as solid walls, drawn with their mid texture and
@@ -2749,6 +2750,14 @@ public:
 	 *  (bOldWinding) or the walls'; the live level's unblown explodable walls shut only on the live level.  The sectors reached. */
 	int32 DebugFloodBy(const FOutlawsLevel* L, int32 From, const FVector2D& Eye, double EyeZ, bool bOldWinding, TSet<int32>* OutSeen = nullptr);
 	const FOutlawsLevel* DebugLiveLevel() const;
+	/** (BUG-OBJOVERLAP, -OLObjOverlapProbe) one thing of a sharing sector within arm's reach of an eye in its partner, the flood not reaching it. */
+	struct FObjOverlapLeak { FString Name; FVector Pos = FVector::ZeroVector; int32 Sector = -1, From = -1; FVector2D Eye = FVector2D::ZeroVector; double EyeZ = 0.0; };
+	/** The sharing pairs of L, its things in them and those leaks; one line a thing goes to the log. */
+	void DebugObjOverlapScan(const FOutlawsLevel& Lv, int32& OutPairs, int32& OutSectors, int32& OutThings, int32& OutWithin, TArray<FObjOverlapLeak>& OutLeaks);
+	bool DebugSeenNow(int32 Sector) const { return SeenFromEye.Contains(Sector); }
+	bool DebugOverlapOff(int32 Sector) const { return OverlapHidden.Contains(Sector); }
+	/** Ns for one rebuild of OverlapOffBits (the hidden set changing), and for one sprite's read of them. */
+	double DebugOverlapOffNs(double* OutReadNs = nullptr);
 #endif
 	FString DebugGroupsHidden() const;        // (tests) the doors and lifts the culling hides, by name
 private:

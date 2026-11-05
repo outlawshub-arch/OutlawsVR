@@ -43,6 +43,7 @@ namespace
 	// portal culling, published by the level each frame
 	bool GCullOn = false;
 	const TBitArray<>* GCullVisible = nullptr;
+	const TBitArray<>* GCullOverlapOff = nullptr;  // (BUG-OBJOVERLAP) the sharing sectors left undrawn this tick
 	FVector GCullEye = FVector::ZeroVector;
 	TFunction<int32(int32, const FVector&, const FVector&)> GCullTrack;
 	// (V1: was 3 m, which let a shared-space room's things show from the sector beside them) only what is in arm's reach
@@ -59,10 +60,11 @@ static TAutoConsoleVariable<int32> CVarOLObjectLod(TEXT("ol.ObjectLod"), 1,
 static TAutoConsoleVariable<float> CVarOLObjectLodScale(TEXT("ol.ObjectLodScale"), 1.f,
 	TEXT("CPU1 object LOD: every LOD distance times this (tuning; the Graphics page's Object Detail scales them too)."));
 
-void AOutlawsSpriteActor::SetCulling(bool bOn, const TBitArray<>* Visible, const FVector& Eye, TFunction<int32(int32, const FVector&, const FVector&)> Track)
+void AOutlawsSpriteActor::SetCulling(bool bOn, const TBitArray<>* Visible, const FVector& Eye, TFunction<int32(int32, const FVector&, const FVector&)> Track, const TBitArray<>* OverlapOff)
 {
 	GCullOn = bOn && Visible != nullptr;
 	GCullVisible = Visible;
+	GCullOverlapOff = OverlapOff;
 	GCullEye = Eye;
 	if (Track || !bOn) GCullTrack = MoveTemp(Track);
 }
@@ -93,9 +95,13 @@ bool AOutlawsSpriteActor::UpdateCull(float DeltaSeconds)
 		CullSector = GCullTrack ? GCullTrack(CullSector, CullPos, P) : -1;
 		CullPos = P;
 	}
-	const bool bSee = CullSector < 0 || !GCullVisible->IsValidIndex(CullSector) || (*GCullVisible)[CullSector]
-		|| FVector::DistSquared(P, GCullEye) < FMath::Square(CullSafeCm);
-	CullHold = bSee ? 0.25f : CullHold - DeltaSeconds;
+	// (BUG-OBJOVERLAP, user 5 Nov, the mill: a thing of the sector sharing this one's space showed in the tunnel, its walls
+	// and floor rightly not) a sector the overlap choice leaves undrawn takes its things with it, at once, in arm's reach too:
+	// no wall stands between them and the eye there.  The reach and the holds below are for sectors with one between
+	const bool bOverlapOff = GCullOverlapOff && GCullOverlapOff->IsValidIndex(CullSector) && (*GCullOverlapOff)[CullSector];
+	const bool bSee = !bOverlapOff && (CullSector < 0 || !GCullVisible->IsValidIndex(CullSector) || (*GCullVisible)[CullSector]
+		|| FVector::DistSquared(P, GCullEye) < FMath::Square(CullSafeCm));
+	CullHold = bSee ? 0.25f : bOverlapOff ? 0.f : CullHold - DeltaSeconds;
 	const bool bHide = !bSee && CullHold <= 0.f;
 	if (bHide != bCulled)
 	{

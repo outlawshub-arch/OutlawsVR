@@ -127,8 +127,8 @@ public:
 	 *  whatever hangs on it: its 3D model, a grab halo) in a sector it does not reach, and more than CullSafeCm from
 	 *  the eye, is hidden in game.  Its clock still runs (props fire their chor events), collision and AI are untouched.
 	 *  Occlusion queries are off on the Quest (the GPU hang), so this is the only thing keeping sprites behind walls
-	 *  out of the draw list. */
-	static void SetCulling(bool bOn, const TBitArray<>* Visible, const FVector& Eye, TFunction<int32(int32, const FVector&, const FVector&)> Track);
+	 *  out of the draw list.  OverlapOff (BUG-OBJOVERLAP, may be null): sectors whose things go whatever the distance. */
+	static void SetCulling(bool bOn, const TBitArray<>* Visible, const FVector& Eye, TFunction<int32(int32, const FVector&, const FVector&)> Track, const TBitArray<>* OverlapOff = nullptr);
 	int32 HomeSector = -1;                  // (V1) the OB's own sector, its first membership (the level sets it at spawn)
 	int32 DebugCullSector() const { return CullSector; }
 	bool DebugCulled() const { return bCulled; }

@@ -153,6 +153,7 @@ void AOutlawsLevelActor::Clear()
 	NextCullLog = 0.0;
 	OverlapParts.Reset();
 	OverlapHidden.Reset();
+	OverlapOffBits.Empty();
 	OverlapIgnored.Reset();
 	OverlapFrom = -2;
 	ZoneGates.Reset();
@@ -4076,6 +4077,9 @@ void AOutlawsLevelActor::ApplyOverlapChoice(int32 BodySector, bool bLog)
 	}
 	OverlapIgnored = MoveTemp(Hide);
 	OverlapHidden = MoveTemp(Unseen);
+	// (BUG-OBJOVERLAP) only when the set changes; -OLOldObjOverlap: sprites and models by the flood and the arm's reach alone
+	OverlapOffBits.Init(false, L.Sectors.Num());
+	for (const int32 Hs : OverlapHidden) if (Hs >= 0 && Hs < OverlapOffBits.Num()) OverlapOffBits[Hs] = true;
 	if (Changed > 0 && (bLog || OLFlags::Param(TEXT("OLShots"))))
 	{
 		FString Which;
@@ -4475,8 +4479,10 @@ void AOutlawsLevelActor::UpdateVisibility()
 	for (const int32 Si : SeenFromEye) if (Si >= 0 && Si < NumS) SeenAt[Si] = VisNow;
 	for (int32 s = 0; s < NumS; ++s) if (SeenAt[s] >= 0.0 && VisNow - SeenAt[s] <= CVarOLVisHold.GetValueOnGameThread()) VisibleSectors[s] = true;
 	// (the sprites' sector: tracked from where each was, as the player's; handed over once a level)
+	static const bool bOldObjOverlap = OLFlags::Param(TEXT("OLOldObjOverlap"));
 	AOutlawsSpriteActor::SetCulling(true, &VisibleSectors, EyeW, bCullFnSent ? TFunction<int32(int32, const FVector&, const FVector&)>()
-		: TFunction<int32(int32, const FVector&, const FVector&)>([this](int32 Was, const FVector& From, const FVector& P) { return TrackThing(Was, From, P); }));
+		: TFunction<int32(int32, const FVector&, const FVector&)>([this](int32 Was, const FVector& From, const FVector& P) { return TrackThing(Was, From, P); }),
+		bOldObjOverlap ? nullptr : &OverlapOffBits);
 	bCullFnSent = true;
 	// doors and lifts: shown while any of their sectors may be seen
 	if (GroupCullSectors.Num() != Groups.Num())
