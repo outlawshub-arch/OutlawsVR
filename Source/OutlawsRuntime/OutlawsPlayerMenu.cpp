@@ -3564,6 +3564,13 @@ FString AOutlawsPlayer::CoopRowLabel(const FString& Name) const
 	return It ? It->Label : FString();
 }
 
+bool AOutlawsPlayer::CoopRowGreyed(const FString& Name) const
+{
+	if (!bMenuOpen || !MenuPage) return false;
+	const OutlawsMenu::FItem* It = MenuPage->Items.FindByPredicate([&Name](const OutlawsMenu::FItem& I) { return I.Name == Name; });
+	return It && It->Classes.Contains(TEXT("disabled"));
+}
+
 int32 AOutlawsPlayer::SheetRowsFit() const
 {
 	// (REQ-MPLOBBY c) the rows from the top that sit on the parchment sheet: each row's text above the sheet's foot, and above

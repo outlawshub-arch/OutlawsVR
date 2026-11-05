@@ -2399,6 +2399,8 @@ public:
 	bool TestPressLink(const FString& Target);
 	/** BUG-READYFLIP's test: the label the open page shows on its row named Name (empty: no such row). */
 	FString CoopRowLabel(const FString& Name) const;
+	/** BUG-READYFLIP's test: the row named Name is on the open page and greyed out. */
+	bool CoopRowGreyed(const FString& Name) const;
 	/** A line under the menu for a few seconds. */
 	void CoopToast(const FString& Text) { MenuToastText(Text); MenuToastLeft = 5.f; }
 	/** BUG-HOSTPAUSE: the host's app paused: this client's world held still as behind the single-player menu (the body,

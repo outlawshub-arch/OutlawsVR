@@ -46,15 +46,16 @@ void UOutlawsCoop::TickReadyFlipHost(double Now, AOutlawsPlayer* P)
 	const int32 Want = FMath::Max(PartyPlayers, 3);
 	AOutlawsCoopLink* C1 = GetLink(1);
 	AOutlawsCoopLink* C2 = GetLink(2);
-	// (a client's note: "readyflip <who> <k> <entered>|<the row it shows>")
-	auto NoteFor = [this](int32 K, bool& bEntered, FString& Label)
+	// (a client's note: "readyflip <who> <k> <entered> <row greyed>|<the row it shows>")
+	auto NoteFor = [this](int32 K, bool& bEntered, bool& bGreyed, FString& Label)
 	{
 		FString Head;
 		if (!RFNote.Split(TEXT("|"), &Head, &Label)) return false;
 		TArray<FString> W;
 		Head.ParseIntoArrayWS(W);
-		if (W.Num() < 4 || FCString::Atoi(*W[2]) != K) return false;
+		if (W.Num() < 5 || FCString::Atoi(*W[2]) != K) return false;
 		bEntered = FCString::Atoi(*W[3]) != 0;
+		bGreyed = FCString::Atoi(*W[4]) != 0;
 		return true;
 	};
 	if (RFStep == 0)
@@ -79,12 +80,14 @@ void UOutlawsCoop::TickReadyFlipHost(double Now, AOutlawsPlayer* P)
 	else if (RFStep == 20 || RFStep == 30)
 	{
 		const int32 K = RFStep == 20 ? 1 : 2;
-		bool bEntered = false;
+		bool bEntered = false, bGreyed = false;
 		FString Label;
-		const bool bNote = NoteFor(K, bEntered, Label);
+		const bool bNote = NoteFor(K, bEntered, bGreyed, Label);
 		if (!bNote && Now < RFAt) return;
 		const bool bCounted = C1 && C1->bLobbyReady;
-		ReadyFlipCheck(bNote && bCounted && bEntered && Label == TEXT("Entered: waiting for the host to start"),
+		// (REQ-LOBBYREDO: the redone page keeps its ENTER GAME (n) row after the press, greyed; the older page shows the "Entered" heading)
+		const bool bLabelOk = Label == TEXT("Entered: waiting for the host to start") || (Label.StartsWith(TEXT("ENTER GAME (")) && bGreyed);
+		ReadyFlipCheck(bNote && bCounted && bEntered && bLabelOk,
 			FString::Printf(TEXT("client 1 %s: the host counts it entered %d, its row shows '%s'"), K == 1 ? TEXT("presses Enter Game") : TEXT("presses it twice more in one frame"), bCounted ? 1 : 0,
 				bNote ? *Label : TEXT("(no note)")));
 		if (K == 1)
@@ -219,7 +222,7 @@ void UOutlawsCoop::TickReadyFlipClient(double Now, AOutlawsPlayer* P)
 	{
 		const FString Label = P->CoopRowLabel(EnteredRow);
 		UE_LOG(LogOutlawsCoop, Log, TEXT("OLCOOP readyflip client: step %d: the row shows '%s', the host counts this player entered %d"), RFClientK, *Label, Mine->bLobbyReady ? 1 : 0);
-		Mine->ServerTestNote(FString::Printf(TEXT("readyflip %d %d %d|%s"), MyIndex(), RFClientK, Mine->bLobbyReady ? 1 : 0, *Label));
+		Mine->ServerTestNote(FString::Printf(TEXT("readyflip %d %d %d %d|%s"), MyIndex(), RFClientK, Mine->bLobbyReady ? 1 : 0, P->CoopRowGreyed(EnteredRow) ? 1 : 0, *Label));
 		RFClientStep = 0;
 	}
 }
