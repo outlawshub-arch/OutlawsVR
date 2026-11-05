@@ -69,7 +69,11 @@ void UOutlawsCoop::PlayerRows(TArray<FPlayerRow>& Out) const
 
 void UOutlawsCoop::MenuPageChanged(const UObject* Context)
 {
-	if (UOutlawsCoop* C = Get(Context)) C->PlayerListPage = 0;
+	if (UOutlawsCoop* C = Get(Context))
+	{
+		C->PlayerListPage = 0;
+		C->bRecentOpen = false;              // (REQ-RECENTIPS: the join page comes back with its drop-down shut)
+	}
 }
 
 int32 UOutlawsCoop::BotsInSession() const

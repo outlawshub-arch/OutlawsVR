@@ -1268,6 +1268,9 @@ public:
 	/** The joiner leaves for its main menu, saying why (an auto test quits). */
 	void LeaveCannotBuild(const FString& Why);
 	TMap<FString, FString> RecentPasswords;     // (the join page: the password a Recent host took, by its address)
+	bool bRecentOpen = false;                   // (REQ-RECENTIPS: the join page's Recent drop-down hangs open)
+	/** REQ-RECENTIPS: the drop-down open is shut, the join page drawn again (Back shuts it before it leaves the page). */
+	static bool CloseRecentList(AOutlawsPlayer* P);
 	void ReadRecentPasswords();
 	void NoteRecentPassword(const FString& Address, const FString& Password);
 	/** The Host Game page's Start: host a match with these options (a listen session straight into the map). */

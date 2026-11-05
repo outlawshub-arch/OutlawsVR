@@ -104,6 +104,15 @@ FString UOutlawsCoop::RecentLabel(int32 i) const
 	return N.IsEmpty() ? RecentAddrs[i] : FString::Printf(TEXT("%s  %s"), *RecentAddrs[i], *N);
 }
 
+bool UOutlawsCoop::CloseRecentList(AOutlawsPlayer* P)
+{
+	UOutlawsCoop* C = Get(P);
+	if (!C || !P || !C->bRecentOpen) return false;
+	C->bRecentOpen = false;
+	P->CoopShowPage(TEXT("#coopjoin"), false);
+	return true;
+}
+
 // ---- M1: the optional game password -----------------------------------------------------------------------------------------
 
 FString UOutlawsCoop::CleanPassword(const FString& In)

@@ -113,6 +113,19 @@ namespace
 		}
 		return Out + Line;
 	}
+
+	constexpr int32 MessageChars = 44;                 // a dialog's message, wrapped at this
+
+	// BUG-QUITGAP (user 5 Nov, snapshot #23: Yes and No sat far below "Are you sure you want to quit"): the row a dialog's
+	// buttons start on.  It was 4 whatever the message, room for four lines: now about a row's gap under its last line (the lines
+	// run from row 0.5, 0.8 of a row apart), so 2 for one line, 3 for two.  No message: the first row
+	int32 DialogFirstRow(const FString& Message)
+	{
+		if (Message.IsEmpty()) return 0;
+		TArray<FString> Lines;
+		Wrap(Message, MessageChars).ParseIntoArrayLines(Lines);
+		return FMath::CeilToInt(1.5f + 0.8f * float(Lines.Num() - 1));
+	}
 }
 
 bool AOutlawsPlayer::LoadMenuSource()
@@ -371,6 +384,7 @@ void AOutlawsPlayer::UnlockPageContinue()
 void AOutlawsPlayer::MenuBack()
 {
 	if (MenuPage && MenuPage->File == TEXT("#unlocked")) { UnlockPageContinue(); return; }
+	if (MenuPage && MenuPage->File == TEXT("#coopjoin") && UOutlawsCoop::CloseRecentList(this)) return;     // (REQ-RECENTIPS: Back shuts the drop-down first)
 	if (MenuStack.Num() == 0)
 	{
 		if (!bFrontMenu) CloseMenu();
@@ -385,7 +399,7 @@ void AOutlawsPlayer::MenuBack()
 		const int32 i = MenuPage->Items.IndexOfByPredicate([](const OutlawsMenu::FItem& It) { return It.Target == TEXT("#voice"); });
 		if (i != INDEX_NONE && i >= MenuScroll)
 		{
-			const int32 First = MenuPage->Message.IsEmpty() ? 0 : 4;
+			const int32 First = DialogFirstRow(MenuPage->Message);
 			MenuHover[0] = MenuHover[1] = i - MenuScroll + First;
 			bMenuHoverHeld = true;
 			RedrawMenu();
@@ -513,7 +527,9 @@ bool AOutlawsPlayer::ShowMenuPage(const FString& File, bool bPush)
 		Add(EItemKind::Heading, TEXT("Hands"), TEXT(""), {});
 		Add(EItemKind::Select, TEXT("Dominant hand"), TEXT("vr_domhand"), { TEXT("Right"), TEXT("Left") });
 		Add(EItemKind::Select, TEXT("One controller"), TEXT("vr_onectrl"), { TEXT("Off"), TEXT("Left only"), TEXT("Right only") });
-		Add(EItemKind::Check, TEXT("Y / B reload (off: tap X / A)"), TEXT("vr_facereload"), {});
+		// REQ-BUTTONLABEL (user 5 Nov, snapshot #18: "Y / B reload" was confusing): the row names the button that reloads
+		// (MenuRowText: "Reload button:  Y / B" or "Tap X / A"), still an on/off row underneath, ButtonLayout in the settings
+		Add(EItemKind::Check, TEXT("Reload button"), TEXT("vr_facereload"), {});
 		Add(EItemKind::Action, TEXT("Restore defaults"), TEXT("defaults:vr"), {});
 	}
 	else if (File == TEXT("#levels"))
@@ -1072,10 +1088,10 @@ bool AOutlawsPlayer::ShowMenuPage(const FString& File, bool bPush)
 		F.Options = { TEXT("1 minute"), TEXT("2 minutes"), TEXT("3 minutes"), TEXT("5 minutes"), TEXT("10 minutes"), TEXT("15 minutes") };
 		Page->Items.Add(F);
 		// REQ-ENDONBOSS (user 2-3 Nov): a mission over as its boss goes down (HM straight to the card, the Handful at once); off
-		// by default, as the original
+		// by default, as the original.  REQ-BOSSDOWNLABEL (user 5 Nov, snapshot #19): "historical" in the label
 		OutlawsMenu::FItem Eb;
 		Eb.Kind = OutlawsMenu::EItemKind::Check;
-		Eb.Label = TEXT("End mission on boss down");
+		Eb.Label = TEXT("End historical mission on boss down");
 		Eb.Name = TEXT("endonboss");
 		Page->Items.Add(Eb);
 		// REQ-SPMULT (user 2026-10-05): co-op's bad guys multiplier in single player, the same quarters up to four times
@@ -1211,7 +1227,7 @@ bool AOutlawsPlayer::ShowMenuPage(const FString& File, bool bPush)
 	FrontHits.Reset();
 	FrontItemInk.Reset();
 	MenuTitle->SetText(FText::FromString(Page->Title.IsEmpty() ? File : Page->Title));
-	MenuMessage->SetText(FText::FromString(Wrap(Page->Message, 44)));
+	MenuMessage->SetText(FText::FromString(Wrap(Page->Message, MessageChars)));
 	RefreshMenuRows();
 	return true;
 }
@@ -1395,7 +1411,7 @@ FString AOutlawsPlayer::MenuRowText(int32 Index) const
 		else if (I.Name == TEXT("r_perfhud")) bOn = OutlawsDeviceProfile::PerfHud();
 		else if (I.Name == TEXT("r_grabglow")) bOn = OutlawsDeviceProfile::GrabGlow();
 		else if (I.Name == TEXT("r_quest2mode")) bOn = OutlawsDeviceProfile::IsQuest2();
-		else if (I.Name == TEXT("vr_facereload")) bOn = bFaceReload;
+		else if (I.Name == TEXT("vr_facereload")) return FString::Printf(TEXT("%s:  %s"), *I.Label, bFaceReload ? TEXT("Y / B") : TEXT("Tap X / A"));     // (REQ-BUTTONLABEL)
 		else if (I.Name == TEXT("autosave")) bOn = L && L->bAutosave;
 		else if (I.Name == TEXT("endonboss")) bOn = L && L->bEndOnBoss;
 		else if (I.Name == TEXT("mp_announce") || I.Name == TEXT("mp_listen")) bOn = UOutlawsBeacon::Setting(I.Name);
@@ -1446,7 +1462,7 @@ void AOutlawsPlayer::RefreshMenuRows()
 	}
 	const int32 N = MenuPage->Items.Num();
 	// dialogs put their message where the first rows would be: their buttons go lower
-	const int32 First = MenuPage->Message.IsEmpty() ? 0 : 4;
+	const int32 First = DialogFirstRow(MenuPage->Message);
 	const int32 Fit = SheetRowsFit();          // (REQ-MPLOBBY c: a row that would reach off the sheet waits for the scroll)
 	for (int32 r = 0; r < MenuRows.Num(); ++r)          // (REQ-SUBMENUSPACE: the rows past this page's count left empty)
 	{
@@ -1655,7 +1671,7 @@ void AOutlawsPlayer::DrawMenuCanvas(UCanvas* C, int32 Width, int32 Height)
 		const int32 Item = MenuScroll + r - (MenuPage->Items.Num() > 0 ? 0 : 0);
 		// (BUG-SPEEDWARN) the speed warning: its two lines in the small font, in the warning's colour, in its row's place
 		// (REQ-REFRESHHINT: the Graphics page's refresh note the same)
-		const int32 NoteI = Item - (MenuPage->Message.IsEmpty() ? 0 : 4);
+		const int32 NoteI = Item - (DialogFirstRow(MenuPage->Message));
 		if (!RowText.IsEmpty() && MenuPage->Items.IsValidIndex(NoteI) && (MenuPage->Items[NoteI].Name == TEXT("vr_speedwarn") || MenuPage->Items[NoteI].Name == TEXT("r_refreshhint")))
 		{
 			TArray<FString> Lines;
@@ -1708,7 +1724,7 @@ void AOutlawsPlayer::DrawMenuCanvas(UCanvas* C, int32 Width, int32 Height)
 			continue;
 		}
 		// (REQ-EXTRAS) a locked mode's row greyed, its requirement in its label
-		const int32 Ri = MenuScroll + r - (MenuPage->Message.IsEmpty() ? 0 : 4);
+		const int32 Ri = MenuScroll + r - (DialogFirstRow(MenuPage->Message));
 		const bool bGrey = MenuPage->Items.IsValidIndex(Ri) && MenuPage->Items[Ri].Classes.Contains(TEXT("disabled"));
 		const FBox2D RowBox = Text(MenuRowFont, RowText, ColX, Y(RowZ(r)), bGrey ? FLinearColor::FromSRGBColor(FColor(0x6a, 0x60, 0x56)) : bHot ? Hot : Ink, ColW);
 		if (bInk && RowBox.bIsValid) SheetRowInk.Add(RowBox);
@@ -1958,7 +1974,7 @@ void AOutlawsPlayer::MenuMousePress(bool bRight)
 	float Length = 0.f;
 	const int32 Row = MenuRowUnderRay(Camera->GetComponentLocation(), Camera->GetForwardVector(), Length);
 	if (Row < 0) return;
-	const int32 First = MenuPage->Message.IsEmpty() ? 0 : 4;
+	const int32 First = DialogFirstRow(MenuPage->Message);
 	MenuMouseStep(MenuScroll + Row - First, bRight);
 }
 
@@ -1967,7 +1983,7 @@ int32 AOutlawsPlayer::MenuRowUnderRay(const FVector& O, const FVector& D, float&
 	if (!MenuRoot || !MenuPage) return -1;
 	const FTransform Panel = MenuRoot->GetComponentTransform();
 	const FVector N = Panel.GetUnitAxis(EAxis::X);
-	const int32 First = MenuPage->Message.IsEmpty() ? 0 : 4;
+	const int32 First = DialogFirstRow(MenuPage->Message);
 	int32 Row = -1;
 	const double Den = FVector::DotProduct(D, N);
 	if (Den >= -1e-3) return -1;
@@ -2815,7 +2831,7 @@ void AOutlawsPlayer::UpdateMenu(float Dt)
 	// scroll with either stick
 	const float Stick = FMath::Abs(MoveStick().Y) > FMath::Abs(TurnStick().Y) ? MoveStick().Y : TurnStick().Y;
 	MenuScrollWait -= Dt;
-	const int32 First = MenuPage->Message.IsEmpty() ? 0 : 4;
+	const int32 First = DialogFirstRow(MenuPage->Message);
 	const int32 MaxScroll = IsAchievPage() ? FMath::Max(0, MenuPage->Items.Num() - AchievRowsShown) : bWideSheet ? FMath::Max(0, MenuPage->Items.Num() + First - 7) : SheetMaxScroll();
 	if (FMath::Abs(Stick) > 0.6f && MenuScrollWait <= 0.f)
 	{
@@ -3366,7 +3382,7 @@ int32 AOutlawsPlayer::SheetRowsShownNow() const
 {
 	// (as RefreshMenuRows fills them: from the top, up to what fits, as far as the page's rows go at this scroll)
 	if (!MenuPage) return 0;
-	const int32 First = MenuPage->Message.IsEmpty() ? 0 : 4;
+	const int32 First = DialogFirstRow(MenuPage->Message);
 	return FMath::Clamp(MenuPage->Items.Num() + First - MenuScroll, 1, FMath::Min(SheetRowsFit(), PageRowsShown()));
 }
 
@@ -3454,7 +3470,7 @@ float AOutlawsPlayer::RowZ(int32 r) const
 	float Z = PageRowTop() - PageRowStep() * r;
 	if (MenuPage)
 	{
-		const int32 First = MenuPage->Message.IsEmpty() ? 0 : 4;
+		const int32 First = DialogFirstRow(MenuPage->Message);
 		for (int32 k = 1; k <= r; ++k)
 		{
 			const int32 i = MenuScroll + k - First;
@@ -3558,7 +3574,7 @@ int32 AOutlawsPlayer::SheetRowsFit() const
 	const int32 Most = PageRowsShown();
 	const float Half = SheetRowInk.Num() > 0 ? SheetRowInk[0].GetSize().Y * 0.5f : 24.f;          // (the letters' height, not the line's)
 	float FootHalf = SheetFootInk.Num() > 0 ? SheetFootInk[0].GetSize().Y * 0.5f : 16.f;
-	const int32 First = MenuPage->Message.IsEmpty() ? 0 : 4;
+	const int32 First = DialogFirstRow(MenuPage->Message);
 	const bool bFoot = MenuStack.Num() > 0 || MenuPage->Items.Num() + First > Most
 		|| (MenuPage->File.Equals(TEXT("main_game.rml"), ESearchCase::IgnoreCase) && !PauseTimeShown.IsEmpty());
 	// (REQ-BUTTONGLYPHS) VR's Back and "more below" have their controllers under the words: that much room under the line
@@ -3610,7 +3626,7 @@ void AOutlawsPlayer::SheetBlockZ(int32 N, float& OutTopZ, float& OutFootZ) const
 		OutTopZ = bVR ? RowZ(0) + RowHalf + 10.f / S + Small * 2.f + Glyph * (1.f + OutlawsGlyphs::StackGap)
 			: (RowZ(0) + TitleZ) * 0.5f + Small;
 	}
-	const int32 First = MenuPage->Message.IsEmpty() ? 0 : 4;
+	const int32 First = DialogFirstRow(MenuPage->Message);
 	const bool bMoreDown = MenuScroll + N - First < MenuPage->Items.Num();
 	const bool bFoot = MenuStack.Num() > 0 || bMoreDown;
 	// (REQ-BACKRIGHT) "more below" has its stick under its words; Back alone its controllers beside them, on the line
@@ -3645,7 +3661,7 @@ int32 AOutlawsPlayer::SheetMaxScroll()
 {
 	// (the scroll that shows the last row, with each scroll's own row count)
 	if (!MenuPage) return 0;
-	const int32 First = MenuPage->Message.IsEmpty() ? 0 : 4;
+	const int32 First = DialogFirstRow(MenuPage->Message);
 	const int32 Keep = MenuScroll;
 	int32 Max = 0;
 	for (int32 Sc = 0; Sc <= MenuPage->Items.Num(); ++Sc)
@@ -4158,12 +4174,65 @@ void AOutlawsPlayer::DrawFrontCanvas(UCanvas* C, int32 Width, int32 Height)
 				// (REQ-MPMENU: the rows placed by name, not by index: since M1's Password row the Join row had fallen into the
 				// Recent column, under a "Recent" heading with no hosts in it)
 				const FString& Nm = MenuPage->Items[i].Name;
+				// REQ-RECENTIPS (user 5 Nov, snapshot #17): the Recent button right of the pad, in its first row's line, its arrow
+				// down, up while the list hangs open under it: a slip of paper on the parchment, between the pad and the torn edge
+				constexpr float ListL = 1140.f, ListR = 1428.f, ListTop = 536.f, ListStep = 66.f;
+				static const bool bOldRecentIps = OLFlags::Param(TEXT("OLOldRecentIps"));
+				if (Nm == TEXT("coop:recentlist"))
+				{
+					Link(i, MenuPage->Items[i].Label, (ListL + ListR) * 0.5f - 22.f, 494.f, 1, 13, 14, 60.f, 16.f);
+					if (FrontItemInk.IsValidIndex(i))
+					{
+						const bool bOpen = MenuPage->Items.ContainsByPredicate([](const OutlawsMenu::FItem& It) { return It.Name.StartsWith(TEXT("coop:recent:")); });
+						const float AX = float(FrontItemInk[i].Max.X) + 28.f, Half = 18.f, Rise = bOpen ? -13.f : 13.f;
+						FCanvasTriangleItem Arrow(FVector2D((AX - Half) * K, (494.f - Rise) * K), FVector2D((AX + Half) * K, (494.f - Rise) * K), FVector2D(AX * K, (494.f + Rise) * K), GWhiteTexture);
+						Arrow.SetColor(i == Hot ? Warm : Ink);
+						Arrow.BlendMode = SE_BLEND_Translucent;
+						C->DrawItem(Arrow);
+					}
+					continue;
+				}
 				if (Nm.StartsWith(TEXT("coop:recent:")))
 				{
 					// (R8) the Recent hosts, a column to the right of the pad
 					const int32 r = FCString::Atoi(*Nm.Mid(12));
-					if (r == 0) Txt(SaveFont(5), TEXT("Recent"), 1330.f, 452.f, 1, Ink, false);
-					Link(i, MenuPage->Items[i].Label, 1330.f, 500.f + float(r) * 90.f, 1, 11, 12, 32.f, 16.f);
+					if (bOldRecentIps)
+					{
+						if (r == 0) Txt(SaveFont(5), TEXT("Recent"), 1330.f, 452.f, 1, Ink, false);
+						Link(i, MenuPage->Items[i].Label, 1330.f, 500.f + float(r) * 90.f, 1, 11, 12, 32.f, 16.f);
+						continue;
+					}
+					if (r == 0)
+					{
+						// (the list's rows are the page's last)
+						const float ListH = float(MenuPage->Items.Num() - i) * ListStep + 12.f;
+						FCanvasTileItem Slip(FVector2D(ListL * K, ListTop * K), GWhiteTexture, FVector2D((ListR - ListL) * K, ListH * K), FLinearColor(0.9f, 0.75f, 0.47f, 0.62f));
+						Slip.BlendMode = SE_BLEND_Translucent;
+						C->DrawItem(Slip);
+						FCanvasBoxItem Edge(FVector2D(ListL * K, ListTop * K), FVector2D((ListR - ListL) * K, ListH * K));
+						Edge.SetColor(Ink);
+						Edge.LineThickness = 2.f;
+						C->DrawItem(Edge);
+					}
+					// a row: the address, the host's name small under it when it was learned (RecentLabel: two spaces between).  The
+					// addresses all at one size, the longest fitting the slip: fitted one by one a name or a port shrank that row alone
+					float Widest = 0.f, XL = 0.f, YL = 0.f;
+					for (const OutlawsMenu::FItem& It : MenuPage->Items)
+					{
+						if (!It.Name.StartsWith(TEXT("coop:recent:"))) continue;
+						FString A = It.Label;
+						It.Label.Split(TEXT("  "), &A, nullptr);
+						C->TextSize(SaveFont(13), A, XL, YL);
+						Widest = FMath::Max(Widest, XL / K);
+					}
+					FString Addr = MenuPage->Items[i].Label, Host;
+					MenuPage->Items[i].Label.Split(TEXT("  "), &Addr, &Host);
+					C->TextSize(SaveFont(13), Addr, XL, YL);
+					const float Room = ListR - ListL - 20.f;
+					const float RowY = ListTop + 6.f + ListStep * (float(r) + 0.5f);
+					Link(i, Addr, (ListL + ListR) * 0.5f, Host.IsEmpty() ? RowY : RowY - 11.f, 1, 13, 14, 0.f, 0.f, XL / K * FMath::Min(1.f, Room / FMath::Max(Widest, 1.f)));
+					if (!Host.IsEmpty()) FrontInk += Txt(SaveFont(5), Host, (ListL + ListR) * 0.5f, RowY + 20.f, 1, Ink, false, nullptr, Room);
+					FrontHits.Emplace(FBox2D(FVector2D(ListL, RowY - ListStep * 0.5f), FVector2D(ListR, RowY + ListStep * 0.5f)), i);     // (the whole row, not its letters)
 					continue;
 				}
 				if (Nm == TEXT("coop:joinpassword") || Nm == TEXT("coop:join") || Nm == TEXT("coop:leave"))
@@ -4557,7 +4626,7 @@ void AOutlawsPlayer::MpMenuShotTick()
 	{
 		// (R8, REQ-VOICEPAGE) the meter on the Voice Chat page: the microphone open for it, the row redrawn ten times a second
 		const int32 Mi = MenuPage ? MenuPage->Items.IndexOfByPredicate([](const OutlawsMenu::FItem& It) { return It.Name == TEXT("mp_meter"); }) : INDEX_NONE;
-		const int32 RowAt = Mi - MenuScroll + (MenuPage && !MenuPage->Message.IsEmpty() ? 4 : 0);
+		const int32 RowAt = Mi - MenuScroll + (MenuPage ? DialogFirstRow(MenuPage->Message) : 0);
 		UE_LOG(LogOutlaws, Display, TEXT("OLSHOT mp menu: meter on page %s: microphone open for it %s, row '%s', drawn '%s'"), MenuPage ? *MenuPage->File : TEXT("?"),
 			UOutlawsCoop::MicMeterOpen(this) ? TEXT("yes") : TEXT("no"), Mi != INDEX_NONE ? *MenuRowText(Mi) : TEXT("(none)"),
 			MenuRows.IsValidIndex(RowAt) && MenuRows[RowAt] ? *MenuRows[RowAt]->Text.ToString() : TEXT("(not drawn)"));
@@ -5221,7 +5290,7 @@ int32 AOutlawsPlayer::MenuFitWalk(const FString& Root, TFunctionRef<void(bool, c
 				// can be pressed finds that row
 				const FTransform Pn = MenuRoot->GetComponentTransform();
 				const FVector Nrm = Pn.GetUnitAxis(EAxis::X);
-				const int32 First = MenuPage->Message.IsEmpty() ? 0 : 4;
+				const int32 First = DialogFirstRow(MenuPage->Message);
 				const int32 Fit = SheetRowsFit();
 				int32 Lo = -1, Hi = -1;
 				for (int32 r = First; r < Fit; ++r)
@@ -5292,7 +5361,7 @@ void UOutlawsCoop::PauseTidyTestTick(AOutlawsPlayer* P, float Dt)
 		FString R;
 		const int32 N = P->MenuPage ? P->MenuPage->Items.Num() : 0;
 		for (int32 i = 0; i < N; ++i) R += (R.IsEmpty() ? TEXT("") : TEXT(" | ")) + P->MenuPage->Items[i].Label;
-		const int32 First = P->MenuPage && !P->MenuPage->Message.IsEmpty() ? 4 : 0;
+		const int32 First = P->MenuPage ? DialogFirstRow(P->MenuPage->Message) : 0;
 		const bool bScroll = N + First > MenuRowsShown;
 		UE_LOG(LogOutlaws, Log, TEXT("OLPAUSE %s %s (%s): %d rows: %s"), *Mode, What, P->MenuPage ? *P->MenuPage->File : TEXT("none"), N, *R);
 		UE_LOG(LogOutlaws, Log, TEXT("OLPAUSE check %s: %s %s no scroll (%d of %d rows shown)"), bScroll ? TEXT("FAIL") : TEXT("PASS"), *Mode, What, FMath::Min(N + First, MenuRowsShown), N + First);
@@ -5614,7 +5683,7 @@ void AOutlawsPlayer::TriggerStepTestTick()
 		const int32 Sp = Find(TEXT("vr_speed"));
 		if (Mode == 2 && Sp != INDEX_NONE && Camera && MenuRoot)
 		{
-			const int32 First = MenuPage->Message.IsEmpty() ? 0 : 4;
+			const int32 First = DialogFirstRow(MenuPage->Message);
 			const int32 R = Sp - MenuScroll + First;
 			const FVector At = MenuRoot->GetComponentTransform().TransformPosition(FVector(0.0, 0.0, RowZ(R)));
 			const FVector Eye = Camera->GetComponentLocation();

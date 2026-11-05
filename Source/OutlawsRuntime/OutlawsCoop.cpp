@@ -2235,10 +2235,15 @@ void UOutlawsCoop::BuildMenuPage(AOutlawsPlayer* P, const FString& File, Outlaws
 		if (!bConnecting) Act(FString::Printf(TEXT("Password: %s"), C && !C->JoinPassword.IsEmpty() ? *FString::ChrN(C->JoinPassword.Len(), '*') : TEXT("(none)")), TEXT("coop:joinpassword"));     // (M1)
 		Act(bConnecting ? TEXT("Cancel") : C && !C->JoinError.IsEmpty() ? TEXT("Retry") : TEXT("Join"), bConnecting ? TEXT("coop:leave") : TEXT("coop:join"));
 		// (R8) the last few hosts joined, newest first: one pick joins
+		// REQ-RECENTIPS (user 5 Nov, snapshot #17: the list beside the pad looked janky): a Recent button and a drop-down of
+		// them, shown only while it hangs open; one pick fills the address, Join joins.  No hosts yet, no button: it would open
+		// nothing.  -OLOldRecentIps: the column always there, one pick joins
 		if (C && !bConnecting)
 		{
+			static const bool bOldRecentIps = OLFlags::Param(TEXT("OLOldRecentIps"));
 			C->ReadRecent();
-			for (int32 i = 0; i < C->RecentAddrs.Num(); ++i) Act(C->RecentLabel(i), FString::Printf(TEXT("coop:recent:%d"), i));
+			if (!bOldRecentIps && C->RecentAddrs.Num() > 0) Act(TEXT("Recent"), TEXT("coop:recentlist"));
+			if (bOldRecentIps || C->bRecentOpen) for (int32 i = 0; i < C->RecentAddrs.Num(); ++i) Act(C->RecentLabel(i), FString::Printf(TEXT("coop:recent:%d"), i));
 		}
 	}
 	else if (File == TEXT("#cooppause"))
@@ -2399,6 +2404,7 @@ void UOutlawsCoop::MenuAction(AOutlawsPlayer* P, const FString& Name)
 {
 	UOutlawsCoop* C = Get(P);
 	if (!C || !P) return;
+	if (!Name.StartsWith(TEXT("coop:recent"))) C->bRecentOpen = false;     // (REQ-RECENTIPS: a press anywhere else shuts the drop-down, as a click outside one does)
 	if (Name == TEXT("coop:host"))
 	{
 		C->Host();
@@ -2513,9 +2519,15 @@ void UOutlawsCoop::MenuAction(AOutlawsPlayer* P, const FString& Name)
 	{
 		C->StartGame(true);              // (REQ-MPLOBBY: the level loads behind the lobby; whoever entered comes along)
 	}
+	else if (Name == TEXT("coop:recentlist"))
+	{
+		C->bRecentOpen = !C->bRecentOpen;        // (REQ-RECENTIPS: the Recent button)
+		P->CoopShowPage(TEXT("#coopjoin"), false);
+	}
 	else if (Name.StartsWith(TEXT("coop:recent:")))
 	{
 		// (R8) a Recent host joined at once
+		// REQ-RECENTIPS: fills the address (a port with it, if it had one) and shuts the list; Join joins.  -OLOldRecentIps: joined at once
 		const int32 i = FCString::Atoi(*Name.Mid(12));
 		C->ReadRecent();
 		if (C->RecentAddrs.IsValidIndex(i))
@@ -2524,7 +2536,14 @@ void UOutlawsCoop::MenuAction(AOutlawsPlayer* P, const FString& Name)
 			FString Host = C->RecentAddrs[i];
 			Host.Split(TEXT(":"), &Host, nullptr);
 			if (const FString* Pw = C->RecentPasswords.Find(Host)) C->JoinPassword = *Pw;      // (M1: the password it took last time)
-			C->Join(C->RecentAddrs[i], true);
+			if (OLFlags::Param(TEXT("OLOldRecentIps"))) C->Join(C->RecentAddrs[i], true);
+			else
+			{
+				C->JoinAddress = C->RecentAddrs[i];
+				C->WriteAddressFile();
+				C->JoinError.Reset();            // (the last failure was the old address's: Join, not Retry)
+				C->bRecentOpen = false;
+			}
 			P->CoopShowPage(TEXT("#coopjoin"), false);
 		}
 	}
