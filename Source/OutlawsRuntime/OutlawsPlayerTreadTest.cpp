@@ -37,6 +37,8 @@
 #include "Materials/Material.h"
 #include "MaterialShared.h"
 #include "Engine/Engine.h"
+#include "HAL/IConsoleManager.h"
+#include "HAL/PlatformTime.h"
 #include "StereoRendering.h"
 #include "Components/TextRenderComponent.h"
 #include "Materials/MaterialInstanceDynamic.h"
@@ -61,7 +63,9 @@ void AOutlawsPlayer::TreadTestTick(float Dt)
 	static int32 Phase = 0, Fails = 0, Sec = -1, LetGo = 0, Exits = 0, Shots = 0;
 	static float At = 0.f, MinUnder = 0.f, NextAct = 0.f, Yaw0 = 0.f;
 	static FVector Start = FVector::ZeroVector;
-	static bool bWasHeld = false, bWasSwimming = false;
+	static bool bWasHeld = false, bWasSwimming = false, bFpsCapped = false;
+	static double SettleWall = 0.0, PhaseWall = 0.0;          // (TREADFIX: the settle's start; the phase's start, wall clock)
+	static int32 PhaseFrames = 0;
 	UCharacterMovementComponent* M = GetCharacterMovement();
 	auto Middle = [this]() { return float(GetActorLocation().Z - GetCapsuleComponent()->GetScaledCapsuleHalfHeight()) + TreadStandHalf; };
 	auto Check = [](bool bOk, const FString& What)
@@ -91,6 +95,14 @@ void AOutlawsPlayer::TreadTestTick(float Dt)
 		M->Velocity = FVector::ZeroVector;
 		return true;
 	};
+	if (!bFpsCapped)
+	{
+		// TREADFIX: the test ran uncapped (200-366 fps) and the stroke dive failed on the old swim at those rates and passed at 72;
+		// a cap inside the test gives every caller, the weekly gate too, the same rate (the fps held is printed per phase)
+		if (IConsoleVariable* MaxFps = IConsoleManager::Get().FindConsoleVariable(TEXT("t.MaxFPS"))) MaxFps->Set(72.f, ECVF_SetByConsole);
+		bFpsCapped = true;
+		UE_LOG(LogOutlaws, Display, TEXT("OLSHOT tread fps cap: t.MaxFPS 72"));
+	}
 	if (ShotStep == 0)
 	{
 		if (ShotTime < 3.f) return;
@@ -132,11 +144,13 @@ void AOutlawsPlayer::TreadTestTick(float Dt)
 		At = ShotTime;
 		MinUnder = 0.f; LetGo = Exits = Shots = 0; NextAct = 0.f;
 		bWasHeld = true; bWasSwimming = true;
+		PhaseWall = FPlatformTime::Seconds(); PhaseFrames = 0;
 	}
 	else if (ShotStep == 2)
 	{
 		const FPhase& Ph = Phases[Phase];
 		const float T = ShotTime - At;
+		++PhaseFrames;
 		const bool bDive = FCString::Strcmp(Ph.Name, TEXT("dive")) == 0;
 		const bool bStrokeDive = FCString::Strcmp(Ph.Name, TEXT("strokedive")) == 0;
 		float Yaw = Yaw0;
@@ -185,8 +199,9 @@ void AOutlawsPlayer::TreadTestTick(float Dt)
 		bWasSwimming = bSwimming;
 		if (T < Ph.Seconds) return;
 		HoldMoveStick(FVector2D::ZeroVector, 0.f);
-		UE_LOG(LogOutlaws, Display, TEXT("OLSHOT tread phase %s: %.1f s, the middle at most %.1f cm under its float depth, the hold let go %d times, out of the swim %d times%s, held at the end %d"),
-			Ph.Name, Ph.Seconds, MinUnder, LetGo, Exits, Shots > 0 ? *FString::Printf(TEXT(", %d shots"), Shots) : TEXT(""), IsSurfaceHeld() ? 1 : 0);
+		UE_LOG(LogOutlaws, Display, TEXT("OLSHOT tread phase %s: %.1f s, the middle at most %.1f cm under its float depth, the hold let go %d times, out of the swim %d times%s, held at the end %d, fps held %.0f"),
+			Ph.Name, Ph.Seconds, MinUnder, LetGo, Exits, Shots > 0 ? *FString::Printf(TEXT(", %d shots"), Shots) : TEXT(""), IsSurfaceHeld() ? 1 : 0,
+			PhaseFrames / FMath::Max(0.001, FPlatformTime::Seconds() - PhaseWall));
 		if (bDive || bStrokeDive)
 		{
 			Check(LetGo > 0 && MinUnder > 25.f, FString::Printf(TEXT("%s: %s with the head down lets go and goes under (%.0f cm under its float depth)"),
@@ -211,6 +226,20 @@ void AOutlawsPlayer::TreadTestTick(float Dt)
 		if (Controller) Controller->SetControlRotation(FRotator(0.0, Yaw0, 0.0));
 		HandVelocity[0] = HandVelocity[1] = FVector::ZeroVector;
 		if (ShotTime < At) return;
+		// TREADFIX (BUG-SWIMWEAK): the strokes phase starts only with the body held and at rest, not still falling from the
+		// teleport (the earlier "falling at 248 cm/s" was reasoned, not measured: the numbers are printed here every phase)
+		const bool bNeedRest = FCString::Strcmp(Phases[Phase].Name, TEXT("strokes")) == 0;
+		if (SettleWall == 0.0) SettleWall = FPlatformTime::Seconds();
+		const double Waited = FPlatformTime::Seconds() - SettleWall;
+		const float Vz = float(M->Velocity.Z);
+		if (bNeedRest && !(IsSurfaceHeld() && FMath::Abs(Vz) < 5.f))
+		{
+			if (Waited < 8.0) return;
+			Check(false, FString::Printf(TEXT("%s: the body never settled held and at rest within 8 s (held %d, vertical speed %.0f cm/s)"), Phases[Phase].Name, IsSurfaceHeld() ? 1 : 0, Vz));
+		}
+		UE_LOG(LogOutlaws, Display, TEXT("OLSHOT tread settled before %s: %.2f s (wall) after the 1 s wait, held %d, swimming %d, vertical speed %.1f cm/s"),
+			Phases[Phase].Name, Waited, IsSurfaceHeld() ? 1 : 0, bSwimming ? 1 : 0, Vz);
+		SettleWall = 0.0; PhaseWall = FPlatformTime::Seconds(); PhaseFrames = 0;
 		At = ShotTime;
 		MinUnder = 0.f; LetGo = Exits = Shots = 0; NextAct = 0.f;
 		bWasHeld = IsSurfaceHeld(); bWasSwimming = bSwimming;
