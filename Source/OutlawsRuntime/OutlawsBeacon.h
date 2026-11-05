@@ -52,7 +52,8 @@ enum class EOutlawsBubbleKind : uint8
 	Asking,          // "Asking <name>...": X
 	Refused,         // "<name> said not now": X
 	Knocked,         // "<name> wants to join your game": Accept / Not now
-	Opening          // "Opening your game to <name>...": nothing
+	Opening,         // "Opening your game to <name>...": nothing
+	Update           // REQ-AUTOUPDATE: OutlawsUpdate.cpp's own bubble, three buttons at its prompt
 };
 
 /** The bubble: a small panel in front of the eyes (60 cm, 15 degrees under the view line) in the DialogBox look. */
@@ -63,12 +64,12 @@ class OUTLAWSRUNTIME_API AOutlawsJoinBubble : public AActor
 
 public:
 	AOutlawsJoinBubble();
-	void Show(EOutlawsBubbleKind InKind, const FString& InText, const FString& InYes, const FString& InNo);
+	void Show(EOutlawsBubbleKind InKind, const FString& InText, const FString& InYes, const FString& InNo, const FString& InThird = FString());
 	EOutlawsBubbleKind GetKind() const { return Kind; }
 	const FString& GetText() const { return Text; }
-	/** Which button a hand's laser is on (0 yes, 1 no, -1 none): the gun keeps quiet while it is on one. */
+	/** Which button a hand's laser is on (0 yes, 1 no, 2 the third, -1 none): the gun keeps quiet while it is on one. */
 	int32 HandOn(int32 Hand) const { return Hover[Hand]; }
-	/** Picked (the trigger on a button; tests and desktop keys too): 0 yes, 1 no. */
+	/** Picked (the trigger on a button; tests and desktop keys too): 0 yes, 1 no, 2 the third. */
 	TFunction<void(int32 Button)> OnPick;
 	void Pick(int32 Button);
 
@@ -90,12 +91,12 @@ private:
 	UFont* Font = nullptr;
 	UFont* ButtonFont = nullptr;
 	EOutlawsBubbleKind Kind = EOutlawsBubbleKind::None;
-	FString Text, Yes, No;
+	FString Text, Yes, No, Third;
 	int32 Hover[2] = { -1, -1 };
 	bool bArmed[2] = { false, false };
 	float Yaw = 0.f, YawVel = 0.f;
 	bool bFollow = false, bPlaced = false;
-	FBox2D Buttons[2];
+	FBox2D Buttons[3];
 	void Place(float Dt);
 	void Redraw();
 	UFUNCTION()
@@ -115,6 +116,8 @@ public:
 	static void Toggle(const FString& Row);
 	/** A hand's laser is on the bubble's button: the trigger is the bubble's, not the gun's. */
 	static bool HandOnBubble(const UObject* Context, int32 Hand);
+	/** A join bubble is up (REQ-AUTOUPDATE: the update bubble waits for it). */
+	static bool BubbleShown(const UObject* Context);
 
 	virtual void Initialize(FSubsystemCollectionBase& Collection) override;
 	virtual void Deinitialize() override;

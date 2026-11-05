@@ -15,6 +15,7 @@
 #include "Misc/ConfigCacheIni.h"
 #include "Misc/FileHelper.h"
 #include "OutlawsLevelActor.h"         // the settings file (InstallPath=)
+#include "OutlawsUpdate.h"             // REQ-AUTOUPDATE: an update's native maps on the Quest
 #include "OutlawsInstallWindows.h"
 #if PLATFORM_ANDROID
 #include <dirent.h>                    // (BUG-QUESTNATIVEMAPS: the native maps listing's diagnosis)
@@ -405,6 +406,9 @@ FString FOutlawsAssets::NativeMapsRoot()
 	if (const FString* Set = Settings.Find(TEXT("NativeMapsPath"))) Tries.Add(FPaths::ConvertRelativePathToFull(Set->TrimQuotes()));
 	Tries.Add(FPaths::ConvertRelativePathToFull(FPaths::Combine(FPaths::RootDir(), TEXT("Tools"), TEXT("NativeMaps"))));
 #if PLATFORM_ANDROID
+	// (REQ-AUTOUPDATE: an update's maps, in the app's own folder, before the ones Install on Quest pushed)
+	const FString Updated = OLUpdate::UpdatedDataDir();
+	if (!Updated.IsEmpty()) Tries.Add(FPaths::Combine(Updated, TEXT("NativeMaps")));
 	Tries.Add(FPaths::ConvertRelativePathToFull(FPaths::Combine(FPaths::ProjectPersistentDownloadDir(), TEXT("Outlaws"), TEXT("NativeMaps"))));
 #endif
 	for (const FString& T : Tries)

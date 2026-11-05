@@ -16,6 +16,20 @@ public class OutlawsRuntime : ModuleRules
 		// by default, so night.sh's own builds for the user leave it off).  UBT keeps its makefile when only the environment
 		// changes, so a release package build also gives UBT an argument the nightly's does not (-ubtargs="... -NoUBTMakefiles")
 		PrivateDefinitions.Add("OL_RELEASE_BUILD=" + (System.Environment.GetEnvironmentVariable("OL_RELEASE_BUILD") == "1" ? "1" : "0"));
+		// (REQ-AUTOUPDATE) the rising number the update check compares with latest.json: StoreVersion, the Android versionCode,
+		// from the one place it is kept. OL_UPDATE_TEST_BUILD in the environment bakes a lower one for the real-app trigger test
+		// (user 1 Nov: a build-time define, never a menu or dev switch; the versionCode stays, or Android refuses the update)
+		int UpdateBuild = 0;
+		string UpdateTest = System.Environment.GetEnvironmentVariable("OL_UPDATE_TEST_BUILD");
+		if (string.IsNullOrEmpty(UpdateTest))
+		{
+			foreach (string IniLine in System.IO.File.ReadAllLines(System.IO.Path.Combine(ModuleDirectory, "..", "..", "Config", "DefaultEngine.ini")))
+			{
+				if (IniLine.StartsWith("StoreVersion=")) int.TryParse(IniLine.Substring("StoreVersion=".Length).Trim(), out UpdateBuild);
+			}
+		}
+		else int.TryParse(UpdateTest, out UpdateBuild);
+		PrivateDefinitions.Add("OL_UPDATE_BUILD=" + UpdateBuild);
 		PublicDependencyModuleNames.AddRange(new string[] { "Core", "CoreUObject", "Engine", "InputCore", "Slate", "SlateCore", "RenderCore", "RHI", "ProceduralMeshComponent", "HeadMountedDisplay", "AudioMixer", "MediaAssets", "Media", "Json" });
 		PrivateDependencyModuleNames.Add("Sockets");          // co-op: the machine's local network address for the lobby
 		PrivateDependencyModuleNames.Add("HTTP");             // co-op (R8): the host's internet address for its lobby
@@ -28,6 +42,8 @@ public class OutlawsRuntime : ModuleRules
 		if (Target.Platform == UnrealTargetPlatform.Android)
 		{
 			PrivateDependencyModuleNames.Add("AndroidPermission");   // the Quest's RECORD_AUDIO asked for at runtime
+			PrivateDependencyModuleNames.Add("Launch");              // (REQ-AUTOUPDATE) FJavaWrapper, the installer's Java side
+			AdditionalPropertiesForReceipt.Add("AndroidPlugin", System.IO.Path.Combine(ModuleDirectory, "OutlawsUpdate_UPL.xml"));
 		}
 		if (Target.Platform == UnrealTargetPlatform.Win64)
 		{

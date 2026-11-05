@@ -5,6 +5,7 @@
 #include "OutlawsDeathmatch.h"
 #include "OutlawsFlags.h"
 #include "OutlawsBeacon.h"
+#include "OutlawsUpdate.h"
 #include "OutlawsPlayer.h"
 #include "OutlawsPerfTest.h"
 #include "OutlawsStats.h"
@@ -1094,6 +1095,12 @@ bool AOutlawsPlayer::ShowMenuPage(const FString& File, bool bPush)
 		Eb.Label = TEXT("End historical mission on boss down");
 		Eb.Name = TEXT("endonboss");
 		Page->Items.Add(Eb);
+		// REQ-AUTOUPDATE (user 4 Nov): the startup check for a new build, on until turned off here
+		OutlawsMenu::FItem Uc;
+		Uc.Kind = OutlawsMenu::EItemKind::Check;
+		Uc.Label = TEXT("Check for updates at startup");
+		Uc.Name = TEXT("update_check");
+		Page->Items.Add(Uc);
 		// REQ-SPMULT (user 2026-10-05): co-op's bad guys multiplier in single player, the same quarters up to four times
 		// (UNLOCKFREE, user decision for 0.95: there from the first start, x1 until the player sets it)
 		{
@@ -1267,7 +1274,7 @@ bool AOutlawsPlayer::ItemWorks(const OutlawsMenu::FItem& I, TSet<FString>& Visit
 	case EItemKind::Select:
 	case EItemKind::Range:
 		return Settings.Contains(I.Name) || I.Name.StartsWith(TEXT("vr_")) || I.Name.StartsWith(TEXT("cheat_")) || I.Name.StartsWith(TEXT("autosave"))
-			|| I.Name == TEXT("solo_badguys") || I.Name == TEXT("endonboss");
+			|| I.Name == TEXT("solo_badguys") || I.Name == TEXT("endonboss") || I.Name == TEXT("update_check");
 	case EItemKind::Heading:
 		return true;           // kept only when something under it stays (ScrubPage)
 	default:
@@ -1415,6 +1422,7 @@ FString AOutlawsPlayer::MenuRowText(int32 Index) const
 		else if (I.Name == TEXT("vr_facereload")) return FString::Printf(TEXT("%s:  %s"), *I.Label, bFaceReload ? TEXT("Y / B") : TEXT("Tap X / A"));     // (REQ-BUTTONLABEL)
 		else if (I.Name == TEXT("autosave")) bOn = L && L->bAutosave;
 		else if (I.Name == TEXT("endonboss")) bOn = L && L->bEndOnBoss;
+		else if (I.Name == TEXT("update_check")) bOn = UOutlawsUpdate::CheckOn();
 		else if (I.Name == TEXT("mp_announce") || I.Name == TEXT("mp_listen")) bOn = UOutlawsBeacon::Setting(I.Name);
 		else if (I.Name == TEXT("mp_upnp")) bOn = UOutlawsCoop::UpnpSetting();
 		else if (I.Name == TEXT("mp_vfade")) bOn = L && L->bMpVoiceFade;
@@ -2612,6 +2620,12 @@ void AOutlawsPlayer::MenuActivate(int32 Hand, int32 Index)
 			if (AOutlawsLevelActor* L = Level.Get()) L->bAutosave = !L->bAutosave;
 			RefreshMenuRows();
 			SaveSettings();
+			return;
+		}
+		if (I.Name == TEXT("update_check"))
+		{
+			UOutlawsUpdate::ToggleCheck();
+			RefreshMenuRows();
 			return;
 		}
 		if (I.Name == TEXT("endonboss"))

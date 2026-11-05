@@ -1,5 +1,6 @@
 // Common.kpf menus: see OutlawsMenuDoc.h.
 #include "OutlawsMenuDoc.h"
+#include "OutlawsUpdate.h"
 #include "OutlawsRuntime.h"
 #include "OutlawsFlags.h"
 #include "OutlawsLevelActor.h"
@@ -267,6 +268,9 @@ namespace OutlawsMenu
 			const TMap<FString, FString> Settings = AOutlawsLevelActor::ReadSettings();       // (held: Find points into it)
 			if (const FString* Set = Settings.Find(TEXT("MenuOverlayPath"))) Tries.Add(FPaths::ConvertRelativePathToFull(Set->TrimQuotes()));
 			Tries.Add(FPaths::ConvertRelativePathToFull(FPaths::Combine(FPaths::RootDir(), TEXT("Tools"), TEXT("MenuOverlay.kpf"))));
+			// (REQ-AUTOUPDATE: on the Quest an update brings its theme into the app's own folder; empty on a PC)
+			const FString Updated = OLUpdate::UpdatedDataDir();
+			if (!Updated.IsEmpty()) Tries.Add(FPaths::Combine(Updated, TEXT("MenuOverlay.kpf")));
 			Tries.Add(FPaths::Combine(InstallRoot, TEXT("MenuOverlay.kpf")));
 			for (const FString& T : Tries)
 			{

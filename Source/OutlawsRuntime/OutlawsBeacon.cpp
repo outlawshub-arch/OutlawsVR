@@ -16,6 +16,7 @@
 //   (as the Frag Table), Montagu Slab; its buttons picked by a hand's laser and the trigger, as the menu's rows are.
 
 #include "OutlawsBeacon.h"
+#include "OutlawsUpdate.h"
 #include "OutlawsFlags.h"
 #include "OutlawsPerf.h"
 #include "OutlawsRuntime.h"
@@ -98,12 +99,13 @@ AOutlawsJoinBubble::AOutlawsJoinBubble()
 	}
 }
 
-void AOutlawsJoinBubble::Show(EOutlawsBubbleKind InKind, const FString& InText, const FString& InYes, const FString& InNo)
+void AOutlawsJoinBubble::Show(EOutlawsBubbleKind InKind, const FString& InText, const FString& InYes, const FString& InNo, const FString& InThird)
 {
 	Kind = InKind;
 	Text = InText;
 	Yes = InYes;
 	No = InNo;
+	Third = InThird;
 	Hover[0] = Hover[1] = -1;
 	bArmed[0] = bArmed[1] = false;           // (a trigger already held does not pick at once)
 	SetActorHiddenInGame(Kind == EOutlawsBubbleKind::None);
@@ -114,6 +116,7 @@ void AOutlawsJoinBubble::Pick(int32 Button)
 {
 	if (Button == 0 && Yes.IsEmpty()) return;
 	if (Button == 1 && No.IsEmpty()) return;
+	if (Button == 2 && Third.IsEmpty()) return;
 	if (OnPick) OnPick(Button);
 }
 
@@ -222,19 +225,21 @@ void AOutlawsJoinBubble::DrawCanvas(UCanvas* C, int32 Width, int32 Height)
 	if (B.IsEmpty()) Txt(Font, A, W * 0.5f, TextMid, Pale, W - 140.f);
 	else { Txt(Font, A, W * 0.5f, TextMid - 32.f, Pale, W - 140.f); Txt(ButtonFont, B, W * 0.5f, TextMid + 30.f, Pale, W - 140.f); }
 	// the buttons: the yes one wide, the no one (X) square or wide as its word needs
-	Buttons[0] = Buttons[1] = FBox2D(ForceInit);
+	Buttons[0] = Buttons[1] = Buttons[2] = FBox2D(ForceInit);
 	const float By = 220.f, Bh = 84.f;
-	const float YesW = Yes.IsEmpty() ? 0.f : 330.f, NoW = No.IsEmpty() ? 0.f : (No.Len() <= 1 ? 110.f : 250.f);
-	const float Gap = YesW > 0.f && NoW > 0.f ? 40.f : 0.f;
-	float X = (W - YesW - Gap - NoW) * 0.5f;
-	for (int32 b = 0; b < 2; ++b)
+	const bool bThree = !Third.IsEmpty();           // (REQ-AUTOUPDATE's prompt: three narrower ones)
+	const float YesW = Yes.IsEmpty() ? 0.f : (bThree ? 280.f : 330.f), NoW = No.IsEmpty() ? 0.f : (No.Len() <= 1 ? 110.f : (bThree ? 220.f : 250.f));
+	const float ThirdW = bThree ? 300.f : 0.f;
+	const float Gap = YesW > 0.f && NoW > 0.f ? (bThree ? 30.f : 40.f) : 0.f;
+	float X = (W - YesW - NoW - ThirdW - Gap * (bThree ? 2.f : 1.f)) * 0.5f;
+	for (int32 b = 0; b < 3; ++b)
 	{
-		const float Bw = b == 0 ? YesW : NoW;
+		const float Bw = b == 0 ? YesW : b == 1 ? NoW : ThirdW;
 		if (Bw <= 0.f) continue;
 		const bool bHot = Hover[0] == b || Hover[1] == b;
 		Fill(X - 3.f, By - 3.f, Bw + 6.f, Bh + 6.f, bHot ? Hot : Gold);
 		Fill(X, By, Bw, Bh, Col(0x14, 0x0c, 0x06));
-		Txt(ButtonFont, b == 0 ? Yes : No, X + Bw * 0.5f, By + Bh * 0.5f, bHot ? Hot : Gold, Bw - 24.f);
+		Txt(ButtonFont, b == 0 ? Yes : b == 1 ? No : Third, X + Bw * 0.5f, By + Bh * 0.5f, bHot ? Hot : Gold, Bw - 24.f);
 		Buttons[b] = FBox2D(FVector2D(X, By), FVector2D(X + Bw, By + Bh));
 		X += Bw + Gap;
 	}
@@ -295,7 +300,7 @@ void AOutlawsJoinBubble::Tick(float DeltaSeconds)
 					// the plane is 100 x 100 before its scale: local X, Y in -50..50
 					const FVector L = T.InverseTransformPosition(O + D * Dist);
 					const FVector2D Px((L.X / 100.0 + 0.5) * BubblePxW, (L.Y / 100.0 + 0.5) * BubblePxH);
-					for (int32 b = 0; b < 2; ++b) if (Buttons[b].bIsValid && Buttons[b].IsInside(Px)) On = b;
+					for (int32 b = 0; b < 3; ++b) if (Buttons[b].bIsValid && Buttons[b].IsInside(Px)) On = b;
 					if (Px.X >= 0.0 && Px.X <= BubblePxW && Px.Y >= 0.0 && Px.Y <= BubblePxH) Len = float(Dist);
 				}
 			}
@@ -346,7 +351,14 @@ void UOutlawsBeacon::Toggle(const FString& Row)
 bool UOutlawsBeacon::HandOnBubble(const UObject* Context, int32 Hand)
 {
 	const UOutlawsBeacon* B = Get(Context);
-	return B && IsValid(B->Bubble) && B->Bubble->GetKind() != EOutlawsBubbleKind::None && !B->Bubble->IsHidden() && B->Bubble->HandOn(Hand) >= 0;
+	if (B && IsValid(B->Bubble) && B->Bubble->GetKind() != EOutlawsBubbleKind::None && !B->Bubble->IsHidden() && B->Bubble->HandOn(Hand) >= 0) return true;
+	return UOutlawsUpdate::HandOnBubble(Context, Hand);      // (REQ-AUTOUPDATE's bubble, the same kind of panel)
+}
+
+bool UOutlawsBeacon::BubbleShown(const UObject* Context)
+{
+	const UOutlawsBeacon* B = Get(Context);
+	return B && IsValid(B->Bubble) && B->Bubble->GetKind() != EOutlawsBubbleKind::None;
 }
 
 void UOutlawsBeacon::Initialize(FSubsystemCollectionBase& Collection)
@@ -765,7 +777,7 @@ void UOutlawsBeacon::UpdateBubble(double Now)
 	const EOutlawsBubbleKind Kind = IsValid(Bubble) ? Bubble->GetKind() : EOutlawsBubbleKind::None;
 	if (Kind == EOutlawsBubbleKind::Knocked || Kind == EOutlawsBubbleKind::Refused || Kind == EOutlawsBubbleKind::Leave || Kind == EOutlawsBubbleKind::Opening) return;
 	bool bInPlay = false;
-	if (!MayListen(bInPlay) || !Setting(TEXT("mp_listen")))
+	if (!MayListen(bInPlay) || !Setting(TEXT("mp_listen")) || UOutlawsUpdate::BubbleUp(this))
 	{
 		if (Kind == EOutlawsBubbleKind::Offer) HideBubble();
 		return;
