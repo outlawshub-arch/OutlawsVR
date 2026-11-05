@@ -898,6 +898,7 @@ int32 AOutlawsLevelActor::AddSections(UProceduralMeshComponent* Mesh, const TMap
 	int32 Index = FirstSection;
 	TArray<int32> Collide;
 	static const bool bOldWaterMidTint = OLFlags::Param(TEXT("OLOldWaterMidTint"));    // (-OLOldWaterMidTint: as before, for shots)
+	static const bool bOldTranspOrder = OLFlags::Param(TEXT("OLOldTranspOrder"));      // (-OLOldTranspOrder: as before, for shots)
 	// (REQ-SECTORLIGHT) a lit sector's section of the static world: kept, to be drawn at its light (SplitWorldDraws moves
 	// its solid ones to parts of their own)
 	auto NoteLight = [this, Mesh](const FOutlawsMeshSection& S, int32 At)
@@ -936,6 +937,11 @@ int32 AOutlawsLevelActor::AddSections(UProceduralMeshComponent* Mesh, const TMap
 			// M_OLR_WorldGlass has the world's OLWaterTint node since, tools\olue\ue_olue_glass_watertint.py)
 			const bool bNoTint = Opaque != WorldMaterial || (bOldWaterMidTint && Parent == WorldGlassMaterial);
 			Mesh->SetMaterial(Index, MaterialFor(Parent, S.Texture, bNoTint ? -1 : S.WaterGroup, S.AtxWall));
+			// (BUG-TRANSPREGRESS) the glass goes under the water wherever the eye is: with no order of their own the two meshes
+			// went by how far their centres lie from the eye, so where the world's centre was the nearer the glass came after the
+			// water and painted the bars back over its surface, sharp and unveiled, where the walls round them are seen through
+			// it. A bar above the water loses nothing: its solid pass (below) writes depth and keeps the water off it
+			if (Parent == WorldGlassMaterial && !bOldTranspOrder && WaterChainHue.Num() > 0) Mesh->SetTranslucentSortPriority(-1);
 			OutTris += S.NumTriangles();
 			++Index;
 		}

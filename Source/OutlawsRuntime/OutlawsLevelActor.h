@@ -619,6 +619,8 @@ public:
 	bool WaterSurfaceAt(const FVector& P, float& OutSurfaceZ, int32& OutTopSector, int32* OutSector = nullptr, bool* OutAir = nullptr) const;
 	/** (BUG-SURFACEJOLT test) a water sector's heights, current and stacking as the swim reads them, one line */
 	FString DebugWaterSectorInfo(int32 Sector) const;
+	/** (BUG-TRANSPREGRESS test) of a grid over the water, the spots where the see-through mids draw after the water; each mesh's place in the order, one line */
+	FString DebugGlassWaterOrder(int32& OutSpots, int32& OutGlassLast) const;
 	/** (BUG-SURFACEJOLT test) a point well inside a sector (furthest from its walls on a grid), at its ceiling */
 	bool DebugPointInSector(int32 Sector, FVector& OutAtCeiling) const;
 	/** (BUG-WATERHANDS test) eyes over / a hand under each water surface: how many WaterSurfaceHit finds (and the old rule) */

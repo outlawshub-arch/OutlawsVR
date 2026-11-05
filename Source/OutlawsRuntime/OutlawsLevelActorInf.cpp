@@ -4302,6 +4302,29 @@ FString AOutlawsLevelActor::DebugWaterSurfaceCheck(int32& OutChecked, int32& Out
 	return Missed.Num() ? FString::Printf(TEXT("missed:%s"), *FString::Join(Missed, TEXT(" "))) : FString(TEXT("none missed"));
 }
 
+FString AOutlawsLevelActor::DebugGlassWaterOrder(int32& OutSpots, int32& OutGlassLast) const
+{
+	// (BUG-TRANSPREGRESS test) translucent meshes draw by priority, then farthest centre first: over a 40 x 40 grid of the
+	// water mesh's box, how many spots draw the world's glass after the water
+	OutSpots = OutGlassLast = 0;
+	if (!WorldMesh || !WaterMesh) return TEXT("no world or water mesh");
+	const FVector Glass = WorldMesh->Bounds.Origin, Water = WaterMesh->Bounds.Origin;
+	const FVector Half = WaterMesh->Bounds.BoxExtent;
+	for (int32 i = 0; i < 40; ++i)
+	{
+		for (int32 j = 0; j < 40; ++j)
+		{
+			const FVector Eye = Water + FVector(Half.X * (i / 19.5 - 1.0), Half.Y * (j / 19.5 - 1.0), 0.0);
+			const bool bGlassLast = WorldMesh->TranslucencySortPriority != WaterMesh->TranslucencySortPriority
+				? WorldMesh->TranslucencySortPriority > WaterMesh->TranslucencySortPriority : FVector::Dist(Eye, Glass) < FVector::Dist(Eye, Water);
+			++OutSpots;
+			OutGlassLast += bGlassLast ? 1 : 0;
+		}
+	}
+	return FString::Printf(TEXT("world mesh centre %s priority %d, water mesh centre %s priority %d, %.0f cm apart"), *Glass.ToCompactString(), WorldMesh->TranslucencySortPriority,
+		*Water.ToCompactString(), WaterMesh->TranslucencySortPriority, FVector::Dist(Glass, Water));
+}
+
 FString AOutlawsLevelActor::DebugWaterSectorInfo(int32 Index) const
 {
 	// (BUG-SURFACEJOLT test) a water sector as the swim reads it: its heights, flags, current and vertical adjoin, and over
