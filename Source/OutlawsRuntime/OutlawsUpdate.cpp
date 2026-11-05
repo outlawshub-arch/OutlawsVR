@@ -468,14 +468,14 @@ echo failed>"%UPD%\failed"
 :run
 cd /d "%ROOT%"
 if "%2"=="test" goto testrun
-if exist "Play Outlaws VR.bat" goto bat
-start "" "OutlawsUE.exe" -vr -SaveToUserDir
+if exist "%ROOT%\Play Outlaws VR.bat" goto bat
+start "" "%ROOT%\OutlawsUE.exe" -vr -SaveToUserDir
 exit /b 0
 :bat
-start "" "Play Outlaws VR.bat"
+start "" "%ROOT%\Play Outlaws VR.bat"
 exit /b 0
 :testrun
-call "Play Outlaws VR.bat"
+call "%ROOT%\Play Outlaws VR.bat"
 exit /b 0
 )OLS");
 }
