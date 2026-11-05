@@ -1226,6 +1226,7 @@ bool AOutlawsPlayer::ShowMenuPage(const FString& File, bool bPush)
 	SetSheetShape(IsSavePage() || IsFrontPage(), !File.Equals(TEXT("main_game.rml"), ESearchCase::IgnoreCase));
 	FrontHits.Reset();
 	FrontItemInk.Reset();
+	FrontNameInk.Reset();
 	MenuTitle->SetText(FText::FromString(Page->Title.IsEmpty() ? File : Page->Title));
 	MenuMessage->SetText(FText::FromString(Wrap(Page->Message, MessageChars)));
 	RefreshMenuRows();
@@ -3695,6 +3696,7 @@ void AOutlawsPlayer::DrawFrontCanvas(UCanvas* C, int32 Width, int32 Height)
 	}
 	FrontHits.Reset();
 	FrontItemInk.Reset();
+	FrontNameInk.Reset();
 	FrontInk = FBox2D(ForceInit);
 	auto Col = [](uint8 R, uint8 G, uint8 B) { return FLinearColor::FromSRGBColor(FColor(R, G, B)); };
 	// a piece of art placed as the page's rules place it: the page content lives inside tpl_menu's "background"
@@ -4176,7 +4178,7 @@ void AOutlawsPlayer::DrawFrontCanvas(UCanvas* C, int32 Width, int32 Height)
 				const FString& Nm = MenuPage->Items[i].Name;
 				// REQ-RECENTIPS (user 5 Nov, snapshot #17): the Recent button right of the pad, in its first row's line, its arrow
 				// down, up while the list hangs open under it: a slip of paper on the parchment, between the pad and the torn edge
-				constexpr float ListL = 1140.f, ListR = 1428.f, ListTop = 536.f, ListStep = 66.f;
+				constexpr float ListL = 1140.f, ListR = 1428.f, ListTop = 528.f, ListStep = 92.f;      // (REQ-MENUFONT: 66 fitted the stock font; in the shipped one a name ran into the address)
 				static const bool bOldRecentIps = OLFlags::Param(TEXT("OLOldRecentIps"));
 				if (Nm == TEXT("coop:recentlist"))
 				{
@@ -4230,8 +4232,14 @@ void AOutlawsPlayer::DrawFrontCanvas(UCanvas* C, int32 Width, int32 Height)
 					C->TextSize(SaveFont(13), Addr, XL, YL);
 					const float Room = ListR - ListL - 20.f;
 					const float RowY = ListTop + 6.f + ListStep * (float(r) + 0.5f);
-					Link(i, Addr, (ListL + ListR) * 0.5f, Host.IsEmpty() ? RowY : RowY - 11.f, 1, 13, 14, 0.f, 0.f, XL / K * FMath::Min(1.f, Room / FMath::Max(Widest, 1.f)));
-					if (!Host.IsEmpty()) FrontInk += Txt(SaveFont(5), Host, (ListL + ListR) * 0.5f, RowY + 20.f, 1, Ink, false, nullptr, Room);
+					Link(i, Addr, (ListL + ListR) * 0.5f, Host.IsEmpty() ? RowY : RowY - 26.f, 1, 13, 14, 0.f, 0.f, XL / K * FMath::Min(0.5f, Room / FMath::Max(Widest, 1.f)));      // (half size at most: three short hosts drew 68 tall, a name under one ran into the next row)
+					if (!Host.IsEmpty())
+					{
+						const FBox2D NameInk = Txt(SaveFont(5), Host, (ListL + ListR) * 0.5f, RowY + 21.f, 1, Ink, false, nullptr, Room);
+						FrontInk += NameInk;
+						while (FrontNameInk.Num() <= i) FrontNameInk.Add(FBox2D(ForceInit));
+						FrontNameInk[i] = NameInk;
+					}
 					FrontHits.Emplace(FBox2D(FVector2D(ListL, RowY - ListStep * 0.5f), FVector2D(ListR, RowY + ListStep * 0.5f)), i);     // (the whole row, not its letters)
 					continue;
 				}

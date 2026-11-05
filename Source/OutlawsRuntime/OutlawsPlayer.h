@@ -1284,6 +1284,7 @@ private:
 	bool bFrontMenu = false;              // the main menu is up (it cannot be closed, only left by starting a game)
 	TArray<TPair<FBox2D, int32>> FrontHits;   // where each item is on the 1920 x 1080 view, for the lasers
 	TArray<FBox2D> FrontItemInk;          // (REQ-TITLEMENU) each front item's label as last drawn (greyed ones too), for the tests
+	TArray<FBox2D> FrontNameInk;          // (REQ-MENUFONT) a Recent row's host name as last drawn, by item index, for the tests
 	/** The front item a laser meeting the view at Px, Py (1920 x 1080) points at, or -1 (the pointer and the tests). */
 	int32 FrontHitAt(const FVector2D& At) const;
 	FBox2D FrontInk = FBox2D(ForceInit);  // (REQ-MPLOBBY b) a co-op page's lines and rows as last drawn, for the fit check

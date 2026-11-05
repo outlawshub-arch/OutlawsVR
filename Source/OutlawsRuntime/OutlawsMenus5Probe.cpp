@@ -48,6 +48,12 @@ OL_SHOT_TEST(OLMenus5Probe, 2493)
 		const bool bOld = OLFlags::Param(TEXT("OLOldRecentIps"));
 		UOutlawsCoop* C = UOutlawsCoop::Get(this);
 		if (!bMenuOpen) OpenMenu();
+		// (REQ-MENUFONT) which font the shots are in: the user's MenuOverlay.kpf (what ships) or the remaster's stock one. The run
+		// script passes -OLMenuOverlay=<file> and -OLMenuFontExpect when it found the overlay, so a shot in the wrong font fails here
+		LoadMenuSource();
+		const bool bOverlay = MenuSource && MenuSource->HasOverlay();
+		UE_LOG(LogOutlaws, Display, TEXT("OLSHOT menus5 font: %s"), bOverlay ? TEXT("the MenuOverlay.kpf font (as shipped)") : TEXT("the remaster's stock font (no overlay found)"));
+		if (OLFlags::Param(TEXT("OLMenuFontExpect"))) Check(bOverlay, TEXT("the shots are in the shipped menu font (overlay open)"));
 		auto Row = [this](const FString& Name) { return MenuPage ? MenuPage->Items.IndexOfByPredicate([&Name](const OutlawsMenu::FItem& It) { return It.Name == Name; }) : INDEX_NONE; };
 		auto ListRows = [this]()
 		{
@@ -64,6 +70,23 @@ OL_SHOT_TEST(OLMenus5Probe, 2493)
 			C->RecentAddrs.Reset();
 			C->RecentNames.Reset();
 			for (int32 i = 0; i < N; ++i) { C->RecentAddrs.Add(A[i]); C->RecentNames.Add(Nm[i]); }
+		};
+		// (REQ-MENUFONT) each host name under its own address: inside the slip, clear of its address and of the next row's address
+		auto NamesFit = [this](const TCHAR* What)
+		{
+			int32 Named = 0, Bad = 0;
+			FString Said;
+			if (MenuPage) for (int32 k = 0; k < MenuPage->Items.Num(); ++k)
+			{
+				if (!MenuPage->Items[k].Name.StartsWith(TEXT("coop:recent:")) || !FrontNameInk.IsValidIndex(k) || !FrontNameInk[k].bIsValid || !FrontItemInk.IsValidIndex(k)) continue;
+				++Named;
+				const FBox2D& N = FrontNameInk[k];
+				const FBox2D& A = FrontItemInk[k];
+				bool bOk = N.Min.X >= 1140.f && N.Max.X <= 1428.f && N.Min.Y >= A.Max.Y;
+				for (int32 j = 0; j < FrontItemInk.Num(); ++j) if (j != k && FrontItemInk[j].bIsValid && FrontItemInk[j].Intersect(N)) bOk = false;
+				if (!bOk) { ++Bad; Said += FString::Printf(TEXT(" [%s: name y %.0f..%.0f x %.0f..%.0f under its address y %.0f..%.0f]"), *MenuPage->Items[k].Label, N.Min.Y, N.Max.Y, N.Min.X, N.Max.X, A.Min.Y, A.Max.Y); }
+			}
+			Check(Named > 0 && Bad == 0, FString::Printf(TEXT("%s: %d host names under their addresses, %d running into one%s"), What, Named, Bad, *Said));
 		};
 		auto Fits = [this](const TCHAR* What)
 		{
@@ -91,7 +114,7 @@ OL_SHOT_TEST(OLMenus5Probe, 2493)
 				const int32 Btn = Row(TEXT("coop:recentlist"));
 				// each row: on the parchment, clear of the pad's and the password's ink and of the next row, the pointer finds it; the
 				// addresses all one size; the slip clear of everything else on the page
-				const FBox2D Slip(FVector2D(1140.f, 536.f), FVector2D(1428.f, 536.f + 5.f * 66.f + 12.f));
+				const FBox2D Slip(FVector2D(1140.f, 528.f), FVector2D(1428.f, 528.f + 5.f * 92.f + 12.f));
 				bool bSlipClear = true;
 				for (int32 k = 0; k < MenuPage->Items.Num() && k < FrontItemInk.Num(); ++k)
 				{
@@ -118,6 +141,7 @@ OL_SHOT_TEST(OLMenus5Probe, 2493)
 						r, *MenuPage->Items[i].Label, Ink.Min.X, Ink.Max.X, Ink.Min.Y, Ink.Max.Y, bClear ? 1 : 0, Hit, Edge, i));
 				}
 				Check(Tallest - Lowest <= 1.0 && Lowest >= 28.0, FString::Printf(TEXT("the addresses one size: %.0f..%.0f tall (the hint line about 30)"), Lowest, Tallest));
+				NamesFit(TEXT("the open list"));
 				if (FrontItemInk.IsValidIndex(Btn)) Check(FrontHitAt(FrontItemInk[Btn].GetCenter()) == Btn, FString::Printf(TEXT("the pointer finds the button, ink x %.0f..%.0f"), FrontItemInk[Btn].Min.X, FrontItemInk[Btn].Max.X));
 			} });
 			Steps.Add({ TEXT("join_filled"), [this]() { CoopPressRow(TEXT("coop:recent:1")); }, [=]()
@@ -145,7 +169,7 @@ OL_SHOT_TEST(OLMenus5Probe, 2493)
 				C->RecentAddrs = { TEXT("host-a.example"), TEXT("host-b.example"), TEXT("host-d.example") };
 				C->RecentNames = { TEXT("Dotard"), TEXT("Marshal"), TEXT("") };
 				CoopPressRow(TEXT("coop:recentlist"));
-			}, [=]() { Fits(TEXT("the drop-down open, three hosts")); Check(ListRows() == 3, TEXT("three hosts: three rows")); } });
+			}, [=]() { Fits(TEXT("the drop-down open, three hosts")); Check(ListRows() == 3, TEXT("three hosts: three rows")); NamesFit(TEXT("the open list, three hosts")); } });
 		}
 		// the VR page's reload row, both ways (the row at the page's foot: scrolled there)
 		const bool bFace0 = bFaceReload;
