@@ -718,6 +718,40 @@ int32 AOutlawsEnemy::CrowdAround(const FVector& P, double Radius, bool bTheirGoa
 	return N;
 }
 
+bool AOutlawsEnemy::OldEnemyCorners()
+{
+	static const bool bOld = OLFlags::Param(TEXT("OLOldEnemyCorners"));
+	return bOld;
+}
+
+bool AOutlawsEnemy::WalkOffBunch()
+{
+	FVector Crowd, Away;
+	if (CrowdAround(GetActorLocation(), 180.0, false, Crowd) < 2) return false;
+	++GCornerStat[0];
+	FVector From = GetActorLocation() - Crowd;
+	From.Z = 0.0;
+	const float Yaw = From.IsNearlyZero() ? FMath::FRandRange(-180.f, 180.f) : float(From.Rotation().Yaw);
+	bool bPlace = PickPoint(5.f, 15.f, Yaw, 70.f, 8, false, Away, true);
+	// (BUG-ENEMYCORNERS, user 5 Nov: "enemies press up against room corners") inside a bunch no place 1.5 m off is 1.6 m clear
+	// of everyone (105 of 111 looks found none, 70 men in a room): further round first, then out from the bunch's middle clear
+	// or not, so its outer men go first and the inner ones have room next
+	if (!bPlace && !OldEnemyCorners())
+	{
+		bPlace = PickPoint(5.f, 40.f, Yaw, 120.f, 8, false, Away, true) || PickPoint(5.f, 25.f, Yaw, 50.f, 4, false, Away, false);
+	}
+	if (!bPlace)
+	{
+		++GCornerStat[1];
+		return false;
+	}
+	++GCornerStat[2];
+	MoveTarget = Away;
+	bRunning = false;
+	SetSub(SubCover);
+	return true;
+}
+
 void AOutlawsEnemy::Decide()
 {
 	// (BUG-BOSSPASSIVE, user 2026-10-15: the canyon's Dick Farmer "would just run around aimlessly") a hunting named outlaw
@@ -744,6 +778,12 @@ void AOutlawsEnemy::Decide()
 		if (DecideMove(false)) return;
 		SetSub(SubFace);
 		return;
+	}
+	// (BUG-ENEMYCORNERS) a slide's end comes here straight, past SubFace's look at the bunch: the same look
+	if (!bSeen && !OldEnemyCorners() && DisperseWait <= 0.f && CoopSelf < 0 && !IsFightingBoss())
+	{
+		DisperseWait = FMath::FRandRange(1.5f, 3.f);
+		if (WalkOffBunch()) return;
 	}
 	// a place clear of the others first (user 2026-10-01: following the player they all bunched in one corner of a room);
 	// the original's choice anywhere when there is none
@@ -920,6 +960,8 @@ bool AOutlawsEnemy::PickPoint(float MinU, float MaxU, float CentreYaw, float Spr
 	return false;
 }
 
+int32 AOutlawsEnemy::GCornerStat[7] = {};
+
 void AOutlawsEnemy::MoveAlong(float Dt)
 {
 	const FVector Here = GetActorLocation();
@@ -941,7 +983,7 @@ void AOutlawsEnemy::MoveAlong(float Dt)
 			{
 				MoveTarget = SlideGoal;
 				SlideUntil = 0.0;
-				SubTime = 0.f;
+				if (bHunter || OldEnemyCorners()) SubTime = 0.f;
 				StuckTime = 0.f;
 				bDoorTried = false;
 				return;
@@ -965,6 +1007,7 @@ void AOutlawsEnemy::MoveAlong(float Dt)
 				HuntSlidVia = HuntVia;
 				HuntSlidAt = T;
 			}
+			++GCornerStat[4];
 			SetSub(bHunt ? SubFace : SubDecide);
 			if (bHunt) HuntWait = 0.f;
 			return;
@@ -979,6 +1022,7 @@ void AOutlawsEnemy::MoveAlong(float Dt)
 	}
 	if (To.Size() < 50.0 || SubTime > 8.f)
 	{
+		++GCornerStat[5];
 		SetSub(SubFace);
 		return;
 	}
@@ -1054,12 +1098,16 @@ void AOutlawsEnemy::MoveAlong(float Dt)
 	}
 	// (BUG-BOSSWALL) pressed on a wall (or a body) for a second: along it instead; -OLOldBossWall stops and thinks again.
 	// Not a match bot: its own driver steers it and steps it aside (OutlawsCoopBots.cpp)
-	if (StuckTime > 1.f && IsMoveSub(Sub) && CoopSelf < 0 && !OldBossWall() && StartWallSlide())
+	// (BUG-ENEMYCORNERS) a press on another man is no wall to go along: he stops and looks at the bunch, as before BUG-BOSSWALL;
+	// 498 of 568 slides in a room of 70 were off a body.  A hunter still goes round
+	const bool bBodyOnly = bBlockBody && !bHunter && !OldEnemyCorners();
+	if (StuckTime > 1.f && IsMoveSub(Sub) && CoopSelf < 0 && !OldBossWall() && !bBodyOnly && StartWallSlide())
 	{
 		return;
 	}
 	if (StuckTime > 1.2f)
 	{
+		++GCornerStat[3];
 		SetSub(SubFace);
 	}
 }
@@ -1086,6 +1134,7 @@ void AOutlawsEnemy::MoveBlockedBy(const FHitResult& Impact)
 	if (!N.Normalize()) return;
 	BlockNormal = N;
 	BlockPoint = Impact.ImpactPoint;
+	bBlockBody = Cast<APawn>(Impact.GetActor()) != nullptr;
 	BlockWhat = Impact.GetComponent() ? Impact.GetComponent()->GetFName() : (Impact.GetActor() ? Impact.GetActor()->GetFName() : NAME_None);
 	BlockAt = Now();
 }
@@ -1130,6 +1179,7 @@ bool AOutlawsEnemy::StartWallSlide()
 	{
 		return false;
 	}
+	if (bBlockBody) ++GCornerStat[6];
 	UE_LOG(LogOutlawsAI, Log, TEXT("OLRT %s pressed on %s %.1f s: slides %s along it, %.0f cm"), *OutlawsName, *BlockWhat.ToString(), StuckTime, bAgain ? TEXT("off (again)") : TEXT("on"), Dist);
 	if (SlideUntil <= 0.0) SlideGoal = MoveTarget;        // (a slide off a slide keeps the move's own goal)
 	MoveTarget = Here + Way * Dist;
@@ -1137,7 +1187,10 @@ bool AOutlawsEnemy::StartWallSlide()
 	SlideUntil = T + 3.0;
 	SlideCheck = 0.2f;
 	++Slides;
-	SubTime = 0.f;
+	// (BUG-ENEMYCORNERS) a hunter's step only: for anyone else the clock runs on through a slide, or a place behind the others
+	// is walked at for ever, press, slide, back, press, the 8 s that ends a move never reached (snapshot 13: 4.1 s a round,
+	// the same slide each time) and SubFace's look at the bunch never comes
+	if (bHunter || OldEnemyCorners()) SubTime = 0.f;
 	StuckTime = 0.f;
 	bDoorTried = false;
 	return true;
@@ -2786,6 +2839,7 @@ void AOutlawsEnemy::Tick(float Dt)
 				SetSub(SubFace);
 			}
 		};
+		if (Sub == SubFace || !OldEnemyCorners()) DisperseWait -= Dt;     // (BUG-ENEMYCORNERS: Decide looks too, a slide's end comes straight there)
 		switch (Sub)
 		{
 		case SubFace:
@@ -2793,24 +2847,10 @@ void AOutlawsEnemy::Tick(float Dt)
 			FaceYaw((TargetPos - GetActorLocation()).Rotation().Yaw, Dt);
 			// two or more others within 1.8 m and the player out of sight: walk off away from the bunch, now and then
 			// (user 2026-10-01: following the player they all cornered to one side of a room)
-			DisperseWait -= Dt;
-			FVector Crowd, Away;
 			if (!bSeen && DisperseWait <= 0.f)
 			{
 				DisperseWait = FMath::FRandRange(1.5f, 3.f);
-				if (CrowdAround(GetActorLocation(), 180.0, false, Crowd) >= 2)
-				{
-					FVector From = GetActorLocation() - Crowd;
-					From.Z = 0.0;
-					const float Yaw = From.IsNearlyZero() ? FMath::FRandRange(-180.f, 180.f) : float(From.Rotation().Yaw);
-					if (PickPoint(5.f, 15.f, Yaw, 70.f, 8, false, Away, true))
-					{
-						MoveTarget = Away;
-						bRunning = false;
-						SetSub(SubCover);
-						break;
-					}
-				}
+				if (WalkOffBunch()) break;
 			}
 			if (bSeen && bLegsHidden && Def.DuckChor >= 0)
 			{
@@ -3121,6 +3161,12 @@ void AOutlawsEnemy::TickWander(float Dt)
 	{
 		WanderLeft = FMath::FRandRange(2.f, 5.f);
 		WanderDir = FMath::RandBool() ? FRotator(0.0, FMath::FRandRange(0.f, 360.f), 0.0).Vector() : FVector::ZeroVector;
+		// (BUG-ENEMYCORNERS) in a bunch he drifts out of it (26 of the 65 bunched in a room of 70 stood in this tier)
+		FVector Crowd;
+		if (!OldEnemyCorners() && CrowdAround(Here, 180.0, false, Crowd) >= 2 && !FVector(Here.X - Crowd.X, Here.Y - Crowd.Y, 0.0).IsNearlyZero())
+		{
+			WanderDir = FRotator(0.0, FVector(Here.X - Crowd.X, Here.Y - Crowd.Y, 0.0).Rotation().Yaw + FMath::FRandRange(-40.f, 40.f), 0.0).Vector();
+		}
 	}
 	if (WanderDir.IsNearlyZero()) return;
 	const float Speed = GetCharacterMovement()->MaxWalkSpeed * 0.4f * CustomTimeDilation;

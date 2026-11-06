@@ -242,6 +242,10 @@ public:
 	 *  by (what, its normal, how long ago), a slide along it under way, and the hunt's opening and the ones it now avoids. */
 	FString DebugMoveState() const;
 	FVector DebugMoveTarget() const { return MoveTarget; }
+	int32 DebugSub() const { return Sub; }                 // (-OLEnemyCornersProbe)
+	FVector DebugTargetPos() const { return TargetPos; }
+	bool DebugSees() const { return bSeen; }
+	static int32 GCornerStat[7];                           // (-OLEnemyCornersProbe: 0 looks at a bunch, 1 no place to go, 2 walked off, 3 stuck to SubFace, 4 slide done, 5 move done, 6 slides off a body)
 	int32 DebugSlides() const { return Slides; }
 	/** BUG-BOSSWALL: -OLOldBossWall, a chasing bad guy stuck on a wall stops and thinks again (no slide along it, no other way
 	 *  round for a hunter). */
@@ -249,6 +253,8 @@ public:
 	/** BUG-NOFLOORSTUCK: -OLOldNoFloorStuck, no floor found ahead stops him even with a wall between (no walk into it, no
 	 *  other way for a hunter). */
 	static bool OldNoFloorStuck();
+	/** BUG-ENEMYCORNERS: -OLOldEnemyCorners, a slide restarts the move's clock, a press on a body slides too, the bunch looked at from SubFace alone and for a place 1.5 m off. */
+	static bool OldEnemyCorners();
 	/** BUG-DYNTHROW (user 2 Nov, the user's snapshot #41: shgulch's Dick Farmer only looked): a bad guy whose ITM has a
 	 *  THROW_MAX throws his THROW_ITEM (a stick of dynamite, a knife) at the player instead of shooting, as the original
 	 *  [EXE 0x140089fcb, 0x14008cfe0, 0x140090670]: only between THROW_MIN and THROW_MAX and only when a lob reaches; the
@@ -448,6 +454,7 @@ private:
 	FVector BlockNormal = FVector::ZeroVector;
 	FVector BlockPoint = FVector::ZeroVector;
 	FName BlockWhat;
+	bool bBlockBody = false;              // (BUG-ENEMYCORNERS: that block was another man)
 	double BlockAt = -10.0;
 	double SlideUntil = 0.0;              // world seconds: the slide under way ends then (or on arrival) ...
 	FVector SlideGoal = FVector::ZeroVector;        // ... or once the straight way to where he was going is clear
@@ -536,6 +543,8 @@ private:
 	/** How many other live bad guys stand within Radius of P (or are walking to there); OutCentre their middle. */
 	int32 CrowdAround(const FVector& P, double Radius, bool bTheirGoals, FVector& OutCentre) const;
 	float DisperseWait = 0.f;
+	/** Two or more others within 1.8 m: a walk off away from them.  False with no bunch or nowhere to go. */
+	bool WalkOffBunch();
 	// far and unseen (user 2026-10-03, see IsFarFrozen)
 	bool bFarFrozen = false;
 	float FreezeCheck = 0.f;                  // the next look (four times a second; a frozen one looks every tick)
