@@ -5,7 +5,7 @@
 	<androidManifestUpdates>
 		<addPermission android:name="android.permission.REQUEST_INSTALL_PACKAGES" />
 		<addElements tag="application">
-			<receiver android:name="com.outlawsvr.OutlawsUE.OutlawsUpdateReplaced" android:exported="false">
+			<receiver android:name="com.epicgames.unreal.GameActivity$OutlawsUpdateReplaced" android:exported="false">
 				<intent-filter>
 					<action android:name="android.intent.action.MY_PACKAGE_REPLACED" />
 				</intent-filter>
@@ -113,6 +113,33 @@
 				}
 			}
 		}, "olupdate-install").start();
+	}
+
+	// REQ-DROPJAVA: the receiver the manifest names, generated here as a nested class so public source builds complete
+	// (it used to be Build/Android/src/.../OutlawsUpdateReplaced.java, which the public tree leaves out). It reaches the
+	// new version after the game has updated itself and brings it up; the VR category is what starts it in the headset,
+	// not as a flat panel, and if Android holds the start back the player just opens the game from the library.
+	public static class OutlawsUpdateReplaced extends android.content.BroadcastReceiver
+	{
+		@Override
+		public void onReceive(android.content.Context ctx, Intent intent)
+		{
+			Intent start = ctx.getPackageManager().getLaunchIntentForPackage(ctx.getPackageName());
+			if (start == null)
+			{
+				return;
+			}
+			start.addCategory("com.oculus.intent.category.VR");
+			start.addFlags(Intent.FLAG_ACTIVITY_NEW_TASK);
+			try
+			{
+				ctx.startActivity(start);
+			}
+			catch (Throwable t)
+			{
+				android.util.Log.w("OLUPD", "the relaunch did not start: " + t);
+			}
+		}
 	}
 ]]>
 		</insert>
