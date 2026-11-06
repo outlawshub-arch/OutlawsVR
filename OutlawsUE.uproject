@@ -29,6 +29,10 @@
         {
             "Name": "OpenXR",
             "Enabled": true
+        },
+        {
+            "Name": "OpenImageDenoise",
+            "Enabled": false
         }
     ],
     "Modules": [
