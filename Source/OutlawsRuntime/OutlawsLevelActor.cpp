@@ -1781,6 +1781,15 @@ void AOutlawsLevelActor::Build()
 					if (AOutlawsEnemy* E = Enemies.Last().Get())
 					{
 						E->bBoss = true;
+						// (REQ-BOSSPACE) these handlers set the original's BOSS flag themselves [EXE or's in the handlers 0x14006a420,
+						// 0x14006a4d0, 0x14006a540, 0x14006ac10 of the GOG build]; the plain handler's named outlaws (Bloodeye_New,
+						// Buckshot_New, Mary_New) have it only by the ITM key, which none of theirs carries
+						static const TSet<FString> MarkFuncs = { TEXT("farmer_new"), TEXT("simms_new"), TEXT("dynamite_new"), TEXT("shdick_new"),
+							TEXT("slim_new"), TEXT("drdeath_new"), TEXT("bob_new"), TEXT("sanchez_new"), TEXT("twofeathers_new") };
+						E->bBossMark |= MarkFuncs.Contains(Func);
+						// (the user's ruling, 6 Nov: those three named outlaws get boss speed all the same: Tim Bloodworth, Bill Morgan, Mary)
+						static const TSet<FString> SpeedRuleFuncs = { TEXT("bloodeye_new"), TEXT("buckshot_new"), TEXT("mary_new") };
+						E->bBossSpeedRule = SpeedRuleFuncs.Contains(Func);
 						E->bStationary = Func == TEXT("slim_new") || Func == TEXT("drdeath_new") || Func == TEXT("bob_new");
 						E->bPeekShooter = Func == TEXT("bob_new");
 						E->bBehindDoor = E->bPeekShooter;      // (frozen till his door opens: WakeCurtainBoss)

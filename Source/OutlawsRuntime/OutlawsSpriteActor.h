@@ -259,6 +259,9 @@ public:
 	/** Play a choreography from its start (-1: back to the atlas default); a one-shot holds its last frame. */
 	UFUNCTION(BlueprintCallable, Category = "Outlaws")
 	void PlayChor(int32 Chor, bool bLoop);
+	/** REQ-BOSSPACE: the playing choreography's speed over its own FPS (PlayChor puts it back to 1). */
+	void SetChorRate(float Rate) { ChorRate = Rate; }
+	float GetChorRate() const { return ChorRate; }
 
 	UFUNCTION(BlueprintCallable, Category = "Outlaws")
 	int32 GetPlayingChor() const { return PlayingChor; }
@@ -309,6 +312,7 @@ private:
 
 	int32 ForcedCell = -1;
 	float AnimTime = 0.f;
+	float ChorRate = 1.f;
 	float HeldFaceYaw = 0.f;               // HoldView's facing, and the frame it was last set in
 	uint64 HeldViewFrame = 0;
 	bool bFadeMaterial = false;

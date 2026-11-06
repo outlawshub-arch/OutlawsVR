@@ -193,6 +193,19 @@ public:
 
 	/** The level's boss (Sanchez, Two Feathers): its death ends the level. */
 	bool bBoss = false;
+	/** REQ-BOSSPACE: the original's own BOSS mark (actor flag 0x200000): the ITM key BOSS TRUE, or a FUNC whose handler sets it
+	 *  (the level's spawn).  Tim Bloodworth, Bill Morgan and Mary run the plain handler: bosses in our code alone, not marked. */
+	bool bBossMark = false;
+	/** REQ-BOSSPACE (the user's ruling, 6 Nov): boss speed by our rule, no mark of the original's: those three (the level's spawn). */
+	bool bBossSpeedRule = false;
+	/** REQ-BOSSPACE: marked or by the rule, and paced as a boss: not Bob behind his curtain (his peeks are paced in real seconds
+	 *  against his own chors, BUG-BOBSHOOT), not a match bot; -OLOldBossPace: none. */
+	bool IsPaceBoss() const { return (bBossMark || bBossSpeedRule) && !bPeekShooter && CoopSelf < 0 && !OldBossPace(); }
+	/** REQ-BOSSPACE: his pace in place of EnemyPace (ol.BossPace, the original's 1.0 by default), and what his move speed and
+	 *  his walk and run frames are scaled by (ol.BossMovePace, 0.6); 1 for anyone else.  No co-op x1.5 on either. */
+	float BossPaceNow() const;
+	float BossMoveScale() const;
+	static bool OldBossPace();
 	/** A boss with one place of his own (not Sanchez, not Two Feathers): hunts only once alerted (sight, a shot heard,
 	 *  a hit), so he is at his place when the player comes (user 2026-10-01: the canyon's Dick Farmer hunted from the
 	 *  level's start and was gone from it at the end). */

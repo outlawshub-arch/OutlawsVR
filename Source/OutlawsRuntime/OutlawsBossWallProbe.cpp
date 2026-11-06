@@ -20,6 +20,7 @@
 #include "OutlawsFlags.h"
 #include "OutlawsCoop.h"
 #include "OutlawsPlayer.h"
+#include "OutlawsSpriteActor.h"
 #include "Components/CapsuleComponent.h"
 #include "Containers/Ticker.h"
 #include "Engine/Engine.h"
@@ -488,6 +489,8 @@ void UOutlawsCoop::TickBossWallTest(double Now, AOutlawsLevelActor* L, AOutlawsP
 		const double Free = BwRun.Free();
 		BwCheck(Free >= 0.0 && Free <= 6.5 && BwRun.LongestPress <= 3.0 && BwRun.SeenAt >= 0.0, FString::Printf(TEXT("the host's %s: %s, %d slides; now %s"), *B->GetOutlawsName(), *BwRun.Describe(),
 			B->DebugSlides(), *B->GetActorLocation().ToCompactString()));
+		// (REQ-BOSSPACE) in a real session: the bad guys at x1.5, the boss at the original's pace, his feet scaled, no x1.5 on either
+		BwCheck(!B->IsPaceBoss() || (FMath::IsNearlyEqual(B->CustomTimeDilation, 1.f, 0.01f) && FMath::IsNearlyEqual(B->BossMoveScale(), 0.6f, 0.001f) && L->CoopPaceScale > 1.4f), FString::Printf(TEXT("the host's %s: pace %.2f, move scale %.2f, the bad guys %.2f (x%.2f)"), *B->GetOutlawsName(), B->CustomTimeDilation, B->BossMoveScale(), L->EnemyPace(), L->CoopPaceScale));
 		UE_LOG(LogOutlawsAI, Log, TEXT("OLCOOP bosswall host RESULT %s (%d passed, %d failed)"), BwFails == 0 && BwPasses > 0 ? TEXT("ALL PASS") : TEXT("FAIL"), BwPasses, BwFails);
 		BwStep = 5;
 		BwAt = Now + 6.0;            // (the client looks at its copy meanwhile)
@@ -529,10 +532,17 @@ void UOutlawsCoop::TickBossWallTest(double Now, AOutlawsLevelActor* L, AOutlawsP
 		// (the copy's move is the host's, its sub-state not sent: still under 25 cm a second counts within 1.5 m of the
 		// corner by the door's leaf where the snapshot's boss stood pressed, UE 8340 -1240; the copy is not paced itself, it
 		// follows the host's at the shared pace: EnemyPace)
-		BwRun.Step(Dt, L->EnemyPace(), B->GetActorLocation(), !B->IsDead() && FVector::Dist2D(B->GetActorLocation(), FVector(8340.0, -1240.0, 0.0)) < 150.0);
+		BwRun.Step(Dt, B->IsPaceBoss() ? B->BossPaceNow() : L->EnemyPace(), B->GetActorLocation(), !B->IsDead() && FVector::Dist2D(B->GetActorLocation(), FVector(8340.0, -1240.0, 0.0)) < 150.0);
+		// (REQ-BOSSPACE) over the whole watch, not the last frame's chor: the copy's rate while it walks or runs
+		const AOutlawsSpriteActor* Spr = B->GetSprite();
+		static float FeetRate = -1.f;
+		if (Spr && (Spr->GetPlayingChor() == B->Def.WalkChor || Spr->GetPlayingChor() == B->Def.RunChor)) FeetRate = Spr->GetChorRate();
 		if (BwRun.Time < 28.0) return;
 		const double Free = BwRun.Free();
 		BwCheck(Free >= 0.0 && Free <= 6.5 && BwRun.LongestPress <= 3.0, FString::Printf(TEXT("the client's copy of %s: %s; now %s"), *B->GetOutlawsName(), *BwRun.Describe(), *B->GetActorLocation().ToCompactString()));
+		// (REQ-BOSSPACE) the client's copy paced and its feet's frames scaled as the host's
+		BwCheck(!B->IsPaceBoss() || (FMath::IsNearlyEqual(B->CustomTimeDilation, 1.f, 0.01f) && FMath::IsNearlyEqual(FeetRate, 0.6f, 0.01f)),
+			FString::Printf(TEXT("the client's copy of %s: pace %.2f, walk and run frames at %.2f"), *B->GetOutlawsName(), B->CustomTimeDilation, FeetRate));
 		BwStep = 22;
 		return;
 	}

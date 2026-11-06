@@ -72,6 +72,12 @@ static TAutoConsoleVariable<int32> CVarOLFarFreezeEnable(TEXT("ol.FarFreezeEnabl
 	TEXT("Far-off bad guys out of sight hold still (1, the default) or think and walk as the near ones do (0)."));
 static TAutoConsoleVariable<float> CVarOLFarFreezeDistance(TEXT("ol.FarFreezeDistance"), 10000.f,
 	TEXT("How far (cm) from the nearest player an unseen bad guy freezes; he thaws a tenth inside it."));
+// REQ-BOSSPACE (user 5 Nov): a boss ignores the bad guys' slowdown (EnemyPace): his shots, sight and reactions at the original's
+// speed, in every mode and at any dial, no co-op x1.5; only his feet are slowed, and his walk and run frames with them
+static TAutoConsoleVariable<float> CVarOLBossPace(TEXT("ol.BossPace"), 1.f,
+	TEXT("A boss's pace in place of the bad guys' (1 the original's speed: his shots, sight, reactions, everything but his feet)."));
+static TAutoConsoleVariable<float> CVarOLBossMovePace(TEXT("ol.BossMovePace"), 0.6f,
+	TEXT("What a boss's walk and run speed and their frames are scaled by (the difficulty's speed still applies on top)."));
 
 namespace
 {
@@ -268,6 +274,7 @@ void AOutlawsEnemy::Init(AOutlawsLevelActor* InLevel, const FString& InName, con
 	OutlawsName = InName;
 	ApplyLossless();
 	Def.Read(ItmData);
+	bBossMark = ItmData.FindRef(TEXT("BOSS")).Equals(TEXT("TRUE"), ESearchCase::IgnoreCase);     // (REQ-BOSSPACE: the key [EXE 0x14008f855]; the handlers' at the level's spawn)
 	Unscaled = { Def.WalkSpeed, Def.RunSpeed, Def.ShootTimer, Def.Health, Def.Confidence, Def.Damage, Def.MoveInaccuracy, Def.WeaponInaccuracy, Def.Aggressiveness };
 	Def.ScaleForDifficulty(InLevel ? InLevel->Difficulty : EOutlawsDifficulty::Good);
 	Health = Def.Health;
@@ -356,6 +363,7 @@ void AOutlawsEnemy::Play(int32 Chor, bool bLoop)
 	if (Chor >= 0 && (Chor == Def.ChestDieChor || Chor == Def.LegDieChor)) ++DieChorsPlayed;
 	bHeldForCutscene = false;                     // (a held frame lets go with any new choreography)
 	Sprite->PlayChor(Chor, bLoop);
+	if (Chor >= 0 && (Chor == Def.WalkChor || Chor == Def.RunChor)) Sprite->SetChorRate(BossMoveScale());       // (REQ-BOSSPACE: the frames match his feet)
 	// (BUG-SAMENEMY) art with no death (MAX.NWX: three chors, none past 2): the dead bad guy goes as he falls, not left
 	// standing on his first frame for good (-OLOldMaxStatue: as before)
 	static const bool bOldMaxStatue = OLFlags::Param(TEXT("OLOldMaxStatue"));
@@ -436,7 +444,8 @@ void AOutlawsEnemy::SetSub(int32 NewSub)
 	case SubRetreat:
 	case SubCover:
 		Play(bRunning ? Def.RunChor : Def.WalkChor, true);
-		GetCharacterMovement()->MaxWalkSpeed = (bRunning ? Def.RunSpeed : Def.WalkSpeed) * UnitCm;
+		// (REQ-BOSSPACE: the one place a move's speed is set; Rescale's ratio keeps the scale)
+		GetCharacterMovement()->MaxWalkSpeed = (bRunning ? Def.RunSpeed : Def.WalkSpeed) * UnitCm * BossMoveScale();
 		break;
 	case SubDuck:
 		// [EXE 0x14008c6a3]: 7.9 s + up to 8.2 s, a second less per point of aggressiveness; the
@@ -1110,6 +1119,22 @@ void AOutlawsEnemy::MoveAlong(float Dt)
 		++GCornerStat[3];
 		SetSub(SubFace);
 	}
+}
+
+bool AOutlawsEnemy::OldBossPace()
+{
+	static const bool bOld = OLFlags::Param(TEXT("OLOldBossPace"));
+	return bOld;
+}
+
+float AOutlawsEnemy::BossPaceNow() const
+{
+	return FMath::Clamp(CVarOLBossPace.GetValueOnGameThread(), 0.05f, 2.f);
+}
+
+float AOutlawsEnemy::BossMoveScale() const
+{
+	return IsPaceBoss() ? FMath::Clamp(CVarOLBossMovePace.GetValueOnGameThread(), 0.05f, 2.f) : 1.f;
 }
 
 bool AOutlawsEnemy::OldBossWall()
@@ -2445,11 +2470,12 @@ void AOutlawsEnemy::Tick(float Dt)
 		const bool bReacting = FPlatformTime::Seconds() < FullPaceUntil || bKnockFlight;
 		// held or thrown, he goes at the player's hand's own speed (user 2026-10-02: a living one thrown flew in slow motion,
 		// at the bad guys' pace of 0.3, three times as long as a body or a rock)
-		const float Pace = IsDead() || bReacting || bHeldByPlayer || bThrown || CoopSelf >= 0 ? 1.f : Level->EnemyPace();
+		const float Pace = IsDead() || bReacting || bHeldByPlayer || bThrown || CoopSelf >= 0 ? 1.f : IsPaceBoss() ? BossPaceNow() : Level->EnemyPace();
 		if (CustomTimeDilation != Pace)
 		{
 			CustomTimeDilation = Pace;
 			if (Sprite && !bFarFrozen) Sprite->CustomTimeDilation = Pace;      // (frozen, his sprite holds its frame)
+			if (IsPaceBoss()) UE_LOG(LogOutlawsAI, Log, TEXT("OLRT %s at boss pace %.2f, feet %.2f"), *OutlawsName, Pace, BossMoveScale());     // (REQ-BOSSPACE: only off the default; the Shipping log shows the cvars took)
 		}
 	}
 	// far and unseen: nothing more till he thaws (user 2026-10-03)

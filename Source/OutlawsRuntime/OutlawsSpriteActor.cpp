@@ -118,7 +118,7 @@ void AOutlawsSpriteActor::AdvanceClock(float DeltaSeconds)
 	// a culled sprite's animation keeps its time (a prop's chor events and a one-shot's end are read from it)
 	if (ForcedCell < 0 && !bClockHeld && (Chors.IsValidIndex(PlayingChor) || (FPS > 0.f && FrameCount > 1)))
 	{
-		AnimTime += DeltaSeconds;
+		AnimTime += DeltaSeconds * ChorRate;
 	}
 }
 
@@ -651,7 +651,7 @@ void AOutlawsSpriteActor::UpdateSprite(float DeltaSeconds, const FVector* Viewer
 	{
 		// a character's choreography: its own direction count, speed and cells
 		const FOutlawsSpriteChor& C = Chors[PlayingChor];
-		if (!bClockHeld) AnimTime += DeltaSeconds;
+		if (!bClockHeld) AnimTime += DeltaSeconds * ChorRate;
 		const int32 Shown = GetChorFrame();
 		const int32 Len = FMath::Max(1, C.Length);
 		const int32 Frame = bChorLoop ? Shown % Len : FMath::Min(Shown, Len - 1);
@@ -838,6 +838,7 @@ void AOutlawsSpriteActor::PlayChor(int32 Chor, bool bLoop)
 	PlayingChor = Chors.IsValidIndex(Chor) ? Chor : -1;
 	bChorLoop = bLoop;
 	bClockHeld = false;
+	ChorRate = 1.f;
 	AnimTime = 0.f;
 	CurrentCell = -1;
 }
