@@ -28,6 +28,7 @@ namespace
 	struct FAirCase
 	{
 		const TCHAR* What = TEXT("");
+		bool bRealJump = false;     // (REQ-JUMPSTAMINA) off the real jump, not thrown up: what it takes, up to the catch and after
 		EAirKind Kind = EAirKind::Held;
 		int32 Hand = 1;             // the hand that goes for the ledge
 		double HandUp = 100.0;      // that hand over the feet, 6 cm out from the wall's face
@@ -46,7 +47,7 @@ namespace
 	{
 		TArray<FAirCase> Cases;
 		int32 CaseI = -1, Step = 0, Stage = 0, Pass = 0, Fail = 0;
-		float T = 0.f, At = 0.f, Air = 0.f;
+		float T = 0.f, At = 0.f, Air = 0.f, CatchAt = -1.f, CatchStamina = 0.f;
 		bool bSqueezed = false, bReachAtSqueeze = false, bReachSeen = false, bEndsClear = false, bTook = false;
 		bool bLanded = false;
 		int32 Ticks0 = 0, FramesInAir = 0;
@@ -63,6 +64,7 @@ namespace
 	{
 		auto Add = [&Out](const TCHAR* What, EAirKind Kind) -> FAirCase& { FAirCase& C = Out.AddDefaulted_GetRef(); C.What = What; C.Kind = Kind; return C; };
 		{ FAirCase& C = Add(TEXT("an early squeeze held till the ledge comes in reach"), EAirKind::Held); C.bCatch = true; }
+		{ FAirCase& C = Add(TEXT("the same off a real jump"), EAirKind::Held); C.bCatch = C.bRealJump = true; }
 		{ FAirCase& C = Add(TEXT("the same squeeze let go before the ledge comes"), EAirKind::Held); C.bLetGo = true; }
 		{ FAirCase& C = Add(TEXT("a hitch's step down past the ledge"), EAirKind::Hitch); C.HandUp = 150.0; C.Step = -100.0; C.bCatch = true; }
 		{ FAirCase& C = Add(TEXT("a hitch's step up past the ledge"), EAirKind::Hitch); C.HandUp = 150.0; C.Step = 100.0; C.bCatch = true; }
@@ -227,6 +229,14 @@ OL_SHOT_TEST(OLAirCatchProbe, 2350)
 			M->SetMovementMode(MOVE_Falling);
 			M->Velocity = FVector::ZeroVector;
 			PutHands();
+			P.Air = 0.f;
+			P.FramesInAir = 0;
+		}
+		else if (C.bRealJump)
+		{
+			Stamina = 60.f;
+			P.CatchAt = -1.f;
+			DoJump();
 			P.Air = 0.f;
 			P.FramesInAir = 0;
 		}
@@ -435,6 +445,13 @@ OL_SHOT_TEST(OLAirCatchProbe, 2350)
 		}
 		if (C.Kind != EAirKind::OnFoot) P.bReachSeen = P.bReachSeen || (!IsClimbing() && InReach(H));
 		if (!bEnd) return;
+		if (C.bRealJump && IsClimbing())
+		{
+			// (REQ-JUMPSTAMINA) the catch ends the jump's air time: the refill on again, hanging there
+			if (P.CatchAt < 0.f) { P.CatchAt = P.T; P.CatchStamina = Stamina; }
+			if (P.T < P.CatchAt + 0.4f) return;
+			UE_LOG(LogOutlaws, Display, TEXT("OLSHOT aircatch stamina: 60 at the press, %.3f at the catch after %.2f s up, %.3f 0.4 s on (%.2f a second back on the ledge)"), P.CatchStamina, P.Air, Stamina, (Stamina - P.CatchStamina) / 0.4f);
+		}
 		const bool bGot = IsClimbing() && GrabHand == H;
 		const bool bWant = bOld ? C.bCatchOld : C.bCatch;
 		bool bOk = bGot == bWant && P.Note.IsEmpty();

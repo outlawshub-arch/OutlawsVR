@@ -1656,8 +1656,10 @@ private:
 	// a jump E_JUMP 5; resting gives back E_REST 11 (walking half that, INFERRED), crouched E_CROUCH 2 more.
 	// Spent, running slows to a walk and jumps reach half as high; every shot strays (100 - energy) x 0.05
 	// degrees more [EXE 0x1400de9d1]; below 99, tired.wav breathes, louder the lower it gets.  Ours (StaminaRate):
-	// running and jumps at a quarter of the exe's over 1.5, resting, walking and crouched at the exe's own (REQ-STAMINA15)
+	// running at a quarter of the exe's over 1.5, resting, walking and crouched at the exe's own (REQ-STAMINA15), jumps at the
+	// exe's own too and nothing back in their air time (REQ-JUMPSTAMINA)
 	float Stamina = 100.f;
+	bool bJumpAir = false;               // (REQ-JUMPSTAMINA) in the air off a jump's take-off, until it lands or something takes the body
 	TWeakObjectPtr<class UAudioComponent> TiredSound;
 	float TiredWait = 0.f;
 	// (REQ-TIREDVOL, -OLStaminaProbe only) the first breath since the probe set TiredBreathStamina to -1: its stamina and multiplier
@@ -1718,9 +1720,13 @@ private:
 	 *  walk), or still, and crouched or not.  The breath lasts 1.5 times as long running and comes back twice as fast as
 	 *  before; bOld (-OLOldStamina): the rates before it. */
 	static float StaminaRate(bool bRunOnGround, bool bMoving, bool bCrouched, float Pace, bool bCarrying, bool bOld);
-	/** REQ-STAMINA15: what a jump spends (E_JUMP 5 at a quarter, over 1.5; bOld: at a quarter, as before). */
-	static float StaminaJumpCost(bool bCarrying, bool bOld);
-	/** -OLOldStamina (REQ-STAMINA15's A/B switch): the running, jumping and recovery rates before 27 Oct. */
+	/** REQ-JUMPSTAMINA: what a jump spends: the original's E_JUMP 5; bOldJump (-OLOldJumpStamina): as before, E_JUMP at a
+	 *  quarter, over 1.5 (REQ-STAMINA15), and with bOld (-OLOldStamina too) at a quarter. */
+	static float StaminaJumpCost(bool bCarrying, bool bOld, bool bOldJump);
+	/** -OLOldJumpStamina (REQ-JUMPSTAMINA's A/B switch): a jump's cost as before and the air refilling, as on 4 Nov. */
+	static bool OldJumpStamina();
+	/** -OLOldStamina (REQ-STAMINA15's A/B switch): the running and recovery rates before 27 Oct, and a jump's only with
+	 *  -OLOldJumpStamina too: since REQ-JUMPSTAMINA that switch has the jump. */
 	static bool OldStamina();
 	/** REQ-CROUCHRUN (user 2026-10-28, snapshot 19's note: no crouch run): the crouched speed before the speed dial and a
 	 *  carried man: the crouch walk, and running, the crouch walk times the standing run's share over the walk at this
@@ -1765,6 +1771,9 @@ private:
 	 *  With -OLShipSmoke the first level is played until it is done; without it the game quits once done. */
 	static bool StaminaProbeOn();
 	void TickStaminaProbe(float Dt);
+	/** (REQ-JUMPSTAMINA, OutlawsJumpStaminaProbe.cpp) -OLJumpStaminaProbe[=vr], in any build, through OLFlags. */
+	static bool JumpStaminaProbeOn();
+	void TickJumpStaminaProbe(float Dt);
 	/** REQ-REGEN2X: the auto health regen a second standing still (the host's in co-op and multiplayer). */
 	float RegenRate() const;
 	/** Air under water (user 2026-10-01): it runs down as the head stays under, 30 s at the slider's 100 % and longer as

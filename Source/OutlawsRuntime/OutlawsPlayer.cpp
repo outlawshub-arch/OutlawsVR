@@ -534,10 +534,19 @@ float AOutlawsPlayer::TiredGain(float Want, bool bOld)
 	return (bOld ? 1.f : 1.5f) * FMath::Max(0.04f, Want);
 }
 
-float AOutlawsPlayer::StaminaJumpCost(bool bCarrying, bool bOld)
+bool AOutlawsPlayer::OldJumpStamina()
 {
-	// E_JUMP 5, at a quarter (user 2026-09-27), over 1.5 (REQ-STAMINA15, user 2026-10-27); -OLOldStamina: the quarter alone
-	return (bOld ? 1.25f : 1.25f / 1.5f) * (bCarrying ? CarryDrain : 1.f);
+	static const bool bOld = OLFlags::Param(TEXT("OLOldJumpStamina"));     // (REQ-JUMPSTAMINA's before: the cut jump, refilled in the air)
+	return bOld;
+}
+
+float AOutlawsPlayer::StaminaJumpCost(bool bCarrying, bool bOld, bool bOldJump)
+{
+	// REQ-JUMPSTAMINA (user 2026-11-05: "every jump should take about 5 to 10 %", then 5 %): the original's E_JUMP 5 whole, once
+	// [cidjames.itm; EXE 0x1400ba15b..0x1400ba163, only on the take-off's frame 0x1400b91af..0x1400b9244; no energy test there, so
+	// empty still jumps].  -OLOldJumpStamina: as before, at a quarter (user 2026-09-27), over 1.5 (REQ-STAMINA15, user 2026-10-27),
+	// and with -OLOldStamina too the quarter alone
+	return (!bOldJump ? 5.f : bOld ? 1.25f : 1.25f / 1.5f) * (bCarrying ? CarryDrain : 1.f);
 }
 
 void AOutlawsPlayer::UpdateStamina(float Dt)
@@ -546,12 +555,16 @@ void AOutlawsPlayer::UpdateStamina(float Dt)
 	UCharacterMovementComponent* M = GetCharacterMovement();
 	const bool bMovingNow = GetVelocity().Size2D() > 60.f;
 	const bool bCrouched = GetCapsuleComponent()->GetUnscaledCapsuleHalfHeight() < 60.f;
+	// REQ-JUMPSTAMINA (5 Nov): a jump's air time pays nothing back, take-off to landing (or the water, a grip, a mantle), so its net
+	// cost is what it took.  Ours, not the original's: its E_REST runs in the air.  Only a jump's air: walk-offs and falls refill as
+	// they did, and this overrides the walking and running rulings of 27 Sep and 27 Oct for that jump alone
+	if (bDeadView || M->MovementMode != MOVE_Falling || bSwimming || IsClimbing() || MantleLeft > 0.f) bJumpAir = false;
 	if (!bDeadView && !bMenuOpen)
 	{
 		// (StaminaRate: REQ-STAMINA15, user 2026-10-27, the breath lasts 1.5 times as long running and comes back twice as fast)
 		const float Rate = StaminaRate(bRunning && bMovingNow && M->IsMovingOnGround(), bMovingNow, bCrouched,
 			Level.IsValid() ? Level->Pace() : 0.5f, CarryingMan(), OldStamina());
-		Stamina = FMath::Clamp(Stamina + Rate * Dt, 0.f, 100.f);
+		Stamina = FMath::Clamp(Stamina + (bJumpAir ? FMath::Min(Rate, 0.f) : Rate) * Dt, 0.f, 100.f);
 	}
 	if (bDeadView) Stamina = 100.f;
 	// below half health it comes back up to half: standing still 2 % a second (REQ-REGEN2X, user 2026-10-11: was 1 %),
@@ -1628,9 +1641,9 @@ void AOutlawsPlayer::DoJump()
 	}
 	// a spent body jumps half as high (height goes with the square of the launch speed)
 	GetCharacterMovement()->JumpZVelocity = (bVR ? VRJumpVelocity : DesktopJumpVelocity) * FMath::Sqrt(FMath::Lerp(0.5f, 1.f, StaminaFrac()));
-	if (CanJump())
+	if (OldJumpStamina() && CanJump())
 	{
-		Stamina = FMath::Max(0.f, Stamina - StaminaJumpCost(CarryingMan(), OldStamina()));    // E_JUMP 5 at a quarter, over 1.5 (user 2026-10-27)
+		Stamina = FMath::Max(0.f, Stamina - StaminaJumpCost(CarryingMan(), OldStamina(), true));    // E_JUMP 5 at a quarter, over 1.5 (user 2026-10-27)
 	}
 	if (CanJump() && L)
 	{
@@ -1646,6 +1659,15 @@ void AOutlawsPlayer::OnJumped_Implementation()
 	const AOutlawsLevelActor* L = Level.Get();
 	UCharacterMovementComponent* M = GetCharacterMovement();
 	JumpAirSpeed = 0.f;
+	// REQ-JUMPSTAMINA: the jump's cost, here on the take-off itself, so a press the jump doesn't follow takes nothing, a walk-off or a
+	// fall never comes here and an eased-in take-off (BUG-JUMPSPEED) pays once.  The reach below goes with the stamina it was pressed
+	// with, as the height did in DoJump: at full, 900 cm, not this jump's own 5 % short of it
+	const float PressedFrac = StaminaFrac();
+	if (!OldJumpStamina())
+	{
+		Stamina = FMath::Max(0.f, Stamina - StaminaJumpCost(CarryingMan(), OldStamina(), false));
+		bJumpAir = true;
+	}
 	if (!M) return;
 	// BUG-JUMPHYBRID (user 3 Nov, after BUG-JUMPSPEED: the small icecaves gap, pit 211, now clears at 40 %, but the big one a
 	// little further on, the ice slide 215's jump over the void 232 to 228, no longer does; they prefer the old feel, "the
@@ -1686,7 +1708,7 @@ void AOutlawsPlayer::OnJumped_Implementation()
 	const float Top = FMath::Max(1.f, !bVR && bCrouched ? M->MaxWalkSpeedCrouched : M->MaxWalkSpeed);
 	const float Push = FMath::Min(FMath::Clamp(M->GetAnalogInputModifier(), 0.f, 1.f), FMath::Clamp(float(Vh.Size()) / Top, 0.f, 1.f));
 	constexpr float OrigWalkReach = 600.f, OrigRunReach = 900.f;
-	float Reach = bRunning ? FMath::Lerp(OrigWalkReach, OrigRunReach, StaminaFrac()) : OrigWalkReach;
+	float Reach = bRunning ? FMath::Lerp(OrigWalkReach, OrigRunReach, PressedFrac) : OrigWalkReach;
 	if (bCrouched) Reach *= 0.5f;                  // (the original halves the speed crouched: 0x1400b7d5d)
 	if (CarryingMan()) Reach *= CarrySpeedScale;
 	const float Tk = T * K;
@@ -1821,6 +1843,7 @@ void AOutlawsPlayer::Tick(float Dt)
 	// both sticks kept in for 1.5 s: mark this moment for the perf report (and no recenter at the release)
 #if WITH_OUTLAWS_TESTS
 	if (OLFlags::Param(TEXT("OLTestStickChord"))) TickStickChordTest();
+	if (JumpStaminaProbeOn()) TickJumpStaminaProbe(Dt);   // (REQ-JUMPSTAMINA: -OLJumpStaminaProbe)
 	static const bool bPauseTidyTest = OLFlags::HasValue(TEXT("OLPauseTidyMode"));
 	if (bPauseTidyTest) UOutlawsCoop::PauseTidyTestTick(this, Dt);      // (REQ-PAUSETIDY: OutlawsPlayerMenu.cpp)
 	static const bool bDevChecksTest = OLFlags::Has(TEXT("OLDevChecksTest"));

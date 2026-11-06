@@ -1868,7 +1868,8 @@ void UOutlawsCoop::Tick(float DeltaTime)
 	TickJoin(Now);                   // (R7: a late player's snapshot, once this host's level is steady; OutlawsCoopJoin.cpp)
 #if WITH_OUTLAWS_TESTS
 	TickTest(Now);
-	if (bAuto && !bWorldTest && bLevelBuilt && !bSummaryDone && Now - LevelBuiltAt > (Mode == EOutlawsCoopMode::Client ? AutoClientQuitAfter : AutoHostQuitAfter))
+	// (-OLCoopStay, REQ-JUMPSTAMINA's and REQ-RUNHEAL's probes: joined, no world test, and no quit: the run's script ends it)
+	if (bAuto && !bWorldTest && bLevelBuilt && !bSummaryDone && !OLFlags::Param(TEXT("OLCoopStay")) && Now - LevelBuiltAt > (Mode == EOutlawsCoopMode::Client ? AutoClientQuitAfter : AutoHostQuitAfter))
 	{
 		Summary(TEXT("done"));
 		QuitForTest();

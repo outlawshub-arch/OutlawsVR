@@ -115,10 +115,14 @@ void AOutlawsPlayer::TickStaminaProbe(float Dt)
 		}
 		for (const bool bCarry : { false, true })
 		{
-			const float OldCost = StaminaJumpCost(bCarry, true), NewCost = StaminaJumpCost(bCarry, false);
+			// (the 27 Oct rule, which -OLOldJumpStamina keeps; REQ-JUMPSTAMINA's jump, the one in use, is the next check)
+			const float OldCost = StaminaJumpCost(bCarry, true, true), NewCost = StaminaJumpCost(bCarry, false, true);
 			const int32 OldN = FMath::CeilToInt(100.f / OldCost - 0.0001f), NewN = FMath::CeilToInt(100.f / NewCost - 0.0001f);
-			Check(FMath::IsNearlyEqual(OldCost / NewCost, 1.5f, 0.001f), FString::Printf(TEXT("jumps%s: %.3f each before, %.3f now; full to spent in %d jumps before, %d now"),
+			Check(FMath::IsNearlyEqual(OldCost / NewCost, 1.5f, 0.001f), FString::Printf(TEXT("jumps%s, -OLOldJumpStamina: %.3f each with -OLOldStamina too, %.3f without; full to spent in %d jumps, %d"),
 				bCarry ? TEXT(", carrying a man") : TEXT(""), OldCost, NewCost, OldN, NewN));
+			const float Whole = StaminaJumpCost(bCarry, false, false);
+			Check(FMath::IsNearlyEqual(Whole, 5.f * (bCarry ? CarryDrain : 1.f), 0.001f) && FMath::IsNearlyEqual(StaminaJumpCost(bCarry, true, false), Whole, 0.001f),
+				FString::Printf(TEXT("jumps%s, REQ-JUMPSTAMINA: %.3f each, -OLOldStamina or not; full to spent in %d jumps"), bCarry ? TEXT(", carrying a man") : TEXT(""), Whole, FMath::CeilToInt(100.f / Whole - 0.0001f)));
 		}
 		// REQ-TIREDVOL: tired.wav's multiplier on the same curve, before and now (and in use, at the sound and master volumes)
 		const float Vol = L->SoundVolume * L->MasterVolume;

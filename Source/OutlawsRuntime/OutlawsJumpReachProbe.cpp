@@ -42,6 +42,7 @@ namespace OutlawsJumpReachLocal
 	int32 CaseI = 0, Step = 0, Passes = 0, Fails = 0;
 	bool bArmed = false, bVRMode = false, bOld = false, bGeo = false, bWasFalling = false;
 	float CaseT = 0.f, LevelT = 0.f, AirSpeed = 0.f, OffSpeed = 0.f, DownT = -1.f, ReachT = -1.f;
+	float PressStamina = 0.f, LandStamina = -1.f;       // (REQ-JUMPSTAMINA) the stamina at the press and the landing, for the line
 	FVector2D Lip182 = FVector2D::ZeroVector, Lip203 = FVector2D::ZeroVector, Dir = FVector2D::ZeroVector;   // Outlaws units (x, z)
 	double Gap = 0.0, MeasuredReach = -1.0, OffAlong = 0.0;
 	FVector TakeOff = FVector::ZeroVector, PrevFeet = FVector::ZeroVector;
@@ -290,7 +291,7 @@ OL_SHOT_TEST(OLJumpReachProbe, 1710)
 		Step = 2;
 		CaseT = 0.f;
 	}
-	Stamina = 100.f;
+	if (Step != 3) Stamina = 100.f;      // (REQ-JUMPSTAMINA: in the air it's left alone, for the line at the landing)
 	bRunning = C.bRun;
 	if (C.bSlide && Step < 9)
 	{
@@ -341,6 +342,7 @@ OL_SHOT_TEST(OLJumpReachProbe, 1710)
 			DownIn = -1;
 			AirSpeed = 0.f;
 			bWasFalling = false;
+			PressStamina = Stamina;
 			DoJump();
 			Step = 3;
 			CaseT = 0.f;
@@ -361,6 +363,7 @@ OL_SHOT_TEST(OLJumpReachProbe, 1710)
 		if (bWasFalling && !bFalling && DownT < 0.f)
 		{
 			DownT = CaseT;
+			LandStamina = Stamina;
 			const FOutlawsSector* Sd = Lv->SectorAt(FVector(Ol.X, Ol.Y + 0.5, Ol.Z));
 			DownIn = Sd ? Sd->Index : -1;
 			if (AcrossAtRim < 0.0) AcrossAtRim = FVector2D::DotProduct(P - Off2, OffDir);
@@ -374,6 +377,7 @@ OL_SHOT_TEST(OLJumpReachProbe, 1710)
 		// (the far side's rim holds the body with its middle over the pit: 232 at the rim's height counts as across)
 		const bool bAcross = !bFellIn && DownT >= 0.f && (EndIn == 228 || EndIn == 207 || (EndIn == 232 && Ol.Y > -120.0));
 		const double Margin = AcrossAtRim >= 0.0 && RimDist >= 0.0 ? (AcrossAtRim - RimDist) * 30.0 : -9999.0;
+		UE_LOG(LogOutlaws, Display, TEXT("OLSHOT jumpreach stamina, %s: %.2f at the press, %.2f at the landing, net %.3f over %.2f s"), *Sid, PressStamina, LandStamina, PressStamina - LandStamina, DownT);
 		UE_LOG(LogOutlaws, Display, TEXT("OLSHOT jumpreach %s: off at %.0f cm/s %.0f cm before the lip, %.0f cm/s across in the air, the far rim %.0f cm on and %.0f cm down, %.0f cm across at its height: margin %.0f cm, %s (sector %d, down in %d after %.2f s; off at %.1f, %.1f, %.1f; now %.1f, %.1f, %.1f)"),
 			*Sid, OffSpeed, OffEarly, AirSpeed, RimDist * 30.0, (OffOl.Y - RimY) * 30.0, AcrossAtRim * 30.0, Margin, bAcross ? TEXT("ACROSS") : TEXT("INTO THE PIT"), EndIn, DownIn, DownT,
 			OffOl.X, OffOl.Y, OffOl.Z, Ol.X, Ol.Y, Ol.Z);
@@ -396,6 +400,7 @@ OL_SHOT_TEST(OLJumpReachProbe, 1710)
 		OffAlong = Along;
 		TakeOff = Feet;
 		PrevFeet = Feet;
+		PressStamina = Stamina;
 		DoJump();
 		Step = 3;
 		CaseT = 0.f;
@@ -431,6 +436,7 @@ OL_SHOT_TEST(OLJumpReachProbe, 1710)
 			return;
 		}
 		const double Reach = MeasuredReach >= 0.0 ? MeasuredReach : FVector::Dist2D(Feet, TakeOff);
+		UE_LOG(LogOutlaws, Display, TEXT("OLSHOT jumpreach stamina, the gap, %s: %.2f at the press, %.2f at the end of it, net %.3f over %.2f s"), *Id, PressStamina, Stamina, PressStamina - Stamina, CaseT);
 		const FOutlawsSector* Sec = Lv->SectorAt(FVector(Ol.X, Ol.Y + 0.5, Ol.Z));
 		const int32 In = Sec ? Sec->Index : -1;
 		const FVector OffOl = FOutlawsGeometry::ToOutlaws(TakeOff);

@@ -95,6 +95,8 @@ namespace OutlawsSwimUpDownLocal
 		{ TEXT("up held"), Stack, 2.6f, false, NoArms, 0.f, true, false },
 		{ TEXT("up held and arms looking up"), Stack, 2.6f, false, Stroke, 80.f, true, false } };
 	int32 CaseI = 0, Step = 0, Passes = 0, Fails = 0, Toasts = 0, LetGo = 0, Exits = 0, Squeezes = 0;
+	int32 Jumps0 = 0;               // (REQ-JUMPSTAMINA) the jumps taken and the stamina as the out-of-the-water cases start
+	float ExitStamina = -1.f;
 	bool bArmed = false, bVRMode = false, bOldUD = false, bOldStack = false, bMaxMin = false, bOldClimb = false, bWasHeld = false, bWasSwimming = false, bHeldSeen = false;
 	float ExitAt = -1.f, ExitMid = 0.f;         // (the first time out of the water: when, and the middle then)
 	bool bCrouch0 = false, bAuto0 = false, bIsCrouched0 = false, bWasSqueezed = false, bSurfEdge = false;
@@ -318,6 +320,7 @@ OL_SHOT_TEST(OLSwimUpDownProbe, 1920)
 		}
 		else if (C.Kind == Up || C.Kind == ToSurface || C.Kind == SurfUp || C.Kind == EdgeUp || C.Kind == EdgeOut) Hold(1.f);
 		else Hold(-1.f);
+		if (C.Kind == SurfUp || C.Kind == EdgeOut) { Stamina = 60.f; ExitStamina = -1.f; Jumps0 = TutNotes.Jumps; }
 		NextPress = 0.5f;
 		T = 0.f;
 		Step = 2;
@@ -364,7 +367,7 @@ OL_SHOT_TEST(OLSwimUpDownProbe, 1920)
 	if (bWasHeld && !IsSurfaceHeld() && bSwimming) ++LetGo;
 	if (bWasSwimming && !bSwimming)
 	{
-		if (Exits == 0) { ExitAt = T; ExitMid = PrevMid; }
+		if (Exits == 0) { ExitAt = T; ExitMid = PrevMid; ExitStamina = Stamina; }
 		++Exits;
 	}
 	bWasHeld = IsSurfaceHeld();
@@ -435,6 +438,7 @@ OL_SHOT_TEST(OLSwimUpDownProbe, 1920)
 			C.Name, SurfaceZ - StartMid, CaseYaw, IsSurfaceHeld() ? 1 : 0, bHeldSeen ? 1 : 0, Exits, Top - FloatZ, Fastest, Speed, Toasts, Squeezes);
 		if (C.Kind == EdgeOut)
 		{
+			UE_LOG(LogOutlaws, Display, TEXT("OLSHOT swimupdown stamina, out of the water: 60 at the hold, %.2f at the climb out, %.2f at the end, %d jumps taken"), ExitStamina, Stamina, TutNotes.Jumps - Jumps0);
 			Check(Exits > 0 && Top > FloatZ + 50.f, FString::Printf(TEXT("%s: held at the surface facing the side, the jump's press climbs out over it as before (out %d, the middle up to %.0f over its float depth)"),
 				C.Name, Exits, Top - FloatZ));
 		}
@@ -471,6 +475,7 @@ OL_SHOT_TEST(OLSwimUpDownProbe, 1920)
 		Window(HoldFor - 0.5f, HoldFor, false, Mean, Lo, Hi, Peak, false);
 		UE_LOG(LogOutlaws, Display, TEXT("OLSHOT swimupdown %s: held %.1f s at yaw %.0f; the middle %.0f..%.0f cm off its float depth (feet %.0f..%.0f over the floor); the hold let go %d times, out of the water %d times, held at the end %d, swimming %d; the last half second %.0f cm/s; toasts %d"),
 			C.Name, HoldFor, CaseYaw, Low - FloatZ, Top - FloatZ, Low - StandHalf - FloorZ, Top - StandHalf - FloorZ, LetGo, Exits, IsSurfaceHeld() ? 1 : 0, bSwimming ? 1 : 0, Mean, Toasts);
+		if (C.Kind == SurfUp) UE_LOG(LogOutlaws, Display, TEXT("OLSHOT swimupdown stamina, the jump held at the surface: 60 at the hold, %.2f at the end, out %d times, %d jumps taken"), Stamina, Exits, TutNotes.Jumps - Jumps0);
 		if (C.Kind == SurfUp && !bSurfEdge) Check(LetGo == 0 && Exits == 0 && Top <= FloatZ + 12.f && Low >= FloatZ - 12.f, FString::Printf(TEXT("%s: held at the surface through the press and the hold, no edge ahead (let go %d, out %d, %.0f..%.0f cm)"), C.Name, LetGo, Exits, Low - FloatZ, Top - FloatZ));
 		if (C.Kind == SurfUp && bSurfEdge) UE_LOG(LogOutlaws, Display, TEXT("OLSHOT swimupdown %s: an edge every way here: the press climbs out over it (today's), out %d"), C.Name, Exits);
 		if (C.Kind == SurfDown) Check(LetGo > 0 && Low < FloatZ - 25.f, FString::Printf(TEXT("%s: the hold lets go and the body goes under (%.0f cm under its float depth)"), C.Name, FloatZ - Low));
