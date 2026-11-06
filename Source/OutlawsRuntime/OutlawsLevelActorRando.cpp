@@ -46,6 +46,7 @@ namespace OLRando
 	constexpr uint32 ItemSalt = 0x4954454Du;           // ("ITEM")
 	constexpr uint32 OrderSalt = 0x4F524452u;          // ("ORDR")
 	constexpr uint32 BossSalt = 0x424F5353u;           // ("BOSS")
+	TArray<FString> GBossPool;                         // (BUG-BOSSNODEATH: the pool's named outlaws, for the probe)
 	bool GOldItemPool = false;                         // (-OLRandoBossTest: the re-roll as it was, from the level's own mix, to compare)
 	bool GOldKindWeights = false;                      // (-OLRandoCritterTest: every kind drawn as often as any other, as it was, to compare)
 	double GSpecialShare = 0.0;                        // (tests) the special kinds' share of the game's own placements, in %
@@ -380,6 +381,8 @@ bool AOutlawsLevelActor::RollRando(const FOutlawsLevel& L, const FString& Level,
 		GP.bBuilt = true;
 		TArray<FString> Lvs, Mvs;
 		RandoStory(Lvs, Mvs);
+		const bool bOldBossPool = FParse::Param(FCommandLine::Get(), TEXT("OLOldBossPool"));
+		TArray<FString> NoDeath;
 		for (const TCHAR* H : { TEXT("shfort"), TEXT("shgranry"), TEXT("shgulch"), TEXT("shsimms"), TEXT("shwildns") }) Lvs.AddUnique(H);
 		for (const FString& Lv : Lvs)
 		{
@@ -406,6 +409,33 @@ bool AOutlawsLevelActor::RollRando(const FOutlawsLevel& L, const FString& Level,
 				{
 					if (bNwx && Radius > 0.0 && !GP.Bosses.Contains(O.Name.ToUpper()))
 					{
+						// (BUG-BOSSNODEATH) a boss whose sheet has no death frames (one still frame per direction in the chest and leg
+						// death rows: Slim, Henry and their E twins) would stand up when killed in another level, so he stays out of the pool
+						if (!bOldBossPool)
+						{
+							int32 ChestDie = 21, LegDie = 22;
+							if (I.Data.Contains(TEXT("CHEST_DIE_CHOR"))) ChestDie = FCString::Atoi(*I.Data[TEXT("CHEST_DIE_CHOR")]);
+							if (I.Data.Contains(TEXT("LEG_DIE_CHOR"))) LegDie = FCString::Atoi(*I.Data[TEXT("LEG_DIE_CHOR")]);
+							TArray<uint8> WaxBytes;
+							OutlawsFormats::FWax Wax;
+							bool bDies = true;
+							if (A.Get(I.Anim, WaxBytes) && OutlawsFormats::ParseWax(MoveTemp(WaxBytes), Wax))
+								{
+								// frames shown by the first direction's row of the choreography (its end marker is not a frame)
+								auto Shown = [&Wax](int32 Chor)
+								{
+									TArray<int32> Fr;
+									if (Wax.Chors.IsValidIndex(Chor)) OutlawsFormats::ChorFrames(Wax.Chors[Chor].Grid.GetData(), Wax.Chors[Chor].Frames, Fr);
+									return Fr.Num();
+								};
+								bDies = Shown(ChestDie) > 1 && Shown(LegDie) > 1;
+							}
+							if (!bDies)
+							{
+								NoDeath.AddUnique(O.Name.ToUpper());
+								continue;
+							}
+						}
 						GP.Bosses.Add(O.Name.ToUpper());
 						GP.BossFunc.Add(O.Name.ToUpper(), I.Func);
 					}
@@ -419,6 +449,12 @@ bool AOutlawsLevelActor::RollRando(const FOutlawsLevel& L, const FString& Level,
 		}
 		GP.Chars.Sort();
 		GP.Bosses.Sort();
+		OLRando::GBossPool = GP.Bosses;
+		if (NoDeath.Num() > 0)
+		{
+			NoDeath.Sort();
+			UE_LOG(LogOutlaws, Display, TEXT("OLRANDO bosses left out of the pool, no death frames: %s"), *FString::Join(NoDeath, TEXT(" ")));
+		}
 		{
 			TArray<FString> Said;
 			int32 All = 0, Spec = 0;
@@ -1094,6 +1130,15 @@ void AOutlawsLevelActor::TickRandoBossTest(float Dt)
 		}
 		OLRando::GOldItemPool = false;
 		// the random bosses over 20 seeds
+		{
+			// (BUG-BOSSNODEATH) bosses without death frames are out of the pool (old pool with -OLOldBossPool), the rest stay
+			const bool bOld = FParse::Param(FCommandLine::Get(), TEXT("OLOldBossPool"));
+			int32 Gone = 0;
+			for (const TCHAR* N : { TEXT("SLIM"), TEXT("ESLIM"), TEXT("HENRY"), TEXT("EHENRY") }) Gone += OLRando::GBossPool.Contains(N) ? 1 : 0;
+			UE_LOG(LogOutlaws, Display, TEXT("OLRANDO boss pool %d (%s): %d of the four no-death bosses in it"), OLRando::GBossPool.Num(), bOld ? TEXT("old") : TEXT("new"), Gone);
+			Check(Gone == (bOld ? 4 : 0), FString::Printf(TEXT("the four bosses without death frames are %s the pool"), bOld ? TEXT("in") : TEXT("out of")));
+			Check(OLRando::GBossPool.Num() == (bOld ? 28 : 24), FString::Printf(TEXT("the other bosses stay in the pool (%d)"), OLRando::GBossPool.Num()));
+		}
 		for (const TCHAR* Lv : Lvs)
 		{
 			int32 NBoss = 0, With = 0, Most = 0, Pinned = 0;
