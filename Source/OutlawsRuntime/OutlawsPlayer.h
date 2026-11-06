@@ -1776,6 +1776,9 @@ private:
 	void TickJumpStaminaProbe(float Dt);
 	/** REQ-REGEN2X: the auto health regen a second standing still (the host's in co-op and multiplayer). */
 	float RegenRate() const;
+	/** (REQ-RUNHEAL, OutlawsRunHealProbe.cpp) -OLRunHealProbe, in any build, through OLFlags. */
+	static bool RunHealProbeOn();
+	void TickRunHealProbe(float Dt);
 	/** Air under water (user 2026-10-01): it runs down as the head stays under, 30 s at the slider's 100 % and longer as
 	 *  the speed is turned down (as far on a breath); out of it, a tenth of health every 5 s with choke.wav. */
 	void UpdateBreath(float Dt);

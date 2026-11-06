@@ -568,12 +568,15 @@ void AOutlawsPlayer::UpdateStamina(float Dt)
 	}
 	if (bDeadView) Stamina = 100.f;
 	// below half health it comes back up to half: standing still 2 % a second (REQ-REGEN2X, user 2026-10-11: was 1 %),
-	// walking a quarter of that, running none; crouched, twice as fast (user 2026-10-01)
+	// walking a quarter of that, running an eighth (REQ-RUNHEAL, user 2026-11-05: half the walking rate, 0.25 %; a spent body still
+	// running too; -OLOldRunHeal: none), in the air and swimming none; crouched, twice as fast (user 2026-10-01)
 	if (AOutlawsLevelActor* LH = Level.Get())
 	{
+		static const bool bOldRunHeal = OLFlags::Param(TEXT("OLOldRunHeal"));
 		const bool bStill = GetVelocity().Size() < 20.f;
 		const bool bWalking = !bStill && !(bRunning && bMovingNow) && M->IsMovingOnGround();
-		const float Pace = (bStill ? 1.f : bWalking ? 0.25f : 0.f) * (bCrouched ? 2.f : 1.f);
+		const float RunPace = !bOldRunHeal && !bStill && !bWalking && M->IsMovingOnGround() ? 0.125f : 0.f;
+		const float Pace = (bStill ? 1.f : bWalking ? 0.25f : RunPace) * (bCrouched ? 2.f : 1.f);
 		if (!bDeadView && !bMenuOpen && Pace > 0.f && !LH->IsPlayerDead() && LH->GetHealth() < OutlawsFeel::RegenCap)
 		{
 			LH->HealPlayer(FMath::Min(RegenRate() * Pace * Dt, OutlawsFeel::RegenCap - LH->GetHealth()));
@@ -1656,9 +1659,6 @@ void AOutlawsPlayer::OnJumped_Implementation()
 {
 	Super::OnJumped_Implementation();
 	++TutNotes.Jumps;                    // (REQ-TUTORIAL)
-	const AOutlawsLevelActor* L = Level.Get();
-	UCharacterMovementComponent* M = GetCharacterMovement();
-	JumpAirSpeed = 0.f;
 	// REQ-JUMPSTAMINA: the jump's cost, here on the take-off itself, so a press the jump doesn't follow takes nothing, a walk-off or a
 	// fall never comes here and an eased-in take-off (BUG-JUMPSPEED) pays once.  The reach below goes with the stamina it was pressed
 	// with, as the height did in DoJump: at full, 900 cm, not this jump's own 5 % short of it
@@ -1668,6 +1668,9 @@ void AOutlawsPlayer::OnJumped_Implementation()
 		Stamina = FMath::Max(0.f, Stamina - StaminaJumpCost(CarryingMan(), OldStamina(), false));
 		bJumpAir = true;
 	}
+	const AOutlawsLevelActor* L = Level.Get();
+	UCharacterMovementComponent* M = GetCharacterMovement();
+	JumpAirSpeed = 0.f;
 	if (!M) return;
 	// BUG-JUMPHYBRID (user 3 Nov, after BUG-JUMPSPEED: the small icecaves gap, pit 211, now clears at 40 %, but the big one a
 	// little further on, the ice slide 215's jump over the void 232 to 228, no longer does; they prefer the old feel, "the
@@ -1838,12 +1841,13 @@ void AOutlawsPlayer::Tick(float Dt)
 	if (ToolWhackProbeOn()) TickToolWhackProbe(Dt);   // (BUG-SHOVELWHACK: -OLToolWhackProbe)
 	if (PerfTestProbeOn()) TickPerfTestProbe(Dt);     // (REQ-PERFTESTMODE: -OLPerfTestProbe)
 	if (PerfSweepProbeOn()) TickPerfSweepProbe(Dt);   // (REQ-PERFSWEEP: -OLPerfSweepProbe)
+	if (RunHealProbeOn()) TickRunHealProbe(Dt);       // (REQ-RUNHEAL: -OLRunHealProbe)
 	if (StaminaProbeOn()) TickStaminaProbe(Dt);       // (REQ-STAMINA15: -OLStaminaProbe)
+	if (JumpStaminaProbeOn()) TickJumpStaminaProbe(Dt);   // (REQ-JUMPSTAMINA: -OLJumpStaminaProbe)
 	OutlawsAchievements::Tick(this, Level.Get(), Dt);     // (REQ-EXTRAS: an achievement's toast once there is somewhere to show it)
 	// both sticks kept in for 1.5 s: mark this moment for the perf report (and no recenter at the release)
 #if WITH_OUTLAWS_TESTS
 	if (OLFlags::Param(TEXT("OLTestStickChord"))) TickStickChordTest();
-	if (JumpStaminaProbeOn()) TickJumpStaminaProbe(Dt);   // (REQ-JUMPSTAMINA: -OLJumpStaminaProbe)
 	static const bool bPauseTidyTest = OLFlags::HasValue(TEXT("OLPauseTidyMode"));
 	if (bPauseTidyTest) UOutlawsCoop::PauseTidyTestTick(this, Dt);      // (REQ-PAUSETIDY: OutlawsPlayerMenu.cpp)
 	static const bool bDevChecksTest = OLFlags::Has(TEXT("OLDevChecksTest"));
