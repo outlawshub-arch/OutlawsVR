@@ -493,7 +493,12 @@ void UOutlawsCoop::TickBossWallTest(double Now, AOutlawsLevelActor* L, AOutlawsP
 		BwCheck(!B->IsPaceBoss() || (FMath::IsNearlyEqual(B->CustomTimeDilation, 1.f, 0.01f) && FMath::IsNearlyEqual(B->BossMoveScale(), 0.6f, 0.001f) && L->CoopPaceScale > 1.4f), FString::Printf(TEXT("the host's %s: pace %.2f, move scale %.2f, the bad guys %.2f (x%.2f)"), *B->GetOutlawsName(), B->CustomTimeDilation, B->BossMoveScale(), L->EnemyPace(), L->CoopPaceScale));
 		UE_LOG(LogOutlawsAI, Log, TEXT("OLCOOP bosswall host RESULT %s (%d passed, %d failed)"), BwFails == 0 && BwPasses > 0 ? TEXT("ALL PASS") : TEXT("FAIL"), BwPasses, BwFails);
 		BwStep = 5;
-		BwAt = Now + 6.0;            // (the client looks at its copy meanwhile)
+		// (the client looks at its copy meanwhile.  REQ-BOSSPACE: 28 s of its own at its pace; a client on -OLOldBossPace counts them
+		// at the bad guys' 0.45 against this host's boss at 1.0, so it wants -OLBossWallTailSec=40 here to finish before the quit)
+		{
+			FString Tail;
+			BwAt = Now + (OLFlags::Value(TEXT("OLBossWallTailSec"), Tail) ? double(FCString::Atof(*Tail)) : 6.0);
+		}
 		return;
 	}
 	case 5:

@@ -11,6 +11,8 @@
 // (line "OLSHOT bosspace close"): data for the fight's report, no check.  -OLOldBossPace: all at EnemyPace, nothing scaled.
 // A walk frame count over clean spans (no restart of the chor) is the true rate; a boss's restarts of his stride are counted, and
 // one who walks on the spot gets a "trace" line with his move state.  -OLBossPaceFightSec=<s>: a shorter fight, for the close data.
+// -OLBossPaceCloseSec=<s>: a longer close part (10 s at pace 1 are 33 s at the bad guys' 0.3).  -OLBossPaceCloseFront: the player
+// put in front of the boss's facing; without it the first clear of eight fixed bearings, often behind a stationary or walking boss.
 // Lines "OLSHOT bosspace check PASS|FAIL" and "OLSHOT bosspace RESULT".
 #include "OutlawsPlayer.h"
 #include "OutlawsLevelActor.h"
@@ -29,9 +31,10 @@
 namespace OutlawsBossPaceProbeLocal
 {
 	float FightSec = 22.f;
-	constexpr float CloseSec = 10.f, LegSec = 14.f;
+	float CloseSec = 10.f;
+	constexpr float LegSec = 14.f;
 	int32 Passes = 0, Fails = 0, Case = 0, CloseIdx = 0, LegIdx = -1;
-	float Wait = 0.f, Began = 0.f, SampleAt = 0.f, CloseAt = 0.f;
+	float Wait = 0.f, Began = 0.f, SampleAt = 0.f, CloseAt = 0.f, CloseTraceAt = 0.f;
 	bool bLiveDone = false;
 	TArray<FString> Levels;
 
@@ -46,7 +49,7 @@ namespace OutlawsBossPaceProbeLocal
 		// clean spans of a walk or run chor: from its first frame change to its last, a restart or a new chor ends one
 		float Clock = 0.f, SpanStart = -1.f, SpanEnd = 0.f, SpanFrames = 0.f, CleanFrames = 0.f, CleanTime = 0.f, CapSeen = 0.f, TraceAt = 0.f;
 		float SpanWant = 0.f, SpanWantEnd = 0.f, CleanWant = 0.f;       // (the frames his chor's FPS, its rate and his pace should have shown: walk and run differ)
-		int32 Restarts = 0, WalkLen = 0, CloseShots0 = 0;
+		int32 Restarts = 0, WalkLen = 0, CloseShots0 = 0, CloseThrows0 = 0;
 		FVector TraceMark = FVector::ZeroVector;
 		void EndSpan()
 		{
@@ -200,6 +203,7 @@ OL_SHOT_TEST(OLBossPaceProbe, 1645)
 		List.ParseIntoArray(Levels, TEXT("+"));
 		FString Sec;
 		if (OLFlags::Value(TEXT("OLBossPaceFightSec"), Sec)) FightSec = FMath::Max(1.f, FCString::Atof(*Sec));
+		if (OLFlags::Value(TEXT("OLBossPaceCloseSec"), Sec)) CloseSec = FMath::Max(1.f, FCString::Atof(*Sec));
 	}
 	const bool bOld = AOutlawsEnemy::OldBossPace();
 	const FString& Lv = Levels[FMath::Min(Case, Levels.Num() - 1)];
@@ -320,15 +324,17 @@ OL_SHOT_TEST(OLBossPaceProbe, 1645)
 		bool bPlaced = false;
 		for (int32 i = 0; i < 8 && !bPlaced; ++i)
 		{
-			const FVector Dir = FRotator(0.f, 45.f * i, 0.f).Vector(), To = From + Dir * 700.0;
+			static const bool bFront = OLFlags::Param(TEXT("OLBossPaceCloseFront"));
+			const FVector Dir = FRotator(0.f, (bFront ? E->GetHeading() : 0.f) + 45.f * i, 0.f).Vector(), To = From + Dir * 700.0;
 			FHitResult Hit;
 			if (GetWorld()->LineTraceSingleByChannel(Hit, From, To, ECC_Visibility, Q)) continue;
 			if (!GetWorld()->LineTraceSingleByChannel(Hit, To, To - FVector(0.0, 0.0, 400.0), ECC_Visibility, Q)) continue;
 			bPlaced = TeleportTo(Hit.Location + FVector(0.0, 0.0, 100.0), (-Dir).Rotation(), false, false);
 		}
 		W.CloseShots0 = E->ShotsTotal;
+		W.CloseThrows0 = E->ThrowsTotal;
 		W.Mark = E->GetActorLocation();
-		CloseAt = ShotTime;
+		CloseAt = CloseTraceAt = ShotTime;
 		if (!bPlaced) { UE_LOG(LogOutlaws, Display, TEXT("OLSHOT bosspace close %s %s: no spot 7 m off in his sight"), *Lv, *W.Name); ++CloseIdx; return; }
 		ShotStep = 4;
 		return;
@@ -336,11 +342,19 @@ OL_SHOT_TEST(OLBossPaceProbe, 1645)
 	case 4:
 	{
 		if (!bHere) { if (!L->IsRebuildPending()) NextLevel(); return; }
+		// (a line a second: where he went and what his sight says; a knife or stick is a throw, not a shot)
+		if (ShotTime - CloseTraceAt >= 1.f)
+		{
+			CloseTraceAt = ShotTime;
+			const FWatch& T = Watch[CloseIdx];
+			if (const AOutlawsEnemy* E = T.E.Get()) UE_LOG(LogOutlaws, Display, TEXT("OLSHOT bosspace closetrace %s %s at %.0f s: %.1f m off, boss at %s, player at %s, shots %d throws %d, %s | %s | %s"), *Lv, *T.Name, ShotTime - CloseAt,
+				FVector::Dist(E->GetActorLocation(), FeetOfPlayer()) / 100.f, *E->GetActorLocation().ToCompactString(), *FeetOfPlayer().ToCompactString(), E->ShotsTotal - T.CloseShots0, E->ThrowsTotal - T.CloseThrows0, *E->DebugBossState(), *E->DebugSight(), *E->DebugMoveState());
+		}
 		if (ShotTime - CloseAt < CloseSec) return;
 		const FWatch& W = Watch[CloseIdx];
 		if (const AOutlawsEnemy* E = W.E.Get())
 		{
-			UE_LOG(LogOutlaws, Display, TEXT("OLSHOT bosspace close %s %s: %d shots in %.0f s, %.1f m off at the end, sees %d, pace %.2f, %s"), *Lv, *W.Name, E->ShotsTotal - W.CloseShots0, CloseSec,
+			UE_LOG(LogOutlaws, Display, TEXT("OLSHOT bosspace close %s %s: %d shots in %.0f s, %d throws, %.1f m off at the end, sees %d, pace %.2f, %s"), *Lv, *W.Name, E->ShotsTotal - W.CloseShots0, CloseSec, E->ThrowsTotal - W.CloseThrows0,
 				FVector::Dist(E->GetActorLocation(), FeetOfPlayer()) / 100.f, E->DebugSees() ? 1 : 0, E->CustomTimeDilation, *E->DebugBossState());
 			if (W.bNoRoute) Check(E->ShotsTotal > W.CloseShots0 || FVector::Dist2D(E->GetActorLocation(), W.Mark) > 100.f, FString::Printf(TEXT("%s %s, no way to the far player: close to, moved %.1f m and fired %d"), *Lv, *W.Name, FVector::Dist2D(E->GetActorLocation(), W.Mark) / 100.f, E->ShotsTotal - W.CloseShots0));
 		}
