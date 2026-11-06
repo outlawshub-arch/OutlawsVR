@@ -48,8 +48,8 @@ namespace OutlawsEnemyCornersProbeLocal
 		for (int32 i = Tail.Num() - N; i < Tail.Num(); ++i) Mean += Tail[i] / double(FMath::Max(N, 1));
 		Check(C[6] == 0, FString::Printf(TEXT("%d slides off a body"), C[6]));
 		Check(C[0] >= 50 && C[1] * 2 < C[0], FString::Printf(TEXT("%d looks at the bunch, %d found nowhere to go"), C[0], C[1]));
-		Check(Mean.X < 18.0, FString::Printf(TEXT("biggest bunch %.1f men round one (old 20 to 22)"), Mean.X));
-		Check(Mean.Y < 45.0, FString::Printf(TEXT("%.1f of them moved under 1 m in 5 s (old 55)"), Mean.Y));
+		Check(Mean.X < 14.0, FString::Printf(TEXT("biggest bunch %.1f men round one (old 22 to 23, new 6 to 9)"), Mean.X));
+		Check(Mean.Y < 35.0, FString::Printf(TEXT("%.1f of them moved under 1 m in 5 s (old 48 to 55, new 20 to 30)"), Mean.Y));
 	}
 
 	void Sample(AOutlawsLevelActor* L, APawn* Pawn)
