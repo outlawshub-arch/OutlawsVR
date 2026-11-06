@@ -170,6 +170,21 @@ OL_SHOT_TEST(OLMenus5Probe, 2493)
 				C->RecentNames = { TEXT("Dotard"), TEXT("Marshal"), TEXT("") };
 				CoopPressRow(TEXT("coop:recentlist"));
 			}, [=]() { Fits(TEXT("the drop-down open, three hosts")); Check(ListRows() == 3, TEXT("three hosts: three rows")); NamesFit(TEXT("the open list, three hosts")); } });
+			// (REQ-MENUOVERLAYPROBES) -OLMenus5Addr=<address>: the join page and its Recent list with a real address, dots and all, in
+			// whatever font this run uses. The value comes from the run script's command line only; the default run shoots nothing here
+			FString Dotted;
+			if (OLFlags::Value(TEXT("OLMenus5Addr"), Dotted, /*bShouldStopOnSeparator*/ false) && !Dotted.IsEmpty())
+			{
+				Steps.Add({ TEXT("join_dotted"), [=]()
+				{
+					C->bRecentRead = true;
+					C->RecentAddrs = { Dotted, Dotted + TEXT(":7883") };
+					C->RecentNames = { TEXT("Dotard"), TEXT("") };
+					C->JoinAddress = Dotted;
+					if (ListRows() > 0) CoopPressRow(TEXT("coop:recentlist"));     // (shut, so the press below opens it on the new hosts)
+					CoopPressRow(TEXT("coop:recentlist"));
+				}, [=]() { Fits(TEXT("the join page, a dotted address, the list open")); Check(ListRows() == 2, TEXT("two hosts: two rows")); NamesFit(TEXT("the open list, dotted addresses")); } });
+			}
 		}
 		// the VR page's reload row, both ways (the row at the page's foot: scrolled there)
 		const bool bFace0 = bFaceReload;
