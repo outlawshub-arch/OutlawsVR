@@ -18,7 +18,8 @@ class UFont;
 namespace OutlawsFormats { struct FLafFont; }
 
 /** (REQ-CREDITS) one line of the end credits: the original's credits.txt layout ("~" a heading, a plain line a name, an empty
- *  line a line of space); Part 0 the Outlaws VR credits, 2 Night Dive's, 1 the original game's, in that order on the roll. */
+ *  line a line of space); Part 0 the Outlaws VR credits, 2 Night Dive's, 1 the original game's, and from REQ-CREDITBLOCKS the
+ *  remaster's other blocks around that one (CreditsBlocks in OutlawsLevelActorCredits.cpp gives the order). */
 struct FOutlawsCreditLine
 {
 	FString Text;
@@ -133,6 +134,7 @@ public:
 	void SeekCredits(int32 Line, float BaselineFrac);
 	void SeekMovie(float Seconds);
 	int32 CreditsLineCount(int32 Part) const;
+	int32 CreditsLineTotal() const { return CreditLines.Num(); }
 	int32 CreditsFirstLine(int32 Part) const;
 	/** (tests, BUG-CREDITSBG / REQ-TEXTSIZE) the picture under the words (nullptr: the black); the canvas drawn at W x H (the
 	 *  Quest's 1280 x 720 on the PC); the widest line's ink over the canvas's width (the crawl's lines, or the credits'), its text. */

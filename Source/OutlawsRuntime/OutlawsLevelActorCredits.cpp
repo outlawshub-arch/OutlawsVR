@@ -11,6 +11,13 @@
 // before LucasArts'.  Night Dive's are read at runtime from the player's Common.kpf (credits/credits_nds.txt, the same layout),
 // never shipped, and left out as credits.txt is when they are not there.  "Thanks for playing" is gone from the end of the VR
 // part, as the credits carry on after it.  -OLOldCreditOrder: ours then the original's, with that line.
+// REQ-CREDITBLOCKS (the user 6 Nov): every block in the remaster's Common.kpf is on the roll, in the remaster's own order (its
+// exe's list, CreditsBlocks below), all read at runtime and none shipped; a block the player lacks is left out with no gap.
+// credits.txt is those blocks run together (the original's, the silly credits, the legal lines, The End), so the blocks replace
+// it rather than follow it, which would show them twice; with no credits_og.txt credits.txt stands in, the end of it included.
+// -OLOldCreditBlocks: the VR credits, Night Dive's, credits.txt.
+// (the planner, 7 Nov) credits.msc's tracks end about 328 s before this roll does, so they go round again (StartCreditsMusic);
+// ol.CreditsMusicLoop 0 or -OLOldCreditBlocks: once through and quiet, as before.
 //
 // Co-op: each machine rolls its own credits on its own screen after its own copy of the movie; nothing new goes over the
 // network.  A skip is the movies' skip (either player's skip ends it for both, UOutlawsCoop::NoteMovieSkip), and when the
@@ -20,6 +27,8 @@
 // (black: the roll with no movie, BUG-CREDITSBG: its backdrop, its length, the widest line and canvas shots at 1920 and 1280 wide)
 // -OLLevel=ranch -OLNoFrontEnd -OLCreditOrderProbe [-OLOldCreditOrder] [-OLOldCreditsEnd] [-OLNoNightDiveCredits]: the parts, line
 // for line against their files, the joins' canvas shots, and the start, the hold and the fade over the longer roll
+// -OLCreditBlocksProbe [-OLOldCreditBlocks] [-OLNoCreditBlock=name+name]: the same with every block (REQ-CREDITBLOCKS): each join
+// shot, each block once, every letter inked, the last line and the fade shot; name is a block's in CreditsBlocks
 #include "OutlawsLevelActor.h"
 #include "OutlawsFlags.h"
 #include "OutlawsRuntime.h"
@@ -41,8 +50,12 @@
 #include "Misc/FileHelper.h"
 #include "Misc/Paths.h"
 #include "Misc/Parse.h"
+#include "HAL/IConsoleManager.h"
 #include "HAL/PlatformTime.h"
 #include "UnrealClient.h"
+
+TAutoConsoleVariable<int32> CVarOLCreditsMusicLoop(TEXT("ol.CreditsMusicLoop"), 1,
+	TEXT("The end credits: credits.msc goes round again until the roll is over (1), or plays once and stops (0)."));
 
 namespace
 {
@@ -54,9 +67,29 @@ namespace
 	constexpr double CreditsRollFrom = 79.0, CreditsRollFromOld = 76.0;
 	constexpr double CreditsHoldFrom = 127.5, CreditsHoldFromOld = 125.0;
 	constexpr int32 CreditsPartGap = 6;              // empty lines between two parts
+	constexpr int32 CreditsPartOriginal = 1;
 	constexpr int32 CreditsPartNightDive = 2;        // (FOutlawsCreditLine::Part: it rolls between 0 and 1)
-	// where the remaster keeps Night Dive's credits, in the player's Common.kpf
-	constexpr const TCHAR* CreditsNightDiveFile = TEXT("credits/credits_nds.txt");
+	// REQ-CREDITBLOCKS: the remaster's blocks in its Common.kpf, in the order its exe lists them.  bOriginal: part of what
+	// credits.txt holds (the localised versions' lines aside), so on the roll only when credits_og.txt stands for that file
+	struct FCreditsBlock
+	{
+		const TCHAR* Name;
+		const TCHAR* File;
+		int32 Part;
+		bool bOriginal;
+	};
+	constexpr FCreditsBlock CreditsBlocks[] =
+	{
+		{ TEXT("nds"), TEXT("credits/credits_nds.txt"), CreditsPartNightDive, false },
+		{ TEXT("quantic"), TEXT("credits/credits_quantic.txt"), 3, false },
+		{ TEXT("disney"), TEXT("credits/credits_disney.txt"), 4, false },
+		{ TEXT("og"), TEXT("credits/credits_og.txt"), CreditsPartOriginal, true },
+		{ TEXT("ogloc"), TEXT("credits/credits_ogloc.txt"), 5, true },
+		{ TEXT("ogsilly"), TEXT("credits/credits_ogsilly.txt"), 6, true },
+		{ TEXT("vst"), TEXT("credits/credits_vst.txt"), 7, true },
+		{ TEXT("legal"), TEXT("credits/credits_legal.txt"), 8, true },
+		{ TEXT("theend"), TEXT("credits/credits_theend.txt"), 9, true },
+	};
 	// -OLOldCreditOrder: the line vr_credits.txt ended on before REQ-CREDITORDER, three empty lines under the one before it
 	constexpr const TCHAR* CreditsOldVrEnd = TEXT("\n\n\n~Thanks for playing\n");
 
@@ -94,10 +127,44 @@ namespace
 		return FPaths::ProjectContentDir() / TEXT("Credits") / TEXT("vr_credits.txt");
 	}
 
-	bool ReadNightDiveCredits(const FOutlawsAssets* Assets, FString& Out)
+	int32 CreditBlockOfPart(int32 Part)
 	{
+		for (int32 i = 0; i < UE_ARRAY_COUNT(CreditsBlocks); ++i) if (CreditsBlocks[i].Part == Part) return i;
+		return INDEX_NONE;
+	}
+
+	// (tests) -OLNoCreditBlock=name+name: as if the player's Common.kpf lacked them ('+': a comma ends a flag's value)
+	bool CreditBlockLeftOut(const TCHAR* Name)
+	{
+		FString Names;
+		TArray<FString> Left;
+		if (OLFlags::Value(TEXT("OLNoCreditBlock"), Names)) Names.ParseIntoArray(Left, TEXT("+"));
+		return Left.Contains(Name);
+	}
+
+	// each of CreditsBlocks' texts, empty where the player has none.  mf3s.laf stops at 255, so it has no long dash and no trade
+	// mark, and its copyright slot holds the font's filler block: those three as the 1997 credits.txt wrote them, or the first
+	// two would drop out of the lines and the third would draw as a striped box (seen in the shot, 7 Nov)
+	void ReadCreditBlocks(const FOutlawsAssets* Assets, TArray<FString>& Out)
+	{
+		Out.Reset();
+		Out.SetNum(UE_ARRAY_COUNT(CreditsBlocks));
 		OutlawsMenu::FKpf Kpf;
-		return Assets && Kpf.Open(FPaths::Combine(Assets->GetRoot(), TEXT("Common.kpf"))) && Kpf.ReadText(CreditsNightDiveFile, Out);
+		if (!Assets || !Kpf.Open(FPaths::Combine(Assets->GetRoot(), TEXT("Common.kpf")))) return;
+		const TCHAR LongDash[] = { TCHAR(0x2014), 0 };
+		const TCHAR TradeMark[] = { TCHAR(0x2122), 0 };
+		const TCHAR Copyright[] = { TCHAR(0x00A9), 0 };
+		for (int32 i = 0; i < Out.Num(); ++i)
+		{
+			if (CreditBlockLeftOut(CreditsBlocks[i].Name) || !Kpf.ReadText(CreditsBlocks[i].File, Out[i]))
+			{
+				Out[i].Reset();
+				continue;
+			}
+			Out[i].ReplaceInline(LongDash, TEXT("-"));
+			Out[i].ReplaceInline(TradeMark, TEXT("(TM)"));
+			Out[i].ReplaceInline(Copyright, TEXT("(c)"));
+		}
 	}
 }
 
@@ -135,17 +202,28 @@ bool AOutlawsLevelActor::BuildEndCredits(TArray<FOutlawsCreditLine>& Out) const
 		Out.Append(Lines);
 		return N;
 	};
-	// then Night Dive's and the original's, from the player's own files (REQ-CREDITORDER Common.kpf; the original's the LAB that
-	// holds it last in the patch order: olpatch3's where it is there); missing, unreadable or empty: left out, with nothing
-	// waiting in its place.  -OLNoOrigCredits: nothing of the player's
+	// then the player's own files, in the remaster's order (REQ-CREDITBLOCKS: Common.kpf; credits.txt standing in for the original's
+	// from the LAB that holds it last in the patch order: olpatch3's where it is there); missing, unreadable or empty: left out,
+	// with nothing waiting in its place.  -OLNoOrigCredits: nothing of the player's
 	const bool bNoOrig = OLFlags::Param(TEXT("OLNoOrigCredits"));
 	const bool bNoNightDive = bOldOrder || bNoOrig || OLFlags::Param(TEXT("OLNoNightDiveCredits"));
-	FString NightDive, Orig;
-	const int32 NNightDive = !bNoNightDive && ReadNightDiveCredits(AssetsRef.Get(), NightDive) ? AddPart(NightDive, CreditsPartNightDive) : 0;
-	const int32 NOrig = !bNoOrig && AssetsRef && AssetsRef->GetText(TEXT("credits.txt"), Orig) ? AddPart(Orig, 1) : 0;
-	UE_LOG(LogOutlaws, Log, TEXT("OLRT credits: Outlaws VR %d lines (%s), Night Dive %d lines, the original %d lines (%s)"), NVr, *CreditsVrFile(), NNightDive, NOrig,
-		bNoOrig ? TEXT("left out: -OLNoOrigCredits") : NOrig > 0 ? *FString::Printf(TEXT("credits.txt from %s"), *FPaths::GetCleanFilename(AssetsRef->Where(TEXT("credits.txt"))))
-		: TEXT("none in the player's files: left out"));
+	const bool bOldBlocks = bOldOrder || OLFlags::Param(TEXT("OLOldCreditBlocks"));
+	TArray<FString> Blocks;
+	ReadCreditBlocks(AssetsRef.Get(), Blocks);
+	const bool bChain = !bOldBlocks && !Blocks[CreditBlockOfPart(CreditsPartOriginal)].IsEmpty();
+	int32 NNightDive = 0, NOrig = 0, NMore = 0;
+	for (int32 i = 0; !bNoOrig && i < Blocks.Num(); ++i)
+	{
+		const FCreditsBlock& B = CreditsBlocks[i];
+		FString Orig;
+		if (B.Part == CreditsPartNightDive) NNightDive = bNoNightDive ? 0 : AddPart(Blocks[i], B.Part);
+		else if (B.Part != CreditsPartOriginal) NMore += (B.bOriginal ? bChain : !bOldBlocks) ? AddPart(Blocks[i], B.Part) : 0;
+		else if (bChain) NOrig = AddPart(Blocks[i], B.Part);
+		else if (AssetsRef && AssetsRef->GetText(TEXT("credits.txt"), Orig)) NOrig = AddPart(Orig, B.Part);
+	}
+	UE_LOG(LogOutlaws, Log, TEXT("OLRT credits: Outlaws VR %d lines (%s), Night Dive %d lines, the original %d lines (%s), the remaster's other blocks %d lines"), NVr, *CreditsVrFile(), NNightDive, NOrig,
+		bNoOrig ? TEXT("left out: -OLNoOrigCredits") : bChain ? TEXT("credits_og.txt from Common.kpf") : NOrig > 0 ? *FString::Printf(TEXT("credits.txt from %s"), *FPaths::GetCleanFilename(AssetsRef->Where(TEXT("credits.txt"))))
+		: TEXT("none in the player's files: left out"), NMore);
 	return Out.ContainsByPredicate([](const FOutlawsCreditLine& L) { return !L.Text.IsEmpty(); });
 }
 
@@ -162,7 +240,25 @@ void AOutlawsLevelActor::ArmEndCredits(const FString& MovieName)
 	Movie->ArmCredits(Lines, bFont ? &Font : nullptr, bOldEnd ? CreditsRollFromOld : CreditsRollFrom, bOldEnd ? CreditsHoldFromOld : CreditsHoldFrom,
 		!bOldEnd && !UOutlawsCoop::IsActive(this));
 	// the original's credits music (credits.msc) once the picture is held and the movie's own sound is over
-	Movie->OnCreditsHeld.AddWeakLambda(this, [this]() { StartMusic(TEXT("credits.msc")); });
+	Movie->OnCreditsHeld.AddWeakLambda(this, [this]() { StartCreditsMusic(); });
+}
+
+bool AOutlawsLevelActor::CreditsMusicLoops() const
+{
+	return CVarOLCreditsMusicLoop.GetValueOnGameThread() != 0 && !OLFlags::Param(TEXT("OLOldCreditBlocks")) && !OLFlags::Param(TEXT("OLOldCreditOrder"));
+}
+
+void AOutlawsLevelActor::StartCreditsMusic()
+{
+	StartMusic(TEXT("credits.msc"));
+	// after the last cue the file's music stops: a jump back to the cue it started on, so UpdateMusic and PeekNextMusicFile walk
+	// it as they do any GOTO_CUE (no cue playing: no tracks found, the roll stays quiet as it did)
+	if (!CreditsMusicLoops() || !MusicCues.IsValidIndex(MusicCue)) return;
+	FMusicCmd Back;
+	Back.bGoto = true;
+	Back.Cue = MusicCue;
+	MusicCues.Last().Add(Back);
+	UE_LOG(LogOutlaws, Log, TEXT("OLRT music credits: round again from cue %d after cue %d"), MusicCue + 1, MusicCues.Num());
 }
 
 bool AOutlawsLevelActor::StartEndCreditsIfDue()
@@ -187,7 +283,7 @@ bool AOutlawsLevelActor::StartEndCreditsIfDue()
 	Movie = World->SpawnActor<AOutlawsMovieScreen>(AOutlawsMovieScreen::StaticClass(), FTransform::Identity, SP);
 	if (!Movie) return false;
 	Movie->OnFinished.AddUObject(this, &AOutlawsLevelActor::StartNextLevel);
-	Movie->OnCreditsHeld.AddWeakLambda(this, [this]() { StartMusic(TEXT("credits.msc")); });
+	Movie->OnCreditsHeld.AddWeakLambda(this, [this]() { StartCreditsMusic(); });
 	FadeCamera(1.f, 0.f, 1.f, false);
 	UE_LOG(LogOutlaws, Log, TEXT("OLRT credits with no movie (the end movie %s did not roll them)"), *NextMovie);
 	PlayCreditsWithoutMovie(Lines, P);
@@ -239,7 +335,7 @@ bool AOutlawsLevelActor::PlayExtrasCredits()
 	Movie->OnFinished.AddUObject(this, &AOutlawsLevelActor::ExtrasCreditsDone);
 	StopMusic();
 	bMenuMusic = false;
-	StartMusic(TEXT("credits.msc"));
+	StartCreditsMusic();
 	UE_LOG(LogOutlaws, Log, TEXT("OLRT credits from Extras: %d lines, no movie"), Lines.Num());
 	PlayCreditsWithoutMovie(Lines, P);
 	SetActorTickEnabled(true);
@@ -262,16 +358,29 @@ void AOutlawsLevelActor::TickCreditsTest(float Dt)
 {
 	static int32 Step = 0, Passes = 0, Fails = 0;
 	static double T = 0.0, Mark = 0.0, SkipAt = 0.0, RollAt = 0.0, HeldAt = 0.0, WordsGoneAt = 0.0;
-	static bool bFadeSeen = false;
+	static bool bFadeSeen = false, bFadeShot = false, bBlackShot = false;
+	static TArray<int32> JoinParts;                     // (REQ-CREDITBLOCKS) the parts after the first, in the roll's order
+	static int32 JoinAt = 0;
+	static int32 MusicCueWas = -1, MusicRounds = 0;      // (REQ-CREDITBLOCKS) the credits' cue last seen, the times it went back
 	static FString Mode;
 	if (Step < 0) return;
 	if (Mode.IsEmpty())
 	{
-		if (OLFlags::Param(TEXT("OLCreditOrderProbe"))) Mode = TEXT("order");
+		if (OLFlags::Param(TEXT("OLCreditBlocksProbe"))) Mode = TEXT("blocks");
+		else if (OLFlags::Param(TEXT("OLCreditOrderProbe"))) Mode = TEXT("order");
 		else if (!OLFlags::Value(TEXT("OLCreditsTest"), Mode)) Mode = TEXT("roll");
 		Mode = Mode.ToLower();
 	}
 	T += Dt;
+	if (!bFrontEnd && Movie && Movie->IsCreditsHeld() && MusicCue >= 0)
+	{
+		if (MusicCue < MusicCueWas)
+		{
+			++MusicRounds;
+			UE_LOG(LogOutlaws, Display, TEXT("OLSHOT credits music: back to cue %d at roll %.1f s (round %d)"), MusicCue + 1, Movie->CreditsAgeNow(), MusicRounds);
+		}
+		MusicCueWas = MusicCue;
+	}
 	UWorld* World = GetWorld();
 	AOutlawsPlayer* P = World && World->GetFirstPlayerController() ? Cast<AOutlawsPlayer>(World->GetFirstPlayerController()->GetPawn()) : nullptr;
 	auto Check = [](bool bOk, const FString& What)
@@ -286,7 +395,7 @@ void AOutlawsLevelActor::TickCreditsTest(float Dt)
 		FGenericPlatformMisc::RequestExit(false);
 	};
 	const bool bBlack = Mode == TEXT("black");
-	const bool bOrder = Mode == TEXT("order");
+	const bool bOrder = Mode == TEXT("order") || Mode == TEXT("blocks");
 	const bool bShots = OLFlags::Param(TEXT("OLCreditsShots")) || bBlack || bOrder;
 	auto Shot = [&](const TCHAR* Name)
 	{
@@ -307,12 +416,26 @@ void AOutlawsLevelActor::TickCreditsTest(float Dt)
 		const double Want = bOldEnd ? CreditsHoldFromOld : CreditsHoldFrom;
 		Check(FMath::Abs(Movie->GetTime() - Want) < 0.6, FString::Printf(TEXT("the picture held at %.2f s of the movie (%.1f wanted)"), double(Movie->GetTime()), Want));
 	};
-	// (REQ-CREDITORDER) the parts as the roll has them, each against its file read again here; these lines give counts and CRCs,
-	// so no words of Night Dive's are written anywhere
+	// (REQ-CREDITORDER, REQ-CREDITBLOCKS) the parts as the roll has them, each against its file read again here; these lines give
+	// counts and CRCs, so no words of the player's files are written anywhere
 	auto CheckParts = [&]()
 	{
 		const bool bOldOrder = OLFlags::Param(TEXT("OLOldCreditOrder"));
+		const bool bOldBlocks = bOldOrder || OLFlags::Param(TEXT("OLOldCreditBlocks"));
 		const bool bNightDive = !bOldOrder && !OLFlags::Param(TEXT("OLNoNightDiveCredits"));
+		TArray<FString> Blocks;
+		ReadCreditBlocks(AssetsRef.Get(), Blocks);
+		const bool bChain = !bOldBlocks && !Blocks[CreditBlockOfPart(CreditsPartOriginal)].IsEmpty();
+		// (written out again here, so a change to the table shows) the exe's order: Night Dive, Quantic, Disney, the original,
+		// the localised versions, the silly credits, Very Special Thanks, the legal lines, The End
+		TArray<int32> Want = { 0 };
+		for (const int32 Part : { CreditsPartNightDive, 3, 4, CreditsPartOriginal, 5, 6, 7, 8, 9 })
+		{
+			const int32 At = CreditBlockOfPart(Part);
+			if (At == INDEX_NONE) { Check(false, FString::Printf(TEXT("part %d is in the blocks' table"), Part)); continue; }
+			const bool bHere = !Blocks[At].IsEmpty();
+			if (Part == CreditsPartNightDive ? bNightDive && bHere : Part == CreditsPartOriginal ? true : CreditsBlocks[At].bOriginal ? bChain && bHere : !bOldBlocks && bHere) Want.Add(Part);
+		}
 		TArray<FOutlawsCreditLine> Lines;
 		const bool bLines = BuildEndCredits(Lines);
 		// the order, and the empty lines at each join
@@ -328,8 +451,7 @@ void AOutlawsLevelActor::TickCreditsTest(float Dt)
 			}
 			Prev = i;
 		}
-		const TArray<int32> Want = bNightDive ? TArray<int32>{ 0, CreditsPartNightDive, 1 } : TArray<int32>{ 0, 1 };
-		Check(bLines && Order == Want, FString::Printf(TEXT("the parts in order: %s (0 Outlaws VR, 2 Night Dive, 1 the original)"), *FString::JoinBy(Order, TEXT(" "), [](int32 P) { return FString::FromInt(P); })));
+		Check(bLines && Order == Want, FString::Printf(TEXT("the parts in order: %s (0 Outlaws VR, 2 Night Dive, 3 Quantic, 4 Disney, 1 the original, 5 localised, 6 silly, 7 VST, 8 legal, 9 The End)"), *FString::JoinBy(Order, TEXT(" "), [](int32 P) { return FString::FromInt(P); })));
 		Check(BadGaps == 0, FString::Printf(TEXT("%d empty lines at each of the %d joins (%d not)"), CreditsPartGap, FMath::Max(0, Order.Num() - 1), BadGaps));
 		auto CheckFile = [&](int32 Part, const TCHAR* Name, const FString& Text, const FString& From)
 		{
@@ -345,38 +467,68 @@ void AOutlawsLevelActor::TickCreditsTest(float Dt)
 			}
 			Check(N > 0 && Same == N, FString::Printf(TEXT("%s: %d of %d lines as %s has them, crc %08x"), Name, Same, N, *From, Crc));
 		};
-		FString NightDive, Orig;
-		if (bNightDive)
+		for (int32 i = 0; i < Blocks.Num(); ++i)
 		{
-			const bool bRead = ReadNightDiveCredits(AssetsRef.Get(), NightDive);
-			Check(bRead, FString::Printf(TEXT("%s read from %s"), CreditsNightDiveFile, *FPaths::Combine(AssetsRef->GetRoot(), TEXT("Common.kpf"))));
-			CheckFile(CreditsPartNightDive, TEXT("Night Dive"), NightDive, CreditsNightDiveFile);
-			// a letter the font lacked would drop out of a name
-			OutlawsFormats::FLafFont Font;
-			TArray<uint8> FontBytes;
-			int32 Letters = 0, NoGlyph = 0;
-			if (AssetsRef->Get(TEXT("mf3s.laf"), FontBytes) && OutlawsFormats::DecodeLaf(FontBytes, Font))
+			const FCreditsBlock& B = CreditsBlocks[i];
+			if (!Want.Contains(B.Part) || (B.Part == CreditsPartOriginal && !bChain))
 			{
-				for (const FOutlawsCreditLine& L : Lines)
+				if (B.Part == CreditsPartNightDive) Check(Movie->CreditsLineCount(CreditsPartNightDive) == 0, bOldOrder ? TEXT("old order (-OLOldCreditOrder): no Night Dive part") : TEXT("no Night Dive part (-OLNoNightDiveCredits): the roll closes over the space"));
+				else if (B.Part != CreditsPartOriginal) Check(Movie->CreditsLineCount(B.Part) == 0, FString::Printf(TEXT("no %s block: the roll closes over the space"), B.Name));
+				continue;
+			}
+			CheckFile(B.Part, B.Name, Blocks[i], FString::Printf(TEXT("%s in %s"), B.File, *FPaths::Combine(AssetsRef->GetRoot(), TEXT("Common.kpf"))));
+		}
+		FString Orig;
+		if (!bChain)
+		{
+			if (AssetsRef->GetText(TEXT("credits.txt"), Orig)) CheckFile(CreditsPartOriginal, TEXT("the original"), Orig, AssetsRef->Where(TEXT("credits.txt")));
+			else Check(false, TEXT("credits.txt read"));
+		}
+		// (REQ-CREDITBLOCKS) credits.txt holds these three as well: each block's longest line once on the roll, never twice
+		for (int32 i = 0; i < Blocks.Num(); ++i)
+		{
+			const FCreditsBlock& B = CreditsBlocks[i];
+			if (Blocks[i].IsEmpty() || (FCString::Strcmp(B.Name, TEXT("ogsilly")) != 0 && FCString::Strcmp(B.Name, TEXT("legal")) != 0 && FCString::Strcmp(B.Name, TEXT("theend")) != 0)) continue;
+			TArray<FOutlawsCreditLine> File;
+			AddCreditsText(File, Blocks[i], B.Part, false);
+			FString Longest;
+			for (const FOutlawsCreditLine& L : File) if (L.Text.Len() > Longest.Len()) Longest = L.Text;
+			const int32 Seen = Lines.FilterByPredicate([&Longest](const FOutlawsCreditLine& L) { return L.Text == Longest; }).Num();
+			Check(Seen == 1, FString::Printf(TEXT("%s's longest line on the roll %d time(s), crc %08x"), B.Name, Seen, FCrc::StrCrc32(*Longest)));
+		}
+		// a letter the font lacks drops out of its line, and a line of nothing else is a blank line; a slot with no letter of its
+		// own holds the filler block at the font's data offset 0 (only the space sits there by right): every letter a real one
+		OutlawsFormats::FLafFont Font;
+		TArray<uint8> FontBytes;
+		int32 Letters = 0, NoGlyph = 0;
+		if (AssetsRef->Get(TEXT("mf3s.laf"), FontBytes) && OutlawsFormats::DecodeLaf(FontBytes, Font))
+		{
+			for (const FOutlawsCreditLine& L : Lines)
+			{
+				for (const TCHAR Ch : L.Text)
 				{
-					if (L.Part != CreditsPartNightDive) continue;
-					for (const TCHAR Ch : L.Text) { ++Letters; NoGlyph += Font.Find(Ch) ? 0 : 1; }
+					const OutlawsFormats::FLafGlyph* G = Font.Find(Ch);
+					++Letters;
+					NoGlyph += G && (Ch == TEXT(' ') || (G->W * G->H > 1 && G->DataOffset != 0)) ? 0 : 1;
 				}
 			}
-			Check(Letters > 0 && NoGlyph == 0, FString::Printf(TEXT("Night Dive's %d letters all in mf3s.laf (%d not)"), Letters, NoGlyph));
 		}
-		else
-		{
-			Check(Movie->CreditsLineCount(CreditsPartNightDive) == 0, bOldOrder ? TEXT("old order (-OLOldCreditOrder): no Night Dive part") : TEXT("no Night Dive part (-OLNoNightDiveCredits): the roll closes over the space"));
-		}
-		if (AssetsRef->GetText(TEXT("credits.txt"), Orig)) CheckFile(1, TEXT("the original"), Orig, AssetsRef->Where(TEXT("credits.txt")));
-		else Check(false, TEXT("credits.txt read"));
+		Check(Letters > 0 && NoGlyph == 0, FString::Printf(TEXT("the roll's %d letters all real ones in mf3s.laf (%d not)"), Letters, NoGlyph));
+		const int32 LastAt = Lines.FindLastByPredicate([](const FOutlawsCreditLine& L) { return !L.Text.IsEmpty(); });
+		const bool bNoEnd = bChain && CreditBlockLeftOut(TEXT("theend"));
+		Check(Lines.IsValidIndex(LastAt) && (bNoEnd || Lines[LastAt].bHeading), FString::Printf(TEXT("the roll's last line is part %d's: The End, or credits.txt's, or with The End left out the block before it"), Lines.IsValidIndex(LastAt) ? Lines[LastAt].Part : -1));
 		const int32 Thanks = Lines.IndexOfByPredicate([](const FOutlawsCreditLine& L) { return L.Text.Contains(TEXT("Thanks for playing")); });
 		if (bOldOrder) Check(Lines.IsValidIndex(Thanks) && Lines[Thanks].bHeading && Lines[Thanks].Part == 0 && Thanks + 1 + CreditsPartGap == Movie->CreditsFirstLine(1), TEXT("old order: \"Thanks for playing\" ends the VR part"));
 		else Check(Thanks == INDEX_NONE, TEXT("no \"Thanks for playing\" anywhere on the roll"));
 		const double Frac = Movie->WidestLineFrac(nullptr);
 		Check(Frac > 0.0 && Frac <= 0.9, FString::Printf(TEXT("the widest line's ink %.1f%% of the canvas's width, inside a 5%% margin either side"), Frac * 100.0));
-		UE_LOG(LogOutlaws, Display, TEXT("OLSHOT credits order: %d lines, Outlaws VR %d, Night Dive %d, the original %d, the roll %.0f s"), Lines.Num(), Movie->CreditsLineCount(0), Movie->CreditsLineCount(CreditsPartNightDive), Movie->CreditsLineCount(1), Movie->CreditsSeconds());
+		UE_LOG(LogOutlaws, Display, TEXT("OLSHOT credits order: %d lines, Outlaws VR %d, Night Dive %d, the original %d, the rest %d, the roll %.0f s"), Lines.Num(), Movie->CreditsLineCount(0), Movie->CreditsLineCount(CreditsPartNightDive), Movie->CreditsLineCount(1),
+			Lines.Num() - Movie->CreditsLineCount(0) - Movie->CreditsLineCount(CreditsPartNightDive) - Movie->CreditsLineCount(1), Movie->CreditsSeconds());
+	};
+	auto PartName = [](int32 Part)
+	{
+		const int32 At = CreditBlockOfPart(Part);
+		return FString(At != INDEX_NONE ? CreditsBlocks[At].Name : TEXT("vr"));
 	};
 	// (REQ-CREDITORDER) the middle of the gap ahead of a part at the picture's middle, the lines either side of it on show
 	auto SeekJoin = [&](int32 Part) { Movie->SeekCredits(Movie->CreditsFirstLine(Part) - CreditsPartGap / 2, 0.5f); };
@@ -645,7 +797,7 @@ void AOutlawsLevelActor::TickCreditsTest(float Dt)
 		else Check(Back && ((Bw == 640 && Bh == 480) || (Bw == 6912 && Bh == 2160)), FString::Printf(TEXT("the roll over the crawl's picture %s (%dx%d; hintro.pcx 640x480 or the wide 6912x2160)"),
 			Back ? *Back->GetName() : TEXT("none"), Bw, Bh));
 		// the length as it was at 0.6 and 66 px a second (mf3s.laf's 71 px line): within 8 s
-		const int32 N = Movie->CreditsLineCount(0) + Movie->CreditsLineCount(CreditsPartNightDive) + Movie->CreditsLineCount(1);
+		const int32 N = Movie->CreditsLineTotal();
 		const double Was = (1080.0 + N * 71.0 * 0.6) / 66.0;
 		Check(FMath::Abs(Movie->CreditsSeconds() - Was) < 8.0, FString::Printf(TEXT("%s: the roll %.0f s for %d lines (%.0f s at the old size)"), bOldSize ? TEXT("old size (-OLOldTextSize)") : TEXT("1.5x the letters"),
 			Movie->CreditsSeconds(), N, Was));
@@ -694,36 +846,40 @@ void AOutlawsLevelActor::TickCreditsTest(float Dt)
 		return;
 	case 61:
 		if (T - Mark < 2.0) return;
-		SeekJoin(Movie->CreditsFirstLine(CreditsPartNightDive) != INDEX_NONE ? CreditsPartNightDive : 1);
+		// (REQ-CREDITBLOCKS) every join the roll has
+		JoinParts.Reset();
+		for (const FCreditsBlock& B : CreditsBlocks) if (Movie->CreditsFirstLine(B.Part) != INDEX_NONE) JoinParts.Add(B.Part);
+		JoinParts.Sort([this](int32 A, int32 B) { return Movie->CreditsFirstLine(A) < Movie->CreditsFirstLine(B); });
+		JoinAt = 0;
 		Mark = T;
-		Step = 62;
+		Step = JoinParts.Num() > 0 ? 62 : 65;
 		return;
 	case 62:
-	{
 		if (T - Mark < 0.6) return;
-		const bool bNightDive = Movie->CreditsFirstLine(CreditsPartNightDive) != INDEX_NONE;
-		SeekJoin(bNightDive ? CreditsPartNightDive : 1);
-		Shot(bNightDive ? TEXT("2_join_vr_nightdive") : TEXT("2_join_vr_original"));
+		SeekJoin(JoinParts[JoinAt]);
 		Mark = T;
-		Step = bNightDive ? 63 : 65;
+		Step = 63;
 		return;
-	}
 	case 63:
 		if (T - Mark < 0.6) return;
-		SeekJoin(1);
+		SeekJoin(JoinParts[JoinAt]);
+		Shot(*FString::Printf(TEXT("2_join_%s_%s"), *PartName(JoinAt > 0 ? JoinParts[JoinAt - 1] : 0), *PartName(JoinParts[JoinAt])));
+		++JoinAt;
+		Mark = T;
+		Step = JoinAt < JoinParts.Num() ? 62 : 65;
+		return;
+	case 65:
+		if (T - Mark < 0.6) return;
+		// (a block forced missing leaves fewer joins: the credits music's walk seen before the end, the check at case 67)
+		if (!MusicAudio.IsValid() && CreditsMusicLoops() && MusicCue >= 0 && MusicRounds == 0 && T - Mark < 25.0) return;
+		Movie->SeekCredits(Movie->CreditsLineTotal() - 1, 0.1f);
 		Mark = T;
 		Step = 64;
 		return;
 	case 64:
 		if (T - Mark < 0.6) return;
-		SeekJoin(1);
-		Shot(TEXT("3_join_nightdive_original"));
-		Mark = T;
-		Step = 65;
-		return;
-	case 65:
-		if (T - Mark < 0.6) return;
-		Movie->SeekCredits(Movie->CreditsLineCount(0) + Movie->CreditsLineCount(CreditsPartNightDive) + Movie->CreditsLineCount(1) - 1, 0.1f);
+		Movie->SeekCredits(Movie->CreditsLineTotal() - 1, 0.1f);
+		Shot(TEXT("3_last_line"));
 		Step = 66;
 		return;
 	case 66:
@@ -735,11 +891,17 @@ void AOutlawsLevelActor::TickCreditsTest(float Dt)
 		if (!bFrontEnd)
 		{
 			if (Movie && Movie->CreditsFadeNow() > 0.f) bFadeSeen = true;
+			if (Movie && !bFadeShot && Movie->CreditsFadeNow() >= 0.45f) { bFadeShot = true; Shot(TEXT("4_fade")); }
+			if (Movie && !bBlackShot && Movie->CreditsFadeNow() >= 0.93f) { bBlackShot = true; Shot(TEXT("5_black")); }
 			if (T - WordsGoneAt > 15.0) { Check(false, TEXT("back to the main menu after the last line")); Done(); }
 			return;
 		}
 		Check(bOldEnd ? !bFadeSeen : bFadeSeen, bOldEnd ? TEXT("old ending (-OLOldCreditsEnd): no fade") : TEXT("the held picture faded to black before the menu"));
 		Check(bOldEnd ? T - WordsGoneAt < 1.5 : FMath::Abs(T - WordsGoneAt - 3.0) < 0.75, FString::Printf(TEXT("the main menu up %.2f s after the last line (the 3 s fade; old ending: at once)"), T - WordsGoneAt));
+		// the tracks can't sound in these runs (-nosound: a cue that can't start gives way after 5 s, so every cue is over well
+		// inside this run): the walk past the last cue is what's measured.  A run with sound keeps its first cue here.
+		if (!MusicAudio.IsValid()) Check(CreditsMusicLoops() ? MusicRounds > 0 : MusicRounds == 0, FString::Printf(TEXT("the credits music %s: back to its first cue %d time(s)"),
+			CreditsMusicLoops() ? TEXT("goes round") : TEXT("plays once (ol.CreditsMusicLoop 0 or an old roll)"), MusicRounds));
 		Done();
 		return;
 	default:

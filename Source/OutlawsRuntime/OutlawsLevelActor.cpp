@@ -2461,8 +2461,8 @@ void AOutlawsLevelActor::Tick(float DeltaSeconds)
 #if WITH_OUTLAWS_TESTS
 	static const bool bTeardownTest = OLFlags::HasValue(TEXT("OLTeardownTest"));
 	if (bTeardownTest) StartTeardownTest();
-	static const bool bCreditsTest = OLFlags::Has(TEXT("OLCreditsTest")) || OLFlags::Param(TEXT("OLCreditOrderProbe"));
-	if (bCreditsTest) TickCreditsTest(DeltaSeconds);      // (REQ-CREDITS, REQ-CREDITORDER)
+	static const bool bCreditsTest = OLFlags::Has(TEXT("OLCreditsTest")) || OLFlags::Param(TEXT("OLCreditOrderProbe")) || OLFlags::Param(TEXT("OLCreditBlocksProbe"));
+	if (bCreditsTest) TickCreditsTest(DeltaSeconds);      // (REQ-CREDITS, REQ-CREDITORDER, REQ-CREDITBLOCKS)
 #endif
 	if (bRebuildPending)
 	{

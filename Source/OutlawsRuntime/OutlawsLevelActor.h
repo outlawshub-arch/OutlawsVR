@@ -537,7 +537,7 @@ public:
 	void TickBossTauntTest(float Dt);
 	void TickThrottleBossTest(float Dt);
 	/** REQ-CREDITS (OutlawsLevelActorCredits.cpp): the story's end (outlaws.rcs CREDITS: rae.san, the ride-off) rolls the
-	 *  credits: the Outlaws VR ones (Content/Credits/vr_credits.txt) then the original's (credits.txt in the player's LABs).
+	 *  credits: the Outlaws VR ones (Content/Credits/vr_credits.txt) then the player's (Common.kpf's blocks, or credits.txt in the LABs).
 	 *  ArmEndCredits puts them on the end movie's screen (PlayMovie); StartEndCreditsIfDue plays them on the black when that
 	 *  movie never rolled them (missing, failed), then the end goes on as before (StartNextLevel). */
 	bool IsStoryEndMovie(const FString& MovieName) const;
@@ -1944,6 +1944,9 @@ private:
 	bool bMuffled = false;
 	static constexpr float MuffleHz = 700.f;
 	void StartMusic(const FString& Msc);
+	/** (REQ-CREDITBLOCKS, OutlawsLevelActorCredits.cpp) credits.msc, going round again while the roll lasts (ol.CreditsMusicLoop). */
+	void StartCreditsMusic();
+	bool CreditsMusicLoops() const;
 	/** The main menu's music, looped: the remaster's music/TRK03A.flac (its exe names it among the menu's own files; the
 	 *  Vault's is TRK05B); user 2026-09-28: the menu was silent. */
 	void StartMenuMusic();

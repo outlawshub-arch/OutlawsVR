@@ -1,8 +1,8 @@
 // REQ-CREDITS (user 2026-10-05, board card): the end credits roll at the end of the final cutscene, as James rides off into
 // the sunset: first the Outlaws VR credits (Content/Credits/vr_credits.txt), then Night Dive's (REQ-CREDITORDER: from the player's
-// Common.kpf), then the original game's own (credits.txt from the player's LABs), all in the original's layout ("~" a heading, a
-// plain line a name, an empty line a line of space), in the crawl's look (REQ-HOMCRAWL: mf3s.laf, white with a black drop shadow,
-// rising flat up the full picture).
+// Common.kpf), then the original game's own and the remaster's other blocks (REQ-CREDITBLOCKS: Common.kpf too, credits.txt from
+// the player's LABs where it lacks them), all in the original's layout ("~" a heading, a plain line a name, an empty line a line
+// of space), in the crawl's look (REQ-HOMCRAWL: mf3s.laf, white with a black drop shadow, rising flat up the full picture).
 #include "OutlawsMovieScreen.h"
 #include "OutlawsRuntime.h"
 #include "OutlawsFlags.h"
