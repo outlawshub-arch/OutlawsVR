@@ -2,6 +2,7 @@
 // other player's puppet.  Everything here runs only once a player picks Co-op (or a -OLCoop* launch flag is given); single
 // player keeps Mode at None and never reaches it.
 #include "OutlawsCoop.h"
+#include "OutlawsBuildInfo.h"
 #include "OutlawsFlags.h"
 #include "OutlawsPerf.h"
 #include "OutlawsFeel.h"
@@ -239,17 +240,24 @@ void AOutlawsCoopGameMode::PreLogin(const FString& Options, const FString& Addre
 	Super::PreLogin(Options, Address, UniqueId, ErrorMessage);
 	// N1: the host's lobby row says how many may play (2 to 8)
 	const UOutlawsCoop* C = UOutlawsCoop::Get(this);
-	// M1: the game's password first, before anything else is let in (optional: none set, anyone may join)
 	if (C && ErrorMessage.IsEmpty())
 	{
+		// (REQ-NETVERSION: the number first, no password asked of a joiner who could not play anyway; -OLOldNetVersion none)
+		ErrorMessage = UOutlawsCoop::CheckJoinNetVersion(Options);
+		if (!ErrorMessage.IsEmpty())
+		{
+			UE_LOG(LogOutlawsCoop, Log, TEXT("OLCOOP net version: a player from %s turned away (%s)"), *Address, *ErrorMessage);
+			return;
+		}
+		// M1: the game's password, before anything else is let in (optional: none set, anyone may join)
 		ErrorMessage = C->CheckJoinPassword(Options);
 		if (!ErrorMessage.IsEmpty())
 		{
 			UE_LOG(LogOutlawsCoop, Log, TEXT("OLCOOP lobby: a player from %s turned away (%s)"), *Address, *ErrorMessage);
 			return;
 		}
-		// (REQ-NATIVEMAPS: the join guard, the host's community map missing there or another copy; another build is let in;
-		// -OLOldJoinGuard none)
+		// (REQ-NATIVEMAPS: the join guard, the host's community map missing there or another copy; another build on the same
+		// net version is let in; -OLOldJoinGuard none)
 		ErrorMessage = C->CheckJoinBuildAndMap(Options);
 		if (!ErrorMessage.IsEmpty())
 		{
@@ -1995,17 +2003,26 @@ void UOutlawsCoop::HandleNetworkFailure(UWorld* World, UNetDriver* NetDriver, EN
 	// is tried again by the client (a reconnect's own failures keep trying until its two minutes are up)
 	const bool bHostLeft = Mode == EOutlawsCoopMode::Client && FailureType == ENetworkFailure::FailureReceived && ErrorString.Contains(TEXT("Host closed"));
 	const bool bLost = Mode == EOutlawsCoopMode::Client && !bHostLeft && (FailureType == ENetworkFailure::ConnectionLost || FailureType == ENetworkFailure::ConnectionTimeout);
+	// (REQ-NETVERSION: the host's refusal, or a host that lets anyone in and the session's checksum then says it: a host from
+	// before the number, or a number not bumped.  One plain line for both, for the raw NetChecksumMismatch toast)
+	const bool bNetVersion = Mode == EOutlawsCoopMode::Client && !OldNetVersion() && (ErrorString == NetVersionRefusal() || FailureType == ENetworkFailure::NetChecksumMismatch);
 	const FString Why = bHostLeft ? FString(TEXT("the host left the game"))
+		: bNetVersion ? FString(NetVersionRefusal())
 		: FailureType == ENetworkFailure::PendingConnectionFailure ? FString::Printf(TEXT("could not reach %s (%s)"), *ConnectingTo, *ErrorString)
 		: bDropped ? FString::Printf(TEXT("the connection to the other player ended (%s)"), *ErrorString)
 		: FString::Printf(TEXT("network failure (%s) %s"), ENetworkFailure::ToString(FailureType), *ErrorString);
-	if (FailureType == ENetworkFailure::PendingConnectionFailure && bJoinFromMenu)
+	if (bNetVersion)
+	{
+		UE_LOG(LogOutlawsCoop, Warning, TEXT("OLCOOP net version: this machine on %d, build %s, refused by %s: %s (%s)"), NetVersionHere(), OutlawsBuildInfo::Commit(), *ConnectingTo, ENetworkFailure::ToString(FailureType), *ErrorString);
+		if (bJoinFromMenu) JoinError = NetVersionRefusal();
+	}
+	else if (FailureType == ENetworkFailure::PendingConnectionFailure && bJoinFromMenu)
 	{
 		// (R8: said on the join page, which stays up with Retry)
 		const bool bNoAnswer = ErrorString.IsEmpty() || ErrorString.Contains(TEXT("imed out")) || ErrorString.Contains(TEXT("imeout"));
 		JoinError = bNoAnswer ? FString::Printf(TEXT("Could not reach %s (no answer in 12 s)"), *ConnectingTo) : FString::Printf(TEXT("Refused: %s"), *ErrorString);
 	}
-	if (bReconnectAttempt && !bHostLeft)
+	if (bReconnectAttempt && !bHostLeft && !bNetVersion)
 	{
 		UE_LOG(LogOutlawsCoop, Log, TEXT("OLCOOP reconnect try %d failed: %s"), ReconnectTries, *Why);
 		const FString Keep = ReconnectTo;

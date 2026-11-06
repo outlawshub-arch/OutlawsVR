@@ -3,7 +3,8 @@
 // the menu, not too far from the player's face ... an X button if they want to get rid of the bubble").
 // - The beacon: a joinable game (a co-op host's lobby or level, or a level played alone) says so every 2 s, one UDP datagram
 //   to the network's broadcast addresses on port 7778: "OLB1", its id, the player's name, the state, the level, players and
-//   the most, a password flag, the build, the game port (tab separated).  Off in automated runs unless -OLBeacon is given.
+//   the most, a password flag, the build, the game port, the net version (tab separated; REQ-NETVERSION: the last is new with
+//   0.96, a listener of 0.95 reads its first ten and goes on).  Off in automated runs unless -OLBeacon is given.
 // - The listener: on the main menu or alone in a level (no session, not dead, no cutscene) it remembers what it hears for 6 s
 //   and offers the newest game not dismissed in a bubble.  X hides that game until its state (or level) changes, and for ten
 //   minutes at most otherwise.  In play the bubble waits for a quiet second (both triggers let go).
@@ -520,6 +521,11 @@ bool UOutlawsBeacon::MayListen(bool& bInPlay) const
 	return !L->IsPlayerDead();
 }
 
+bool UOutlawsBeacon::OffersNetVersion(int32 Theirs)
+{
+	return UOutlawsCoop::OldNetVersion() || Theirs == UOutlawsCoop::NetVersionHere();
+}
+
 FString UOutlawsBeacon::OfferText(const FOutlawsHeardGame& G, bool& bSameBuild) const
 {
 	bSameBuild = G.Build == OutlawsBuildInfo::Commit();
@@ -556,12 +562,13 @@ void UOutlawsBeacon::HandleMessage(const FString& Msg, const FString& FromIp, in
 		G.bPassword = F[7] == TEXT("1");
 		G.Build = F[8];
 		G.GamePort = FCString::Atoi(*F[9]);
+		G.NetVersion = F.Num() >= 11 ? FCString::Atoi(*F[10]) : 0;
 		G.HeardAt = Now;
 		if (bNew)
 		{
 			G.FirstAt = Now;
-			UE_LOG(LogOutlawsCoop, Log, TEXT("OLBEACON heard %s at %s: %s %s (%d/%d), build %s, game port %d%s"), *G.Name, *Key, *G.State, *G.Level, G.Players, G.Max, *G.Build, G.GamePort,
-				MayListen(bInPlay) ? TEXT("") : TEXT(" (not listening now)"));
+			UE_LOG(LogOutlawsCoop, Log, TEXT("OLBEACON heard %s at %s: %s %s (%d/%d), build %s, game port %d, net version %d%s%s"), *G.Name, *Key, *G.State, *G.Level, G.Players, G.Max, *G.Build, G.GamePort, G.NetVersion,
+				MayListen(bInPlay) ? TEXT("") : TEXT(" (not listening now)"), OffersNetVersion(G.NetVersion) ? TEXT("") : TEXT(" (another net version: not offered)"));
 		}
 		return;
 	}
@@ -650,7 +657,8 @@ void UOutlawsBeacon::OnPick(int32 Button)
 			return;
 		}
 		// (REQ-NATIVEMAPS, the user 3 Nov: "your PC and Quest can always play together", they are often on different nightlies:
-		// another build joins too, said here; the host's join guard turns away only a missing map or another copy of it)
+		// another build on the same net version joins too, said here; the host's join guard turns away a missing map or
+		// another copy of it)
 		if (G->Build != OutlawsBuildInfo::Commit())
 		{
 			UE_LOG(LogOutlawsCoop, Log, TEXT("OLBEACON %s plays a different version (%s, this %s): joining all the same"), *G->Name, *G->Build, OutlawsBuildInfo::Commit());
@@ -789,6 +797,7 @@ void UOutlawsBeacon::UpdateBubble(double Now)
 		const FOutlawsHeardGame& G = Kv.Value;
 		const FString* D = Dismissed.Find(G.Key);
 		if (D && *D == StateKey(G) && Now - DismissedAt.FindRef(G.Key) < DismissFor) continue;
+		if (!OffersNetVersion(G.NetVersion)) continue;      // (REQ-NETVERSION: no Join that can only be refused)
 		if (!Best || G.FirstAt > Best->FirstAt) Best = &G;
 	}
 	if (!Best)
@@ -839,7 +848,7 @@ void UOutlawsBeacon::Tick(float DeltaTime)
 			FString Build = OutlawsBuildInfo::Commit();
 			OLFlags::Value(TEXT("OLBeaconFakeBuild"), Build);          // (tests: a different version)
 			AOutlawsLevelActor* L = FindLevel();
-			const FString Msg = FString::Printf(TEXT("OLB1\t%s\t%s\t%s\t%s\t%d\t%d\t%d\t%s\t%d"), *MyId, L ? *L->MpPlayerName : TEXT(""), *State, *Lv, Pl, Mx, 0, *Build, MyGamePort);
+			const FString Msg = FString::Printf(TEXT("OLB1\t%s\t%s\t%s\t%s\t%d\t%d\t%d\t%s\t%d\t%d"), *MyId, L ? *L->MpPlayerName : TEXT(""), *State, *Lv, Pl, Mx, 0, *Build, MyGamePort, UOutlawsCoop::NetVersionHere());
 			for (const TPair<FString, int32>& To : SendTo) Send(Msg, To.Key, To.Value);
 			static FString LastLogged;
 			if (LastLogged != State + Lv) { LastLogged = State + Lv; UE_LOG(LogOutlawsCoop, Log, TEXT("OLBEACON announcing: %s %s (%d/%d)"), *State, *Lv, Pl, Mx); }
@@ -953,9 +962,9 @@ void UOutlawsBeacon::TickTest(double Now)
 			TestStep = 4;
 		}
 		return;
-	case 4:      // a game of a different version heard: offered with Join as any other (REQ-NATIVEMAPS, user 3 Nov)
+	case 4:      // a game on another build, the same net version, heard: offered with Join as any other (REQ-NATIVEMAPS, user 3 Nov)
 		if (Now - TestAt < 1.5) return;
-		HandleMessage(FString::Printf(TEXT("OLB1\tfake0001\tOld Timer\tsingle\tcanyon\t1\t8\t0\toldbuild\t7777")), TEXT("127.0.0.9"), 7778, Now);
+		HandleMessage(FString::Printf(TEXT("OLB1\tfake0001\tOld Timer\tsingle\tcanyon\t1\t8\t0\toldbuild\t7777\t%d"), UOutlawsCoop::NetVersionHere()), TEXT("127.0.0.9"), 7778, Now);
 		TestAt = Now;
 		TestStep = 5;
 		return;
@@ -971,11 +980,14 @@ void UOutlawsBeacon::TickTest(double Now)
 		if (Now - TestAt < 1.0) return;
 		Bubble->Pick(1);                 // (X: no join to the fake game, it has no host)
 		Heard.Remove(TEXT("127.0.0.9:7778"));
+		// (REQ-NETVERSION: newest heard, on another number: the real one's bubble comes up, not this)
+		HandleMessage(FString::Printf(TEXT("OLB1\tfake0002\tWrong Number\tsingle\tcanyon\t1\t8\t0\toldbuild\t7777\t%d"), UOutlawsCoop::NetVersionHere() + 1), TEXT("fakehost"), 7778, Now);
 		TestStep = 7;
 		TestAt = Now;
 		return;
 	case 7:      // the real one again, Join: the knock, the target accepts, the co-op join
 		if (Kind != EOutlawsBubbleKind::Offer || Now - TestAt < 1.0) return;
+		UE_LOG(LogOutlawsCoop, Log, TEXT("OLBEACON test: another net version's game: %s (\"%s\")"), Bubble->GetText().Contains(TEXT("Wrong Number")) ? TEXT("OFFERED") : TEXT("not offered"), *Bubble->GetText());
 		Bubble->Pick(0);
 		TestStep = 8;
 		return;

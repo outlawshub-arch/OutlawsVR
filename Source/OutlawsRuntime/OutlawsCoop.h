@@ -1255,11 +1255,23 @@ public:
 	static bool PasswordTyped(AOutlawsPlayer* P, const FString& Purpose, const FString& Text);
 	/** PreLogin: a joiner's password checked (empty: let in). */
 	FString CheckJoinPassword(const FString& Options) const;
+	/** REQ-NETVERSION (the user 6 Nov, choice A; OutlawsCoopConnect.cpp): the number in OutlawsBuildInfo decides who plays
+	 *  together.  OldNetVersion: -OLOldNetVersion (no number sent, no refusal, the beacon offers every game: the raw
+	 *  NetChecksumMismatch toast back).  NetVersionHere: this machine's (a test's -OLNetVersionFake=<n> stands in).
+	 *  NetVersionRefusal: the one line a joiner reads.  CheckJoinNetVersion: PreLogin's first refusal (empty: let in). */
+	static bool OldNetVersion();
+	static int32 NetVersionHere();
+	static const TCHAR* NetVersionRefusal();
+	static FString CheckJoinNetVersion(const FString& Options);
+#if WITH_OUTLAWS_TESTS
+	static int32 NetVersionTurnedAway;           // (the probe's host: how many this run refused)
+#endif
 	/** REQ-NATIVEMAPS (user 3 Nov), the join guard (OutlawsCoopConnect.cpp).  JoinGuardOptions: the joiner's URL options, its
-	 *  build (logged by the host, never refused: the user 3 Nov) and its native maps ("?OLBuild=..?OLMaps=.."), empty with
-	 *  -OLOldJoinGuard.  CheckJoinBuildAndMap: PreLogin's refusal (empty: let in): the host's match on a native map the joiner
-	 *  lacks or holds another copy of.  ClientCannotBuild: a joiner told to build a level it cannot (no
-	 *  .lvt for it, another copy of a native map's LAB than the host's): the reason, empty when it can. */
+	 *  net version (REQ-NETVERSION), its build (logged by the host, never refused: the user 3 Nov) and its native maps
+	 *  ("?OLNetVersion=..?OLBuild=..?OLMaps=.."), the guard's two empty with -OLOldJoinGuard.  CheckJoinBuildAndMap: PreLogin's
+	 *  refusal (empty: let in): the host's match on a native map the joiner lacks or holds another copy of.  ClientCannotBuild:
+	 *  a joiner told to build a level it cannot (no .lvt for it, another copy of a native map's LAB than the host's): the
+	 *  reason, empty when it can. */
 	static bool OldJoinGuard();
 	static FString NativeStampsHere();
 	static FString JoinGuardOptions();

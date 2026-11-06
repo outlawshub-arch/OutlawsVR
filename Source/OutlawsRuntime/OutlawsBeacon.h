@@ -39,6 +39,7 @@ struct FOutlawsHeardGame
 	bool bPassword = false;
 	FString Build;
 	int32 GamePort = 7777;
+	int32 NetVersion = 0;    // (REQ-NETVERSION: 0, a beacon from before the number)
 	double HeardAt = 0.0;
 	double FirstAt = 0.0;
 };
@@ -110,6 +111,9 @@ class OUTLAWSRUNTIME_API UOutlawsBeacon : public UGameInstanceSubsystem, public 
 
 public:
 	static UOutlawsBeacon* Get(const UObject* Context);
+	/** REQ-NETVERSION: a game on this net version is offered; another could only be refused at its door, so no bubble
+	 *  (-OLOldNetVersion: every game). */
+	static bool OffersNetVersion(int32 Theirs);
 	/** The Options > Multiplayer rows: "mp_announce" (let players on my network find my game), "mp_listen" (tell me when
 	 *  someone nearby is playing); both On unless the settings file says Off. */
 	static bool Setting(const FString& Row);

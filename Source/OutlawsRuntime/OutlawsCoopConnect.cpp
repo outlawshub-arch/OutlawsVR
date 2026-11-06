@@ -177,20 +177,59 @@ FString UOutlawsCoop::NativeStampsHere()
 	return A ? A->NativeStampList() : FString();
 }
 
+bool UOutlawsCoop::OldNetVersion()
+{
+	static const bool bOld = OLFlags::Param(TEXT("OLOldNetVersion"));
+	return bOld;
+}
+
+int32 UOutlawsCoop::NetVersionHere()
+{
+	int32 N = OutlawsBuildInfo::NetVersion;
+#if WITH_OUTLAWS_TESTS
+	OLFlags::Value(TEXT("OLNetVersionFake"), N);              // (tests: a machine on another number)
+#endif
+	return N;
+}
+
+const TCHAR* UOutlawsCoop::NetVersionRefusal()
+{
+	return TEXT("This host is on a different version. Please update.");
+}
+
+#if WITH_OUTLAWS_TESTS
+int32 UOutlawsCoop::NetVersionTurnedAway = 0;
+#endif
+
+FString UOutlawsCoop::CheckJoinNetVersion(const FString& Options)
+{
+	if (OldNetVersion()) return FString();
+	// (REQ-NETVERSION: before this number 16 of 16 mixed-build joins fell at the door, NetChecksumMismatch on the session 0.09 s
+	// after the lobby; none on the URL is a joiner from before it, 0.95 and the nightlies since)
+	const int32 Theirs = UGameplayStatics::GetIntOption(Options, TEXT("OLNetVersion"), 0);
+	if (Theirs == NetVersionHere()) return FString();
+#if WITH_OUTLAWS_TESTS
+	++NetVersionTurnedAway;
+#endif
+	UE_LOG(LogOutlawsCoop, Log, TEXT("OLCOOP net version: joiner on %d, this host on %d, build %s: refused"), Theirs, NetVersionHere(), OutlawsBuildInfo::Commit());
+	return NetVersionRefusal();
+}
+
 FString UOutlawsCoop::JoinGuardOptions()
 {
-	if (OldJoinGuard()) return FString();
+	const FString Net = OldNetVersion() ? FString() : FString::Printf(TEXT("?OLNetVersion=%d"), NetVersionHere());
+	if (OldJoinGuard()) return Net;
 	FString Build = OutlawsBuildInfo::Commit();
 #if WITH_OUTLAWS_TESTS
 	OLFlags::Value(TEXT("OLJoinGuardFakeBuild"), Build);      // (tests: a joiner on another build)
 #endif
-	return FString::Printf(TEXT("?OLBuild=%s?OLMaps=%s"), *Build, *NativeStampsHere());
+	return Net + FString::Printf(TEXT("?OLBuild=%s?OLMaps=%s"), *Build, *NativeStampsHere());
 }
 
 FString UOutlawsCoop::CheckJoinBuildAndMap(const FString& Options) const
 {
 	if (OldJoinGuard()) return FString();
-	// (another build is let in, the user 3 Nov: said once a join, never refused)
+	// (another build on the same net version is let in, the user 3 Nov: said once a join, never refused)
 	const FString Build = UGameplayStatics::ParseOption(Options, TEXT("OLBuild"));
 	if (Build != OutlawsBuildInfo::Commit())
 	{

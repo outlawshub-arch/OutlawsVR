@@ -2321,6 +2321,7 @@ void AOutlawsLevelActor::BeginPlay()
 		&& !OLFlags::Param(TEXT("OLExtrasTest"))          // (REQ-EXTRAS: from the title menu)
 		&& !OLFlags::Has(TEXT("OLExtrasLayoutProbe"))     // (BUG-ACHIEVBOX: the Extras pages, from the title menu)
 		&& !OLFlags::Has(TEXT("OLMenuOverlayProbe"))      // (REQ-LEGACYKPF: the title pages shot)
+		&& !OLFlags::Has(TEXT("OLNetVersionProbe"))       // (REQ-NETVERSION: a join from the title's join page)
 		&& !OLFlags::ValueIs(TEXT("OLBackClickTest"), TEXT("extras"))      // (REQ-NOUNLOCKABLES: Back on the Extras pages, from the title)
 		&& !OLFlags::HasValue(TEXT("OLTitleLoadTest"))      // (REQ-TITLEMENU: the title menu tested)
 		// (BUG-LATEJOIN: a co-op host or a joiner run with -OLShots built a level of its own at once, so the title menu and then

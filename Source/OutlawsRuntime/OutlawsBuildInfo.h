@@ -8,6 +8,12 @@
  */
 namespace OutlawsBuildInfo
 {
+	/** REQ-NETVERSION (the user 6 Nov, choice A): the number two machines must share to play together, sent in the join
+	 *  handshake and said on the beacon.  Same number joins, whatever the nightly; another number is refused before the lobby.
+	 *  One line to bump, up by one, in any landing that changes the network surface (an RPC, a replicated property, a struct
+	 *  those carry: tools/olue/land/netcheck.py lists them).  0.96 starts it at 1; a joiner with none on its URL counts as 0. */
+	inline constexpr int32 NetVersion = 1;
+
 	/** The version the main menu shows ("0.95") and the working name of the builds after it ("hotfix 2", or empty). */
 	OUTLAWSRUNTIME_API const TCHAR* Version();
 	OUTLAWSRUNTIME_API const TCHAR* Label();
