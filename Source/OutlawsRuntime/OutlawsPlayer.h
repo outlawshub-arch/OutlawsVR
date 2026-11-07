@@ -2732,6 +2732,11 @@ private:
 	float JumpStretch = 1.f;                   // K: how many times longer the jump lasts
 	float JumpOffZ = 0.f;                      // the feet at the take-off
 	FVector JumpHeading = FVector::ZeroVector; // (BUG-JUMPWALL) the way across the body was going a frame ago
+	FVector SlidePushLast = FVector::ZeroVector;    // (BUG-SLIDELOAD) the slide's push last frame, cm/s^2 (zero: none)
+	FVector SlideWallNormal = FVector::ZeroVector;  // (BUG-SLIDELOAD) the wall the walking body last touched, across
+	double SlideWallTime = -1000.0;            // (when, world seconds)
+	int32 SlideWallHits = 0;                   // (how many, the slide probe's measure)
+	float SlideWallCutMax = 0.f;               // (the most taken off, cm/s: the slide probe's measure)
 	/** -OLOldJumpWall (BUG-JUMPWALL): the held speed scales a wall's slide back up whatever the angle. */
 	static bool OldJumpWall();
 	/** (BUG-JUMPWALL) degrees from straight at a wall a jump stops at it within: -OLJumpWallLeeway=<x>, else ol.JumpWallLeeway. */

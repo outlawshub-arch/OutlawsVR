@@ -1758,6 +1758,14 @@ float AOutlawsPlayer::JumpWallLeeway()
 void AOutlawsPlayer::NotifyHit(UPrimitiveComponent* MyComp, AActor* Other, UPrimitiveComponent* OtherComp, bool bSelfMoved, FVector HitLocation, FVector HitNormal, FVector NormalImpulse, const FHitResult& Hit)
 {
 	Super::NotifyHit(MyComp, Other, OtherComp, bSelfMoved, HitLocation, HitNormal, NormalImpulse, Hit);
+	// (BUG-SLIDELOAD) a wall the walking body touched, by its face (the sweep's own normal can be off, see Locomotion)
+	if (bSelfMoved && MyComp == GetCapsuleComponent() && GetCharacterMovement() && GetCharacterMovement()->IsMovingOnGround()
+		&& Hit.ImpactNormal.Z < GetCharacterMovement()->GetWalkableFloorZ() && Hit.ImpactNormal.SizeSquared2D() >= 0.25)
+	{
+		SlideWallNormal = FVector(Hit.ImpactNormal.X, Hit.ImpactNormal.Y, 0.0).GetSafeNormal();
+		SlideWallTime = GetWorld()->GetTimeSeconds();
+		++SlideWallHits;
+	}
 	// BUG-JUMPWALL (user 4 Nov, after the Quest test: "I seem to bounce off walls I'm jumping into instead of being able to grab
 	// them"; "maybe there should be 45 degree leeway or maybe a 30 degree leeway", and a jump along a wall can still glance off
 	// it).  There is no bounce: the engine slides what hits a wall along it, leaving the sideways part, and BUG-JUMPSPEED's held
@@ -2546,6 +2554,9 @@ void AOutlawsPlayer::Locomotion(float Dt, bool& bOutMoving)
 	// crouch nor letting go brakes a slide.  The stick's push scales with the friction, with a small floor (SlideSteerFloor)
 	// so a little steering stays on ice (the user's "steer a little"; the original's input scaling there, inferred, gives
 	// none).  -OLOldSlide: every old value
+	static const bool bOldSlideHitch = OLFlags::Param(TEXT("OLOldSlideHitch"));
+	const FVector SlideOwed = SlidePushLast;
+	SlidePushLast = FVector::ZeroVector;
 	if (M->IsMovingOnGround() && !bSwimming && !IsClimbing())
 	{
 		static const bool bOldSlide = OLFlags::Param(TEXT("OLOldSlide"));
@@ -2568,6 +2579,22 @@ void AOutlawsPlayer::Locomotion(float Dt, bool& bOutMoving)
 		M->MaxAcceleration = bInstant ? VRInstantAcceleration : (bVR ? VRAcceleration : Acceleration) * Grip;   // no traction to push off on ice or mud
 		// (the desktop's crouch is the engine's, which holds a crouched body at a ledge: a crouched slide stopped dead at 78's lip)
 		M->bCanWalkOffLedgesWhenCrouching = bSlideFloor;
+		// BUG-SLIDELOAD (icecaves' jump over the pit 232 fell now and then, more on a busy machine): the slide grazes 215's north
+		// wall from about x 540.  About 3 contact frames in 100 the sweep's normal comes out a fraction of a degree off the wall's
+		// (0.146 for its 0.139, triangle collision), the body goes on along that line, away from the wall, so nothing puts it
+		// right: 10 to 20 cm/s more across, kept through the flight, reached 228's rim about a unit along it, too low to land on,
+		// and the rim turned the body into the pit.  So on a slide floor what is going away from the wall's own face just after
+		// a touch comes off: the wall's line, whatever the contact read.  -OLOldSlideHitch: as before
+		constexpr double SlideWallHold = 0.1;          // s from the last touch (from the frame's start, so a long frame still counts)
+		if (!bOldSlideHitch && bSlideFloor && GetWorld()->GetTimeSeconds() - Dt - SlideWallTime < SlideWallHold)
+		{
+			const double Off = FVector::DotProduct(M->Velocity, SlideWallNormal);
+			if (Off > 0.0)
+			{
+				M->Velocity -= SlideWallNormal * Off;
+				SlideWallCutMax = FMath::Max(SlideWallCutMax, float(Off));
+			}
+		}
 		// (BUG-JUMPHYBRID: BUG-JUMPSPEED's floor under the slide's drag, the top speed raised to the body's own up to 1350 cm/s,
 		// is gone.  It was what lost icecaves' big gap, the ice slide 215's jump over 232 to 228: with the top speed at the body's
 		// own, the engine cut each frame's push back off whenever it was under half a per cent of the speed (below), so a slide
@@ -2596,11 +2623,22 @@ void AOutlawsPlayer::Locomotion(float Dt, bool& bOutMoving)
 				if (!OldJumpSpeed() && Across > TopNow * 0.98f && Across < TopNow * 1.02f) TopNow = Across / 1.02f;
 			}
 			M->AddImpulse(Down / Tan * Slide * Dt, true);
+			if (bSlideFloor) SlidePushLast = Down / Tan * Slide;
 		}
 	}
 	else if (bVR)
 	{
 		M->MaxAcceleration = VRAcceleration;   // off the ground: the instant value times the 0.5 air control would be full steering in the air and in water
+	}
+	// (BUG-SLIDELOAD) the push is worked out above, after the frame's move and from the floor it ended on, and lands on the next
+	// frame's, so a frame that ended off the slide lost its own: a 300 ms frame from x 560 left icecaves' lip at 1828 cm/s for
+	// 1875 (3198 for 3283 on the desktop), one from x 555, ending over the pit's edge, at 1806, and both fell short of 228.  So
+	// a body that has just left the slide gets it, for the part of the frame it wasn't falling (its fall speed says how long),
+	// whatever the frame's length.  -OLOldSlideHitch: as before
+	if (!bOldSlideHitch && !SlideOwed.IsZero() && SlidePushLast.IsZero() && (M->IsFalling() || M->IsMovingOnGround()) && M->Velocity.Z <= 0.0)
+	{
+		const float Fallen = float(M->Velocity.Z) / FMath::Min(M->GetGravityZ(), -1.f);
+		M->Velocity += SlideOwed * FMath::Max(0.f, Dt - Fallen);
 	}
 	if (IsClimbing() || MantleLeft > 0.f || IsMountedGun())
 	{

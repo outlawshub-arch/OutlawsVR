@@ -9,6 +9,9 @@
 // shgranry, from its high end with no input for 2.5 s, invincible: never moved more than 3 m in a tick (a rescue or an
 // unstuck), never 1 m over the start, ending inside a sector at or over its floor.  -OLOldSlide: icecaves (1) only, the lip
 // speed no more than 960 cm/s, as before.  Lines "OLSHOT slide check PASS|FAIL: ..." and "OLSHOT slide RESULT".
+// BUG-SLIDELOAD: icecaves runs (1) and (2) plain and with forced long frames (-OLSlideHitch=ms@x+ms@x for others): on the slope,
+// by the wall, on the lip's run-out and in the flight, each to land as the plain run does.  A long frame alone doesn't bring the
+// bug back, it was a contact, so each run's heading at the lip is checked too: the wall's line, not the off one that misses 228.
 
 #include "OutlawsPlayer.h"
 #include "OutlawsRuntime.h"
@@ -49,7 +52,8 @@ namespace OutlawsSlideProbeLocal
 	int32 LevelI = 0, CaseI = -1, Step = 0, Passes = 0, Fails = 0;
 	bool bArmed = false, bAsked = false, bVRMode = false, bOld = false, bWasFalling = false, bJumped = false, bHitchDone = false, bHitchLog = false;
 	int32 HitchLeft = -1, HitchFrames = 1;
-	float CaseT = 0.f, LevelT = 0.f, LandedT = -1.f, LipSpeed = -1.f, PlainLip = -1.f, MaxRise = 0.f, MaxStepCm = 0.f, HealthAtLip = 0.f;
+	float CaseT = 0.f, LevelT = 0.f, LandedT = -1.f, LipSpeed = -1.f, PlainLip = -1.f, MaxRise = 0.f, MaxStepCm = 0.f, HealthAtLip = 0.f, LipHeading = 0.f;
+	constexpr float WallHeadingMax = 0.138f;     // across over along at the lip: 0.134 to 0.137 in 30 runs on the wall's line, 0.140 and more off it
 	FVector StartAt = FVector::ZeroVector, PrevAt = FVector::ZeroVector, NoInputMove = FVector::ZeroVector, FlowDir = FVector::ZeroVector;
 	FString LevelName;
 
@@ -100,7 +104,7 @@ namespace OutlawsSlideProbeLocal
 			FString Hitches, FramesStr;
 			TArray<FString> Pairs;
 			if (OLFlags::Value(TEXT("OLSlideHitch"), Hitches)) Hitches.ParseIntoArray(Pairs, TEXT("+"));
-			if (Pairs.Num() == 0) Pairs.Add(TEXT("0@0"));
+			if (Pairs.Num() == 0) Pairs = { TEXT("0@0"), TEXT("150@537"), TEXT("300@537"), TEXT("300@555"), TEXT("300@560"), TEXT("200@640") };
 			if (OLFlags::Value(TEXT("OLSlideHitchFrames"), FramesStr)) HitchFrames = FMath::Max(1, FCString::Atoi(*FramesStr));
 			for (const FString& Pair : Pairs)
 			{
@@ -216,6 +220,26 @@ OL_SHOT_TEST(OLSlideProbe, 1540)
 		Step = 0;
 		if (Lv) BuildCases(LevelName.ToLower(), *Lv); else SlideCases.Reset();
 		UE_LOG(LogOutlaws, Display, TEXT("OLSHOT slide %s: %d cases"), *LevelName, SlideCases.Num());
+		FString Dump;
+		if (Lv && OLFlags::Value(TEXT("OLSlideDump"), Dump))     // (-OLSlideDump=215+228: those sectors' plans, floors and adjoins)
+		{
+			TArray<FString> Ids;
+			Dump.ParseIntoArray(Ids, TEXT("+"));
+			for (const FString& Id : Ids)
+			{
+				const int32 I = FCString::Atoi(*Id);
+				if (!Lv->Sectors.IsValidIndex(I)) continue;
+				const FOutlawsSector& S = Lv->Sectors[I];
+				FString Line;
+				for (const FOutlawsWall& W : S.Walls)
+				{
+					if (!S.Verts.IsValidIndex(W.V1)) continue;
+					const FVector2D P = S.Verts[W.V1];
+					Line += FString::Printf(TEXT(" (%.1f,%.1f y%.1f a%d)"), P.X, P.Y, Lv->SurfaceY(S, P, true), W.Adjoin);
+				}
+				UE_LOG(LogOutlaws, Display, TEXT("OLSHOT slidedump %d '%s' friction %.2f flags %u:%s"), I, *S.Name, S.Friction, uint32(S.Flags), *Line);
+			}
+		}
 	}
 	LevelT += Dt;
 	if (LevelT < 3.f || !Lv) return;     // (the level settled, the fade in done)
@@ -265,6 +289,8 @@ OL_SHOT_TEST(OLSlideProbe, 1540)
 		bWasFalling = bJumped = false;
 		bHitchDone = bHitchLog = false;
 		HitchLeft = -1;
+		SlideWallCutMax = 0.f;
+		SlideWallHits = 0;
 		Step = 1;
 		return;
 	}
@@ -307,6 +333,14 @@ OL_SHOT_TEST(OLSlideProbe, 1540)
 	{
 		const bool bFalling = M->IsFalling();
 		const FVector Ol = FOutlawsGeometry::ToOutlaws(Feet);
+		// BUG-SLIDELOAD: -OLSlideTrace: a line a frame from x 525 on, the feet in units, the body's speeds in cm/s (UE X = Outlaws z, UE Y = Outlaws x)
+		if (OLFlags::Param(TEXT("OLSlideTrace")) && Ol.X >= 525.0 && !bDeadView && !(LandedT >= 0.f && CaseT - LandedT > 0.3f))
+		{
+			const FOutlawsSector* TS = SectorOfFeet();
+			UE_LOG(LogOutlaws, Display, TEXT("OLSHOT slidetrace t %.4f dt %.1f x %.2f y %.2f z %.2f vx %.1f vz %.1f vy %.1f mode %d sector %d hits %d nx %.3f ny %.3f off %.2f cut %.1f"), CaseT, Dt * 1000.f, Ol.X, Ol.Y, Ol.Z,
+				M->Velocity.Y, M->Velocity.X, M->Velocity.Z, int32(M->MovementMode.GetValue()), TS ? TS->Index : -1, SlideWallHits, SlideWallNormal.X, SlideWallNormal.Y,
+				FVector::DotProduct(M->Velocity, SlideWallNormal), SlideWallCutMax);
+		}
 		if (bHitchLog)
 		{
 			bHitchLog = false;
@@ -324,8 +358,9 @@ OL_SHOT_TEST(OLSlideProbe, 1540)
 		{
 			LipSpeed = float(M->Velocity.Size2D());
 			HealthAtLip = L->GetHealth();
-			UE_LOG(LogOutlaws, Display, TEXT("OLSHOT slide %s: off the lip at (%.1f, %.1f, %.1f) units, %.0f cm/s, %.1f s, crouched %d (half %.0f)"), *C.Id, Ol.X, Ol.Y, Ol.Z, LipSpeed, CaseT,
-				bIsCrouched || Half < 60.f ? 1 : 0, Half);
+			LipHeading = float(FMath::Abs(M->Velocity.X) / FMath::Max(1.0, FMath::Abs(M->Velocity.Y)));
+			UE_LOG(LogOutlaws, Display, TEXT("OLSHOT slide %s: off the lip at (%.1f, %.1f, %.1f) units, %.0f cm/s, %.1f s, crouched %d (half %.0f), across %.1f cm/s, the wall's excess %.1f cm/s"), *C.Id, Ol.X, Ol.Y, Ol.Z, LipSpeed, CaseT,
+				bIsCrouched || Half < 60.f ? 1 : 0, Half, M->Velocity.X, SlideWallCutMax);
 		}
 		if (bFalling) bJumped = bJumped || LipSpeed >= 0.f;
 		bWasFalling = bFalling;
@@ -352,6 +387,7 @@ OL_SHOT_TEST(OLSlideProbe, 1540)
 		// (the desktop's fall, at 4.59 g, comes off the lip at 3300 cm/s and slides on over the ice of 228 into 207 behind it)
 		Check(bLanded && (Landed == 228 || Landed == 207) && !bDeadView, FString::Printf(TEXT("%s: lands on the far side alive, 228 (or 207 behind it) (sector %d, dead %d, health %.1f)"), *C.Id, Landed,
 			bDeadView ? 1 : 0, L->GetHealth()));
+		Check(LipHeading <= WallHeadingMax, FString::Printf(TEXT("%s: the heading at the lip %.4f is the wall's line (want %.3f or less)"), *C.Id, LipHeading, WallHeadingMax));
 		if (!C.bCrouch) PlainLip = LipSpeed;
 		else Check(PlainLip > 0.f && FMath::Abs(LipSpeed - PlainLip) <= 0.05f * PlainLip, FString::Printf(TEXT("%s: the lip speed %.0f within 5 %% of no input's %.0f"), *C.Id, LipSpeed, PlainLip));
 		bCrouchHeld = false;
