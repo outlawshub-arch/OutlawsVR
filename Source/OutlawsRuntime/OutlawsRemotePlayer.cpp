@@ -412,9 +412,56 @@ void AOutlawsRemotePlayer::NoteThrow(int32 Kind)
 	ActionUntil = Clock + ChorSeconds(EAnim::Throw, 0.3f) + 0.15f;     // (the jab, then its guard a moment)
 }
 
+extern bool OlShipLogTrim();                // (LOGTRIM: OutlawsCoopMatch.cpp)
+
+namespace
+{
+	// (LOGTRIM) the chor changes in a trimmed log: every puppet's in one line a second, counted by the chor shown, in place of
+	// a line a change (a match's seven bots wrote up to 23 lines a second on the Quest, 7 Nov)
+	struct FOLTrimChors
+	{
+		double Since = 0.0;
+		int32 Changes = 0;
+		TArray<TPair<const TCHAR*, int32>, TInlineAllocator<10>> ByChor;
+		TArray<const void*, TInlineAllocator<16>> Puppets;
+
+		void Flush(double Now)
+		{
+			if (Changes == 0 || Now - Since < 1.0) return;
+			ByChor.Sort([](const TPair<const TCHAR*, int32>& A, const TPair<const TCHAR*, int32>& B) { return A.Value > B.Value; });
+			FString Counts;
+			for (const TPair<const TCHAR*, int32>& Kv : ByChor) Counts += FString::Printf(TEXT("%s%s %d"), Counts.IsEmpty() ? TEXT("") : TEXT(", "), Kv.Key, Kv.Value);
+			UE_LOG(LogOutlawsCoop, Log, TEXT("OLCOOP puppet chors per second: %d change%s on %d puppet%s (%s)"), Changes, Changes == 1 ? TEXT("") : TEXT("s"), Puppets.Num(),
+				Puppets.Num() == 1 ? TEXT("") : TEXT("s"), *Counts);
+			Changes = 0;
+			ByChor.Reset();
+			Puppets.Reset();
+		}
+
+		void Note(const void* Who, const TCHAR* Name, double Now)
+		{
+			Flush(Now);
+			if (Changes == 0) Since = Now;
+			++Changes;
+			Puppets.AddUnique(Who);
+			TPair<const TCHAR*, int32>* Found = ByChor.FindByPredicate([Name](const TPair<const TCHAR*, int32>& Kv) { return FCString::Strcmp(Kv.Key, Name) == 0; });
+			if (Found) ++Found->Value;
+			else ByChor.Emplace(Name, 1);
+		}
+	};
+	FOLTrimChors GOLTrimChors;
+}
+
 void AOutlawsRemotePlayer::LogChor(EAnim A, const FString& Why)
 {
 	if (!Seen.Contains(AnimName(A))) Seen.Add(AnimName(A));
+	// (LOGTRIM) a Shipping build: counted into the one line a second for all the puppets
+	static const bool bTrim = OlShipLogTrim();
+	if (bTrim)
+	{
+		GOLTrimChors.Note(this, AnimName(A), FPlatformTime::Seconds());
+		return;
+	}
 	// a few lines a second at most: the changes beyond that are counted and said with the next line
 	if (LogTokens < 1.f)
 	{
@@ -433,6 +480,7 @@ void AOutlawsRemotePlayer::TickSprite(float Dt, const FOutlawsCoopPose& P, const
 	AOutlawsSpriteActor* S = Sprite.Get();
 	if (!S) return;
 	LogTokens = FMath::Min(4.f, LogTokens + Dt * 3.f);
+	if (GOLTrimChors.Changes > 0) GOLTrimChors.Flush(FPlatformTime::Seconds());      // (LOGTRIM: a quiet second ends the line)
 	const FVector Feet(Body.X, Body.Y, Body.Z - Half);
 	// on the feet, facing where the player looks (the head's yaw: in VR the body's own yaw turns only with the stick)
 	S->SetActorLocation(Feet + FVector(0.0, 0.0, 0.5));

@@ -51,6 +51,53 @@ namespace
 	{
 		return FOutlawsMatchFlow::StateName(static_cast<FOutlawsMatchFlow::EState>(S));
 	}
+
+	// (LOGTRIM) the scores in a trimmed log (OlShipLogTrim): the line at most once a second and only when its words changed
+	// (a ping, a shot or a pickup changes the scores the clients are sent, not this line), saying how many changes it stands
+	// for.  A first change after a quiet second goes out at once, the rest of a busy second with the first tick after it
+	struct FOLTrimScores
+	{
+		FString Shown, Latest;
+		int32 Changes = 0;
+		double ShownAt = -1e9;
+
+		void Note(FString&& Line, double Now)
+		{
+			if (Line != Latest)
+			{
+				Latest = MoveTemp(Line);
+				++Changes;
+			}
+			Flush(Now);
+		}
+
+		void Flush(double Now)
+		{
+			if (Changes == 0 || Now - ShownAt < 1.0) return;
+			if (Latest != Shown)
+			{
+				UE_LOG(LogOutlawsCoop, Log, TEXT("OLMATCH scores (per second, %d change%s): %s"), Changes, Changes == 1 ? TEXT("") : TEXT("s"), *Latest);
+				Shown = Latest;
+				ShownAt = Now;
+			}
+			Changes = 0;
+		}
+	};
+	FOLTrimScores GOLTrimScores;
+}
+
+bool OlShipLogTrim()
+{
+	// (LOGTRIM, planner 7 Nov: an 80 minute match on the Quest wrote 29 MB of log, the scores line 25 % of it and the puppets'
+	// chor lines 15 %) a Shipping build logs the match's scores and the puppets' chor changes as a line a second each, not a
+	// line a change.  The editor and the test builds keep a line a change: the probes and the gate read them there.
+	// -OLOldMatchLog: a Shipping build's lines as before; -OLShipLogTrim: a test build's as Shipping's (logtrim_check)
+#if WITH_OUTLAWS_TESTS
+	static const bool bTrim = OLFlags::Param(TEXT("OLShipLogTrim"));
+#else
+	static const bool bTrim = !OLFlags::Param(TEXT("OLOldMatchLog"));
+#endif
+	return bTrim;
 }
 
 /** The frag table's rows from the session's scores (every machine the same). */
@@ -504,9 +551,12 @@ void UOutlawsCoop::PublishScores()
 	const FOutlawsMatchFlow& F = OutlawsMpHost::Flow();
 	const uint8 State = uint8(F.GetState());
 	const float Left = F.TimeLeft() < 0.f ? -1.f : float(FMath::CeilToInt(F.TimeLeft()));
+	static const bool bTrim = OlShipLogTrim();
+	if (bTrim) GOLTrimScores.Flush(FPlatformTime::Seconds());       // (LOGTRIM: the rest of a busy second's changes)
 	if (Now != S->Scores || State != S->MatchState || Left != S->TimeLeft)
 	{
-		if (Now != S->Scores) UE_LOG(LogOutlawsCoop, Log, TEXT("OLMATCH scores: %s"), *MatchSummary());
+		if (Now != S->Scores && bTrim) GOLTrimScores.Note(MatchSummary(), FPlatformTime::Seconds());
+		else if (Now != S->Scores) UE_LOG(LogOutlawsCoop, Log, TEXT("OLMATCH scores: %s"), *MatchSummary());
 		S->Scores = MoveTemp(Now);
 		S->MatchState = State;
 		S->TimeLeft = Left;
