@@ -4150,6 +4150,8 @@ void AOutlawsPlayer::DrawFrontCanvas(UCanvas* C, int32 Width, int32 Height)
 		D.NameStep = Step;
 		// the items, 120 apart about the panel's middle, between the panel and the rifle and the blue cloth: Rye 66 hollow,
 		// pointed at the remaster's orange; a long one (the co-op host's level) drawn smaller to fit, never under the floor
+		// (BUG-LOBBYBOXES, 7 Nov: the laser boxes 6 over and under the text box, was 18: the shipped menu font's text box is 106.8
+		// tall, so 18 a side ran each box 22.8 into the next row's on the 120 step; 6 leaves them 1.2 apart)
 		const int32 N = MenuPage->Items.Num();
 		for (int32 i = 0; i < N; ++i)
 		{
@@ -4160,7 +4162,7 @@ void AOutlawsPlayer::DrawFrontCanvas(UCanvas* C, int32 Width, int32 Height)
 			const float Sc = W > ItemW ? ItemW / W : 1.f;
 			const float Floor = CapOf(SaveFont(15)) > 0.f ? FloorPx() / CapOf(SaveFont(15)) : 0.f;
 			const FString Shown = Sc >= Floor ? Label : Cut(SaveFont(15), Label, ItemW / FMath::Max(Floor, 0.01f));
-			Link(i, Shown, 1345.f, IY, 1, 15, 16, 30.f, 18.f, ItemW);
+			Link(i, Shown, 1345.f, IY, 1, 15, 16, 30.f, 6.f, ItemW);
 			if (FrontItemInk.IsValidIndex(i)) Note(Shown, FrontItemInk[i], SaveFont(15), FMath::Min(1.f, ItemW / FMath::Max(Wide(SaveFont(15), Shown), 1.f)), i, false);
 		}
 		// the host's address at the foot (P3), above the help line, clear of the red cloth and the blue cloth's tail
