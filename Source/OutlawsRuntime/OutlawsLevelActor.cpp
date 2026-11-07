@@ -2336,6 +2336,15 @@ void AOutlawsLevelActor::BeginPlay()
 		{
 			Difficulty = D.Equals(TEXT("good"), ESearchCase::IgnoreCase) ? EOutlawsDifficulty::Good : D.Equals(TEXT("ugly"), ESearchCase::IgnoreCase) ? EOutlawsDifficulty::Ugly : EOutlawsDifficulty::Bad;
 		}
+#if WITH_OUTLAWS_TESTS
+		// (the probe sweep, 7 Nov) -OLDynThrowProbe on the hideout: its one BGY2BOOM is placed on Ugly alone (FLAGS 0xC0000000), so
+		// the case runs there unless -OLDifficulty says otherwise
+		else if (OLFlags::Param(TEXT("OLDynThrowProbe")) && LevelName.Equals(TEXT("hideout"), ESearchCase::IgnoreCase))
+		{
+			Difficulty = EOutlawsDifficulty::Ugly;
+			UE_LOG(LogOutlaws, Display, TEXT("OLSHOT dynthrow hideout: at Ugly, where its BGY2BOOM is placed"));
+		}
+#endif
 	}
 	if (OLFlags::Param(TEXT("OLHD")))
 	{

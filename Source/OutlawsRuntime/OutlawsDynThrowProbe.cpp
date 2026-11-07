@@ -4,8 +4,9 @@
 // in flight and lying lit, going off LIFE (4.5 s) after it left the hand by its mark, the player hurt by the blast's falloff;
 // (d) the rate: no two throws closer than SHOOT_TIMER_TIME (the difficulty's) allows; (e) a blast flagged a bad guy's kills a bad
 // guy that is no one's (not the player's dynamite kill), the same blast unflagged is the player's.  hideout (BGY2BOOM): a throw at
-// 20 m (inside THROW_MAX 150 units), none at 50 m.  cliff (Two Feathers): knives thrown and one strikes.  -OLOldDynThrow: no
-// throw, as before.  Lines "OLSHOT dynthrow check PASS|FAIL: ..." and "OLSHOT dynthrow RESULT"; shots
+// 20 m (inside THROW_MAX 150 units), none at 50 m, at Ugly (he is placed there alone; -OLDifficulty overrides).  cliff (Two
+// Feathers): knives thrown and one strikes.  -OLOldDynThrow: no throw, as before.  Lines "OLSHOT dynthrow check PASS|FAIL:
+// ..." and "OLSHOT dynthrow RESULT"; shots
 // dynthrow_<level>_<flight|lit>[_old].png in Saved\OLShots.
 // (f) BUG-DICKSTICK (shgulch): his own sticks in (c) leave his health as it was, each one in his reach and sight sparing him;
 // in (e) a bad guy's stick at a bad guy's own feet, his own, spares him, and the next there, SH_DICK's, kills him.
