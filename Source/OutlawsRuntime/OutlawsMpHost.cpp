@@ -223,6 +223,9 @@ void OutlawsMpHost::ListMaps(const FOutlawsAssets* Assets, TArray<FOutlawsMpMap>
 	// never builds ("ERROR: lilbatl.lvt not found").  Bunkers (lilbatl.rcm) is one: olpatch3 carries its .lvb, .rcm, .chk,
 	// .itm and .obb but no install has lilbatl.lvt; one that does lists it again.  -OLOldBunkers: listed as before.
 	static const bool bOldBunkers = OLFlags::Param(TEXT("OLOldBunkers"));
+	// BUG-CUSTOMLIST (the probe sweep 8 Nov: frostbi.rcm beside frostbi.lab in the game folder, -OLNoNativeMaps, was listed, and
+	// hosting it built an empty level, "ERROR: frostbi.lvt not found"): -OLOldCustomList, the game folder's maps listed as before
+	static const bool bOldCustomList = OLFlags::Param(TEXT("OLOldCustomList"));
 	// the stock maps: the RCMs the LABs hold (the patches' over the originals', as every other file)
 	TArray<FString> Stock;
 	Assets->ListByExtension(TEXT(".rcm"), Stock);
@@ -315,6 +318,16 @@ void OutlawsMpHost::ListMaps(const FOutlawsAssets* Assets, TArray<FOutlawsMpMap>
 		{
 			UE_LOG(LogOutlaws, Warning, TEXT("OLMPHOST map %s left out: %s"), *F, Why.IsEmpty() ? TEXT("not readable") : *Why);
 			++Bad;
+			continue;
+		}
+		// (BUG-CUSTOMLIST) nothing reads a game-folder map's own LAB yet (Open reads the stock order, UseLevelOverlay a native
+		// map's LAB), so one whose level is in none of the LABs the game reads would host an empty level: left out, the BUNKERS
+		// rule as for the stock and native maps.  One whose level a stock or native LAB holds loads, and stays.
+		if (!bOldCustomList && !Assets->HasLevel(M.Level))
+		{
+			UE_LOG(LogOutlaws, Log, TEXT("OLMPHOST map %s (%s) left out: its level %s.lvt is in none of the LABs the game reads (its own %s is not read yet)"), *F, *M.Name, *M.Level,
+				*FPaths::GetCleanFilename(Lab));
+			++NoLvt;
 			continue;
 		}
 		Out.Add(M);
