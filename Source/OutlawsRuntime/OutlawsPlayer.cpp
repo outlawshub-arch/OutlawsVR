@@ -886,6 +886,8 @@ void AOutlawsPlayer::SetupPlayerInputComponent(UInputComponent* PIC)
 	// (REQ-TRIGGERSTEP) a desktop menu: the left button steps a value row up, the right down (nothing outside a menu)
 	PIC->BindKey(EKeys::LeftMouseButton, IE_Pressed, this, &AOutlawsPlayer::MenuMouseLeft);
 	PIC->BindKey(EKeys::RightMouseButton, IE_Pressed, this, &AOutlawsPlayer::MenuMouseRight);
+	// (BUG-DESKSAVE) Escape: the pause menu in play and over a cutscene, one page back in a menu (nothing in VR)
+	PIC->BindKey(EKeys::Escape, IE_Pressed, this, &AOutlawsPlayer::DesktopPauseKey);
 #endif
 }
 
@@ -1000,6 +1002,30 @@ void AOutlawsPlayer::DesktopJumpPressed()
 void AOutlawsPlayer::DesktopJumpReleased()
 {
 	bJumpKeyDown = false;
+}
+
+void AOutlawsPlayer::DesktopPauseKey()
+{
+	// (BUG-DESKSAVE, user 7 Nov: no key opened the pause menu on the desktop, so Save Game could not be reached) Escape opens it
+	// in play and over a cutscene as the headset's Menu button does; in a menu it goes one page back, as the desktop's help line
+	// says ("Esc: back"), and on the pause page itself shuts the menu.  VR keeps its own button: a keyboard there does nothing
+	if (bVR) return;
+	if (bMenuOpen) MenuBack();
+	else PressMenu();
+}
+
+bool AOutlawsPlayer::DesktopSkipHeld()
+{
+	// (BUG-DESKSKIP) a cutscene's hold to skip on the desktop: the left mouse button, counted once it has been up in this movie
+	// (the click that picked the row before it, or Resume over it, is no hold)
+#if PLATFORM_ANDROID
+	return false;
+#else
+	const APlayerController* PC = Cast<APlayerController>(GetController());
+	const bool bDown = PC && PC->IsInputKeyDown(EKeys::LeftMouseButton);
+	if (!bDown) bDeskSkipArmed = true;
+	return bDown && bDeskSkipArmed;
+#endif
 }
 
 bool AOutlawsPlayer::OldSwimUpDown()
@@ -1939,6 +1965,7 @@ void AOutlawsPlayer::Tick(float Dt)
 		{
 			HideForMovie(true);
 			ResetMovieCardButtons();
+			bDeskSkipArmed = false;              // (BUG-DESKSKIP: a left button down from before counts once let go)
 		}
 		UpdateMovieCard(Dt, LM);             // (REQ-HANDCARDHOLD: OutlawsPlayerMovieCard.cpp)
 		// watching the story movie: nothing else. Any button or trigger held for 3 s skips it, never in its
@@ -1946,10 +1973,12 @@ void AOutlawsPlayer::Tick(float Dt)
 		// faster (two: twice as fast; user 2026-09-28).  (REQ-HANDCARDHOLD, user 4 Nov: "we should maybe give that a half second
 		// delay or a split second delay") nothing counts and no bar shows until something has been held half a second, so a tap
 		// or a pass flashes nothing; the bar's own 2.5 s keeps the whole hold at 3.  The grip that took the card counts for
-		// nothing until it lets go.  -OLOldHandCardHold: from the first frame, 3 s
+		// nothing until it lets go.  -OLOldHandCardHold: from the first frame, 3 s.  (BUG-DESKSKIP) on the desktop the left mouse
+		// button held counts as one more, by the same clock (the VR buttons' count is as it was; in VR it is never read)
 		static const bool bOldHold = OLFlags::Param(TEXT("OLOldHandCardHold"));
 		const int32 NumHeld = (Axis(TEXT("OLVR_LeftTrigger")) > 0.5f ? 1 : 0) + (Axis(TEXT("OLVR_RightTrigger")) > 0.5f ? 1 : 0)
-			+ (Axis(TEXT("OLVR_LeftGrip")) > 0.5f && !bMovieGripTook[0] ? 1 : 0) + (Axis(TEXT("OLVR_RightGrip")) > 0.5f && !bMovieGripTook[1] ? 1 : 0) + FMath::CountBits(uint64(FaceHeld & 15));
+			+ (Axis(TEXT("OLVR_LeftGrip")) > 0.5f && !bMovieGripTook[0] ? 1 : 0) + (Axis(TEXT("OLVR_RightGrip")) > 0.5f && !bMovieGripTook[1] ? 1 : 0) + FMath::CountBits(uint64(FaceHeld & 15))
+			+ (!bVR && DesktopSkipHeld() ? 1 : 0);
 		const float Need = bOldHold ? 3.f : 2.5f;
 		MovieHoldWait = NumHeld > 0 ? MovieHoldWait + Dt : 0.f;
 		MovieHold = NumHeld > 0 && LM->CanSkipMovie() && (bOldHold || MovieHoldWait >= 0.5f) ? MovieHold + Dt * NumHeld : 0.f;

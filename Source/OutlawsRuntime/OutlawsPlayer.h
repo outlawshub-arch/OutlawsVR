@@ -1690,6 +1690,12 @@ private:
 	int32 JumpFaceButton = 0;            // the face button whose press last jumped (FaceHeld's bit; 0: none)
 	void DesktopJumpPressed();
 	void DesktopJumpReleased();
+	/** (BUG-DESKSAVE) the desktop's Escape: in play, and over a cutscene, the pause menu; in a menu one page back (on the pause
+	 *  page itself: the menu shut).  Nothing in VR. */
+	void DesktopPauseKey();
+	/** (BUG-DESKSKIP) a cutscene's hold to skip on the desktop: the left mouse button down, once it has been up in this movie. */
+	bool DesktopSkipHeld();
+	bool bDeskSkipArmed = false;         // (BUG-DESKSKIP) the left button seen up since this movie began (or came back from the menu)
 	/** REQ-SWIMUPDOWN's stacking (user 3 Nov: arm swimming on top of the stick's nearly doubled the speed), REQ-SWIMUPDOWN2's
 	 *  reading ("measured against the stick's speed"): both together go at most max(arms, (1 + SwimStackShare()) x stick);
 	 *  each alone as before.  SwimArmVel is the arms' own swim, what the strokes alone would give the body (their push,
