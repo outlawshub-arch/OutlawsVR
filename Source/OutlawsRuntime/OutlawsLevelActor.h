@@ -1491,6 +1491,10 @@ public:
 	/** Set while a bad guy's stick goes off (Explode): its harm is no one's doing (no kill, stat or achievement of the
 	 *  player's; the player's own hurt is a bad guy's, not "your own stick"), and the badge does not double it. */
 	bool bEnemyBlast = false;
+	/** (BUG-DICKSTICK) while a bad guy's stick goes off: the one who threw it, whom it spares (AOutlawsEnemy::OldOwnStick);
+	 *  the others in its reach are hurt as ever. */
+	TWeakObjectPtr<AOutlawsEnemy> EnemyBlastBy;
+	int32 EnemyBlastsSpared = 0;                     // (the tests': throwers in their own blast's reach and sight, spared)
 	// (the tests': a bad guy's blasts and knives; the last blast's place, its stick's time from the hand, and its thrower)
 	int32 EnemyBlasts = 0, EnemyKnifeHits = 0, EnemyKnivesSpent = 0;
 	int32 EnemyKnivesLeft = 0;                       // (a missed knife's gknife left on the level, and the last one)

@@ -7,6 +7,9 @@
 // 20 m (inside THROW_MAX 150 units), none at 50 m.  cliff (Two Feathers): knives thrown and one strikes.  -OLOldDynThrow: no
 // throw, as before.  Lines "OLSHOT dynthrow check PASS|FAIL: ..." and "OLSHOT dynthrow RESULT"; shots
 // dynthrow_<level>_<flight|lit>[_old].png in Saved\OLShots.
+// (f) BUG-DICKSTICK (shgulch): his own sticks in (c) leave his health as it was, each one in his reach and sight sparing him;
+// in (e) a bad guy's stick at a bad guy's own feet, his own, spares him, and the next there, SH_DICK's, kills him.
+// -OLOldOwnStick: his own sticks hurt him, as before ((f) FAILs).
 
 #include "OutlawsPlayer.h"
 #include "OutlawsLevelActor.h"
@@ -30,8 +33,8 @@ OL_SHOT_MATCH(OLDynThrowProbe) { return OLFlags::Param(TEXT("OLDynThrowProbe"));
 
 OL_SHOT_TEST(OLDynThrowProbe, 1510)
 {
-	static int32 Passes = 0, Fails = 0, ThrowsWas = 0, BlastsWas = 0, KnifeHitsWas = 0;
-	static float Until = 0.f, NextPlace = 0.f;
+	static int32 Passes = 0, Fails = 0, ThrowsWas = 0, BlastsWas = 0, KnifeHitsWas = 0, SparedWas = 0;
+	static float Until = 0.f, NextPlace = 0.f, ThrowerHealthWas = 0.f;
 	static double StartAt = 0.0;
 	static float HealthPrev = 0.f;
 	static bool bShotFlight = false, bShotLit = false, bBlastChecked = false;
@@ -231,6 +234,8 @@ OL_SHOT_TEST(OLDynThrowProbe, 1510)
 		ThrowsWas = T->ThrowsTotal;
 		BlastsWas = L->EnemyBlasts;
 		KnifeHitsWas = L->EnemyKnifeHits;
+		SparedWas = L->EnemyBlastsSpared;
+		ThrowerHealthWas = T->GetHealth();
 		HealthPrev = L->GetHealth();
 		FeetAtThrow = Mid - FVector(0.0, 0.0, 100.0);
 		StartAt = Now;
@@ -314,6 +319,17 @@ OL_SHOT_TEST(OLDynThrowProbe, 1510)
 		Check(Made >= 1 && ThrowTimes.Num() > 0 && ThrowTimes[0] - StartAt <= 2.0 * T->Def.ShootTimer + 4.0, FString::Printf(TEXT("%s: %s throws at the player %.1f m off (%d throws; the first %.1f s after he was put there; shoot timer %.1f s)"),
 			*Lv, *T->GetOutlawsName(), FVector::Dist2D(FeetAtThrow, FeetOf(T)) / 100.0, Made, ThrowTimes.Num() > 0 ? ThrowTimes[0] - StartAt : -1.0, T->Def.ShootTimer));
 		if (bDick || bBoom) Check(bBlastChecked, FString::Printf(TEXT("%s: the stick went off (%d blasts)"), *Lv, L->EnemyBlasts - BlastsWas));
+		if (bDick || bBoom)
+		{
+			// (f) BUG-DICKSTICK: his own sticks spare him; the player 9 m off (Dick) puts each blast well inside his reach.  BGY2BOOM's
+			// land 20 m off, past it (told, not checked)
+			const int32 Spared = L->EnemyBlastsSpared - SparedWas;
+			const FString Own = FString::Printf(TEXT("%s: his own sticks spare %s: health %.2f before, %.2f after (dead %d) over %d blasts, %d of them in his reach and sight, the last %.1f m from him%s"),
+				*Lv, *T->GetOutlawsName(), ThrowerHealthWas, T->GetHealth(), T->IsDead() ? 1 : 0, L->EnemyBlasts - BlastsWas, Spared,
+				FVector::Dist(L->LastEnemyBlastAt, T->GetActorLocation()) / 100.0, AOutlawsEnemy::OldOwnStick() ? TEXT(" (-OLOldOwnStick)") : TEXT(""));
+			if (bDick) Check(!T->IsDead() && FMath::IsNearlyEqual(T->GetHealth(), ThrowerHealthWas) && Spared >= 1, Own);
+			else UE_LOG(LogOutlaws, Display, TEXT("OLSHOT dynthrow %s"), *Own);
+		}
 		if (bDick)
 		{
 			// [EXE 0x14008b9c6]: the timer's next is SHOOT_TIMER_TIME +- 1.024 s from the last; a throw a timer at most
@@ -355,7 +371,19 @@ OL_SHOT_TEST(OLDynThrowProbe, 1510)
 			const FVector At = FeetOf(E) + FVector(0.0, 0.0, 10.0);
 			if (k == 0)
 			{
+				// (f) a bad guy's stick at his own feet, his own: it spares him
+				const float HpWas = E->GetHealth();
+				const int32 SpWas = L->EnemyBlastsSpared;
+				{
+					TGuardValue<bool> ByEnemy(L->bEnemyBlast, true);
+					TGuardValue<TWeakObjectPtr<AOutlawsEnemy>> Spares(L->EnemyBlastBy, E);
+					L->Explode(At);
+				}
+				Check(!E->IsDead() && FMath::IsNearlyEqual(E->GetHealth(), HpWas) && L->EnemyBlastsSpared == SpWas + 1, FString::Printf(TEXT("shgulch: (f) his own stick at %s's feet spares him (health %.2f -> %.2f, dead %d, spared %d)"),
+					*E->GetOutlawsName(), HpWas, E->GetHealth(), E->IsDead() ? 1 : 0, L->EnemyBlastsSpared - SpWas));
+				// ... and the next there, thrown by SH_DICK, is a bad guy's that kills him (the others in a blast's reach hurt as ever)
 				TGuardValue<bool> ByEnemy(L->bEnemyBlast, true);
+				TGuardValue<TWeakObjectPtr<AOutlawsEnemy>> Spares(L->EnemyBlastBy, Thrower);
 				L->Explode(At);
 			}
 			else

@@ -283,6 +283,9 @@ public:
 	 *  whose copy flies, lies lit and is put out by the host's blast, which alone goes off and hurts.  -OLOldDynCoop: not told
 	 *  (the client hears the throw and the blast, sees no stick), as before. */
 	static bool OldDynCoop();
+	/** (BUG-DICKSTICK) a bad guy's own stick spares him: the original's blast hurts everyone in its reach but the one it came
+	 *  from, unless that one is a player [EXE 0x1400d14dd..0x1400d14f7].  -OLOldOwnStick: it hurts him too, as before. */
+	static bool OldOwnStick();
 	/** A reachable place MinU..MaxU units (octagonal) from Centre, any way round it (the original's 0x140088000). */
 	bool PickPointNear(const FVector& Centre, float MinU, float MaxU, int32 Tries, FVector& Out, bool bAvoidCrowd = false) const;
 	/** The original's close advance applies: a thrower (not a match bot), the new rule. */

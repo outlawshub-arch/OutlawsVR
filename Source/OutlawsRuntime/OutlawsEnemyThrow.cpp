@@ -8,7 +8,7 @@
 //   marks by the player's feet, from 0.8 of his height, at THROW_VELOCITY, the lower arc and then the upper, the whole flight
 //   clear (OutlawsThrowArc.h: the match bots' own lob, UOutlawsCoop::BotThrow);
 // - a stick (pdynam) flies under the bots' gravity, falls off walls, lies lit and goes off its LIFE (4.5 s) after it left
-//   the hand: the level's own blast (Explode), its kills no one's (bEnemyBlast); a knife (pknife, Two Feathers') strikes the
+//   the hand: the level's own blast (Explode), its kills no one's (bEnemyBlast), its thrower spared (BUG-DICKSTICK); a knife (pknife, Two Feathers') strikes the
 //   player for his DAMAGE, as his shot would, and is spent where it meets the level;
 // - both drawn as the player's own (AOutlawsPlayer::BuildThrownLook), the stick's wick burning down under its flame, its
 //   fuse heard.
@@ -86,6 +86,12 @@ bool AOutlawsEnemy::OldDynThrow()
 bool AOutlawsEnemy::OldDynCoop()
 {
 	static const bool bOld = OLFlags::Param(TEXT("OLOldDynCoop"));
+	return bOld;
+}
+
+bool AOutlawsEnemy::OldOwnStick()
+{
+	static const bool bOld = OLFlags::Param(TEXT("OLOldOwnStick"));
 	return bOld;
 }
 
@@ -467,6 +473,7 @@ void AOutlawsLevelActor::TickEnemyThrown(float Dt)
 				const FVector At = F.Pos;
 				const FString By = F.ByName;
 				const float Age = F.Age;
+				const TWeakObjectPtr<AOutlawsEnemy> Thrower = F.By;
 				DropFlying(F);
 				GFlying.RemoveAt(i);
 				++EnemyBlasts;
@@ -475,6 +482,10 @@ void AOutlawsLevelActor::TickEnemyThrown(float Dt)
 				LastEnemyBlastBy = By;
 				UE_LOG(LogOutlawsAI, Log, TEXT("OLRT %s's stick goes off at %s, %.2f s after it left his hand"), *By, *At.ToCompactString(), Age);
 				TGuardValue<bool> ByEnemy(bEnemyBlast, true);
+				// (BUG-DICKSTICK, found by the boss pace probe 7 Nov: SH_Dick's own stick took 11 to 12 of his 12 health, and once
+				// killed him) the one who threw it is spared, as the original's blast spares the one it came from unless he is a
+				// player [EXE 0x1400d14dd..0x1400d14f7]; the other bad guys in its reach are hurt as ever.  -OLOldOwnStick: him too
+				TGuardValue<TWeakObjectPtr<AOutlawsEnemy>> Spares(EnemyBlastBy, AOutlawsEnemy::OldOwnStick() ? TWeakObjectPtr<AOutlawsEnemy>() : Thrower);
 				if (UOutlawsCoop::IsActive(this) && !AOutlawsEnemy::OldDynCoop()) CoopBlastStick = -2;     // (phase 2: told as a bad guy's, it puts out the clients' copies)
 				Explode(At);
 				continue;

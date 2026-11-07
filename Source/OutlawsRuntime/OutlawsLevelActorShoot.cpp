@@ -1183,6 +1183,13 @@ void AOutlawsLevelActor::Explode(const FVector& Where)
 		const double D = FVector::Dist(From, E->GetActorLocation());
 		if (D < R && CanSee(From, E->GetActorLocation(), E))
 		{
+			if (E == EnemyBlastBy.Get())
+			{
+				// (BUG-DICKSTICK) a bad guy's own stick spares him [EXE 0x1400d14dd..0x1400d14f7]
+				++EnemyBlastsSpared;
+				UE_LOG(LogOutlawsAI, Log, TEXT("OLRT %s: his own stick spares him (%.0f cm from it, %.2f by the falloff)"), *E->GetOutlawsName(), D, BlastDamage * Falloff(D));
+				continue;
+			}
 			E->TakeHit(BlastDamage * Falloff(D) * BlastScale, E->GetActorLocation(), (E->GetActorLocation() - Where).GetSafeNormal(), Where, true);
 			BlastKills += E->IsDead() && !E->bVoiceOnly && !E->bNotBadGuy ? 1 : 0;
 		}
