@@ -22,6 +22,7 @@
 #include "Interfaces/IHttpRequest.h"
 #include "Interfaces/IHttpResponse.h"
 #include "Kismet/GameplayStatics.h"
+#include "Misc/App.h"
 #include "Misc/Compression.h"
 #include "Misc/Crc.h"
 #include "Misc/FileHelper.h"
@@ -572,6 +573,24 @@ TStatId UOutlawsUpdate::GetStatId() const
 	RETURN_QUICK_DECLARE_CYCLE_STAT(UOutlawsUpdate, STATGROUP_Tickables);
 }
 
+// (BUG-UPDATETESTFEED, 7 Nov) only a player's run goes to the feed. A worktree's leftover OutlawsBuildStamp.h gave its test runs a
+// real commit, so the old "dev" test let them through, and a published latest.json could have put the prompt into their menu
+// tests. So never from a build with the test code in it, whatever its stamp; and in Shipping (the release's, and the real-app
+// test's OL_UPDATE_TEST_BUILD build, packaged Shipping) never from a run a script started. Null: go on, check.
+static const TCHAR* WhyNoCheck()
+{
+	if (OLFlags::Param(TEXT("OLOldUpdater"))) return TEXT("-OLOldUpdater");
+	if (IsRunningCommandlet()) return TEXT("a commandlet");
+#if WITH_OUTLAWS_TESTS
+	return TEXT("a build with the test code");
+#else
+	if (FCString::Strcmp(OutlawsBuildInfo::Commit(), TEXT("dev")) == 0) return TEXT("no build stamp");
+	if (OLFlags::Param(TEXT("OLShipSmoke"))) return TEXT("-OLShipSmoke");
+	if (FApp::IsUnattended()) return TEXT("-unattended");
+	return nullptr;
+#endif
+}
+
 void UOutlawsUpdate::Initialize(FSubsystemCollectionBase& Collection)
 {
 	Super::Initialize(Collection);
@@ -581,9 +600,10 @@ void UOutlawsUpdate::Initialize(FSubsystemCollectionBase& Collection)
 #if WITH_OUTLAWS_TESTS
 	if (OLFlags::Param(TEXT("OLUpdateProbe")) && !GIsEditor && !IsRunningCommandlet()) OLUpdateStartProbe(this);
 #endif
-	if (OLFlags::Param(TEXT("OLOldUpdater")) || FCString::Strcmp(OutlawsBuildInfo::Commit(), TEXT("dev")) == 0 || OLFlags::Param(TEXT("OLShipSmoke")) || IsRunningCommandlet())
+	if (const TCHAR* Off = WhyNoCheck())
 	{
-		return;       // (an editor run or a test: never on the network; a packaged build only)
+		UE_LOG(LogOutlaws, Log, TEXT("OLUPD no check: %s"), Off);
+		return;       // (an editor run or a test: never on the network; a player's build only)
 	}
 	CleanOldUpdate();
 	if (!CheckOn())
