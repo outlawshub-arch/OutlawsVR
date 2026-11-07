@@ -73,7 +73,7 @@ namespace OutlawsLobbyRedoProbeLocal
 		else if (C.Mode == TEXT("coop")) V.State = { TEXT("The host is playing Hideout"), TEXT("Bad guys x1.50 (the host's choice)") };
 		else V.State = { TEXT("Waiting for friends to join"), TEXT("Bad guys x1.00") };
 		if (V.bMatch) V.State.Add(C.bLocked ? TEXT("Waiting for the host to start the next match") : C.Players == 1 ? TEXT("Waiting for a second player") : TEXT("Starts in 24 s (sooner as players enter)"));
-		if (C.bHostHere) V.Foot = TEXT("Your address  LAN-ADDRESS-1    port 7797");
+		if (C.bHostHere) V.Foot = FString::Printf(TEXT("Your address  %s    port 7797"), *WidestAddress());     // (BUG-LOBBYFOOT)
 		static const TCHAR* Names[] = { TEXT("Marshal"), TEXT("Deputy1"), TEXT("Kate"), TEXT("Slim"), TEXT("Big Bad Barbara Le Fou of New Orleans"), TEXT("Doc"),
 			TEXT("Bob Graham"), TEXT("Matt Morgan"), TEXT("Kid Calico"), TEXT("Ugly Jim"), TEXT("Cactus Pete"), TEXT("Two-Gun Tess"), TEXT("Rattler"), TEXT("Ol' Clem"),
 			TEXT("Spittin' Jack"), TEXT("Gatling Jim") };
@@ -270,8 +270,17 @@ OL_SHOT_TEST(OLLobbyRedoProbe, 1860)
 				Gap >= 0.f ? TEXT("under its letters by") : TEXT("under its baseline, across its descenders' tips by"), FMath::Abs(Gap), Thick, Cap > 0.f ? Thick / Cap : 0.f, U.GetSize().X,
 				Clear, *Next.Left(20), bStep ? TEXT(", inside the row step") : TEXT(", OUT OF THE ROW STEP"));
 		}
+		// BUG-LOBBYFOOT: the foot line whole at the widest address, its letters under the panel, its line box and letters above the
+		// help line (y 1015), and left of the blue cloth's tail
+		if (!V.Foot.IsEmpty())
+		{
+			const FInk* Foot = D.Texts.FindByPredicate([&V](const FInk& X) { return X.Text == V.Foot; });
+			Check(Foot && Foot->Ink.bIsValid && Foot->Ink.Min.Y >= D.Panel.Max.Y && Foot->Ink.Max.Y <= 1015.f && Foot->Box.Max.Y <= 1015.f && Foot->Box.Min.X >= ArtLeft && Foot->Box.Max.X <= ArtRightFoot,
+				Foot ? FString::Printf(TEXT("%s foot: \"%s\" whole, box x %.1f..%.1f y %.1f..%.1f, letters y %.1f..%.1f, the panel's foot %.0f"), *C.Name, *Foot->Text, Foot->Box.Min.X, Foot->Box.Max.X,
+					Foot->Box.Min.Y, Foot->Box.Max.Y, Foot->Ink.Min.Y, Foot->Ink.Max.Y, D.Panel.Max.Y) : FString::Printf(TEXT("%s foot: not drawn whole"), *C.Name));
+		}
 		const bool bOk = bOrder && bGrey && bApart && bFits && bNames && bSides && CutLines == 0 && bUnder;
-		Check(bOk, FString::Printf(TEXT("%s: items [%s]%s; greyed %d, in reach %d; laser boxes %s; panel %d of %d players in %d column%s, step %.0f%s; %d lines cut; %s%s; %s"), *C.Name, *FString::Join(Got, TEXT(" | ")),
+		Check(bOk,FString::Printf(TEXT("%s: items [%s]%s; greyed %d, in reach %d; laser boxes %s; panel %d of %d players in %d column%s, step %.0f%s; %d lines cut; %s%s; %s"), *C.Name, *FString::Join(Got, TEXT(" | ")),
 			bOrder ? TEXT("") : *FString::Printf(TEXT(" (wanted [%s])"), *FString::Join(Want, TEXT(" | "))), Greyed, Reach, bApart ? TEXT("apart") : TEXT("OVERLAP"), D.Names, V.Players.Num(), D.Columns,
 			D.Columns == 1 ? TEXT("") : TEXT("s"), D.NameStep, V.bTeams ? (bSides ? TEXT(", red left and blue right") : TEXT(", SIDES WRONG")) : TEXT(""), CutLines, *Under, bUnder ? TEXT("") : TEXT(" (UNDERLINE WRONG)"), *Said));
 		if (C.bMeLast && MeP)

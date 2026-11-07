@@ -93,6 +93,13 @@ namespace OutlawsLobbyPage
 	inline float ArtRightAt(float BottomY) { return BottomY > ArtFootY ? ArtRightFoot : ArtRightTop; }
 
 #if WITH_OUTLAWS_TESTS
+	/** BUG-LOBBYFOOT: the widest address the foot line can show, for the fit checks: four groups of three, put together here. */
+	inline FString WidestAddress()
+	{
+		const FString G = TEXT("888");
+		return FString::Join(TArray<FString>{ G, G, G, G }, TEXT("."));
+	}
+
 	/** -OLLobbyRedoProbe: a made-up page in place of the session's while bOn. */
 	struct FTest
 	{

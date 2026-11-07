@@ -106,6 +106,10 @@ void UOutlawsCoop::LobbyView(const FString& File, OutlawsLobbyPage::FView& V) co
 	V.Bots = BotsInSession();
 	// the foot: the host's address, the host only (P3: joining is by address; the router's detail is on the Host Game page)
 	if (IsHost()) V.Foot = FString::Printf(TEXT("Your address  %s    port %d"), LanAddress.IsEmpty() ? TEXT("(unknown)") : *LanAddress, ListenPort);
+#if WITH_OUTLAWS_TESTS
+	// (BUG-LOBBYFOOT: the gate's fit runs check the page at the widest address, whatever this machine's is)
+	if (IsHost() && (OLFlags::HasValue(TEXT("OLFitTag")) || OLFlags::HasValue(TEXT("OLCoopLobbyShot")))) V.Foot = FString::Printf(TEXT("Your address  %s    port %d"), *OutlawsLobbyPage::WidestAddress(), ListenPort);
+#endif
 	// the state, at most two lines (P2): what is played and where, then what the page waits for
 	if (V.bHostPage)
 	{

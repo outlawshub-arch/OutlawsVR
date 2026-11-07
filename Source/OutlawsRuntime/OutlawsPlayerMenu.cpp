@@ -3951,7 +3951,8 @@ void AOutlawsPlayer::DrawFrontCanvas(UCanvas* C, int32 Width, int32 Height)
 		Say(0, V.Title, 960.f, 115.f, Ink, false, 1100.f);
 		for (int32 k = 0; k < V.State.Num() && k < 2; ++k) Say(17, V.State[k], 950.f, 252.f + k * 50.f, Ink, false, 1320.f);
 		// the PLAYERS panel, clear of the pistol and the red cloth (x 270) and of the items
-		constexpr float PX0 = 285.f, PX1 = 1040.f, PY0 = 345.f, PY1 = 955.f;
+		// (BUG-LOBBYFOOT: its foot up 10, to leave the foot line's letters room in the shipped menu font)
+		constexpr float PX0 = 285.f, PX1 = 1040.f, PY0 = 345.f, PY1 = 945.f;
 		D.Panel = FBox2D(FVector2D(PX0, PY0), FVector2D(PX1, PY1));
 		{
 			// fragtable.rcss's full_box at 1 view unit a dp: the wood inside the frame's padding (24, 15, 26, 16), repeated at its
@@ -4160,7 +4161,8 @@ void AOutlawsPlayer::DrawFrontCanvas(UCanvas* C, int32 Width, int32 Height)
 			if (FrontItemInk.IsValidIndex(i)) Note(Shown, FrontItemInk[i], SaveFont(15), FMath::Min(1.f, ItemW / FMath::Max(Wide(SaveFont(15), Shown), 1.f)), i, false);
 		}
 		// the host's address at the foot (P3), above the help line, clear of the red cloth and the blue cloth's tail
-		if (!V.Foot.IsEmpty()) Say(17, V.Foot, 890.f, 982.f, Ink, false, 1180.f);
+		// (BUG-LOBBYFOOT, RC gate 7 Nov: at y 982 the shipped menu font's line box, 78 tall, ran to y 1021, onto the help line)
+		if (!V.Foot.IsEmpty()) Say(17, V.Foot, 890.f, 975.f, Ink, false, 1180.f);
 	}
 	else if (File.StartsWith(TEXT("#coop")))
 	{
@@ -5208,14 +5210,16 @@ bool AOutlawsPlayer::MenuPageFits(FString& Said) const
 		if ((File == TEXT("#cooplobby") || File == TEXT("#coopclient") || File == TEXT("#coophost")) && !OutlawsLobbyPage::Old())
 		{
 			// (REQ-LOBBYREDO) every text on the parchment as last drawn: clear of the pistol and the red cloth (x 280), of the rifle
-			// and the blue cloth (x 1640; 1500 under y 960), above the help line (y 1015), none under the floor
+			// and the blue cloth (x 1640; 1500 under y 960), above the help line (y 1015), none under the floor; no letters across
+			// the panel's foot (BUG-LOBBYFOOT: the foot line under it, the names inside it)
 			using namespace OutlawsLobbyPage;
 			const FDrawn& D = Drawn();
 			int32 Out = 0, Small = 0;
 			FString First;
 			for (const FInk& I : D.Texts)
 			{
-				const bool bIn = I.Box.Min.X >= ArtLeft && I.Box.Max.X <= ArtRightAt(I.Box.Max.Y) && I.Box.Min.Y >= 20.f && I.Box.Max.Y <= 1015.f;
+				const bool bAcross = I.Ink.bIsValid && I.Ink.Min.Y < D.Panel.Max.Y && I.Ink.Max.Y > D.Panel.Max.Y;
+				const bool bIn = I.Box.Min.X >= ArtLeft && I.Box.Max.X <= ArtRightAt(I.Box.Max.Y) && I.Box.Min.Y >= 20.f && I.Box.Max.Y <= 1015.f && !bAcross;
 				const bool bBig = I.CapPx >= FloorPx() - 0.01f;
 				Out += bIn ? 0 : 1;
 				Small += bBig ? 0 : 1;
