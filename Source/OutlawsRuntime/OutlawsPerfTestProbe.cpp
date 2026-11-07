@@ -216,7 +216,7 @@ void AOutlawsPlayer::TickPerfTestProbe(float Dt)
 		if (!Is(TEXT("hd_art"), PpOnOff(L->bHDTextures))) Wrong.Add(TEXT("hd_art"));
 		if (!Is(TEXT("stochastic"), PpOnOff(L->bStochastic))) Wrong.Add(TEXT("stochastic"));
 		if (!Is(TEXT("tinting"), PpOnOff(L->bPaletteGrades))) Wrong.Add(TEXT("tinting"));
-		if (!Is(TEXT("brightness"), FString::Printf(TEXT("%.2f"), OutlawsDeviceProfile::Gamma()))) Wrong.Add(TEXT("brightness"));
+		if (!Is(TEXT("brightness"), FString::Printf(TEXT("%.1f (gamma %.2f)"), OutlawsDeviceProfile::Brightness(), OutlawsDeviceProfile::Gamma()))) Wrong.Add(TEXT("brightness"));
 		if (!Is(TEXT("perf_hud"), PpOnOff(OutlawsDeviceProfile::PerfHud()))) Wrong.Add(TEXT("perf_hud"));
 		if (!Is(TEXT("bad_guys"), FString::Printf(TEXT("x%.2f"), L->SoloBadGuysWanted()))) Wrong.Add(TEXT("bad_guys"));
 		if (!Is(TEXT("randomizer"), PpOnOff(L->RandoOn()))) Wrong.Add(TEXT("randomizer"));

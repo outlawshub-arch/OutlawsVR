@@ -98,7 +98,7 @@ OL_SHOT_MATCH(OLLanternRangeProbe) { return OLFlags::Param(TEXT("OLLanternRangeP
 OL_SHOT_TEST(OLLanternRangeProbe, 1900)
 {
 	static int32 Passes = 0, Fails = 0, Case = 0, Spot = 0, Wait = 0;
-	static float Quiet = -1.f, NextAt = 0.f, GammaWas = 1.f, Pix1 = -1.f;
+	static float Quiet = -1.f, NextAt = 0.f, Pix1 = -1.f;
 	static uint8 Map[128];
 	static double KProb[5] = {};
 	static FVector Eye0 = FVector::ZeroVector, Ahead = FVector::ForwardVector;
@@ -133,10 +133,9 @@ OL_SHOT_TEST(OLLanternRangeProbe, 1900)
 	{
 		if (ShotTime < 4.f || !bUp || !TestShadersReady(Quiet, 2.f)) return;
 		L->bInvincible = true;
-		// no lamp lights while the test reads (a lit lamp near would add to the wall), the Brightness at 1.0 (put back after)
+		// no lamp lights while the test reads (a lit lamp near would add to the wall), the gamma at 1.0 (REQ-GAMMA12: a test's own, SetGammaRaw, the picture as before the row's scale; let go after)
 		if (IConsoleVariable* Lamps = IConsoleManager::Get().FindConsoleVariable(TEXT("ol.LampLights"))) Lamps->Set(0, ECVF_SetByCode);
-		GammaWas = OutlawsDeviceProfile::Gamma();
-		OutlawsDeviceProfile::SetGamma(1.f);
+		OutlawsDeviceProfile::SetGammaRaw(1.f);
 		LrDepthMap(Map);
 		// the steady flicker [EXE 0x1402fd740], every 0.02 s: one time in four the last +-0.125 (at least 1), else 1 + rand(29) / 8
 		{
@@ -280,7 +279,7 @@ OL_SHOT_TEST(OLLanternRangeProbe, 1900)
 		if (Controller) Controller->SetControlRotation(Ahead.Rotation());
 		const FVector P = Camera->GetComponentLocation() + Ahead * (LrDist[Di] * 100.0);
 		if (M) { M->SetWorldLocation(P); M->SetWorldRotation(Ahead.Rotation()); }
-		OutlawsDeviceProfile::SetGamma(Cs.Gamma);
+		OutlawsDeviceProfile::SetGammaRaw(Cs.Gamma);
 		if (Wait == 0 && M)
 		{
 			// the wall's own light (the vertex colour's red, as the level's faces carry their sector's)
@@ -357,7 +356,7 @@ OL_SHOT_TEST(OLLanternRangeProbe, 1900)
 			const FLinearColor G16(FMath::Pow(FMath::Min(Want.R, 1.f), 1.f / 1.6f), FMath::Pow(FMath::Min(Want.G, 1.f), 1.f / 1.6f), FMath::Pow(FMath::Min(Want.B, 1.f), 1.f / 1.6f), 1.f);
 			Check(GotLv > Pix1 + 1.f, FString::Printf(TEXT("(2) %s Brightness 1.6, 8 m: the screen %.2f levels, brighter than at 1.0 (%.2f; the frame's sum ^ (1 / 1.6) %.2f)"),
 				Path, GotLv, Pix1, LrLevel(G16)));
-			OutlawsDeviceProfile::SetGamma(1.f);
+			OutlawsDeviceProfile::SetGammaRaw(1.f);
 		}
 		Wait = 0;
 		if (++Case <= int32(UE_ARRAY_COUNT(LrCases))) return;
@@ -415,7 +414,7 @@ OL_SHOT_TEST(OLLanternRangeProbe, 1900)
 	}
 	case 3:
 		if (ShotTime < NextAt + 1.f) return;
-		OutlawsDeviceProfile::SetGamma(GammaWas);
+		OutlawsDeviceProfile::SetGammaRaw(0.f);       // (the row's own again)
 		if (L->bLampOn) L->ToggleLamp();
 		UE_LOG(LogOutlaws, Display, TEXT("OLSHOT lanternrange RESULT %s (%d passed, %d failed; %s, %s)"), Fails == 0 && Passes > 0 ? TEXT("ALL PASS") : TEXT("FAIL"), Passes, Fails,
 			bOld ? TEXT("-OLOldLantern") : TEXT("new"), Path);

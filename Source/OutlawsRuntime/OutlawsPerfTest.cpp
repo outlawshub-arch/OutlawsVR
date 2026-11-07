@@ -556,7 +556,7 @@ FString AOutlawsLevelActor::PerfTestSettings(const FString& CapturePath) const
 	Add(TEXT("object_detail"), FString::Printf(TEXT("%s (x%.2f)"), *OutlawsDeviceProfile::RowValue(TEXT("r_objdetail")), OutlawsDeviceProfile::ObjectDetailScale()));
 	Add(TEXT("stochastic"), OnOff(bStochastic));
 	Add(TEXT("tinting"), OnOff(bPaletteGrades));
-	Add(TEXT("brightness"), FString::Printf(TEXT("%.2f"), OutlawsDeviceProfile::Gamma()));
+	Add(TEXT("brightness"), FString::Printf(TEXT("%.1f (gamma %.2f)"), OutlawsDeviceProfile::Brightness(), OutlawsDeviceProfile::Gamma()));     // (REQ-GAMMA12: the row, the gamma applied)
 	Add(TEXT("perf_hud"), OnOff(OutlawsDeviceProfile::PerfHud()));
 	Add(TEXT("grab_glow"), OnOff(OutlawsDeviceProfile::GrabGlow()));
 	Add(TEXT("movement_speed"), FString::Printf(TEXT("%.0f %%"), GameSpeed * 200.f));

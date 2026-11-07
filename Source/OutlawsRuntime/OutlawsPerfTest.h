@@ -25,8 +25,9 @@
 // marker, a card asks them to stand still; then every Graphics row at its top (the refresh at the highest the headset
 // offers) and each row in turn, A (all top) B (that row at its lowest) A B, 15 s a phase, the first 3 s after a switch not
 // measured: Resolution 120 / 70 (then a phase each at 100 and 85, B-tagged, in no pair), Lamp Lights 4 / 0, Remastered
-// Graphics, Object Detail Far / Near, Stochastic Textures, Tinting, Quest 2 Mode off / on (the other rows held at the top: what
-// it adds by itself), and last All top / lowest.  Every row changes live (no reload); a row that cannot change is skipped and
+// Graphics, Object Detail Far / Near, Stochastic Textures, Tinting, (REQ-GAMMA12) Brightness as set / the old 1.0 look (gamma
+// 1.0: the headset's pow skipped), Quest 2 Mode off / on (the other rows held at the top: what it adds by itself), and last
+// All top / lowest.  Every row changes live (no reload); a row that cannot change is skipped and
 // said so.  A small card shows the phase ("4 of 32: Resolution at lowest").  Each phase's game work, render, RHI and GPU ms,
 // fps, frames over budget, bad guys awake and top buckets (OutlawsPerf::BeginWindow) go to the log and to
 // Saved/Perf/sweep_<the capture's stamp>.txt: each row's saving ranked, with its two pairs' spread, the all pair against the
@@ -105,6 +106,7 @@ namespace OutlawsPerfTest
 		bool bStochastic = true;
 		bool bTinting = true;
 		bool bQuest2 = false;
+		float Gamma = 0.f;           // (REQ-GAMMA12) 0: the Brightness row's own; 1: the old 1.0 look (OutlawsDeviceProfile::SetGammaRaw)
 	};
 	struct FSweepPhase
 	{

@@ -45,6 +45,8 @@
 #include "Engine/TextureRenderTarget2D.h"
 #include "RenderUtils.h"
 #include "UnrealClient.h"
+#include "Engine/GameViewportClient.h"
+#include "RHI.h"
 #include "HAL/PlatformMisc.h"
 #include "Misc/CommandLine.h"
 #include "Misc/Parse.h"
@@ -1156,14 +1158,15 @@ bool AOutlawsPlayer::ShowMenuPage(const FString& File, bool bPush)
 		}
 		if (bDisplay && !Page->Items.ContainsByPredicate([](const OutlawsMenu::FItem& It) { return It.Name == TEXT("r_gamma"); }))
 		{
-			// ours: REQ-GAMMA, a slider like the speed and the volumes (each press a step, live; OutlawsDeviceProfile::Gamma)
+			// ours: REQ-GAMMA, a slider like the speed and the volumes (each press a step, live; OutlawsDeviceProfile::Brightness,
+			// REQ-GAMMA12's scale: the gamma is the row's value x 1.2)
 			OutlawsMenu::FItem G;
 			G.Kind = OutlawsMenu::EItemKind::Range;
 			G.Label = TEXT("Brightness");
 			G.Name = TEXT("r_gamma");
-			G.Min = 0.7f;
-			G.Max = 1.6f;
-			G.Step = 0.1f;
+			G.Min = OutlawsDeviceProfile::BrightnessLo;
+			G.Max = OutlawsDeviceProfile::BrightnessHi;
+			G.Step = OutlawsDeviceProfile::BrightnessStep;
 			Page->Items.Add(G);
 		}
 		if (bDisplay && !Page->Items.ContainsByPredicate([](const OutlawsMenu::FItem& It) { return It.Name == TEXT("r_resolution"); }))
@@ -1242,7 +1245,7 @@ bool AOutlawsPlayer::ShowMenuPage(const FString& File, bool bPush)
 
 const float* AOutlawsPlayer::LiveSetting(const FString& Name) const
 {
-	if (Name == TEXT("r_gamma")) return OutlawsDeviceProfile::GammaSetting();     // (REQ-GAMMA: the machine's, not the level's)
+	if (Name == TEXT("r_gamma")) return OutlawsDeviceProfile::BrightnessSetting();     // (REQ-GAMMA: the machine's, not the level's)
 	AOutlawsLevelActor* L = Level.Get();
 	if (!L) return nullptr;
 	if (Name == TEXT("vr_speed")) return &L->GameSpeed;
@@ -1439,7 +1442,7 @@ FString AOutlawsPlayer::MenuRowText(int32 Index) const
 		return FString::Printf(TEXT("%s %s"), (V && *V) ? TEXT("(o)") : TEXT("( )"), *I.Label);
 	case EItemKind::Range:
 	{
-		if (I.Name == TEXT("r_gamma")) return FString::Printf(TEXT("%s:  %s"), *I.Label, *OutlawsDeviceProfile::GammaText());
+		if (I.Name == TEXT("r_gamma")) return FString::Printf(TEXT("%s:  %s"), *I.Label, *OutlawsDeviceProfile::BrightnessText());
 		if (const AOutlawsLevelActor* LH = Level.Get(); LH && LH->HeldGameSpeed >= 0.f && I.Name == TEXT("vr_speed"))
 		{
 			return FString::Printf(TEXT("Movement speed %d%% (set by host)"), FMath::RoundToInt(LH->HeldGameSpeed * 200.f));      // (REQ-MPSPEED)
@@ -2689,8 +2692,8 @@ void AOutlawsPlayer::MenuActivate(int32 Hand, int32 Index)
 	{
 		if (I.Name == TEXT("r_gamma"))
 		{
-			// REQ-GAMMA: a step brighter (after 1.6 back to 0.7), shown at once behind the menu (UpdateScreenFx)
-			MenuToastText(OutlawsDeviceProfile::PressGamma());
+			// REQ-GAMMA: a step brighter (after 1.3 back to 0.6), shown at once behind the menu (UpdateScreenFx)
+			MenuToastText(OutlawsDeviceProfile::PressBrightness());
 			RefreshMenuRows();
 			SaveSettings();
 			return;
@@ -4795,9 +4798,13 @@ OL_SHOT_TEST(OLGfxMenuShot, 810)
 
 void AOutlawsPlayer::GammaTestTick()
 {
-	// REQ-GAMMA: the view photographed at 1.0 first (the look as before), the Brightness row pressed three times (1.3: the
-	// grade, the headset's QHurt.w, the file), the file read back over a 1.0 in memory, Restore defaults (1.0 everywhere);
-	// then the view at 0.7, 1.0 and 1.6 with the menu closed (the gate measures their mean luminance)
+	// REQ-GAMMA, REQ-GAMMA12: the start's Brightness against the settings file the level read (the old key Gamma alone: the
+	// nearest new step), the old key's table, the row's range, tenths and scale (gamma = Brightness x 1.2), the keys read and
+	// written; the view photographed at the default; the Brightness row pressed three times (1.3: the grade, the headset's
+	// QHurt.w, the file), the file read back over a 1.0 in memory, Restore defaults (1.0 everywhere), a lap of presses; then
+	// with the menu closed the view at the gammas 0.7, 1.0 and 1.6 (a test's own, SetGammaRaw: the pictures as before the
+	// scale; the gate measures their mean luminance) and at the default's 1.2
+	using namespace OutlawsDeviceProfile;
 	static int32 Fails = 0;
 	auto Check = [](bool bOk, const FString& What)
 	{
@@ -4807,12 +4814,12 @@ void AOutlawsPlayer::GammaTestTick()
 	auto Shot = [](const TCHAR* Name)
 	{
 		FScreenshotRequest::RequestScreenshot(FPaths::ProjectSavedDir() / TEXT("OLShots") / FString(Name) + TEXT(".png"), false, false);
-		UE_LOG(LogOutlaws, Display, TEXT("OLSHOT gamma: screenshot %s at %.1f"), Name, OutlawsDeviceProfile::Gamma());
+		UE_LOG(LogOutlaws, Display, TEXT("OLSHOT gamma: screenshot %s at gamma %.2f"), Name, Gamma());
 	};
-	auto FileGamma = []()
+	auto FileBrightness = []()
 	{
 		const TMap<FString, FString> S = AOutlawsLevelActor::ReadSettings();
-		return S.Contains(TEXT("Gamma")) ? S[TEXT("Gamma")] : FString(TEXT("(absent)"));
+		return S.Contains(TEXT("Brightness")) ? S[TEXT("Brightness")] : FString(TEXT("(absent)"));
 	};
 	auto QW = [this]()
 	{
@@ -4820,18 +4827,19 @@ void AOutlawsPlayer::GammaTestTick()
 		if (UMaterialParameterCollectionInstance* M = ToneMpc && GetWorld() ? GetWorld()->GetParameterCollectionInstance(ToneMpc) : nullptr) M->GetVectorParameterValue(TEXT("QHurt"), Q);
 		return Q.A;
 	};
-	auto State = [this, &QW, &FileGamma]()
+	auto State = [this, &QW, &FileBrightness]()
 	{
 		const FPostProcessSettings& PP = Camera->PostProcessSettings;
-		return FString::Printf(TEXT("gamma %.2f, grade ColorGamma override %d w %.2f, headset QHurt.w %.2f, file Gamma=%s"), OutlawsDeviceProfile::Gamma(),
-			PP.bOverride_ColorGamma ? 1 : 0, PP.ColorGamma.W, QW(), *FileGamma());
+		return FString::Printf(TEXT("Brightness %.1f, gamma %.2f, grade ColorGamma override %d w %.2f, headset QHurt.w %.2f, file Brightness=%s"), Brightness(), Gamma(),
+			PP.bOverride_ColorGamma ? 1 : 0, PP.ColorGamma.W, QW(), *FileBrightness());
 	};
 	auto Agree = [this, &QW](float G)
 	{
 		const FPostProcessSettings& PP = Camera->PostProcessSettings;
-		return FMath::IsNearlyEqual(OutlawsDeviceProfile::Gamma(), G, 0.001f) && (PP.bOverride_ColorGamma == (G != 1.f)) && FMath::IsNearlyEqual(float(PP.ColorGamma.W), G, 0.001f)
+		return FMath::IsNearlyEqual(Gamma(), G, 0.001f) && (PP.bOverride_ColorGamma == (G != 1.f)) && FMath::IsNearlyEqual(float(PP.ColorGamma.W), G, 0.001f)
 			&& FMath::IsNearlyEqual(QW(), G - 1.f, 0.001f);
 	};
+	auto AgreeShown = [&Agree](float B) { return FMath::IsNearlyEqual(Brightness(), B, 0.001f) && Agree(B * BrightnessScale); };
 	auto Row = [this]()
 	{
 		const int32 i = MenuPage ? MenuPage->Items.IndexOfByPredicate([](const OutlawsMenu::FItem& It) { return It.Name == TEXT("r_gamma"); }) : INDEX_NONE;
@@ -4839,6 +4847,7 @@ void AOutlawsPlayer::GammaTestTick()
 	};
 	auto Finish = [this]()
 	{
+		SetGammaRaw(0.f);
 		UE_LOG(LogOutlaws, Display, TEXT("OLSHOT gamma RESULT %s (%d failed)"), Fails == 0 ? TEXT("ALL PASS") : TEXT("FAIL"), Fails);
 		FGenericPlatformMisc::RequestExit(false);
 		ShotTime = -1.f;
@@ -4859,11 +4868,89 @@ void AOutlawsPlayer::GammaTestTick()
 	if (ShotStep == 0 && ShotTime > 5.f)
 	{
 		UE_LOG(LogOutlaws, Display, TEXT("OLSHOT gamma: start: %s (%s)"), *State(), GetWorld()->FeatureLevel == ERHIFeatureLevel::ES3_1 ? TEXT("ES3_1, the headset's path") : TEXT("SM5"));
-		Check(Agree(1.f), FString::Printf(TEXT("the default is 1.0, the grade untouched: %s"), *State()));
-		Shot(TEXT("ol_gamma_base"));
+		// the start: what the level read from the file (AOutlawsLevelActor::LoadSettings), the old key alone as its new step
+		{
+			const TMap<FString, FString> F0 = AOutlawsLevelActor::ReadSettings();
+			const FString* B0 = F0.Find(TEXT("Brightness"));
+			const FString* G0 = F0.Find(TEXT("Gamma"));
+			float Want0 = 1.f;
+			if (B0 && FCString::Atof(**B0) > 0.f) Want0 = float(FMath::Clamp(FMath::RoundToInt(FCString::Atof(**B0) * 10.f), 6, 13)) / 10.f;
+			else if (G0 && FCString::Atof(**G0) > 0.f) Want0 = BrightnessFromOldGamma(FCString::Atof(**G0));
+			Check(AgreeShown(Want0), FString::Printf(TEXT("the start: Brightness %.1f, gamma %.2f, from the file's Brightness=%s Gamma=%s: %s"), Want0, Want0 * BrightnessScale,
+				B0 ? **B0 : TEXT("(absent)"), G0 ? **G0 : TEXT("(absent)"), *State()));
+		}
+		// the old key's table: each old gamma to the new step nearest the same picture, the old default to the new default
+		{
+			static const float OldG[] = { 0.7f, 0.8f, 0.9f, 1.0f, 1.1f, 1.2f, 1.3f, 1.4f, 1.5f, 1.6f, 0.5f, 2.0f };
+			static const float NewB[] = { 0.6f, 0.7f, 0.8f, 1.0f, 0.9f, 1.0f, 1.1f, 1.2f, 1.3f, 1.3f, 0.6f, 1.3f };
+			bool bOk = true;
+			FString Table;
+			for (int32 k = 0; k < int32(UE_ARRAY_COUNT(OldG)); ++k)
+			{
+				const float B = BrightnessFromOldGamma(OldG[k]);
+				bOk &= FMath::IsNearlyEqual(B, NewB[k], 0.001f);
+				Table += FString::Printf(TEXT(" %.1f>%.1f"), OldG[k], B);
+			}
+			Check(bOk, TEXT("the old key's table (old gamma>Brightness):") + Table);
+		}
+		// the row: held to 0.6 .. 1.3, whole tenths; every step's gamma its value x 1.2 (0.72 up to 1.56)
+		{
+			static const float In[] = { 0.5f, 0.f, 1.5f, 1.04f, 1.26f, 0.94f, 0.76f };
+			static const float Want[] = { 0.6f, 0.6f, 1.3f, 1.0f, 1.3f, 0.9f, 0.8f };
+			bool bOk = true;
+			FString Text;
+			for (int32 k = 0; k < int32(UE_ARRAY_COUNT(In)); ++k)
+			{
+				SetBrightness(In[k]);
+				bOk &= FMath::IsNearlyEqual(Brightness(), Want[k], 1e-6f) && FMath::IsNearlyEqual(Brightness() * 10.f, FMath::RoundToFloat(Brightness() * 10.f), 1e-4f);
+				Text += FString::Printf(TEXT(" %.2f>%.1f"), In[k], Brightness());
+			}
+			Check(bOk, TEXT("the row held to 0.6 .. 1.3 in tenths:") + Text);
+			bOk = true;
+			Text.Reset();
+			for (int32 s = 6; s <= 13; ++s)
+			{
+				SetBrightness(s / 10.f);
+				bOk &= FMath::IsNearlyEqual(Brightness(), s / 10.f, 1e-6f) && FMath::IsNearlyEqual(Gamma(), s * 0.12f, 0.0005f);
+				Text += FString::Printf(TEXT(" %.1f>%.2f"), Brightness(), Gamma());
+			}
+			Check(bOk && BrightnessLo == 0.6f && BrightnessHi == 1.3f && BrightnessScale == 1.2f, TEXT("gamma = Brightness x 1.2 on each step:") + Text);
+		}
+		// the keys: Brightness read first, the old Gamma only without it; written as Brightness alone, in tenths
+		{
+			TMap<FString, FString> Base;
+			GatherSettings(Base);
+			struct FKeys { const TCHAR* Br; const TCHAR* Gm; float Want; const TCHAR* Saved; };
+			static const FKeys Keys[] = { { nullptr, TEXT("1.30"), 1.1f, TEXT("1.1") }, { nullptr, TEXT("1.00"), 1.f, TEXT("1.0") }, { nullptr, TEXT("0.70"), 0.6f, TEXT("0.6") },
+				{ TEXT("0.8"), TEXT("1.60"), 0.8f, TEXT("0.8") }, { TEXT("1.27"), nullptr, 1.3f, TEXT("1.3") }, { nullptr, nullptr, 1.f, TEXT("1.0") }, { TEXT("junk"), TEXT("1.40"), 1.2f, TEXT("1.2") } };
+			bool bOk = true;
+			FString Text;
+			for (const FKeys& K : Keys)
+			{
+				TMap<FString, FString> M = Base;
+				M.Remove(TEXT("Brightness"));
+				M.Remove(TEXT("Gamma"));
+				if (K.Br) M.Add(TEXT("Brightness"), K.Br);
+				if (K.Gm) M.Add(TEXT("Gamma"), K.Gm);
+				LoadSettings(M, TEXT("gamma test"));
+				TMap<FString, FString> Out;
+				GatherSettings(Out);
+				bOk &= FMath::IsNearlyEqual(Brightness(), K.Want, 0.001f) && Out.FindRef(TEXT("Brightness")) == K.Saved && !Out.Contains(TEXT("Gamma"));
+				Text += FString::Printf(TEXT(" [Brightness=%s Gamma=%s]>%.1f saved %s"), K.Br ? K.Br : TEXT("-"), K.Gm ? K.Gm : TEXT("-"), Brightness(), *Out.FindRef(TEXT("Brightness")));
+			}
+			Check(bOk, TEXT("the keys read and written:") + Text);
+			LoadSettings(Base, TEXT("gamma test: put back"));
+		}
+		SetBrightness(1.f);              // (the default for the steps below, in memory)
 		++ShotStep;
 	}
 	else if (ShotStep == 1 && ShotTime > 6.f)
+	{
+		Check(AgreeShown(1.f), FString::Printf(TEXT("the default 1.0, the grade at gamma 1.2: %s"), *State()));
+		Shot(TEXT("ol_gamma_base"));
+		++ShotStep;
+	}
+	else if (ShotStep == 2 && ShotTime > 7.f)
 	{
 		OpenMenu(false);
 		ShowMenuPage(TEXT("options_display.rml"), true);
@@ -4874,47 +4961,122 @@ void AOutlawsPlayer::GammaTestTick()
 		for (int32 k = 0; k < 3; ++k) MenuActivate(1, i);
 		++ShotStep;
 	}
-	else if (ShotStep == 2 && ShotTime > 7.f)
+	else if (ShotStep == 3 && ShotTime > 8.f)
 	{
 		const int32 i = Row();
 		UE_LOG(LogOutlaws, Display, TEXT("OLSHOT gamma: pressed 3 times: '%s'; %s"), i != INDEX_NONE ? *MenuRowText(i) : TEXT("?"), *State());
-		Check(Agree(1.3f) && FileGamma() == TEXT("1.30") && i != INDEX_NONE && MenuRowText(i).EndsWith(TEXT("1.3")), FString::Printf(TEXT("three presses: 1.3 live and saved: %s"), *State()));
+		Check(AgreeShown(1.3f) && FileBrightness() == TEXT("1.3") && i != INDEX_NONE && MenuRowText(i).EndsWith(TEXT("1.3")), FString::Printf(TEXT("three presses: 1.3 (gamma 1.56) live and saved: %s"), *State()));
 		Shot(TEXT("ol_gamma_menu_130"));
 		// the round trip: 1.0 in memory, then the settings file read again
-		OutlawsDeviceProfile::SetGamma(1.f);
-		OutlawsDeviceProfile::LoadSettings(AOutlawsLevelActor::ReadSettings());     // (what AOutlawsLevelActor::LoadSettings does with it at start)
-		Check(FMath::IsNearlyEqual(OutlawsDeviceProfile::Gamma(), 1.3f, 0.001f), FString::Printf(TEXT("read back from the file: %.2f"), OutlawsDeviceProfile::Gamma()));
-		++ShotStep;
-	}
-	else if (ShotStep == 3 && ShotTime > 8.f)
-	{
-		Check(Agree(1.3f), FString::Printf(TEXT("after the read back the grade follows: %s"), *State()));
-		const int32 d = MenuPage ? MenuPage->Items.IndexOfByPredicate([](const OutlawsMenu::FItem& It) { return It.Name == TEXT("defaults:display"); }) : INDEX_NONE;
-		if (d != INDEX_NONE) MenuActivate(1, d);
+		SetBrightness(1.f);
+		LoadSettings(AOutlawsLevelActor::ReadSettings());     // (what AOutlawsLevelActor::LoadSettings does with it at start)
+		Check(FMath::IsNearlyEqual(Brightness(), 1.3f, 0.001f), FString::Printf(TEXT("read back from the file: %.1f"), Brightness()));
 		++ShotStep;
 	}
 	else if (ShotStep == 4 && ShotTime > 9.f)
 	{
-		const int32 i = Row();
-		UE_LOG(LogOutlaws, Display, TEXT("OLSHOT gamma: after Restore defaults: '%s'; %s"), i != INDEX_NONE ? *MenuRowText(i) : TEXT("?"), *State());
-		Check(Agree(1.f) && FileGamma() == TEXT("1.00") && i != INDEX_NONE && MenuRowText(i).EndsWith(TEXT("1.0 (default)")), FString::Printf(TEXT("Restore defaults: 1.0 live and saved: %s"), *State()));
-		// a full lap of presses comes back round to 1.0 (1.1 .. 1.6, 0.7 .. 1.0: ten)
-		for (int32 k = 0; k < 10; ++k) MenuActivate(1, i);
-		Check(FMath::IsNearlyEqual(OutlawsDeviceProfile::Gamma(), 1.f, 0.001f) && MenuRowText(i).EndsWith(TEXT("1.0 (default)")), FString::Printf(TEXT("ten presses go round to '%s'"), *MenuRowText(i)));
-		CloseMenu();
-		OutlawsDeviceProfile::SetGamma(0.7f);       // (the shots below are not saved)
+		Check(AgreeShown(1.3f), FString::Printf(TEXT("after the read back the grade follows: %s"), *State()));
+		const int32 d = MenuPage ? MenuPage->Items.IndexOfByPredicate([](const OutlawsMenu::FItem& It) { return It.Name == TEXT("defaults:display"); }) : INDEX_NONE;
+		if (d != INDEX_NONE) MenuActivate(1, d);
 		++ShotStep;
 	}
-	else if (ShotStep == 5 && ShotTime > 11.f) { Check(Agree(0.7f), State()); Shot(TEXT("ol_gamma_070")); OutlawsDeviceProfile::SetGamma(1.f); ++ShotStep; }
-	else if (ShotStep == 6 && ShotTime > 12.5f) { Check(Agree(1.f), State()); Shot(TEXT("ol_gamma_100")); OutlawsDeviceProfile::SetGamma(1.6f); ++ShotStep; }
-	else if (ShotStep == 7 && ShotTime > 14.f) { Check(Agree(1.6f), State()); Shot(TEXT("ol_gamma_160")); OutlawsDeviceProfile::SetGamma(1.f); ++ShotStep; }
-	else if (ShotStep == 8 && ShotTime > 15.5f) Finish();
+	else if (ShotStep == 5 && ShotTime > 10.f)
+	{
+		const int32 i = Row();
+		UE_LOG(LogOutlaws, Display, TEXT("OLSHOT gamma: after Restore defaults: '%s'; %s"), i != INDEX_NONE ? *MenuRowText(i) : TEXT("?"), *State());
+		Check(AgreeShown(1.f) && FileBrightness() == TEXT("1.0") && i != INDEX_NONE && MenuRowText(i).EndsWith(TEXT("1.0 (default)")), FString::Printf(TEXT("Restore defaults: 1.0 live and saved: %s"), *State()));
+		// a full lap of presses comes back round to 1.0 (1.1 .. 1.3, 0.6 .. 1.0: eight)
+		for (int32 k = 0; k < 8; ++k) MenuActivate(1, i);
+		Check(FMath::IsNearlyEqual(Brightness(), 1.f, 0.001f) && MenuRowText(i).EndsWith(TEXT("1.0 (default)")), FString::Printf(TEXT("eight presses go round to '%s'"), *MenuRowText(i)));
+		CloseMenu();
+		SetGammaRaw(0.7f);              // (the gammas themselves, as the shots were taken before the scale; not saved)
+		++ShotStep;
+	}
+	else if (ShotStep == 6 && ShotTime > 12.f) { Check(Agree(0.7f), State()); Shot(TEXT("ol_gamma_070")); SetGammaRaw(1.f); ++ShotStep; }
+	else if (ShotStep == 7 && ShotTime > 13.5f) { Check(Agree(1.f), State()); Shot(TEXT("ol_gamma_100")); SetGammaRaw(1.6f); ++ShotStep; }
+	else if (ShotStep == 8 && ShotTime > 15.f) { Check(Agree(1.6f), State()); Shot(TEXT("ol_gamma_160")); SetGammaRaw(0.f); ++ShotStep; }
+	else if (ShotStep == 9 && ShotTime > 16.5f) { Check(AgreeShown(1.f), State()); Shot(TEXT("ol_gamma_default")); ++ShotStep; }
+	else if (ShotStep == 10 && ShotTime > 18.f) Finish();
 }
 
 OL_SHOT_MATCH(OLGammaTest) { return OLFlags::Param(TEXT("OLGammaTest")); }
 OL_SHOT_TEST(OLGammaTest, 820)
 {
 	GammaTestTick();                 // (REQ-GAMMA: OutlawsPlayerMenu.cpp)
+}
+
+// REQ-GAMMA12: what the gamma always on costs (the new default 1.2 against the old 1.0, where the headset's OLQuestLook skips
+// its pow and the PC's grade its override): -OLShots -OLGammaCostProbe [-featureleveles31] [-OLGammaCostPairs=N, 30]. The
+// view held still, a test's own gamma (SetGammaRaw) 1.0 and 1.2 in turn (A B, B A, ...), 2 s each with the first 0.5 s not
+// measured, the GPU's frame time (RHIGetGPUFrameCycles) averaged over each; each pair's difference, their mean and spread.
+// Lines "OLSHOT gammacost pair N: ..." and "OLSHOT gammacost RESULT ...".
+OL_SHOT_MATCH(OLGammaCostProbe) { return OLFlags::Param(TEXT("OLGammaCostProbe")); }
+OL_SHOT_TEST(OLGammaCostProbe, 821)
+{
+	static float Quiet = -1.f, Yaw = -1000.f;
+	static int32 Pairs = 30, Phase = 0, N = 0;
+	static double PhaseAt = 0.0, Sum = 0.0, First = 0.0;
+	static TArray<double> MsA, MsB;
+	if (!L) return;
+	if (Yaw < -999.f)
+	{
+		Yaw = float(GetActorRotation().Yaw);
+		GEngine->Exec(GetWorld(), TEXT("r.MotionBlurQuality 0"));
+		FString C;
+		if (OLFlags::Value(TEXT("OLGammaCostPairs"), C)) Pairs = FMath::Clamp(FCString::Atoi(*C), 2, 500);
+	}
+	if (Controller) Controller->SetControlRotation(FRotator(0.0, Yaw, 0.0));
+	// pair k: 1.0 then 1.2 when k is even, 1.2 then 1.0 when odd (a steady drift cancels)
+	auto IsB = [](int32 P) { return ((P / 2) % 2 == 0) == (P % 2 == 1); };
+	if (ShotStep == 0)
+	{
+		if (!TestShadersReady(Quiet, 2.f) || ShotTime < 8.f) return;
+		L->bInvincible = true;
+		FIntPoint Size(0, 0);
+		if (GEngine && GEngine->GameViewport && GEngine->GameViewport->Viewport) Size = GEngine->GameViewport->Viewport->GetSizeXY();
+		UE_LOG(LogOutlaws, Display, TEXT("OLSHOT gammacost: start: %d pairs of 2 s phases, %s, %d x %d, the row's Brightness %.1f"), Pairs,
+			GetWorld()->FeatureLevel == ERHIFeatureLevel::ES3_1 ? TEXT("ES3_1, the headset's path") : TEXT("SM5"), Size.X, Size.Y, OutlawsDeviceProfile::Brightness());
+		Phase = 0;
+		OutlawsDeviceProfile::SetGammaRaw(IsB(0) ? 1.2f : 1.f);
+		PhaseAt = FPlatformTime::Seconds();
+		Sum = 0.0;
+		N = 0;
+		ShotStep = 1;
+		return;
+	}
+	if (ShotStep != 1) return;
+	const double Now = FPlatformTime::Seconds(), In = Now - PhaseAt;
+	if (In >= 0.5) { Sum += FPlatformTime::ToMilliseconds(RHIGetGPUFrameCycles(0)); ++N; }
+	if (In < 2.0) return;
+	const double Mean = N > 0 ? Sum / N : 0.0;
+	if (Phase % 2 == 0) First = Mean;
+	else
+	{
+		const double A = IsB(Phase) ? First : Mean, B = IsB(Phase) ? Mean : First;
+		MsA.Add(A);
+		MsB.Add(B);
+		UE_LOG(LogOutlaws, Display, TEXT("OLSHOT gammacost pair %d: gamma 1.0 %.3f ms, gamma 1.2 %.3f ms, difference %+.4f ms (%d frames in the last phase)"), MsA.Num(), A, B, B - A, N);
+	}
+	++Phase;
+	Sum = 0.0;
+	N = 0;
+	PhaseAt = Now;
+	if (Phase < 2 * Pairs)
+	{
+		OutlawsDeviceProfile::SetGammaRaw(IsB(Phase) ? 1.2f : 1.f);
+		return;
+	}
+	double SA = 0.0, SB = 0.0, SD = 0.0, SD2 = 0.0;
+	const int32 K = MsA.Num();
+	for (int32 k = 0; k < K; ++k) { SA += MsA[k]; SB += MsB[k]; SD += MsB[k] - MsA[k]; }
+	const double MA = SA / FMath::Max(K, 1), MB = SB / FMath::Max(K, 1), MD = SD / FMath::Max(K, 1);
+	for (int32 k = 0; k < K; ++k) SD2 += FMath::Square(MsB[k] - MsA[k] - MD);
+	const double DiffSd = K > 1 ? FMath::Sqrt(SD2 / (K - 1)) : 0.0, Se = K > 0 ? DiffSd / FMath::Sqrt(double(K)) : 0.0;
+	UE_LOG(LogOutlaws, Display, TEXT("OLSHOT gammacost RESULT %s: gamma 1.0 %.3f ms, gamma 1.2 %.3f ms, difference %+.4f ms (%+.2f %%), the %d pairs' differences spread %.4f ms, standard error %.4f ms"),
+		MA > 0.0 ? TEXT("DONE") : TEXT("FAIL (no GPU time)"), MA, MB, MD, MA > 0.0 ? 100.0 * MD / MA : 0.0, K, DiffSd, Se);
+	OutlawsDeviceProfile::SetGammaRaw(0.f);
+	ShotStep = -1;
+	FGenericPlatformMisc::RequestExit(false);
 }
 #endif // WITH_OUTLAWS_TESTS
 

@@ -2155,9 +2155,11 @@ private:
 	void CharPageShotTick();
 	/** -OLGfxMenuShot: the Graphics page photographed, each performance row pressed with its knob logged before and after. */
 	void GfxMenuShotTick();
-	/** -OLGammaTest (REQ-GAMMA): the Brightness row pressed on the Graphics page (the grade, the headset's QHurt.w and the
-	 *  settings file each checked), the file read back, Restore defaults; then the view photographed at 1.0 before any change
-	 *  and at 0.7, 1.0 and 1.6 (ol_gamma_*.png; the gate's mean luminance). */
+	/** -OLGammaTest (REQ-GAMMA, REQ-GAMMA12): the start against the settings file (the old key Gamma read as its new step),
+	 *  the old key's table, the row's range, tenths and x 1.2 scale, the keys read and written; the Brightness row pressed on
+	 *  the Graphics page (the grade, the headset's QHurt.w and the settings file each checked), the file read back, Restore
+	 *  defaults; then the view photographed at the default, at the gammas 0.7, 1.0 and 1.6 (SetGammaRaw) and at the default
+	 *  again (ol_gamma_*.png; the gate's mean luminance). */
 	void GammaTestTick();
 	void TitleLoadTestTick();        // (REQ-TITLEMENU: -OLTitleLoadTest=saves|slot|none)
 	/** -OLLanternCostTest (REQ-LANTERNBOOST): standing still, the lantern out / lit / out / lit, 6 s each: the GPU frame time

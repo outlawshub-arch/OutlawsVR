@@ -71,9 +71,9 @@ namespace
 	const float OldpDetailScale[] = { 0.6f, 1.f, 1.6f };
 	const TCHAR* const OldpDetailName[] = { TEXT("Near"), TEXT("Normal"), TEXT("Far") };
 	constexpr float OldpQuest2Detail = 0.8f;
-	// (REQ-GAMMA) Brightness: the picture's gamma, 1.0 the look as made; 0.7 up to 1.6 in tenths
-	float OldpGamma = 1.f;
-	constexpr float OldpGammaLo = 0.7f, OldpGammaHi = 1.6f, OldpGammaStep = 0.1f;
+	// (REQ-GAMMA12) Brightness as the row shows it, 0.6 up to 1.3 in tenths; the picture's gamma is it x BrightnessScale
+	float OldpBright = 1.f;
+	float OldpGammaRaw = 0.f;            // a test's or the Settings sweep's own gamma (SetGammaRaw; 0 none)
 
 	// what we changed, to put back when a row returns to a default that does not touch it
 	bool bOldpPdTouched = false;
@@ -588,7 +588,7 @@ void OutlawsDeviceProfile::RestoreDefaults()
 	bOldpPerfHud = false;
 	bOldpGrabGlow = true;
 	OldpChosenDetail = -1;
-	OldpGamma = 1.f;
+	OldpBright = 1.f;
 	OldpPcView = 0;
 	bOldpQuest2Mode = false;
 	OldpRedecide(false);
@@ -597,31 +597,51 @@ void OutlawsDeviceProfile::RestoreDefaults()
 
 float OutlawsDeviceProfile::Gamma()
 {
-	return OldpGamma;
+	if (OldpGammaRaw > 0.f) return OldpGammaRaw;
+	return OldpBright * BrightnessScale;
 }
 
-float* OutlawsDeviceProfile::GammaSetting()
+float OutlawsDeviceProfile::Brightness()
 {
-	return &OldpGamma;
+	return OldpBright;
 }
 
-void OutlawsDeviceProfile::SetGamma(float G)
+float* OutlawsDeviceProfile::BrightnessSetting()
 {
-	OldpGamma = FMath::Clamp(FMath::RoundToFloat(G / OldpGammaStep) * OldpGammaStep, OldpGammaLo, OldpGammaHi);
-	if (FMath::IsNearlyEqual(OldpGamma, 1.f, 0.01f)) OldpGamma = 1.f;     // (exactly the look as made)
+	return &OldpBright;
 }
 
-FString OutlawsDeviceProfile::PressGamma()
+void OutlawsDeviceProfile::SetBrightness(float Shown)
 {
-	// one step brighter or darker (REQ-TRIGGERSTEP: a number row, stopping at 0.7 and 1.6 with two controllers)
-	SetGamma(OutlawsMenu::StepNumber(OldpGamma, OldpGammaLo, OldpGammaHi, OldpGammaStep));
-	UE_LOG(LogOutlaws, Log, TEXT("OLRT gamma: %.1f (menu)"), OldpGamma);
-	return TEXT("Higher lifts the shadows. 1.0 is the picture as made.");
+	// (whole tenths: 1.0 is exactly 1, so the saved value and the row's "(default)" never drift)
+	OldpBright = float(FMath::Clamp(FMath::RoundToInt(Shown * 10.f), 6, 13)) / 10.f;
 }
 
-FString OutlawsDeviceProfile::GammaText()
+float OutlawsDeviceProfile::BrightnessFromOldGamma(float OldGamma)
 {
-	return FMath::IsNearlyEqual(OldpGamma, 1.f, 0.01f) ? FString(TEXT("1.0 (default)")) : FString::Printf(TEXT("%.1f"), OldpGamma);
+	// the old row's own rule first (tenths, 0.7 up to 1.6), then the new step nearest the same gamma, old / 1.2 in tenths,
+	// rounded half up in whole numbers: 0.9 and 1.5 sit halfway and go to 0.8 and 1.3 (the nearer by ratio), 1.6 to the top
+	const int32 Old = FMath::Clamp(FMath::RoundToInt(OldGamma * 10.f), 7, 16);
+	if (Old == 10) return 1.f;          // (the old default, saved whether chosen or not: the new default, today's 1.2)
+	return float(FMath::Clamp((Old * 10 + 6) / 12, 6, 13)) / 10.f;
+}
+
+FString OutlawsDeviceProfile::PressBrightness()
+{
+	// one step brighter or darker (REQ-TRIGGERSTEP: a number row, stopping at 0.6 and 1.3 with two controllers)
+	SetBrightness(OutlawsMenu::StepNumber(OldpBright, BrightnessLo, BrightnessHi, BrightnessStep));
+	UE_LOG(LogOutlaws, Log, TEXT("OLRT gamma: Brightness %.1f, gamma %.2f (menu)"), OldpBright, Gamma());
+	return TEXT("Higher lifts the shadows. 1.0 is the default.");
+}
+
+FString OutlawsDeviceProfile::BrightnessText()
+{
+	return OldpBright == 1.f ? FString(TEXT("1.0 (default)")) : FString::Printf(TEXT("%.1f"), OldpBright);
+}
+
+void OutlawsDeviceProfile::SetGammaRaw(float Applied)
+{
+	OldpGammaRaw = FMath::Max(Applied, 0.f);
 }
 
 void OutlawsDeviceProfile::LoadSettings(const TMap<FString, FString>& S, const TCHAR* Why)
@@ -635,8 +655,16 @@ void OutlawsDeviceProfile::LoadSettings(const TMap<FString, FString>& S, const T
 	const FString* Glow = S.Find(TEXT("GrabGlow"));
 	bOldpGrabGlow = !Glow || Glow->ToBool();
 	OldpChosenDetail = OldpParseChoice(S, TEXT("ObjectDetail"), 0, 2);
+	// (REQ-GAMMA12) the row's Brightness; a file from before it has only the old key Gamma, read as the nearest new step until
+	// the next save writes Brightness (the old key is left in the file as it was)
+	const FString* Br = S.Find(TEXT("Brightness"));
 	const FString* Gm = S.Find(TEXT("Gamma"));
-	SetGamma(Gm && FCString::Atof(**Gm) > 0.f ? FCString::Atof(**Gm) : 1.f);
+	if (Br && FCString::Atof(**Br) > 0.f) SetBrightness(FCString::Atof(**Br));
+	else
+	{
+		SetBrightness(BrightnessFromOldGamma(Gm && FCString::Atof(**Gm) > 0.f ? FCString::Atof(**Gm) : 1.f));
+		if (Gm) UE_LOG(LogOutlaws, Log, TEXT("OLRT brightness: the old Gamma=%s read as Brightness %.1f (gamma %.2f)"), **Gm, OldpBright, Gamma());
+	}
 	const FString* Pv = S.Find(TEXT("PcWindowView"));
 	OldpPcView = Pv && Pv->Equals(TEXT("steady"), ESearchCase::IgnoreCase) ? 1 : 0;
 	const FString* Q2 = S.Find(TEXT("Quest2Mode"));
@@ -653,7 +681,7 @@ void OutlawsDeviceProfile::GatherSettings(TMap<FString, FString>& Out)
 	Out.Add(TEXT("PerfHud"), bOldpPerfHud ? TEXT("true") : TEXT("false"));
 	Out.Add(TEXT("GrabGlow"), bOldpGrabGlow ? TEXT("true") : TEXT("false"));
 	Out.Add(TEXT("ObjectDetail"), OldpChosenDetail >= 0 ? FString::FromInt(OldpChosenDetail) : FString(TEXT("auto")));
-	Out.Add(TEXT("Gamma"), FString::Printf(TEXT("%.2f"), OldpGamma));
+	Out.Add(TEXT("Brightness"), FString::Printf(TEXT("%.1f"), OldpBright));     // (REQ-GAMMA12: the row as shown, in tenths)
 	Out.Add(TEXT("PcWindowView"), OldpPcView != 0 ? TEXT("steady") : TEXT("headset"));   // (written both ways: the save merges into the file's old keys)
 	Out.Add(TEXT("Quest2Mode"), bOldpQuest2Mode ? TEXT("true") : TEXT("false"));
 }

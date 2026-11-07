@@ -81,16 +81,32 @@ namespace OutlawsDeviceProfile
 	OUTLAWSRUNTIME_API bool IsRow(const FString& Name);
 	OUTLAWSRUNTIME_API FString RowValue(const FString& Name);
 	OUTLAWSRUNTIME_API FString PressRow(const FString& Name);
-	/** REQ-GAMMA: the Graphics page's Brightness slider (settings key Gamma), the picture's gamma: out = in ^ (1 / Gamma) on
-	 *  linear colour, 0.7 up to 1.6 in tenths, 1.0 (the default) the look as made.  Applied in the passes the game already
-	 *  runs: on the PC the camera's colour grade (ColorGamma, in the tonemapper's LUT), on the headset the materials' own
-	 *  post process (OLQuestLook, MPC_OLR_Lights QHurt.w = Gamma - 1; ue_olue_quest_look.py).  Live; Restore defaults
-	 *  puts back 1.0. */
+	/** REQ-GAMMA: the Graphics page's Brightness slider, the picture's gamma: out = in ^ (1 / Gamma) on linear colour.
+	 *  Applied in the passes the game already runs: on the PC the camera's colour grade (ColorGamma, in the tonemapper's
+	 *  LUT), on the headset the materials' own post process (OLQuestLook, MPC_OLR_Lights QHurt.w = Gamma - 1;
+	 *  ue_olue_quest_look.py).  Live; Restore defaults puts back 1.0.
+	 *  REQ-GAMMA12 (user 7 Nov 2026: today's 1.2 is the new 1.0): the row shows Brightness, 0.6 up to 1.3 in tenths, and the
+	 *  gamma applied is that times BrightnessScale (0.72 up to 1.56; the default 1.0 gives 1.2).  Saved under the key
+	 *  Brightness; a file with only the old key Gamma (the gamma itself, 0.7 up to 1.6) is read through BrightnessFromOldGamma. */
+	constexpr float BrightnessScale = 1.2f;
+	constexpr float BrightnessLo = 0.6f, BrightnessHi = 1.3f, BrightnessStep = 0.1f;
+	/** The gamma applied (Brightness x BrightnessScale, or a test's own, SetGammaRaw). */
 	OUTLAWSRUNTIME_API float Gamma();
-	OUTLAWSRUNTIME_API float* GammaSetting();
-	OUTLAWSRUNTIME_API void SetGamma(float G);
-	OUTLAWSRUNTIME_API FString PressGamma();
-	OUTLAWSRUNTIME_API FString GammaText();
+	/** The row's value as shown. */
+	OUTLAWSRUNTIME_API float Brightness();
+	OUTLAWSRUNTIME_API float* BrightnessSetting();
+	/** To the nearest tenth, held to 0.6 .. 1.3. */
+	OUTLAWSRUNTIME_API void SetBrightness(float Shown);
+	/** The old key's gamma as a Brightness: the nearest step to the same picture (old / 1.2, a tie upward), except the old
+	 *  default 1.0 (written whether chosen or not), which becomes the new default 1.0. */
+	OUTLAWSRUNTIME_API float BrightnessFromOldGamma(float OldGamma);
+	OUTLAWSRUNTIME_API FString PressBrightness();
+	OUTLAWSRUNTIME_API FString BrightnessText();
+	/** A gamma applied as it is (not on the row's steps, nothing saved): the two tests that photograph or read the picture
+	 *  at a given gamma (-OLGammaTest's 0.7, 1.0 and 1.6 shots, -OLLanternRangeProbe's 1.0 and 1.6 reads), and the Settings
+	 *  sweep's Brightness pair (the old 1.0 look, gamma 1.0, against the row's own; Shipping too).  0 lets go (the row's
+	 *  again). */
+	OUTLAWSRUNTIME_API void SetGammaRaw(float Applied);
 	/** Restore defaults on the Graphics page: every row back to the headset's default. */
 	OUTLAWSRUNTIME_API void RestoreDefaults();
 

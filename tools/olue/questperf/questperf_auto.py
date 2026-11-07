@@ -37,7 +37,7 @@ STORY_NAMES = {"hideout": "The Hideout", "townex": "The Town", "train": "The Tra
 # the randomizer's run order names the HD build of a level (OUTLAWS.RCS LEVELHD), the log's level loads the level's own
 ALIASES = {"town": "townex"}
 GRAPHICS_ROWS = [("Remastered Graphics", "RemasteredGraphics"), ("Tinting", "Tinting"), ("Stochastic Textures", "StochasticTextures"),
-                 ("Brightness", "Gamma"), ("Resolution", "RenderScale"), ("Refresh Rate", "RefreshRate"), ("Lamp Lights", "LampLights"),
+                 ("Brightness", "Brightness"), ("Brightness, old key (gamma)", "Gamma"), ("Resolution", "RenderScale"), ("Refresh Rate", "RefreshRate"), ("Lamp Lights", "LampLights"),
                  ("Object Detail", "ObjectDetail"), ("Quest 2 Mode", "Quest2Mode"), ("Performance HUD", "PerfHud"), ("Grab Glow", "GrabGlow")]
 GAMEPLAY_ROWS = [("Bad guys (single player)", "SoloBadGuys"), ("Randomizer: bad guys", "RandoEnemies"), ("Randomizer: items", "RandoItems"),
                  ("Randomizer: mission order", "RandoOrder"), ("Randomizer: bosses", "RandoBosses"), ("Randomizer: critters", "RandoCritters"),

@@ -205,6 +205,8 @@ void AOutlawsPlayer::TickPerfSweepProbe(float Dt)
 		if (L->bPaletteGrades != Ph.Set.bTinting) Bad.Add(TEXT("tinting"));
 		const bool bQ2Skipped = S.Skipped.ContainsByPredicate([](const FString& K) { return K.StartsWith(TEXT("Quest 2 Mode")); });
 		if (!bQ2Skipped && OutlawsDeviceProfile::Quest2Mode() != Ph.Set.bQuest2) Bad.Add(TEXT("Quest 2 Mode"));
+		const float WantGamma = Ph.Set.Gamma > 0.f ? Ph.Set.Gamma : OutlawsDeviceProfile::Brightness() * OutlawsDeviceProfile::BrightnessScale;
+		if (!FMath::IsNearlyEqual(OutlawsDeviceProfile::Gamma(), WantGamma, 0.001f)) Bad.Add(FString::Printf(TEXT("gamma %.2f"), OutlawsDeviceProfile::Gamma()));
 		const FString Ini = SpIniMd5();
 		const double Off = FVector::Dist2D(GetActorLocation(), S.Spot);
 		SpCheck(Bad.Num() == 0 && Ini == Sp.IniMd5 && L->bInvincible && Off < 100.0, FString::Printf(TEXT("sweep %d phase %d of %d: %s %s (%s) applied (resolution %d, lamps %d, detail %s, remastered %d, stochastic %d, tinting %d, Quest 2 Mode %d); settings file %s; god mode %d, %.0f cm off the spot%s"),
@@ -299,7 +301,7 @@ void AOutlawsPlayer::TickPerfSweepProbe(float Dt)
 		}
 		// the start: The Town, the difficulty's rule, god mode, the spot and the marker, the phases, the table's file
 		const bool bQ2Forced = SpCvar(TEXT("ol.Quest2Profile")) != TEXT("-1");
-		const int32 Want = bQ2Forced ? 28 : 32;           // (Quest 2 Mode's two pairs left out when it cannot change)
+		const int32 Want = bQ2Forced ? 32 : 36;           // (Quest 2 Mode's two pairs left out when it cannot change; REQ-GAMMA12's Brightness pairs in)
 		const double Off = FVector::Dist2D(GetActorLocation(), S.Spot);
 		SpCheck(L->LevelName.Equals(TEXT("townex"), ESearchCase::IgnoreCase) && L->Difficulty == (NewGameDifficulty() >= 0 ? static_cast<EOutlawsDifficulty>(NewGameDifficulty()) : EOutlawsDifficulty::Bad),
 			FString::Printf(TEXT("sweep %d: in %s at %s (New Game's last choice %d)"), Sp.Run, *L->LevelName, OutlawsDifficulty::Name(L->Difficulty), NewGameDifficulty()));

@@ -4547,8 +4547,9 @@ void AOutlawsPlayer::ClearScreenFx()
 void AOutlawsPlayer::ApplyGamma(FPostProcessSettings& PP)
 {
 	// REQ-GAMMA: the Brightness slider in the colour grade the tonemapper already bakes into its LUT (pow(c, 1 / gamma) on
-	// linear colour; no pass of its own). 1.0 leaves the override off: the picture exactly as before. (The headset has no
-	// post process: its materials take QHurt.w, UpdateScreenFx)
+	// linear colour; no pass of its own). A gamma of 1.0 leaves the override off: the picture exactly as made (since
+	// REQ-GAMMA12 only a test's own, SetGammaRaw: the row's default gives 1.2). (The headset has no post process: its
+	// materials take QHurt.w, UpdateScreenFx)
 	const float G = OutlawsDeviceProfile::Gamma();
 	PP.bOverride_ColorGamma = G != 1.f;
 	PP.ColorGamma = FVector4(1.f, 1.f, 1.f, G);

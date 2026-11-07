@@ -98,6 +98,7 @@ namespace
 	{
 		if (Ph.Row == TEXT("All")) return FString::Printf(TEXT("%d of %d: everything at %s"), i, n, Ph.bB ? TEXT("lowest") : TEXT("top"));
 		if (Ph.bStep) return FString::Printf(TEXT("%d of %d: %s at %s %%"), i, n, *Ph.Row, *Ph.Value);
+		if (Ph.Row == TEXT("Brightness")) return FString::Printf(TEXT("%d of %d: Brightness %s"), i, n, Ph.bB ? TEXT("at the old 1.0") : TEXT("as set"));
 		return FString::Printf(TEXT("%d of %d: %s at %s"), i, n, *Ph.Row, Ph.bB ? TEXT("lowest") : TEXT("top"));
 	}
 
@@ -181,6 +182,9 @@ void AOutlawsLevelActor::PerfSweepBegin(const FString& CapturePath)
 	Pairs(TEXT("Object Detail"), TEXT("Far"), TEXT("Near"), [](FSweepSet& B) { B.Detail = 0; });
 	Pairs(TEXT("Stochastic Textures"), TEXT("on"), TEXT("off"), [](FSweepSet& B) { B.bStochastic = false; });
 	Pairs(TEXT("Tinting"), TEXT("on"), TEXT("off"), [](FSweepSet& B) { B.bTinting = false; });
+	// (REQ-GAMMA12) what the gamma always on costs: the row as set (1.0 is gamma 1.2) against the old 1.0 look, gamma 1.0, where
+	// the headset's OLQuestLook skips its pow
+	Pairs(TEXT("Brightness"), TEXT("as set"), TEXT("old 1.0"), [](FSweepSet& B) { B.Gamma = 1.f; });
 	if (bQ2) Pairs(TEXT("Quest 2 Mode"), TEXT("off"), TEXT("on"), [](FSweepSet& B) { B.bQuest2 = true; });
 	FSweepSet Low;
 	Low.Resolution = 70;
@@ -190,6 +194,7 @@ void AOutlawsLevelActor::PerfSweepBegin(const FString& CapturePath)
 	Low.bStochastic = false;
 	Low.bTinting = false;
 	Low.bQuest2 = bQ2;
+	Low.Gamma = 1.f;
 	Add(TEXT("All"), TEXT("top"), false, FSweepSet());
 	Add(TEXT("All"), TEXT("lowest"), true, Low);
 
@@ -275,6 +280,7 @@ void AOutlawsLevelActor::PerfSweepApply(int32 Phase)
 	M.Add(TEXT("Quest2Mode"), Set.bQuest2 ? TEXT("true") : TEXT("false"));
 	if (GRun.TopHz > 0) M.Add(TEXT("RefreshRate"), FString::FromInt(GRun.TopHz));
 	OutlawsDeviceProfile::LoadSettings(M, TEXT("settings sweep"));
+	OutlawsDeviceProfile::SetGammaRaw(Set.Gamma);
 	if (bHDTextures != Set.bRemastered) SetHDTextures(Set.bRemastered);
 	if (bStochastic != Set.bStochastic) SetStochastic(Set.bStochastic);
 	bPaletteGrades = Set.bTinting;
@@ -286,6 +292,7 @@ void AOutlawsLevelActor::PerfSweepRestore(bool bWorld)
 	if (R.bRestored) return;
 	R.bRestored = true;
 	// (bHDChosen still the sweep's: a profile changing back does not touch the look before it is put back below)
+	OutlawsDeviceProfile::SetGammaRaw(0.f);        // (REQ-GAMMA12: the Brightness row's own again)
 	OutlawsDeviceProfile::LoadSettings(R.Player, TEXT("settings sweep over: the player's own"));
 	if (bWorld)
 	{
@@ -512,7 +519,7 @@ FString AOutlawsLevelActor::PerfSweepTable(const FString& Why) const
 	L.Add(FString::Printf(TEXT("phases: %d of %d measured, %.0f s each, the first %.1f s after a switch not measured"), S.Done, S.Phases.Num(), S.PhaseSec, S.SettleSec));
 	L.Add(FString::Printf(TEXT("skipped: %s"), S.Skipped.Num() ? *FString::Join(S.Skipped, TEXT("; ")) : TEXT("none")));
 	L.Add(TEXT("live: every row changes live, no reload (Resolution re-makes the eye buffer through vr.PixelDensity, Lamp Lights and Object Detail are read each frame, Remastered "
-		"Graphics swaps the level's loaded HD textures, Stochastic Textures a material switch, Tinting the view's grade, Quest 2 Mode the profile with the other rows held at the top)"));
+		"Graphics swaps the level's loaded HD textures, Stochastic Textures a material switch, Tinting the view's grade, Brightness the gamma, Quest 2 Mode the profile with the other rows held at the top)"));
 	if (OutlawsDeviceProfile::EyeBufferText() == TEXT("no headset")) L.Add(TEXT("note: no headset (a desktop run): the Resolution row sizes nothing here"));
 	if (OutlawsDynRes::IsActive()) L.Add(TEXT("note: dynamic resolution is on: the Resolution row is its ceiling"));
 	L.Add(FString::Printf(TEXT("capture: %s"), *R.Capture));
