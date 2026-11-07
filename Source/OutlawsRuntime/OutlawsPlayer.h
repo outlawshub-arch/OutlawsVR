@@ -767,6 +767,13 @@ private:
 	static constexpr int32 WheelPoolSlots = 24;
 	/** -OLOldWheelOpen: no prebuild, the wheel made on its first open (and the full-size base picture), as before */
 	static bool OldWheelOpen();
+	/** (BUG-WHEELLATE) the cards of the listed items this level's ground items give, made once a level as it starts (the
+	 *  first level's with the prebuild, a later level's on its first frame up); the pictures made.  -OLOldWheelLate: made at
+	 *  the first open after the pickup, and a match's scorecard drawn at its first open, as before */
+	int32 PrebuildLevelCards(class AOutlawsLevelActor* L);
+	static bool OldWheelLate();
+	const void* CardsLevel = nullptr;
+	FString CardsLevelName;
 	bool bWheelPrebuilt = false;
 	int32 WheelOpenObjects = 0;                  // the last open's objects made and its cost (the probe reads them)
 	float WheelOpenMs = 0.f;

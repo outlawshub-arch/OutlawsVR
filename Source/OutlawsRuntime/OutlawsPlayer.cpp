@@ -1870,6 +1870,7 @@ void AOutlawsPlayer::Tick(float Dt)
 	struct FArcSweep { AOutlawsPlayer* P; ~FArcSweep() { P->SweepThrowArcs(); } } ArcSweep{ this };
 	UpdateFadeVeil();                      // (first: the movie, menu and front-end branches below return early)
 	UpdatePlayWarm(Level.Get());
+	if (bWheelPrebuilt) PrebuildLevelCards(Level.Get());     // (BUG-WHEELLATE: a later level's ground items' cards, once)
 	if (FirstUseProbeOn()) TickFirstUseProbe(Dt);     // (FIRSTHITCH: -OLFirstUseProbe)
 	if (ClimbProbeOn()) TickClimbProbe(Dt);           // (BUG-SLOPECLIMB: -OLClimbProbe)
 	if (ToolWhackProbeOn()) TickToolWhackProbe(Dt);   // (BUG-SHOVELWHACK: -OLToolWhackProbe)

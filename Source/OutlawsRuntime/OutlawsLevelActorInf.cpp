@@ -410,6 +410,20 @@ void AOutlawsLevelActor::GetWheelItems(TArray<FString>& OutItems, TArray<FString
 	}
 }
 
+void AOutlawsLevelActor::GetGroundWheelItems(TArray<FString>& OutItems) const
+{
+	// (BUG-WHEELLATE) what a walk-over pickup here can add to the wheel's item row (GiveEntry's listed items), and the elixir
+	// the row shows by its count
+	OutItems.Reset();
+	for (const FPickup& P : Pickups)
+	{
+		for (const FPickup::FEntry& E : P.Entries)
+		{
+			if (!E.Item.IsEmpty() && (E.Item == TEXT("ielixer") || IsListedItem(E.Item))) OutItems.AddUnique(E.Item);
+		}
+	}
+}
+
 bool AOutlawsLevelActor::UseItem(const FString& Item)
 {
 	const FString Key = Item.ToLower();

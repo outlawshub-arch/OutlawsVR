@@ -1300,6 +1300,9 @@ public:
 	/** What the wheel's item ring shows: usable heals the player carries, then the listed items
 	 *  (keys, documents...) with the game's names for them. */
 	void GetWheelItems(TArray<FString>& OutItems, TArray<FString>& OutLabels) const;
+	/** (BUG-WHEELLATE) the listed items this level's ground items give (a key, the crowbar): the wheel's cards for them are made
+	 *  as the level starts, not at the first open after the pickup. */
+	void GetGroundWheelItems(TArray<FString>& OutItems) const;
 
 	/** An item picked on the wheel: a heal is used; a key or other item is used on a lock in reach that asks for it
 	 *  (UseItemOnLock), else shows its name (locks take keys by themselves).  True when something happened. */

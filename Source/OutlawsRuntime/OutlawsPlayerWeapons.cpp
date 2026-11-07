@@ -1265,6 +1265,7 @@ int32 AOutlawsPlayer::BuildWheelParts(bool bAll, int32 Hand)
 		Decode(ItemCard(It, false));
 		Decode(ItemCard(It, true));
 	}
+	Art += PrebuildLevelCards(Level.Get());       // (BUG-WHEELLATE: and what this level's ground items give)
 	UpdateWheelArrows();
 	BuildMapDrawing();
 	WheelMapParts();
@@ -1288,6 +1289,38 @@ bool AOutlawsPlayer::OldWheelOpen()
 {
 	static const bool bOld = OLFlags::Param(TEXT("OLOldWheelOpen"));
 	return bOld;
+}
+
+bool AOutlawsPlayer::OldWheelLate()
+{
+	static const bool bOld = OLFlags::Param(TEXT("OLOldWheelLate"));
+	return bOld;
+}
+
+int32 AOutlawsPlayer::PrebuildLevelCards(AOutlawsLevelActor* L)
+{
+	// (BUG-WHEELLATE, the Quest 7 Nov: the slow wheel opens of a level made 2 pictures, 8 to 10 ms, the first open after a key
+	// or the crowbar was picked up) the cards of the listed items this level's ground items give, made as the level starts:
+	// the first level's in the prebuild under its fade, a later level's on the first frame it is up (the load's dark), once
+	// a level (by its data and name)
+	if (!L || OldWheelOpen() || OldWheelLate() || L->IsFrontEnd() || L->IsRebuildPending() || !L->HasActorBegunPlay()) return 0;
+	const void* Lv = L->LiveLevel();
+	if (!Lv || (Lv == CardsLevel && L->LevelName == CardsLevelName)) return 0;
+	CardsLevel = Lv;
+	CardsLevelName = L->LevelName;
+	const double T0 = FPlatformTime::Seconds();
+	const int32 Was = KpfTextures.Num();
+	TArray<FString> Items;
+	L->GetGroundWheelItems(Items);
+	int32 Art = 0;
+	for (const FString& It : Items)
+	{
+		if (ItemCard(It, false)) ++Art;
+		if (ItemCard(It, true)) ++Art;
+	}
+	UE_LOG(LogOutlaws, Log, TEXT("OLRT wheel cards for %s's ground items: %d items (%s), %d pictures (%d paths read afresh), %.1f ms"), *L->LevelName, Items.Num(),
+		Items.Num() ? *FString::Join(Items, TEXT(" ")) : TEXT("none"), Art, KpfTextures.Num() - Was, (FPlatformTime::Seconds() - T0) * 1000.0);
+	return Art;
 }
 
 UTexture2D* AOutlawsPlayer::WheelBaseTexture()

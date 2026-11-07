@@ -1121,7 +1121,9 @@ AOutlawsFragTablePanel* UOutlawsCoop::WheelScoreCard(AOutlawsPlayer* P, bool bSh
 		Panel->bOnTop = true;                      // (over the world as the wheel is: the headset's 18 cm copy, behind the hands)
 		Panel->bCard = true;
 		FFragTableData Now;
-		if (C->FillMatchTable(Now)) Panel->SetData(Now);
+		// (BUG-WHEELLATE, the Quest 7 Nov: a match's first open made 5 objects, 11 to 21 ms) drawn now even with no row yet
+		// (the level start has none: nobody is in): its art, canvas and material made under the fade, not at the first open
+		if (C->FillMatchTable(Now) || !AOutlawsPlayer::OldWheelLate()) Panel->SetData(Now);
 		C->WheelPanel = Panel;
 		UE_LOG(LogOutlawsCoop, Log, TEXT("OLMATCH wheel scorecard made (%s, %.1f ms): %s; drawn in %s"), C->IsHost() ? TEXT("host") : WhoWord(C->MyIndex()),
 			(FPlatformTime::Seconds() - T0) * 1000.0, *Now.Describe(), *Panel->DescribeMaterial());
