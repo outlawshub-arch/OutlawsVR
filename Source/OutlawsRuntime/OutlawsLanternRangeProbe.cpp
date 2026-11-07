@@ -1,5 +1,5 @@
 // REQ-LANTERNRANGE (user 2026-11-03: "the lantern's light reaches too far; in narrow spots it feels like a lit room, not
-// darkness creeping in a short way ahead"): -OLShots -OLLevel=shsimms -OLNoFrontEnd -OLLanternRangeProbe [-OLOldLantern].
+// darkness creeping in a short way ahead"): -OLShots -OLLevel=shsimms -OLNoFrontEnd -OLLanternRangeProbe [-OLOldLantern] [-OLLanternReadOld].
 // (1) the curve: the lit lantern (full oil) on a wall facing it in an unlit sector at 0, 0.5, 1, 2, 3, 4, 6, 8 and 12 m,
 // ours through the materials' OLLights sum (C0 x (1 - d / r)^2, shown as its 1 / 2.2 power, over a minute of the flicker)
 // against the original's: 31 + the steady flicker's 1..4 - the depth map at 4 x z units, less 3 levels every 32 units
@@ -290,14 +290,35 @@ OL_SHOT_TEST(OLLanternRangeProbe, 1900)
 			M->UpdateMeshSection(0, V, { FVector(-1.0, 0.0, 0.0), FVector(-1.0, 0.0, 0.0), FVector(-1.0, 0.0, 0.0), FVector(-1.0, 0.0, 0.0) }, Uv, Cols, TArray<FProcMeshTangent>());
 			M->UpdateMeshSection(1, V, { FVector(1.0, 0.0, 0.0), FVector(1.0, 0.0, 0.0), FVector(1.0, 0.0, 0.0), FVector(1.0, 0.0, 0.0) }, Uv, Cols, TArray<FProcMeshTangent>());
 		}
+		// (REQ-GAMMA12, the black wall read 4.96 levels at 55 fps: the other slots as the game thread set them on each of the last
+		// four ticks, as the frame read was drawn a tick or two before the capture's own look at them; a shot's flash at its
+		// tail, 0.25 s, can light the frame drawn and be gone by the capture)
+		static float OthersTick[4] = {};
+		{
+			float Sum = 0.f;
+			if (UMaterialParameterCollectionInstance* I = Mpc())
+			{
+				for (int32 s = 1; s < 8; ++s)
+				{
+					FLinearColor C(0.f, 0.f, 0.f, 0.f);
+					I->GetVectorParameterValue(*FString::Printf(TEXT("C%d"), s), C);
+					Sum += C.R + C.G + C.B;
+				}
+			}
+			for (int32 k = 3; k > 0; --k) OthersTick[k] = OthersTick[k - 1];
+			OthersTick[0] = Sum;
+		}
 		if (++Wait == 8) { bLrGot = false; FScreenshotRequest::RequestScreenshot(FPaths::ProjectSavedDir() / TEXT("OLShots") / TEXT("lanternrange_read.png"), false, false); }
 		if (Wait < 9 || !bLrGot) { if (Wait > 60) { Check(false, FString::Printf(TEXT("(2) case %d: no screen read"), Case)); Wait = 0; ++Case; } return; }
-		if (LrOthers > 0.f)
+		// (-OLLanternReadOld: the capture's look alone, as before, for the rates both ways)
+		const float OthersBefore = OLFlags::Param(TEXT("OLLanternReadOld")) ? 0.f : FMath::Max(FMath::Max(OthersTick[0], OthersTick[1]), FMath::Max(OthersTick[2], OthersTick[3]));
+		if (LrOthers > 0.f || OthersBefore > 0.f)
 		{
-			// a bad guy's shot flashed (or a lamp shone) on that frame: read again (the night yard's men shoot at us)
+			// a bad guy's shot flashed (or a lamp shone) on that frame or just before: read again (the night yard's men shoot at us)
 			static int32 Again = 0;
+			UE_LOG(LogOutlaws, Display, TEXT("OLSHOT lanternrange (2) case %d: read again, another slot lit (%.3f at the capture, %.3f on the ticks before it)"), Case, LrOthers, OthersBefore);
 			if (++Again <= 40) { Wait = 6; return; }
-			Check(false, FString::Printf(TEXT("(2) case %d: every read lit by another slot too (%.3f)"), Case, LrOthers));
+			Check(false, FString::Printf(TEXT("(2) case %d: every read lit by another slot too (%.3f)"), Case, FMath::Max(LrOthers, OthersBefore)));
 		}
 		{
 			// (the read kept beside the shots, to look at)
