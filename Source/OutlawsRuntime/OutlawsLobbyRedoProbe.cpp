@@ -15,6 +15,7 @@
 // team joiner with no side yet, first on the "No side yet" line, underlined there.  The follow-up (user 3 Nov): a joiner who came
 // last (Death Match 8 and 16, Team Play and Capture the Flag 16, 11 red to 5 blue) is listed and underlined on its side, a big side
 // counting the rest under it ("and 4 more").
+// BUG-LOBBYBOXES (7 Nov): each case checks the underline on its own line ("<case> underline: ..."), apart from the page's checks.
 
 #include "OutlawsPlayer.h"
 #include "OutlawsRuntime.h"
@@ -279,14 +280,17 @@ OL_SHOT_TEST(OLLobbyRedoProbe, 1860)
 				Foot ? FString::Printf(TEXT("%s foot: \"%s\" whole, box x %.1f..%.1f y %.1f..%.1f, letters y %.1f..%.1f, the panel's foot %.0f"), *C.Name, *Foot->Text, Foot->Box.Min.X, Foot->Box.Max.X,
 					Foot->Box.Min.Y, Foot->Box.Max.Y, Foot->Ink.Min.Y, Foot->Ink.Max.Y, D.Panel.Max.Y) : FString::Printf(TEXT("%s foot: not drawn whole"), *C.Name));
 		}
-		const bool bOk = bOrder && bGrey && bApart && bFits && bNames && bSides && CutLines == 0 && bUnder;
-		Check(bOk,FString::Printf(TEXT("%s: items [%s]%s; greyed %d, in reach %d; laser boxes %s; panel %d of %d players in %d column%s, step %.0f%s; %d lines cut; %s%s; %s"), *C.Name, *FString::Join(Got, TEXT(" | ")),
+		// (BUG-LOBBYBOXES, 7 Nov: the underline is its own case line, "<case> underline: ...", so a run tells it apart from the page's
+		// other checks; in the shipped menu font it is the one still failing, and the weekly gate's lobbyredo section counts it apart)
+		const bool bOk = bOrder && bGrey && bApart && bFits && bNames && bSides && CutLines == 0;
+		Check(bOk,FString::Printf(TEXT("%s: items [%s]%s; greyed %d, in reach %d; laser boxes %s; panel %d of %d players in %d column%s, step %.0f%s; %d lines cut; %s"), *C.Name, *FString::Join(Got, TEXT(" | ")),
 			bOrder ? TEXT("") : *FString::Printf(TEXT(" (wanted [%s])"), *FString::Join(Want, TEXT(" | "))), Greyed, Reach, bApart ? TEXT("apart") : TEXT("OVERLAP"), D.Names, V.Players.Num(), D.Columns,
-			D.Columns == 1 ? TEXT("") : TEXT("s"), D.NameStep, V.bTeams ? (bSides ? TEXT(", red left and blue right") : TEXT(", SIDES WRONG")) : TEXT(""), CutLines, *Under, bUnder ? TEXT("") : TEXT(" (UNDERLINE WRONG)"), *Said));
+			D.Columns == 1 ? TEXT("") : TEXT("s"), D.NameStep, V.bTeams ? (bSides ? TEXT(", red left and blue right") : TEXT(", SIDES WRONG")) : TEXT(""), CutLines, *Said));
+		Check(bUnder, FString::Printf(TEXT("%s underline: %s%s"), *C.Name, *Under, bUnder ? TEXT("") : TEXT(" (UNDERLINE WRONG)")));
 		if (C.bMeLast && MeP)
 		{
-			// (the LOBBYUNDER follow-up) this player, joined last, listed on its side (underlined: the check above); a big side's
-			// count under it says the rest ("and N more", N the side's players less the 7 rows listed), a Death Match's none
+			// (the LOBBYUNDER follow-up) this player, joined last, listed on its side (underlined: the case's underline line); a big
+			// side's count under it says the rest ("and N more", N the side's players less the 7 rows listed), a Death Match's none
 			const FInk* MeI = D.Texts.FindByPredicate([MeP](const FInk& X) { return X.bName && X.Text.StartsWith(MeP->Name.Left(FMath::Min(8, MeP->Name.Len()))); });
 			const bool bMeSide = MeI && (!V.bTeams || (MeP->Team == 1 ? MeI->Box.Max.X < Mid : MeI->Box.Min.X > Mid));
 			int32 Side = 0;
@@ -294,8 +298,8 @@ OL_SHOT_TEST(OLLobbyRedoProbe, 1860)
 			const FString More = FString::Printf(TEXT("and %d more"), Side - 7);
 			const FInk* MoreI = D.Texts.FindByPredicate([](const FInk& X) { return X.Text.StartsWith(TEXT("and ")) && X.Text.EndsWith(TEXT(" more")); });
 			const bool bMoreOk = V.bTeams && Side > 8 ? MoreI && MeI && MoreI->Text == More && MoreI->Box.Min.Y > MeI->Box.Min.Y : !MoreI;
-			Check(MeI && bMeSide && bMoreOk && bUnder, FString::Printf(TEXT("%s: this player (\"%s\", joined last, %d of %d on its side) listed there and underlined (%s, %s); %s"), *C.Name, *MeP->Name,
-				Side, V.Players.Num(), MeI ? *MeI->Text : TEXT("NOT LISTED"), bUnder ? TEXT("underlined") : TEXT("NOT UNDERLINED"),
+			Check(MeI && bMeSide && bMoreOk, FString::Printf(TEXT("%s: this player (\"%s\", joined last, %d of %d on its side) listed there (%s); %s"), *C.Name, *MeP->Name,
+				Side, V.Players.Num(), MeI ? *MeI->Text : TEXT("NOT LISTED"),
 				MoreI ? *FString::Printf(TEXT("\"%s\" under it%s"), *MoreI->Text, bMoreOk ? TEXT("") : *FString::Printf(TEXT(" (WANTED \"%s\")"), *More)) : (bMoreOk ? TEXT("no \"more\" line") : TEXT("NO \"more\" LINE"))));
 		}
 		if (!bSizesSaid && Title > 0.f && Item > 0.f)
