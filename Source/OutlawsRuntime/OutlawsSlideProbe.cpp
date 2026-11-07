@@ -24,6 +24,7 @@
 #include "MotionControllerComponent.h"
 #include "Engine/World.h"
 #include "HAL/PlatformMisc.h"
+#include "HAL/PlatformProcess.h"
 
 #if WITH_OUTLAWS_TESTS
 
@@ -40,12 +41,14 @@ namespace OutlawsSlideProbeLocal
 		FVector Stick = FVector::ZeroVector;      // the wanted move, world (zero: no input)
 		bool bCrouch = false;
 		float Secs = 2.5f;
+		float HitchMs = 0.f, HitchX = 0.f;       // BUG-SLIDELOAD: a sleep of this many ms in the game thread once the feet pass this x (units)
 	};
 
 	TArray<FString> Levels;
 	TArray<FCase> SlideCases;
 	int32 LevelI = 0, CaseI = -1, Step = 0, Passes = 0, Fails = 0;
-	bool bArmed = false, bAsked = false, bVRMode = false, bOld = false, bWasFalling = false, bJumped = false;
+	bool bArmed = false, bAsked = false, bVRMode = false, bOld = false, bWasFalling = false, bJumped = false, bHitchDone = false, bHitchLog = false;
+	int32 HitchLeft = -1, HitchFrames = 1;
 	float CaseT = 0.f, LevelT = 0.f, LandedT = -1.f, LipSpeed = -1.f, PlainLip = -1.f, MaxRise = 0.f, MaxStepCm = 0.f, HealthAtLip = 0.f;
 	FVector StartAt = FVector::ZeroVector, PrevAt = FVector::ZeroVector, NoInputMove = FVector::ZeroVector, FlowDir = FVector::ZeroVector;
 	FString LevelName;
@@ -92,13 +95,29 @@ namespace OutlawsSlideProbeLocal
 			C.Sector = 215;
 			C.Start = FVector2D(331.0, 829.0);     // (the strip's high end, 215 runs east x 326 -> 555 at z 783..833)
 			C.Secs = 20.f;
-			C.Id = TEXT("ice 215 no input");
-			SlideCases.Add(C);
-			if (!bOld)
+			// BUG-SLIDELOAD: -OLSlideHitch=ms@x+ms@x: each pair is a case pair (no input, crouch held) with a sleep of ms on the
+			// frame(s) the feet pass x (OLSlideHitchFrames, default 1), the stall a busy machine or the Quest gives
+			FString Hitches, FramesStr;
+			TArray<FString> Pairs;
+			if (OLFlags::Value(TEXT("OLSlideHitch"), Hitches)) Hitches.ParseIntoArray(Pairs, TEXT("+"));
+			if (Pairs.Num() == 0) Pairs.Add(TEXT("0@0"));
+			if (OLFlags::Value(TEXT("OLSlideHitchFrames"), FramesStr)) HitchFrames = FMath::Max(1, FCString::Atoi(*FramesStr));
+			for (const FString& Pair : Pairs)
 			{
-				C.bCrouch = true;
-				C.Id = TEXT("ice 215 crouch held");
+				FString Ms, X;
+				if (!Pair.Split(TEXT("@"), &Ms, &X)) { Ms = Pair; X = TEXT("0"); }
+				C.HitchMs = FCString::Atof(*Ms);
+				C.HitchX = FCString::Atof(*X);
+				const FString Tag = C.HitchMs > 0.f ? FString::Printf(TEXT(" hitch %.0f ms at x %.0f"), C.HitchMs, C.HitchX) : FString();
+				C.bCrouch = false;
+				C.Id = TEXT("ice 215 no input") + Tag;
 				SlideCases.Add(C);
+				if (!bOld)
+				{
+					C.bCrouch = true;
+					C.Id = TEXT("ice 215 crouch held") + Tag;
+					SlideCases.Add(C);
+				}
 			}
 			return;
 		}
@@ -244,6 +263,8 @@ OL_SHOT_TEST(OLSlideProbe, 1540)
 		LipSpeed = LandedT = -1.f;
 		MaxRise = MaxStepCm = 0.f;
 		bWasFalling = bJumped = false;
+		bHitchDone = bHitchLog = false;
+		HitchLeft = -1;
 		Step = 1;
 		return;
 	}
@@ -286,6 +307,19 @@ OL_SHOT_TEST(OLSlideProbe, 1540)
 	{
 		const bool bFalling = M->IsFalling();
 		const FVector Ol = FOutlawsGeometry::ToOutlaws(Feet);
+		if (bHitchLog)
+		{
+			bHitchLog = false;
+			UE_LOG(LogOutlaws, Display, TEXT("OLSHOT slide hitch: the frame after it ran Dt %.0f ms, now at (%.1f, %.1f, %.1f) units, %.0f cm/s"), Dt * 1000.f, Ol.X, Ol.Y, Ol.Z, M->Velocity.Size2D());
+		}
+		if (C.HitchMs > 0.f && !bHitchDone && Ol.X >= C.HitchX)
+		{
+			if (HitchLeft < 0) HitchLeft = HitchFrames;
+			FPlatformProcess::Sleep(C.HitchMs / 1000.f);
+			bHitchLog = true;
+			if (--HitchLeft <= 0) bHitchDone = true;
+			UE_LOG(LogOutlaws, Display, TEXT("OLSHOT slide hitch: slept %.0f ms at (%.1f, %.1f, %.1f) units, %.0f cm/s, %.2f s"), C.HitchMs, Ol.X, Ol.Y, Ol.Z, M->Velocity.Size2D(), CaseT);
+		}
 		if (LipSpeed < 0.f && ((bFalling && !bWasFalling && Ol.X > 540.0) || Ol.X > 575.0))
 		{
 			LipSpeed = float(M->Velocity.Size2D());
