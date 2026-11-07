@@ -242,11 +242,20 @@ void AOutlawsLevelActor::SetUpCloudLayer(bool bTiles, float Aspect)
 	SkySurfaceMid->SetScalarParameterValue(TEXT("CloudVOff"), 0.02f);
 	SkySurfaceMid->SetScalarParameterValue(TEXT("CloudVScale"), 0.3f);
 	SkySurfaceMid->SetScalarParameterValue(TEXT("CloudAspect"), Aspect);     // square texels on a wide picture
-	CloudDrift = FVector2D(FMath::FRand(), FMath::FRand());
+	// (BUG-SKYSCROLL0: the clouds' start is a random one each load, a still sky has one place, every load and on both co-op machines:
+	// not 0 and 0, that lines the fold of a horizon sky's top band up with the level's axes, a mirror down the middle of the sky)
+	CloudDrift = bSkyStill ? FVector2D(0.25, 0.25) : FVector2D(FMath::FRand(), FMath::FRand());
 	SkySurfaceMid->SetVectorParameterValue(TEXT("CloudWind"), FLinearColor(float(CloudDrift.X), float(CloudDrift.Y), 0.f, 0.f));
-	CloudSpin = FMath::FRandRange(0.f, 2.f * PI);
+	CloudSpin = bSkyStill ? 1.f : FMath::FRandRange(0.f, 2.f * PI);
 	SkySurfaceMid->SetScalarParameterValue(TEXT("CloudSpin"), CloudSpin);
-	UE_LOG(LogOutlaws, Log, TEXT("OLRT cloud layer on (%s)"), bTiles ? TEXT("the sky tiling") : TEXT("the horizon sky's top band"));
+	UE_LOG(LogOutlaws, Log, TEXT("OLRT cloud layer on (%s), starts at spin %.6f rad, drift %.6f %.6f"), bTiles ? TEXT("the sky tiling") : TEXT("the horizon sky's top band"),
+		CloudSpin, CloudDrift.X, CloudDrift.Y);
+}
+
+bool AOutlawsLevelActor::SkyScrollIsStill(const TMap<FString, FString>& ItmData)
+{
+	const FString* Scroll = ItmData.Find(TEXT("SKYSCROLL"));
+	return Scroll && FCString::Atof(**Scroll) == 0.f;
 }
 
 FString AOutlawsLevelActor::CloudReport() const
@@ -1271,15 +1280,27 @@ void AOutlawsLevelActor::Build()
 	ApplyStartKit();
 	// the level ITM's TAUNT_TYPE picks the bad guys' taunt recordings (TOWN -> c105t.wav)
 	TauntSuffix.Reset();
+	bSkyStill = false;
 	{
 		FString LevelItm;
 		if (A.GetText(LevelName + TEXT(".itm"), LevelItm))
 		{
+#if WITH_OUTLAWS_TESTS
+			TestSkyScrollItm(LevelItm);
+#endif
 			FString Func;
 			TMap<FString, FString> Data;
 			OutlawsFormats::ParseItm(LevelItm, Func, Data);
 			const FString Type = Data.FindRef(TEXT("TAUNT_TYPE")).ToUpper();
 			TauntSuffix = Type == TEXT("TOWN") ? TEXT("t") : Type == TEXT("MINE") ? TEXT("m") : Type == TEXT("CLIFF") ? TEXT("c") : TEXT("");
+			// BUG-SKYSCROLL0 (user 6 Nov: "SKYSCROLL 0 means the sky doesn't scroll at all and stays at its default position"): the
+			// key is the original's sky speed, 1 when the ITM has none (OutlawsAHOM.exe's reader and sky drawing).  INT or FLOAT, a
+			// stock file has both forms.  Only 0 means anything here, a sky at another value goes on as a level without the key.
+			// -OLOldSkyScroll: the sky always moves, as before
+			static const bool bOldSkyScroll = OLFlags::Param(TEXT("OLOldSkyScroll"));
+			bSkyStill = SkyScrollIsStill(Data) && !bOldSkyScroll;
+			UE_LOG(LogOutlaws, Log, TEXT("OLRT sky scroll: SKYSCROLL %s in %s.itm, the sky %s%s"), Data.Contains(TEXT("SKYSCROLL")) ? *Data[TEXT("SKYSCROLL")] : TEXT("not set"), *LevelName,
+				bSkyStill ? TEXT("stays still") : TEXT("moves"), bOldSkyScroll ? TEXT(" (-OLOldSkyScroll)") : TEXT(""));
 		}
 	}
 	bInfEndsLevel = false;
@@ -2604,7 +2625,7 @@ void AOutlawsLevelActor::Tick(float DeltaSeconds)
 		UpdateWavingModels(DeltaSeconds);         // the flags' cloth (their sprite's idle loop, as keyframes)
 		UpdateLamps(DeltaSeconds);                // the lamps' fire, the hanging ones' swing
 	}
-	if (bGame && SkyMesh)
+	if (bGame && SkyMesh && !bSkyStill)      // (BUG-SKYSCROLL0: a level's SKYSCROLL 0 stops all of it, the dome, the cloud layer and the outer walls' sky)
 	{
 		// the clouds drift left: the dome turns slowly about the vertical
 		SkyMesh->AddWorldRotation(FRotator(0.0, -SkySpinSpeed * DeltaSeconds, 0.0));

@@ -1336,6 +1336,16 @@ public:
 	int32 TestSkyThruMids() const { return SkyThruMids.Num(); }
 	void TestSkyThruQuads(TArray<FVector>& OutCorners, TArray<FVector>& OutNormals) const;
 	void TestSkyThruLook(int32 Mode);
+	/** BUG-SKYSCROLL0: an ITM's data says a still sky: SKYSCROLL set, to 0 (the level load's test, public for the probe's cases). */
+	static bool SkyScrollIsStill(const TMap<FString, FString>& ItmData);
+	/** BUG-SKYSCROLL0 (tests): everything that moves the sky, in a fixed order, to compare digit by digit: the dome's yaw, Spin,
+	 *  CloudSpin and CloudWind on the sky's instance, then the same three of each outer wall's (REQ-SKYTHRU).  Empty with no sky. */
+	void TestSkyMovers(TArray<float>& Out, double& OutDomeYaw) const;
+	bool TestSkyStill() const { return bSkyStill; }
+	bool TestSkyCloudLayer() const { return SkyDome.bCloudLayer; }
+	bool TestSkyGradient() const { return bGradientSky; }
+	FString TestSkyPictureNow() const;      // (the picture on the sky's instance now, and whether a texture animation owns it)
+	void TestSkyScrollItm(FString& ItmText) const;      // (-OLSkyScrollItm=INT|FLOAT|NONE: the level's ITM read with that form of the key)
 	uint32 TestSectorFlags(int32 Sector) const;
 	/** REQ-EXTRAS: the level's secret sectors (SECFLAG1_SECRET_TAG, as UOutlawsStats::NoteSecret counts them). */
 	int32 SecretSectorCount() const;
@@ -1786,6 +1796,7 @@ private:
 	FVector2D CloudWindRate = FVector2D(0.012, 0.004);      // picture widths a second
 	bool bCloudLayer = true;           // -OLNoCloudLayer
 	bool bGradientSky = false;         // (BUG-TRAINSKY) this level's sky is the plain gradient dome (the train)
+	bool bSkyStill = false;            // (BUG-SKYSCROLL0) the level's ITM has SKYSCROLL 0: nothing about the sky moves
 	FSkyDomeInfo SkyDome;              // (REQ-SKYDOME, tests)
 	// (BUG-TRAINSKY8BIT) with Remastered Graphics off the dome is one flat colour, the top row of the outer walls' 8-bit picture
 	FLinearColor GradSkyTop = FLinearColor::Black, FlatSkyColour = FLinearColor::Black;
