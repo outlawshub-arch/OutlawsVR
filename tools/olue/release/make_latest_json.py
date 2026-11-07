@@ -32,6 +32,12 @@ def store_version():
     return int(m.group(1)) if m else 0
 
 
+def plain_name(name):
+    """The game's PlainName (OutlawsUpdate.cpp): letters, digits, dot, dash, underscore, 128 at most, no "..". latest.json with a tag,
+    version or zip outside it is thrown away by the game with no message, so the update would never be offered."""
+    return bool(re.fullmatch(r"[A-Za-z0-9._-]{1,128}", name)) and ".." not in name
+
+
 def latest_for(zip_path, tag, version, commit, build, require=True):
     with zipfile.ZipFile(zip_path) as z:
         names = z.namelist()
@@ -75,6 +81,11 @@ def main():
     ap.add_argument("--build", type=int, default=0)
     ap.add_argument("--out", default="")
     a = ap.parse_args()
+    for label, value in (("tag", a.tag), ("version", a.version), ("zip name", os.path.basename(a.zip))):
+        if not plain_name(value):
+            sys.exit("the game would ignore this update: %s %r has a character outside letters, digits, dot, dash and underscore (0.96-hotfix1, not 0.96 hotfix 1)" % (label, value))
+    if not os.path.basename(a.zip).endswith(".zip"):
+        sys.exit("the game would ignore this update: the zip's name must end in .zip")
     build = a.build or store_version()
     if build <= 0:
         sys.exit("no build number")
