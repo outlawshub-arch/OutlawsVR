@@ -74,6 +74,13 @@ namespace
 	// (REQ-GAMMA12) Brightness as the row shows it, 0.6 up to 1.3 in tenths; the picture's gamma is it x BrightnessScale
 	float OldpBright = 1.f;
 	float OldpGammaRaw = 0.f;            // a test's or the Settings sweep's own gamma (SetGammaRaw; 0 none)
+	// (REQ-GAMMA12) -OLOldBrightness: the row as it was before, for a side-by-side and the guard's before: saved as Gamma, the
+	// gamma itself (no x 1.2), 0.7 up to 1.6, no old key read
+	bool OldpOldRule()
+	{
+		static const bool bOld = OLFlags::Param(TEXT("OLOldBrightness"));
+		return bOld;
+	}
 
 	// what we changed, to put back when a row returns to a default that does not touch it
 	bool bOldpPdTouched = false;
@@ -598,7 +605,7 @@ void OutlawsDeviceProfile::RestoreDefaults()
 float OutlawsDeviceProfile::Gamma()
 {
 	if (OldpGammaRaw > 0.f) return OldpGammaRaw;
-	return OldpBright * BrightnessScale;
+	return OldpOldRule() ? OldpBright : OldpBright * BrightnessScale;
 }
 
 float OutlawsDeviceProfile::Brightness()
@@ -614,7 +621,7 @@ float* OutlawsDeviceProfile::BrightnessSetting()
 void OutlawsDeviceProfile::SetBrightness(float Shown)
 {
 	// (whole tenths: 1.0 is exactly 1, so the saved value and the row's "(default)" never drift)
-	OldpBright = float(FMath::Clamp(FMath::RoundToInt(Shown * 10.f), 6, 13)) / 10.f;
+	OldpBright = float(OldpOldRule() ? FMath::Clamp(FMath::RoundToInt(Shown * 10.f), 7, 16) : FMath::Clamp(FMath::RoundToInt(Shown * 10.f), 6, 13)) / 10.f;
 }
 
 float OutlawsDeviceProfile::BrightnessFromOldGamma(float OldGamma)
@@ -622,6 +629,7 @@ float OutlawsDeviceProfile::BrightnessFromOldGamma(float OldGamma)
 	// the old row's own rule first (tenths, 0.7 up to 1.6), then the new step nearest the same gamma, old / 1.2 in tenths,
 	// rounded half up in whole numbers: 0.9 and 1.5 sit halfway and go to 0.8 and 1.3 (the nearer by ratio), 1.6 to the top
 	const int32 Old = FMath::Clamp(FMath::RoundToInt(OldGamma * 10.f), 7, 16);
+	if (OldpOldRule()) return float(Old) / 10.f;      // (-OLOldBrightness: the old row's value as it is)
 	if (Old == 10) return 1.f;          // (the old default, saved whether chosen or not: the new default, today's 1.2)
 	return float(FMath::Clamp((Old * 10 + 6) / 12, 6, 13)) / 10.f;
 }
@@ -629,9 +637,9 @@ float OutlawsDeviceProfile::BrightnessFromOldGamma(float OldGamma)
 FString OutlawsDeviceProfile::PressBrightness()
 {
 	// one step brighter or darker (REQ-TRIGGERSTEP: a number row, stopping at 0.6 and 1.3 with two controllers)
-	SetBrightness(OutlawsMenu::StepNumber(OldpBright, BrightnessLo, BrightnessHi, BrightnessStep));
+	SetBrightness(OutlawsMenu::StepNumber(OldpBright, OldpOldRule() ? 0.7f : BrightnessLo, OldpOldRule() ? 1.6f : BrightnessHi, BrightnessStep));
 	UE_LOG(LogOutlaws, Log, TEXT("OLRT gamma: Brightness %.1f, gamma %.2f (menu)"), OldpBright, Gamma());
-	return TEXT("Higher lifts the shadows. 1.0 is the default.");
+	return OldpOldRule() ? TEXT("Higher lifts the shadows. 1.0 is the picture as made.") : TEXT("Higher lifts the shadows. 1.0 is the default.");
 }
 
 FString OutlawsDeviceProfile::BrightnessText()
@@ -659,7 +667,8 @@ void OutlawsDeviceProfile::LoadSettings(const TMap<FString, FString>& S, const T
 	// the next save writes Brightness (the old key is left in the file as it was)
 	const FString* Br = S.Find(TEXT("Brightness"));
 	const FString* Gm = S.Find(TEXT("Gamma"));
-	if (Br && FCString::Atof(**Br) > 0.f) SetBrightness(FCString::Atof(**Br));
+	if (OldpOldRule()) SetBrightness(Gm && FCString::Atof(**Gm) > 0.f ? FCString::Atof(**Gm) : 1.f);
+	else if (Br && FCString::Atof(**Br) > 0.f) SetBrightness(FCString::Atof(**Br));
 	else
 	{
 		SetBrightness(BrightnessFromOldGamma(Gm && FCString::Atof(**Gm) > 0.f ? FCString::Atof(**Gm) : 1.f));
@@ -681,7 +690,8 @@ void OutlawsDeviceProfile::GatherSettings(TMap<FString, FString>& Out)
 	Out.Add(TEXT("PerfHud"), bOldpPerfHud ? TEXT("true") : TEXT("false"));
 	Out.Add(TEXT("GrabGlow"), bOldpGrabGlow ? TEXT("true") : TEXT("false"));
 	Out.Add(TEXT("ObjectDetail"), OldpChosenDetail >= 0 ? FString::FromInt(OldpChosenDetail) : FString(TEXT("auto")));
-	Out.Add(TEXT("Brightness"), FString::Printf(TEXT("%.1f"), OldpBright));     // (REQ-GAMMA12: the row as shown, in tenths)
+	if (OldpOldRule()) Out.Add(TEXT("Gamma"), FString::Printf(TEXT("%.2f"), OldpBright));
+	else Out.Add(TEXT("Brightness"), FString::Printf(TEXT("%.1f"), OldpBright));     // (REQ-GAMMA12: the row as shown, in tenths)
 	Out.Add(TEXT("PcWindowView"), OldpPcView != 0 ? TEXT("steady") : TEXT("headset"));   // (written both ways: the save merges into the file's old keys)
 	Out.Add(TEXT("Quest2Mode"), bOldpQuest2Mode ? TEXT("true") : TEXT("false"));
 }
