@@ -701,9 +701,9 @@ public:
 	void ServerLevelStats(const FOutlawsLevelStats& In);
 
 	// ---- milestone 6 (OutlawsCoopVerbs.cpp): the shared world's verbs ----
-	/** A blast on the owner's machine (Stick: the pickup number of the stick that went off, -1 none known). */
+	/** A blast on the owner's machine (Stick: the pickup number of the stick that went off, -1 none known; bGrace, REQ-SPAWNSTICK: it deals nothing and throws nobody). */
 	UFUNCTION(Server, Reliable)
-	void ServerBlast(int32 Epoch, FVector_NetQuantize10 Where, int32 Stick);
+	void ServerBlast(int32 Epoch, FVector_NetQuantize10 Where, int32 Stick, bool bGrace);
 	/** A change to the level on the owner's machine (UOutlawsCoop::EBit as a number): a wall blown, a pane shattered, a
 	 *  prop's reaction or a prop taken off its shelf, a lamp's shade broken, a lamp swung. */
 	UFUNCTION(Server, Reliable)
@@ -716,7 +716,7 @@ public:
 	void ServerThrow(int32 Epoch, uint8 Kind, FVector_NetQuantize10 Pos, FVector_NetQuantize10 Vel, float Grav, float Fuse);
 	// (to a client: From is the player who did it, the host or, N1, another client whose word the host passes on)
 	UFUNCTION(Client, Reliable)
-	void ClientBlast(int32 From, int32 Epoch, FVector_NetQuantize10 Where, int32 Stick);
+	void ClientBlast(int32 From, int32 Epoch, FVector_NetQuantize10 Where, int32 Stick, bool bGrace);
 	UFUNCTION(Client, Reliable)
 	void ClientWorldBit(int32 From, int32 Epoch, uint8 Kind, int32 Index, int32 Arg, FVector_NetQuantize100 Vec, float F);
 	UFUNCTION(Client, Unreliable)
@@ -1052,8 +1052,14 @@ public:
 	/** This machine's own player out of harm: a blow the host has not judged (its own stick, a fall, the floor); a hurt the host
 	 *  sends is its word already, and a kill the rules order (1e6: the level's kill floor, unstuck) still kills. */
 	static bool SpawnGraceShields(const UObject* Context, float Damage);
-	/** The blast going off now is credited to a protected player: no throw either. */
+	/** The blast going off now is credited to a protected player: no throw either.  (REQ-SPAWNSTICK) A thrown stick's: judged at its throw. */
 	static bool SpawnGraceBlast(const AOutlawsLevelActor* L);
+	/** REQ-SPAWNSTICK: this machine's own player is protected now: a stick it throws deals nothing, whenever it goes off. */
+	static bool SpawnGraceHere(const UObject* Context);
+	/** REQ-SPAWNSTICK: the blast going off now deals nothing, to anyone, here or by report (SpawnGraceBlast, unless -OLOldSpawnStick has the rules refuse it at each hit). */
+	static bool SpawnStickHarmless(const AOutlawsLevelActor* L);
+	/** -OLOldSpawnStick: a stick judged as it goes off, as REQ-SPAWNGRACE had it. */
+	static bool OldSpawnStick();
 	/** The flash on this machine's own hands and what they hold, 0 to 1 this moment (0: none; the sprite takes SpawnGracePulse). */
 	static float SpawnGraceFlashHere(const UObject* Context);
 	/** The flash's beat, 0 to 1 this moment; every flash runs on it. */
@@ -1123,7 +1129,7 @@ public:
 	void OnPlayer2(int32 Who, const FString& Json);
 	void OnSnapshotPart(int32 Epoch, int32 Part, int32 Parts, const FString& Text);
 	// (the links hand these over)
-	void OnBlast(int32 Who, int32 Epoch, const FVector& Where, int32 Stick);
+	void OnBlast(int32 Who, int32 Epoch, const FVector& Where, int32 Stick, bool bGrace);
 	void OnWorldBit(int32 Who, int32 Epoch, uint8 Kind, int32 Index, int32 Arg, const FVector& Vec, float F);
 	void OnShotFx(int32 Who, const FVector& Muzzle, const FString& Sound);
 	void OnThrow(int32 Who, int32 Epoch, uint8 Kind, const FVector& Pos, const FVector& Vel, float Grav, float Fuse);
@@ -1812,10 +1818,16 @@ private:
 	void TickHostBlastRifleTest(double Now, AOutlawsLevelActor* L, AOutlawsPlayer* P);
 	void OnBlastRifleTestStep(const FString& Step, int32 Arg, AOutlawsLevelActor* L, AOutlawsPlayer* P);
 	void TickClientBlastRifleTest(AOutlawsLevelActor* L);
+	// ---- REQ-BOTFALLRULE's probe (-OLBotFallProbe on a host and its client; OutlawsBotFallProbe.cpp) ----
+	void TickHostBotFallTest(double Now, AOutlawsLevelActor* L, AOutlawsPlayer* P);
+	void OnBotFallTestStep(const FString& Step, int32 Arg, AOutlawsLevelActor* L, AOutlawsPlayer* P);
 	// ---- REQ-SPAWNGRACE's probe (-OLSpawnGraceProbe on a host, its client and a joiner; OutlawsSpawnGraceProbe.cpp) ----
 	void TickHostSpawnGraceTest(double Now, AOutlawsLevelActor* L, AOutlawsPlayer* P);
 	void TickClientSpawnGraceTest(AOutlawsLevelActor* L);
 	void OnSpawnGraceTestStep(const FString& Step, int32 Arg, AOutlawsLevelActor* L, AOutlawsPlayer* P);
+	/** (REQ-SPAWNSTICK) This machine's real throw of a stick lit FuseLeft s more, then laid at At; the last such stick's fuse set anew. */
+	void SpawnGraceTestStick(AOutlawsPlayer* P, const FVector& At, float FuseLeft);
+	void SpawnGraceTestStickGo(AOutlawsPlayer* P, float FuseLeft);
 	/** This machine's gun, fist and knife on Who, as it draws Who, then (bStick) a stick at its feet. */
 	void SpawnGraceBlows(AOutlawsLevelActor* L, AOutlawsPlayer* P, int32 Who, bool bStick);
 	/** A stick of bot Who lying lit at Where, off in FuseLeft s: the bots' own list and blast.  Where zero: the last one's fuse set anew. */
@@ -1982,10 +1994,15 @@ public:
 	void BotFired(AOutlawsEnemy* E, const FVector& Muzzle);
 	/** One of its pellets through its target's body: a hit in the match, judged by the host as a player's is. */
 	void BotPellet(AOutlawsEnemy* E, float Damage, const FVector& At, const FVector& From, uint8 Spot);
+	/** REQ-BOTFALLRULE: its body has landed from a drop of DropCm (AOutlawsEnemy::Landed): the player's rule off its health.  True: that kills it. */
+	bool BotLanded(AOutlawsEnemy* E, float DropCm);
+	float BotFallDropCm = -1.f, BotFallRule = -1.f;      // (the probe's: the last such landing, whether or not it was dealt)
 	/** REQ-MPBOTS: while a bot's stick goes off on the host, the player credited with what the blast does (else -1). */
 	static int32 BlastShooter;
 	/** REQ-SPAWNGRACE: a blast told from another machine came from a protected player (OnBlast, around its Explode). */
 	static bool BlastFromGrace;
+	/** REQ-SPAWNSTICK: while a thrown stick goes off on the machine that threw it, 1 it left the hand in its thrower's protection, 0 it did not (else -1: a blast with no throw). */
+	static int32 BlastStickGrace;
 	/** REQ-SPAWNGRACE: the hurt going in now is the host's judged one, past the shield (it asked the rules itself). */
 	bool bHostDealing = false;
 	/** ... and what that blast would deal the host's own player (Explode leaves it to the match, credited to the bot). */

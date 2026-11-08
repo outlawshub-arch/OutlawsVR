@@ -861,6 +861,8 @@ void UOutlawsCoop::TickTest(double Now)
 	else if (TestOnly == TEXT("flicknet")) return;
 	else if (IsHost() && TestOnly == TEXT("mplethal")) TickHostLethalTest(Now, L, P);    // (REQ-MPLETHAL: OutlawsMpLethalProbe.cpp)
 	else if (TestOnly == TEXT("mplethal")) { TickClientBlastRifleTest(L); return; }     // (BUG-BLASTMISS's probe: what the client sees)
+	else if (IsHost() && TestOnly == TEXT("botfall")) TickHostBotFallTest(Now, L, P);    // (REQ-BOTFALLRULE: OutlawsBotFallProbe.cpp)
+	else if (TestOnly == TEXT("botfall")) return;
 	else if (IsHost() && TestOnly == TEXT("spawngrace")) TickHostSpawnGraceTest(Now, L, P);    // (REQ-SPAWNGRACE: OutlawsSpawnGraceProbe.cpp)
 	else if (TestOnly == TEXT("spawngrace")) { TickClientSpawnGraceTest(L); return; }
 	else if (IsHost() && TestOnly == TEXT("mptntpick")) TickHostTntPickTest(Now, L, P);    // (BUG-MPTNTPICK: OutlawsMpTntPickProbe.cpp)
@@ -1451,6 +1453,10 @@ void UOutlawsCoop::OnTestStep(const FString& Step, int32 Arg)
 	else if (Step.StartsWith(TEXT("ds:")))
 	{
 		OnStrikeTestStep(Step.Mid(3), Arg, L, P);    // (M1's gaps' test: OutlawsCoopMatchStrikes.cpp)
+	}
+	else if (Step.StartsWith(TEXT("bf:")))
+	{
+		OnBotFallTestStep(Step.Mid(3), Arg, L, P);    // (REQ-BOTFALLRULE's probe: OutlawsBotFallProbe.cpp)
 	}
 	else if (Step.StartsWith(TEXT("sg:")))
 	{

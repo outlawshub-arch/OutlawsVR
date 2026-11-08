@@ -571,7 +571,7 @@ void UOutlawsCoop::TickHostBlastRifleTest(double Now, AOutlawsLevelActor* L, AOu
 				Check(bOldPush ? BotLaunch.IsNearlyZero() : FVector::Dist(BotLaunch, Nominal) < 5.0, FString::Printf(TEXT("the bot's launch %.0f cm/s (up %.0f); the player's formula %.0f (up %.0f)%s"),
 					BotLaunch.Size(), BotLaunch.Z, Nominal.Size(), Nominal.Z, bOldPush ? TEXT(", -OLOldBotPush: none") : TEXT("")));
 			}
-			TestAt = Now + 4.5;
+			TestAt = Now + 5.0;      // (a full throw lands at about 4.5 s, and the flight's gravity goes in the bot's next tick: x1.50 on the ground, measured)
 			Phase = 3;
 			return;
 		}
@@ -722,11 +722,14 @@ void UOutlawsCoop::OnBlastRifleTestStep(const FString& Step, int32 Arg, AOutlaws
 		FVector Flat = (P->GetActorLocation() - Mid).GetSafeNormal2D();
 		if (Flat.IsNearlyZero()) Flat = FVector::ForwardVector;
 		FCollisionQueryParams Q(SCENE_QUERY_STAT(OutlawsBlastRifleBack), true, P);
+		Q.AddIgnoredActor(R);
 		for (int32 i = 0; i < 8; ++i)
 		{
 			const FVector Try = Flat.RotateAngleAxis(45.0 * i, FVector::UpVector);
 			FHitResult Hit;
-			if (P->GetWorld()->LineTraceSingleByChannel(Hit, Mid, Mid + Try * 320.0, ECC_Visibility, Q)) continue;
+			// (a body's width, not a line: a bot that lives through its landing can stand by a wall, and a clear line put the shooter in
+			// it, 3 s from the unstuck warp that took it 23 m off before the next pull: REQ-BOTFALLRULE)
+			if (P->GetWorld()->SweepSingleByChannel(Hit, Mid, Mid + Try * 320.0, FQuat::Identity, ECC_Visibility, FCollisionShape::MakeCapsule(40.f, 80.f), Q)) continue;
 			Flat = Try;
 			break;
 		}

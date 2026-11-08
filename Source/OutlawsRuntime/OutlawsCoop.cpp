@@ -346,6 +346,11 @@ void UOutlawsCoop::Initialize(FSubsystemCollectionBase& Collection)
 		bAuto = bAutoReady = bWorldTest = true;
 		TestOnly = TEXT("mplethal");
 	}
+	if (OLFlags::Param(TEXT("OLBotFallProbe")) && !OLFlags::ValueIs(TEXT("OLBotFallProbe"), TEXT("story")))
+	{
+		bAuto = bAutoReady = bWorldTest = true;      // (REQ-BOTFALLRULE's probe: OutlawsBotFallProbe.cpp; the host starts the match itself)
+		TestOnly = TEXT("botfall");
+	}
 	if (OLFlags::Param(TEXT("OLSpawnGraceProbe")))
 	{
 		bAuto = bAutoReady = bWorldTest = true;      // (REQ-SPAWNGRACE's probe: OutlawsSpawnGraceProbe.cpp; the host starts the match itself)
@@ -1882,7 +1887,7 @@ void UOutlawsCoop::Tick(float DeltaTime)
 		Summary(TEXT("done"));
 		QuitForTest();
 	}
-	if (bWorldTest && bLevelBuilt && !bSummaryDone && Now - LevelBuiltAt > (TestOnly == TEXT("mplethal") || TestOnly == TEXT("mpspeed") ? AutoWorldTestGiveUp + 450.0 : AutoWorldTestGiveUp))
+	if (bWorldTest && bLevelBuilt && !bSummaryDone && Now - LevelBuiltAt > (TestOnly == TEXT("mplethal") || TestOnly == TEXT("mpspeed") ? AutoWorldTestGiveUp + 450.0 : TestOnly == TEXT("spawngrace") ? AutoWorldTestGiveUp + 120.0 : AutoWorldTestGiveUp))
 	{
 		Summary(TEXT("the world test did not finish in time"));
 		QuitForTest();

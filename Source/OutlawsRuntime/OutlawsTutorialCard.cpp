@@ -8,6 +8,12 @@
 // middle of the view, holds, then eases up to that place.  The tilt needs nothing of its own: Place has always turned the
 // plane's face to the eye, so at the top it already leans down at the player, by the same 16 degrees or so as ever; a turn
 // added on top would double it.  -OLOldTutCardFloat: up at the top from the first frame.
+// REQ-TUTGUNFIRE (the user's ruling of 5 Nov): while it is low (until its rise is over, about 4.8 s) a card hangs in the line of fire,
+// and a gun fires through it: a hand with a gun has no laser on the low card and no button under it, so the trigger and a fan are the
+// gun's.  Back and Next stay pressable throughout: an empty hand or a fist presses them low or risen, as does a knife, a stick or the
+// lantern (their triggers fire nothing).  Guns in both hands: low, nothing presses, so wait for the card to rise or put one gun away on
+// the wheel; risen, either gun's laser on a button and the trigger presses it and does not fire, as ever.  -OLOldTutGunPress: a gun on a
+// button presses it low too
 
 #include "OutlawsTutorialCard.h"
 #include "OutlawsFlags.h"
@@ -40,6 +46,11 @@ namespace
 	bool TutCardOldFloat()
 	{
 		static const bool bOld = OLFlags::Param(TEXT("OLOldTutCardFloat"));
+		return bOld;
+	}
+	bool TutCardOldGunPress()
+	{
+		static const bool bOld = OLFlags::Param(TEXT("OLOldTutGunPress"));
 		return bOld;
 	}
 	TWeakObjectPtr<AOutlawsTutorialCard> GCard;
@@ -334,6 +345,11 @@ FVector AOutlawsTutorialCard::TestButtonAt(int32 Button) const
 	return GetActorTransform().TransformPosition(FVector((Px.X / CardPxW - 0.5) * 100.0, (Px.Y / CardPxH - 0.5) * 100.0, 0.0));
 }
 
+bool AOutlawsTutorialCard::TestLaserShown(int32 H) const
+{
+	return Laser[H & 1] && Laser[H & 1]->IsVisible();
+}
+
 void AOutlawsTutorialCard::Tick(float DeltaSeconds)
 {
 	OL_PERF_SCOPE("Other ours");
@@ -358,7 +374,9 @@ void AOutlawsTutorialCard::Tick(float DeltaSeconds)
 	{
 		int32 On = -1;
 		float Len = 0.f;
-		if (const UMotionControllerComponent* Aim = P->AimOf(H))
+		const bool bGunThrough = Rise < 1.f && P->HandHoldsGun(H) && !TutCardOldGunPress();      // (REQ-TUTGUNFIRE: low, the card is no button to a gun)
+		if (bGunThrough) Laser[H]->SetVisibility(false);
+		else if (const UMotionControllerComponent* Aim = P->AimOf(H))
 		{
 			const FVector O = Aim->GetComponentLocation(), D = Aim->GetForwardVector();
 			const double Den = FVector::DotProduct(D, N);

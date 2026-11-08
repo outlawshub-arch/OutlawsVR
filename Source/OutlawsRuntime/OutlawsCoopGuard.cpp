@@ -107,7 +107,7 @@ void UOutlawsCoop::OnFuzzTestStep(const FString& Step, AOutlawsLevelActor* L, AO
 	Mine->ServerRevive(E, 99, 1000); ++Sent;
 	Mine->ServerPace(NaN); ++Sent;
 	Mine->ServerPlayerName(Junk(2000)); ++Sent;
-	Mine->ServerBlast(E, Bad, -5); ++Sent;
+	Mine->ServerBlast(E, Bad, -5, false); ++Sent;
 	Mine->ServerWorldBit(E, 255, -1, 0, FVector(NaN), NaN); ++Sent;
 	Mine->ServerShotFx(Bad, Junk(500)); ++Sent;
 	Mine->ServerThrow(E, 255, Bad, FVector(1.0e9), NaN, NaN); ++Sent;

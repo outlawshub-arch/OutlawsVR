@@ -48,6 +48,8 @@ public:
 	void TestPinAge(float Seconds) { PinAge = Seconds; }
 	/** Tests: where button 0 Back, 1 Next is now (zero: not drawn). */
 	FVector TestButtonAt(int32 Button) const;
+	/** Tests (REQ-TUTGUNFIRE): hand H's laser is drawn on the card. */
+	bool TestLaserShown(int32 H) const;
 
 	virtual void Tick(float DeltaSeconds) override;
 

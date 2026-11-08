@@ -163,8 +163,9 @@ public:
 	float TimeLeft(double Now) const;
 
 	void NoteShot(int32 Shooter, double Now);
-	/** A hit on Victim by Shooter: false when it does not count (the victim protected, dead, or no such player). */
-	bool NoteHit(int32 Shooter, int32 Victim, double Now);
+	/** A hit on Victim by Shooter: false when it does not count (the victim protected, dead, or no such player).  bStick (REQ-SPAWNSTICK):
+	 *  a blast, judged at its throw: the shooter's protection now is no matter. */
+	bool NoteHit(int32 Shooter, int32 Victim, double Now, bool bStick = false);
 	/** Victim died; Killer the shooter (-1 or Victim: a suicide or the world). */
 	void NoteKill(int32 Killer, int32 Victim, float DistCm, double Now);
 	/** A dead player asks to come back: granted after RespawnDelay, at the spawn farthest from the living. */

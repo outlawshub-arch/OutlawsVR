@@ -2124,11 +2124,25 @@ void AOutlawsEnemy::PoseHeldCritter(const FTransform& Grip, bool bLeftHand, cons
 void AOutlawsEnemy::Landed(const FHitResult& Hit)
 {
 	Super::Landed(Hit);
+	const bool bFallRead = bFalling;
 	bFalling = false;          // (BUG-FALLSCREAM: the next fall measures from its own start, however the ticks were kept)
 	// how far it came down: the landing speed under the gravity it fell with (a thrown one's quickened gravity too:
 	// v^2 / 2g is the height either way); up to 3 m nothing, then a share of his full health up to all of it at 12 m
 	// (a man falls harder than the player, whose falls hurt from 8 m)
 	if (IsDead()) return;
+	// (REQ-BOTFALLRULE, the user's answer of 5 Nov) a match bot lands on the player's rule, not this one: the drop from the top of its
+	// fall, about 10 m free, about 45 m lethal, on the match's health (a full throw, REQ-BLASTRIFLE's 20.9 m, killed it here at 12 m).
+	// A landing that kills ends the brain as a lethal fall always has, and TickBots takes it to the match from there: the kill stays
+	// with whoever struck it last.  Story and co-op bad guys keep the rule below.  -OLOldBotFall: a bot on it too, as before
+	static const bool bOldBotFall = OLFlags::Param(TEXT("OLOldBotFall"));
+	if (CoopSelf >= 0 && !bOldBotFall)
+	{
+		UOutlawsCoop* C = Coop.Get();
+		if (!C || !C->BotLanded(this, bFallRead ? FMath::Max(0.f, FallTopZ - float(GetActorLocation().Z)) : 0.f)) return;
+		FOutlawsStatsScope FallBy(EOutlawsStatsBy(StatsBy), false, false);
+		TakeHit(GetMaxHealth() * 100.f + 100.f, GetActorLocation(), FVector::DownVector, GetActorLocation() + FVector(0.0, 0.0, 100.0), true, 0.f);
+		return;
+	}
 	const float Down = FMath::Max(0.f, float(-GetCharacterMovement()->Velocity.Z));
 	const float G = FMath::Max(1.f, FMath::Abs(GetCharacterMovement()->GetGravityZ()));
 	float Drop = Down * Down / (2.f * G);

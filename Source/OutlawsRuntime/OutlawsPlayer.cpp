@@ -654,6 +654,16 @@ void AOutlawsPlayer::UpdateBreath(float Dt)
 	}
 }
 
+float AOutlawsPlayer::FallImpact(float Gravity, float DropCm)
+{
+	return FMath::Sqrt(FMath::Abs(Gravity) * DropCm / float(FOutlawsGeometry::UnitsToCm));      // (sqrt(2 g h), g = |GRAVITY| / 2)
+}
+
+float AOutlawsPlayer::FallRule(float Gravity, float DropCm)
+{
+	return FMath::Max(0.f, 0.2f * (FallImpact(Gravity, DropCm) - 45.f));
+}
+
 void AOutlawsPlayer::Landed(const FHitResult& Hit)
 {
 	Super::Landed(Hit);
@@ -686,8 +696,8 @@ void AOutlawsPlayer::Landed(const FHitResult& Hit)
 	const FVector Feet = GetActorLocation() - FVector(0.0, 0.0, GetCapsuleComponent()->GetScaledCapsuleHalfHeight());
 	constexpr float SafeCm = 800.f, LethalCm = 2400.f;   // twice as far before it hurts, half the damage a metre after (user 2026-09-27)
 	const bool bGrace = GetWorld()->GetTimeSeconds() < FallGraceUntil;
-	const float Impact = FMath::Sqrt(FMath::Abs(L->GravityAt(Feet)) * Drop / float(FOutlawsGeometry::UnitsToCm));      // (sqrt(2 g h), g = |GRAVITY| / 2)
-	const float Rule = bOldFall ? (Drop <= SafeCm ? 0.f : 10.f * (Drop - SafeCm) / (LethalCm - SafeCm)) : FMath::Max(0.f, 0.2f * (Impact - 45.f));
+	const float Impact = FallImpact(L->GravityAt(Feet), Drop);
+	const float Rule = bOldFall ? (Drop <= SafeCm ? 0.f : 10.f * (Drop - SafeCm) / (LethalCm - SafeCm)) : FallRule(L->GravityAt(Feet), Drop);
 	LastFallDamage = Rule;
 	const float Damage = bGrace ? 0.f : Rule;
 	if (Damage <= 0.f)

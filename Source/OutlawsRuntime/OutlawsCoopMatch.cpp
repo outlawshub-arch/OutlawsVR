@@ -699,9 +699,10 @@ void UOutlawsCoop::OnMatchHit(int32 Shooter, int32 Epoch, int32 Victim, float Da
 	if (++RateCount[Shooter] > MaxHitsPerSecond) return Refuse(TEXT("too many hits in a second"));
 	const AOutlawsCoopLink* SL = GetLink(Shooter);
 	const FVector ShooterAt = Shooter == 0 && LocalPlayer() ? LocalPlayer()->GetActorLocation() : SL ? FVector(SL->Pose.Body) : From;
-	if (FVector::Dist(ShooterAt, From) > 600.0 || FVector::Dist(From, At) > MaxShotReachCm) return Refuse(TEXT("not where the shooter is"));
+	const bool bStick = bBlast && !OldSpawnStick();      // (REQ-SPAWNSTICK: judged at its throw, the machine it went off on sends only what deals; its thrower may have respawned far off)
+	if (FVector::Dist(ShooterAt, From) > 600.0 || (!bStick && FVector::Dist(From, At) > MaxShotReachCm)) return Refuse(TEXT("not where the shooter is"));
 	if (!Modes.HitAllowed(Shooter, Victim)) return Refuse(TEXT("a teammate (friendly fire off)"));
-	if (!Dm.NoteHit(Shooter, Victim, Now)) return Refuse(TEXT("the rules: protected, or not now"));
+	if (!Dm.NoteHit(Shooter, Victim, Now, bStick)) return Refuse(TEXT("the rules: protected, or not now"));
 	// (REQ-MPLETHAL) a fist, a knife or a scoped head shot: the host's own harm, past the plate and the character's multiplier;
 	// anything else, or the rule off: the victim's character's DAMAGE_MULTIPLIER on what was struck (OutlawsCoopMatchStrikes.cpp)
 	const float Lethal = LethalBlowDamage(Shooter, Victim, Blow, At, ShooterAt);
@@ -749,6 +750,13 @@ void UOutlawsCoop::OnMatchHit(int32 Shooter, int32 Epoch, int32 Victim, float Da
 // frame (TickMatch): one replicated flag, so a late joiner sees a flash under way and a bot's reaches every machine as a player's.
 // What never came to the host is shielded on the machine it happens on (SpawnGraceShields: own stick, a fall, the floor's hurt).
 // No HUD word, no host option; co-op's story has none of this.  -OLOldSpawnGrace: its own shot ended it, no flash, no shield
+// REQ-SPAWNSTICK (the user's ruling of 5 Nov) a stick is judged at the throw, not when it goes off.  Thrown during protection it deals
+// none, whenever it goes off; thrown after protection ends, full; thrown before a death and going off while the thrower is protected
+// after the respawn, full.  The machine that threw it judges (FThrown, FBotFlying: bots the same) and carries that to the blast
+// (BlastStickGrace): a harmless one reports nobody, throws nobody, and tells the far machines so (ServerBlast's bGrace); one that deals
+// reaches the host as a blast, and NoteHit asks nothing of the thrower's protection now.  Protection still stops the thrower being
+// hurt or thrown (SpawnGraceShields, its own stick too).  What has no throw (a stick gone off in the hand, a barrel) is judged as it
+// goes off, as ever.  -OLOldSpawnStick: every stick judged at the blast, by the rules at each hit
 
 bool UOutlawsCoop::SpawnGraceOf(int32 Who) const
 {
@@ -775,7 +783,27 @@ bool UOutlawsCoop::SpawnGraceBlast(const AOutlawsLevelActor* L)
 	if (!L || !IsActive(L)) return false;
 	const UOutlawsCoop* C = Get(L);
 	if (!C) return false;
-	return L->bCoopRemoteBlast ? BlastFromGrace : C->SpawnGraceOf(BlastShooter >= 0 ? BlastShooter : C->MyIndex());
+	if (L->bCoopRemoteBlast) return BlastFromGrace;
+	if (BlastStickGrace >= 0 && !OldSpawnStick()) return BlastStickGrace > 0;      // (REQ-SPAWNSTICK)
+	return C->SpawnGraceOf(BlastShooter >= 0 ? BlastShooter : C->MyIndex());
+}
+
+bool UOutlawsCoop::SpawnGraceHere(const UObject* Context)
+{
+	if (!IsActive(Context)) return false;
+	const UOutlawsCoop* C = Get(Context);
+	return C && C->SpawnGraceOf(C->MyIndex());
+}
+
+bool UOutlawsCoop::SpawnStickHarmless(const AOutlawsLevelActor* L)
+{
+	return !OldSpawnStick() && SpawnGraceBlast(L);
+}
+
+bool UOutlawsCoop::OldSpawnStick()
+{
+	static const bool bOld = OLFlags::Param(TEXT("OLOldSpawnStick"));
+	return bOld;
 }
 
 float UOutlawsCoop::SpawnGracePulse()

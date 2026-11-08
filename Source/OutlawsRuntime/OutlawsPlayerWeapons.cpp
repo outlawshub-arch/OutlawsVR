@@ -2209,6 +2209,11 @@ bool AOutlawsPlayer::HoldsGatling(int32 Hand) const
 	return Hand >= 0 && Hand < 2 && Equipped[Hand] >= 0 && GWeapons[Equipped[Hand]].bAuto;
 }
 
+bool AOutlawsPlayer::HandHoldsGun(int32 Hand) const
+{
+	return Hand >= 0 && Hand < 2 && Equipped[Hand] >= 0 && GWeapons[Equipped[Hand]].Throw == 0 && GrabHand != Hand && !bToolSupport[Hand] && !bSupport[Hand] && !bRegrip[Hand];
+}
+
 UMaterialInterface* AOutlawsPlayer::HeldSectionMaterial(const FString& Key, const FString& Texture)
 {
 	UMaterialInterface* Base = HeldBase();
@@ -4777,6 +4782,7 @@ void AOutlawsPlayer::ThrowHeld(int32 Hand, bool bUnlit, bool bDrop)
 	T.Type = W.Throw;
 	T.Fuse = W.Throw == 1 && !bUnlit ? Fuse[Hand] : -1.f;
 	T.bDud = W.Throw == 1 && bUnlit;
+	T.bGraceThrow = W.Throw == 1 && UOutlawsCoop::SpawnGraceHere(this);
 	T.Sound = FuseSound[Hand];
 	T.Scale0 = A->GetActorScale3D();
 	T.GrowTo = W.Throw == 1 || W.Throw == 2 ? W.ItemScale : 1.f;     // (the stick and the knife: the level item's size)
@@ -5178,6 +5184,7 @@ void AOutlawsPlayer::UpdateThrown(float Dt)
 			if (T.Fuse <= 0.f)
 			{
 				if (T.Sound.IsValid()) T.Sound->Stop();
+				TGuardValue<int32> Judged(UOutlawsCoop::BlastStickGrace, T.bGraceThrow ? 1 : 0);      // (REQ-SPAWNSTICK: as it left the hand)
 				if (L) L->Explode(T.Pos);
 				bGone = true;
 			}
@@ -7597,6 +7604,7 @@ bool AOutlawsPlayer::ShootThrown(AActor* A)
 		}
 		if (T.Type != 1 || T.Actor.Get() != A) continue;
 		const FVector Where = T.Pos;
+		TGuardValue<int32> Judged(UOutlawsCoop::BlastStickGrace, T.bGraceThrow ? 1 : 0);      // (REQ-SPAWNSTICK)
 		if (T.Sound.IsValid()) T.Sound->Stop();
 		Thrown.RemoveAt(i);
 		A->Destroy();

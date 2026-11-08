@@ -324,6 +324,7 @@ public:
 	class UAudioComponent* ForcedTaunt(const FVector& At);
 	EOutlawsEnemyState GetState() const;
 	float GetHealth() const { return Health; }
+	void TestSetHealth(float H) { Health = H; }      // (REQ-BOTFALLRULE's probe: a story bad guy's trials each start whole)
 	const FString& GetOutlawsName() const { return OutlawsName; }
 	AOutlawsSpriteActor* GetSprite() const { return Sprite.Get(); }
 	int32 GetSubState() const { return Sub; }

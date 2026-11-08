@@ -880,6 +880,26 @@ void UOutlawsCoop::BlastThrowsBots(AOutlawsLevelActor* L, const FVector& From, f
 	}
 }
 
+bool UOutlawsCoop::BotLanded(AOutlawsEnemy* E, float DropCm)
+{
+	// (REQ-BOTFALLRULE) AOutlawsEnemy::Landed's bot: what a player's body takes from this drop (AOutlawsPlayer::Landed: the rule, past
+	// any plate, no character's multiplier), off the health the match counts.  A player's fall into water is no landing, and a fresh
+	// spawn's protection holds off a fall.  True: it kills, and the brain dies of it (not here: this is inside the body's own move)
+	FBot* B = E ? FindBot(E->CoopSelf) : nullptr;
+	const AOutlawsLevelActor* L = FindLevel();
+	if (!B || B->bDead || !L || !IsHost()) return false;
+	const FVector Feet = E->GetActorLocation() - FVector(0.0, 0.0, E->GetCapsuleComponent()->GetScaledCapsuleHalfHeight());
+	float Surface = 0.f;
+	const float Damage = L->WaterAt(Feet + FVector(0.0, 0.0, 10.0), Surface) ? 0.f : AOutlawsPlayer::FallRule(L->GravityAt(Feet), DropCm);
+	BotFallDropCm = DropCm;
+	BotFallRule = Damage;
+	if (Damage <= 0.f || SpawnGraceOf(B->Who)) return false;
+	UE_LOG(LogOutlawsAI, Log, TEXT("OLBOT %s falls %.1f m: %.2f of its %.2f health"), *B->Name, DropCm / 100.f, Damage, B->Health);
+	if (Damage >= B->Health) return true;
+	BotHurt(B->Who, Damage, Feet, Feet + FVector(0.0, 0.0, 190.0), -1);
+	return false;
+}
+
 void UOutlawsCoop::BotHurt(int32 Who, float Damage, const FVector& At, const FVector& From, int32 Shooter)
 {
 	FBot* B = FindBot(Who);
@@ -1939,6 +1959,7 @@ void UOutlawsCoop::BotDrive(FBot& B, AOutlawsLevelActor* L, double Now)
 // ---- dynamite and knives ------------------------------------------------------------------------------------------------
 
 int32 UOutlawsCoop::BlastShooter = -1;
+int32 UOutlawsCoop::BlastStickGrace = -1;
 bool UOutlawsCoop::BlastFromGrace = false;
 float UOutlawsCoop::BlastHostDealt = -1.f;
 uint32 UOutlawsCoop::BlastStruckMask = 0;
@@ -1966,6 +1987,7 @@ namespace
 		int32 Target = -1;                   // whom it was thrown at, whether they were on the move then, and (a knife) how
 		bool bMoving = false;                // near it passed them (the test's count)
 		double Closest = 1e9;
+		bool bGraceThrow = false;            // (REQ-SPAWNSTICK) thrown in the bot's protection: it deals nothing, whenever it goes off
 	};
 	TArray<FBotFlying> GBotFlying;
 	constexpr float BotThrowGrav = OutlawsThrowArc::Grav;     // (980 cm/s2 times this, as every machine draws the flight: TickFlyers)
@@ -2059,6 +2081,7 @@ void UOutlawsCoop::BotThrow(FBot& B, AOutlawsLevelActor* L, double Now)
 	F.Epoch = LevelEpoch();
 	F.Target = Who;
 	F.bMoving = Pace.Size2D() > 100.0;
+	F.bGraceThrow = SpawnGraceOf(B.Who);
 	GBotFlying.Add(F);
 	if (Kind == 1) --B.Sticks;
 	else --B.Knives;
@@ -2074,7 +2097,7 @@ void UOutlawsCoop::BotThrow(FBot& B, AOutlawsLevelActor* L, double Now)
 #if WITH_OUTLAWS_TESTS
 void UOutlawsCoop::TestBotStick(int32 Who, const FVector& Where, double FuseLeft)
 {
-	// (REQ-SPAWNGRACE's probe: a stick lit in one life that goes off in the next, on the list a bot's throw goes on)
+	// (REQ-SPAWNGRACE's probe: a stick thrown in one life that goes off in the next, on the list a bot's throw goes on, judged as BotThrow does)
 	const double GoesAt = FPlatformTime::Seconds() + FuseLeft;
 	if (Where.IsZero())
 	{
@@ -2088,6 +2111,7 @@ void UOutlawsCoop::TestBotStick(int32 Who, const FVector& Where, double FuseLeft
 	F.EndAt = GoesAt;
 	F.bRest = true;
 	F.Epoch = LevelEpoch();
+	F.bGraceThrow = SpawnGraceOf(Who);
 	GBotFlying.Add(F);
 }
 #endif
@@ -2162,13 +2186,16 @@ void UOutlawsCoop::TickBotThrown(AOutlawsLevelActor* L, double Dt)
 			FVector HF, TFt;
 			const bool bHostThere = BotFoe(F.Who, 0) && PlayerFeetOf(0, HF);
 			const double FromMark = PlayerFeetOf(F.Target, TFt) ? FVector::Dist(TFt, F.Pos) : -100.0;
+			bool bHarmless = false;
 			{
 				TGuardValue<int32> By(BlastShooter, F.Who);
+				TGuardValue<int32> Judged(BlastStickGrace, F.bGraceThrow ? 1 : 0);      // (REQ-SPAWNSTICK)
 				BlastHostDealt = -1.f;
 				BlastStruckMask = 0;
+				bHarmless = SpawnStickHarmless(L);
 				L->Explode(F.Pos);
 			}
-			const bool bHostHit = bHostThere && BlastHostDealt > 0.f;
+			const bool bHostHit = bHostThere && BlastHostDealt > 0.f && !bHarmless;
 			if (bHostHit) OnMatchHit(F.Who, Epoch, 0, BlastHostDealt, HF + FVector(0.0, 0.0, 90.0), BodyOf(F.Who), true);
 			// struck: the host's player or any other opponent in its reach (BlastAtPlayers' strikes, through the match)
 			int32 Foes = bHostHit ? 1 : 0;

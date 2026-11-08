@@ -1151,7 +1151,7 @@ void AOutlawsLevelActor::Explode(const FVector& Where)
 				// (a match: another machine's blast is dealt to this player by the host, as that machine reports it)
 				// (REQ-MPBOTS: a bot's stick: the match deals it, the bot credited)
 				if (UOutlawsCoop::BlastShooter >= 0) UOutlawsCoop::BlastHostDealt = Dealt;
-				else if (!(bCoopRemote && UOutlawsCoop::BlastsDealtByHost(this)))
+				else if (!(bCoopRemote && UOutlawsCoop::BlastsDealtByHost(this)) && !UOutlawsCoop::SpawnStickHarmless(this))      // (REQ-SPAWNSTICK)
 				{
 					// (BUG-DYNTHROW: a bad guy's stick hurts as a bad guy's shot does, not as the player's own stick)
 					if (bEnemyBlast) bHurtByBadGuy = true;

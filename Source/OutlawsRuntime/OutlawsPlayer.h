@@ -361,6 +361,10 @@ protected:
 	float FallTopZ = 0.f, FallLastZ = 0.f;
 	/** (BUG-FALLDAMAGE's probe) the last landing's drop (cm) and the damage it came to, whether or not it was dealt. */
 	float LastFallDropCm = -1.f, LastFallDamage = -1.f;
+	/** (BUG-FALLDAMAGE) a drop of DropCm where the sector's GRAVITY is Gravity: the impact speed (units/s), and the damage the original's
+	 *  rule makes of it on a health of 10 (Landed; REQ-BOTFALLRULE: a match bot's too, UOutlawsCoop::BotLanded). */
+	static float FallImpact(float Gravity, float DropCm);
+	static float FallRule(float Gravity, float DropCm);
 	/** The fall's height kept while falling (Tick, beside UpdateGravity). */
 	void TrackFall(float Dt);
 	virtual void SetupPlayerInputComponent(UInputComponent* PlayerInputComponent) override;
@@ -603,6 +607,7 @@ private:
 		float Grav = 1.f;           // gravity times this in flight (1 now: every throw falls at its Pull, user 2026-10-02)
 		float Pull = 0.f;           // its fall, cm/s^2: ThrowGravity where it left the hand (0: the player's plain one)
 		bool bDud = false;          // a stick thrown or dropped unlit: at rest it lies there to be picked up again
+		bool bGraceThrow = false;   // (REQ-SPAWNSTICK) a stick thrown in a match's spawn protection: it deals nothing, whenever it goes off
 		float GrowTo = 1.f;         // grows from the hand's size to the level item's over a second (a stick, a knife, a pot or a
 		                            // rock: user 2026-09-29, 2026-10-01)
 		FVector Scale0 = FVector::OneVector;
@@ -1022,6 +1027,8 @@ private:
 	float MapSpotsWait = 0.f;
 	/** This hand holds the gatling (the other hand is its crank's: nothing else is drawn into it, user 2026-10-01). */
 	bool HoldsGatling(int32 Hand) const;
+	/** This hand holds a gun it can fire now (REQ-TUTGUNFIRE): its trigger is the gun's.  Not a thrown weapon, not one put away to grab or steady. */
+	bool HandHoldsGun(int32 Hand) const;
 	UPROPERTY(Transient)
 	TObjectPtr<class UMaterialInterface> GlowShellHeldMat;
 	UPROPERTY(Transient)

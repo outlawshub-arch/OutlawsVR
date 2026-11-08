@@ -51,6 +51,7 @@
 //   doors REQ-TUTDOORS: the pair by name, a push on each, Back shuts them (phase 31 below)
 //   fan   REQ-TUTFAN: its station, and a hand really swiped past the hammer (phase 32 below)
 //   grabfist  REQ-TUTGRABFIST: the other hand given a lit stick, a knife, the lantern, the revolver (phase 33 below)
+//   gunfire   REQ-TUTGUNFIRE: a gun through the low card's buttons fires, an empty hand and a fist press, the risen card as ever (phase 34 below)
 // Prints "OLTUT test check PASS|FAIL: ..." and "OLTUT test RESULT ...".  Screenshots: Saved/OLShots/ol_tut_<name>.png.
 
 #include "OutlawsLevelActor.h"
@@ -1343,7 +1344,7 @@ void AOutlawsLevelActor::TickTutorialTest(float Dt)
 		T.Tries = 0;
 		T.LastStep = 1;
 		T.bGoodSeen = false;
-		T.Phase = Mode == TEXT("float") ? 30 : Mode == TEXT("doors") ? 31 : Mode == TEXT("fan") ? 32 : Mode == TEXT("grabfist") ? 33 : 4;
+		T.Phase = Mode == TEXT("float") ? 30 : Mode == TEXT("doors") ? 31 : Mode == TEXT("fan") ? 32 : Mode == TEXT("grabfist") ? 33 : Mode == TEXT("gunfire") ? 34 : 4;
 		T.At = Now + 1.5;
 		return;
 	}
@@ -1845,6 +1846,177 @@ void AOutlawsLevelActor::TickTutorialTest(float Dt)
 			Finish();
 			return;
 		default:
+			return;
+		}
+	}
+	case 34:
+	{
+		// REQ-TUTGUNFIRE (-OLTutorialTest=gunfire): the card held low (TestPinAge), the main hand's gun through Next, then Back: the trigger
+		// fires and presses nothing, a fan the same, no laser on the card; the empty hand's trigger presses Next, its fist presses Back;
+		// risen, the gun on a button presses and does not fire, a fan does not fire, off the buttons the gun fires; then guns in both hands
+		// low (both fire) and risen (the other hand's presses).  Left-handed: DominantHand=Left.  -OLOldTutGunPress: a gun on a low button presses
+		FOutlawsTutorialRun& R = *TutorialRun;
+		AOutlawsTutorialCard* C = R.CardActor.Get();
+		if (!C || !P->Camera) { Check(false, TEXT("gunfire: the card and the camera are there")); Finish(); return; }
+		const bool bOld = OLFlags::Param(TEXT("OLOldTutGunPress"));
+		const FString Id = TutorialCardId();
+		const int32 DomH = P->MainHand();
+		const int32 OffH = 1 - DomH;
+		const FTransform CamX = P->Camera->GetComponentTransform();
+		static bool bHover = false, bLaser = false, bFired = false, bPressed = false;
+		T.At = Now + 0.03;
+		if (Now - T.CardSeen > 60.0) { Check(false, FString::Printf(TEXT("gunfire: stuck at step %d on %s"), T.Job, *Id)); Finish(); return; }
+		auto Lay = [P, &CamX](int32 H, const FVector& To)
+		{
+			const FVector From = CamX.GetLocation() + CamX.TransformVectorNoScale(FVector(25.0, H == 0 ? -15.0 : 15.0, -20.0));
+			P->AimOf(H)->SetWorldLocationAndRotation(From, (To - From).Rotation());
+		};
+		auto TrigOf = [](int32 H) { return FString(H == 0 ? TEXT("OLVR_LeftTrigger") : TEXT("OLVR_RightTrigger")); };
+		auto GripOf = [](int32 H) { return FString(H == 0 ? TEXT("OLVR_LeftGrip") : TEXT("OLVR_RightGrip")); };
+		// a trial: hand H's laser held on the point, its trigger pulled and let go; true when it has been read
+		auto Trial = [&](int32 H, const FVector& To)
+		{
+			Lay(H, To);
+			if (++T.JobTick == 6)
+			{
+				bHover = AOutlawsTutorialCard::HandOnCard(H);
+				bLaser = C->TestLaserShown(H);
+				T.Tries = P->TutNotes.Shots;
+				T.CardId = Id;
+				P->Mag[H] = FMath::Max(P->Mag[H], 3);
+				P->FireCooldown[H] = 0.f;
+				P->TestAxes.Add(TrigOf(H), 1.f);
+			}
+			if (T.JobTick < 16) return false;
+			P->TestAxes.Remove(TrigOf(H));
+			T.JobTick = 0;
+			bFired = P->TutNotes.Shots > T.Tries;
+			bPressed = Id != T.CardId;
+			return true;
+		};
+		auto Said = [&]() { return FString::Printf(TEXT("fired %d, pressed %d (%s to %s), its button lit %d, its laser on the card %d, rise %.2f, hands %d %d, a gun %d %d, open %d %d"), bFired, bPressed, *T.CardId, *Id, bHover, bLaser, C->GetRise(), P->Equipped[0], P->Equipped[1], P->HandHoldsGun(0), P->HandHoldsGun(1), P->bBreakOpen[0], P->bBreakOpen[1]); };
+		// a fan: the same call the rake past the hammer makes (UpdateFan), the laser laid first; true when it has been read
+		auto Fan = [&](int32 H, const FVector& To)
+		{
+			Lay(H, To);
+			if (++T.JobTick < 6) return false;
+			T.Tries = P->TutNotes.Shots;
+			P->Mag[H] = FMath::Max(P->Mag[H], 3);
+			P->FireCooldown[H] = 0.f;
+			P->FireGun(H, true);
+			T.JobTick = 0;
+			bFired = P->TutNotes.Shots > T.Tries;
+			return true;
+		};
+		const FVector NextAt = C->TestButtonAt(1), BackAt = C->TestButtonAt(0);
+		switch (T.Job)
+		{
+		case 0:
+			Check(P->TutorialTestWheelTake(DomH, RevolverIdx), FString::Printf(TEXT("gunfire: the revolver in the main hand (%d)"), DomH));
+			P->bVR = true;      // (the headset's rules from here: a hand's weapon tick, the lasers)
+			T.At = Now + 0.5;
+			T.Job = 1;
+			return;
+		case 1:
+			T.CardId = Id;
+			C->Pick(1);
+			T.Job = 2;
+			return;
+		case 2:
+			if (Id == T.CardId) return;
+			C->TestPinAge(0.6f);
+			T.JobTick = 0;
+			T.Job = 3;
+			return;
+		case 3:
+			if (!Trial(DomH, NextAt)) return;
+			Check(bOld ? bPressed && !bFired : bFired && !bPressed && !bHover && !bLaser, FString::Printf(TEXT("the gun through low Next: %s"), *Said()));
+			T.Job = 4;
+			return;
+		case 4:
+			if (!Trial(DomH, BackAt)) return;
+			Check(bOld ? bPressed && !bFired : bFired && !bPressed && !bHover && !bLaser, FString::Printf(TEXT("the gun through low Back: %s"), *Said()));
+			T.Job = 5;
+			return;
+		case 5:
+			if (!Fan(DomH, NextAt)) return;
+			Check(bOld ? !bFired : bFired, FString::Printf(TEXT("a fan through low Next: fired %d"), bFired));
+			T.Job = 6;
+			return;
+		case 6:
+			if (!Fan(DomH, BackAt)) return;
+			Check(bOld ? !bFired : bFired, FString::Printf(TEXT("a fan through low Back: fired %d"), bFired));
+			T.Job = 7;
+			return;
+		case 7:
+			Check(P->Equipped[OffH] < 0, FString::Printf(TEXT("the other hand is empty (%d)"), P->Equipped[OffH]));
+			T.Job = 8;
+			return;
+		case 8:
+			if (!Trial(OffH, NextAt)) return;
+			Check(bPressed && !bFired && bHover && bLaser, FString::Printf(TEXT("the empty hand presses low Next: %s"), *Said()));
+			T.Job = 9;
+			return;
+		case 9:
+			// (a fist clear of the gun hand: squeezed against it the gun changes hands, and the test's hands start together)
+			P->GripOf(OffH)->SetWorldLocation(P->GripOf(DomH)->GetComponentLocation() + CamX.TransformVectorNoScale(FVector(0.0, OffH == 0 ? -1.0 : 1.0, 0.0)) * (P->SwapReach() + 30.0));
+			P->TestAxes.Add(GripOf(OffH), 1.f);
+			if (!Trial(OffH, BackAt)) return;
+			P->TestAxes.Remove(GripOf(OffH));
+			Check(bPressed && !bFired && bHover && bLaser, FString::Printf(TEXT("a fist presses low Back: %s"), *Said()));
+			C->TestPinAge(10.f);
+			T.Job = 10;
+			return;
+		case 10:
+			if (C->GetRise() < 1.f) return;
+			Lay(DomH, NextAt);
+			T.Job = 11;
+			return;
+		case 11:
+			if (!Trial(DomH, NextAt)) return;
+			Check(bPressed && !bFired && bHover && bLaser, FString::Printf(TEXT("risen: the gun on Next presses, as today: %s"), *Said()));
+			T.Job = 12;
+			return;
+		case 12:
+			if (C->GetRise() < 1.f) return;
+			if (!Fan(DomH, BackAt)) return;
+			Check(!bFired, FString::Printf(TEXT("risen: a fan on Back does not fire, as today: fired %d"), bFired));
+			T.Job = 13;
+			return;
+		case 13:
+			if (!Trial(DomH, C->GetActorLocation())) return;
+			Check(bFired && !bPressed && !bHover, FString::Printf(TEXT("risen: the gun on the card off its buttons fires, as today: %s"), *Said()));
+			T.Job = 14;
+			return;
+		case 14:
+			P->bVR = false;
+			AddCount(TEXT("ipistol"), 1);      // (the tutorial gives one revolver: the wheel would take it out of the main hand)
+			if (P->Equipped[OffH] != RevolverIdx) P->TutorialTestWheelTake(OffH, RevolverIdx);
+			Check(P->Equipped[OffH] == RevolverIdx && P->Equipped[DomH] == RevolverIdx, FString::Printf(TEXT("a gun in each hand (%d, %d)"), P->Equipped[0], P->Equipped[1]));
+			P->bVR = true;
+			C->TestPinAge(0.6f);
+			T.At = Now + 0.3;
+			T.Job = 15;
+			return;
+		case 15:
+			if (C->GetRise() > 0.f || !Trial(OffH, NextAt)) return;
+			Check(bOld ? bPressed && !bFired : bFired && !bPressed, FString::Printf(TEXT("guns in both hands, low: the other hand's on Next: %s"), *Said()));
+			T.Job = 16;
+			return;
+		case 16:
+			if (!Trial(DomH, NextAt)) return;
+			Check(bOld ? bPressed && !bFired : bFired && !bPressed, FString::Printf(TEXT("guns in both hands, low: the main hand's on Next: %s"), *Said()));
+			C->TestPinAge(10.f);
+			T.Job = 17;
+			return;
+		case 17:
+			if (C->GetRise() < 1.f) return;
+			T.Job = 18;
+			return;
+		default:
+			if (!Trial(OffH, NextAt)) return;
+			Check(bPressed && !bFired && bHover, FString::Printf(TEXT("guns in both hands, risen: the other hand's on Next presses: %s"), *Said()));
+			Finish();
 			return;
 		}
 	}

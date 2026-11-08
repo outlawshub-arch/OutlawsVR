@@ -178,8 +178,8 @@ bool UOutlawsCoop::ReportStrike(AOutlawsLevelActor* L, int32 Victim, float Damag
 	}
 	++MatchHitsSent;
 	UE_LOG(LogOutlawsCoop, Log, TEXT("OLMATCH %s hits the %s for %.2f (%s)"), Kind, WhoWord(Victim), Damage, IsHost() ? TEXT("the host deals it") : TEXT("reported to the host"));
-	if (!SpawnGraceOf(Victim) && !SpawnGraceOf(Striker > 0 ? Striker : MyIndex())) L->SpawnBlood(At, (At - From).GetSafeNormal(), 2);      // (REQ-SPAWNGRACE: it will deal nothing)
 	const bool bBlast = FCString::Strcmp(Kind, TEXT("dynamite")) == 0;      // (REQ-KILLFEED: "blew up")
+	if (!SpawnGraceOf(Victim) && ((bBlast && !OldSpawnStick()) || !SpawnGraceOf(Striker > 0 ? Striker : MyIndex()))) L->SpawnBlood(At, (At - From).GetSafeNormal(), 2);      // (REQ-SPAWNGRACE: it will deal nothing; REQ-SPAWNSTICK: a blast that got here will)
 	// (REQ-MPLETHAL) what struck, for the host's word on it
 	const EOutlawsMatchBlow Blow = FCString::Strcmp(Kind, TEXT("a fist")) == 0 ? EOutlawsMatchBlow::Fist
 		: FCString::Strcmp(Kind, TEXT("a knife's jab")) == 0 ? EOutlawsMatchBlow::Stab
@@ -289,6 +289,7 @@ int32 UOutlawsCoop::BlastAtPlayers(AOutlawsLevelActor* L, const FVector& Where, 
 	if (CVarOLMatchStrikes.GetValueOnGameThread() == 0) return 0;
 	UOutlawsCoop* C = L ? Get(L) : nullptr;
 	if (!C || !C->IsMatch() || !C->bLevelBuilt || Damage <= 0.f || RadiusCm <= 0.f) return 0;
+	if (SpawnStickHarmless(L)) return 0;      // (REQ-SPAWNSTICK: nothing to report; a stick that deals goes on to the host, whoever's protection stands now)
 	const double R = RadiusCm;
 	auto Falloff = [R](double D) { return D <= R * 0.25 ? 1.0 : FMath::Square(FMath::Max(0.0, (R - D) / (0.75 * R))); };
 	int32 Struck = 0;

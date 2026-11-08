@@ -418,7 +418,7 @@ void FOutlawsDeathmatch::NoteShot(int32 Shooter, double Now)
 	if (Phase == EOutlawsDmPhase::Live) ++P->Shots;
 }
 
-bool FOutlawsDeathmatch::NoteHit(int32 Shooter, int32 Victim, double Now)
+bool FOutlawsDeathmatch::NoteHit(int32 Shooter, int32 Victim, double Now, bool bStick)
 {
 	FOutlawsDmPlayer* S = Find(Shooter);
 	FOutlawsDmPlayer* V = Find(Victim);
@@ -428,9 +428,9 @@ bool FOutlawsDeathmatch::NoteHit(int32 Shooter, int32 Victim, double Now)
 		UE_LOG(LogOutlaws, Log, TEXT("OLDM hit on %s refused: protected %.1f s more"), *V->Name, V->ProtectedUntil - Now);
 		return false;
 	}
-	// (REQ-SPAWNGRACE) a hit from a protected player deals nothing: a gun, a knife, a punch, a stick that goes off while it lasts
+	// (REQ-SPAWNGRACE) a hit from a protected player deals nothing: a gun, a knife, a punch (REQ-SPAWNSTICK: a stick was judged at its throw)
 	static const bool bOldGrace = OLFlags::Param(TEXT("OLOldSpawnGrace"));
-	if (!bOldGrace && S && S != V && Now < S->ProtectedUntil)
+	if (!bOldGrace && !bStick && S && S != V && Now < S->ProtectedUntil)
 	{
 		UE_LOG(LogOutlaws, Log, TEXT("OLDM hit by %s refused: it is protected %.1f s more"), *S->Name, S->ProtectedUntil - Now);
 		return false;

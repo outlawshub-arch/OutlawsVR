@@ -34,10 +34,10 @@ namespace
 
 // ---- the link's milestone 6 messages ----------------------------------------------------------------------------------
 
-void AOutlawsCoopLink::ServerBlast_Implementation(int32 Epoch, FVector_NetQuantize10 Where, int32 Stick)
+void AOutlawsCoopLink::ServerBlast_Implementation(int32 Epoch, FVector_NetQuantize10 Where, int32 Stick, bool bGrace)
 {
 	if (!Admit(EOLGate::Blast, Finite(Where) && Stick >= -1)) return;
-	if (UOutlawsCoop* C = UOutlawsCoop::Get(this)) C->OnBlast(PlayerIndex, Epoch, Where, Stick);
+	if (UOutlawsCoop* C = UOutlawsCoop::Get(this)) C->OnBlast(PlayerIndex, Epoch, Where, Stick, bGrace);
 }
 
 void AOutlawsCoopLink::ServerWorldBit_Implementation(int32 Epoch, uint8 Kind, int32 Index, int32 Arg, FVector_NetQuantize100 Vec, float F)
@@ -58,9 +58,9 @@ void AOutlawsCoopLink::ServerThrow_Implementation(int32 Epoch, uint8 Kind, FVect
 	if (UOutlawsCoop* C = UOutlawsCoop::Get(this)) C->OnThrow(PlayerIndex, Epoch, Kind, Pos, Vel, Grav, Fuse);
 }
 
-void AOutlawsCoopLink::ClientBlast_Implementation(int32 From, int32 Epoch, FVector_NetQuantize10 Where, int32 Stick)
+void AOutlawsCoopLink::ClientBlast_Implementation(int32 From, int32 Epoch, FVector_NetQuantize10 Where, int32 Stick, bool bGrace)
 {
-	if (UOutlawsCoop* C = UOutlawsCoop::Get(this)) C->OnBlast(From, Epoch, Where, Stick);
+	if (UOutlawsCoop* C = UOutlawsCoop::Get(this)) C->OnBlast(From, Epoch, Where, Stick, bGrace);
 }
 
 void AOutlawsCoopLink::ClientWorldBit_Implementation(int32 From, int32 Epoch, uint8 Kind, int32 Index, int32 Arg, FVector_NetQuantize100 Vec, float F)
@@ -130,6 +130,7 @@ void UOutlawsCoop::NoteBlast(AOutlawsLevelActor* L, const FVector& Where, int32 
 	UOutlawsCoop* C = Get(L);
 	if (!C || !C->bLevelBuilt || L->bRestoring) return;
 	const int32 Epoch = C->LevelEpoch();
+	const bool bGrace = SpawnGraceBlast(L);       // (REQ-SPAWNSTICK: the far machines take its judging from here)
 	++C->VerbBlastsSent;
 	if (C->VerbLogLines++ < MaxVerbLogLines)
 	{
@@ -139,11 +140,11 @@ void UOutlawsCoop::NoteBlast(AOutlawsLevelActor* L, const FVector& Where, int32 
 	if (C->IsHost())
 	{
 		// (REQ-SPAWNGRACE: a bot's stick goes out as the bot's, for its credit on the far machine)
-		C->ForClients([&](AOutlawsCoopLink& CL) { CL.ClientBlast(BlastShooter >= 0 ? BlastShooter : 0, Epoch, Where, Stick); });
+		C->ForClients([&](AOutlawsCoopLink& CL) { CL.ClientBlast(BlastShooter >= 0 ? BlastShooter : 0, Epoch, Where, Stick, bGrace); });
 	}
 	else if (AOutlawsCoopLink* Mine = C->GetLink(C->MyIndex()))
 	{
-		Mine->ServerBlast(Epoch, Where, Stick);
+		Mine->ServerBlast(Epoch, Where, Stick, bGrace);
 	}
 }
 
@@ -292,11 +293,11 @@ void UOutlawsCoop::OnBreakFx(int32 Who, uint8 Hand, bool bOpen, uint8 Packed, co
 
 // ---- the other machine's verbs, done here -----------------------------------------------------------------------------
 
-void UOutlawsCoop::OnBlast(int32 Who, int32 Epoch, const FVector& Where, int32 Stick)
+void UOutlawsCoop::OnBlast(int32 Who, int32 Epoch, const FVector& Where, int32 Stick, bool bGrace)
 {
 	// (N1: a client's word, passed on by the host to the other clients)
-	if (IsHost()) ForClients([&](AOutlawsCoopLink& CL) { CL.ClientBlast(Who, Epoch, Where, Stick); }, Who);
-	RunFor(Epoch, [this, Who, Where, Stick]()
+	if (IsHost()) ForClients([&](AOutlawsCoopLink& CL) { CL.ClientBlast(Who, Epoch, Where, Stick, bGrace); }, Who);
+	RunFor(Epoch, [this, Who, Where, Stick, bGrace]()
 	{
 		AOutlawsLevelActor* L = FindLevel();
 		if (!L) return;
@@ -349,7 +350,7 @@ void UOutlawsCoop::OnBlast(int32 Who, int32 Epoch, const FVector& Where, int32 S
 			UE_LOG(LogOutlawsCoop, Log, TEXT("OLCOOP blast at %s (%s) from the %s%s"), *Where.ToCompactString(), Me, Other, *StickNote);
 		}
 		TGuardValue<bool> Remote(L->bCoopRemoteBlast, true);
-		TGuardValue<bool> Grace(BlastFromGrace, SpawnGraceOf(Who));      // (REQ-SPAWNGRACE)
+		TGuardValue<bool> Grace(BlastFromGrace, OldSpawnStick() ? SpawnGraceOf(Who) : bGrace);      // (REQ-SPAWNGRACE; REQ-SPAWNSTICK: its machine's judging)
 		L->Explode(Where);
 	});
 }

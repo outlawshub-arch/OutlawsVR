@@ -15,8 +15,9 @@
 // 3. A protected striker, the client, the host and a bot: its gun, knife, fist and stick (a bot's shot and stick) deal nothing and
 //    draw no blood, its shots do not end the protection, its own stick and a hurt of its own leave it whole and where it stood;
 //    once it ends its hit deals.
-// 4. A stick is judged as it goes off: one of the bot's lit in its last life goes off inside its protection and does nothing to
-//    the host beside it, one lit inside its protection goes off after the end and deals.
+// 4. REQ-SPAWNSTICK: a stick is judged at its throw, each of the bot, the client and the host throwing: after its protection, full;
+//    before a death and going off in the protection after it, full, the thrower neither hurt nor thrown; in its protection and going
+//    off after the end, nothing.  -OLOldSpawnStick: judged at the blast, those last two the other way.
 // 5. A joiner comes in on a flash under way; flat shots of it, the host's hands held up with the bot in view
 //    (Saved\OLShots\ol_spawngrace_*).
 // -OLOldSpawnGrace: no flag, no flash, no shield; a protected striker deals, and its shot ends its protection.
@@ -35,6 +36,7 @@
 #include "OutlawsSpriteActor.h"
 #include "Camera/CameraComponent.h"
 #include "Engine/World.h"
+#include "GameFramework/CharacterMovementComponent.h"
 #include "HAL/PlatformMisc.h"
 #include "MotionControllerComponent.h"
 #include "TimerManager.h"
@@ -49,7 +51,7 @@ namespace OutlawsSpawnGraceProbeLocal
 	double PhaseAt = 0.0, Until = 0.0, GraceOnAt = 0.0, ClientOnFor = 0.0;
 	bool bStarted = false, bCheckedOn = false, bClientFlag = false, bSaid = false, bShotTop = false, bShotLow = false, bQuit = false;
 	FVector BaseAt = FVector::ZeroVector;
-	double OffAt[8] = {}, UntilOf[8] = {};
+	double OffAt[16] = {}, UntilOf[16] = {};      // (by seat: a bot's is 14 or 15, MaxPlayers 16)
 	// the client up on a stick (StepWindow; the client's half: sg:window)
 	const int32 WindowTries = 3;
 	int32 WindowShields = 0, WindowBlasts = 0;
@@ -57,6 +59,11 @@ namespace OutlawsSpawnGraceProbeLocal
 	double WindowUpAt = 0.0;
 	float WindowMoved = 0.f, WindowSpeed = 0.f;
 	FVector WindowFrom = FVector::ZeroVector;
+	// (part 4: the sticks; 0 the bot's, 1 the client's, 2 the host's)
+	int32 StickThrower = 0;
+	int32 StickRounds = 0;      // (-OLSpawnGraceSticks=<n>: part 4 alone, n times round, for the rates)
+	double StickStillAt = 0.0;
+	FVector StickLast = FVector::ZeroVector, StickFeet = FVector::ZeroVector, BaseSelf = FVector::ZeroVector;
 
 	void Check(bool bOk, const FString& What)
 	{
@@ -80,6 +87,35 @@ void UOutlawsCoop::SpawnGraceBlows(AOutlawsLevelActor* L, AOutlawsPlayer* P, int
 	StrikeAtPlayers(L, Chest, 22.f, 0.8f, TEXT("a fist"));
 	ReportStrike(L, Who, 4.f, Chest, TEXT("a knife's jab"));       // (straight to the report: StrikePlayer takes a second blow within 0.4 s as the first still going through)
 	if (bStick) L->Explode(R->ShownBody() - FVector(0.0, 0.0, 60.0));
+}
+
+void UOutlawsCoop::SpawnGraceTestStick(AOutlawsPlayer* P, const FVector& At, float FuseLeft)
+{
+	using namespace OutlawsSpawnGraceProbeLocal;
+	P->Equip(1, 6);
+	P->Mag[1] = 1;
+	P->bFuseLit[1] = true;
+	P->Fuse[1] = FuseLeft;
+	const int32 Before = P->Thrown.Num();
+	P->ThrowHeld(1, false, true);
+	if (P->Thrown.Num() <= Before) { Check(false, TEXT("a real throw of a lit stick")); return; }
+	AOutlawsPlayer::FThrown& T = P->Thrown.Last();
+	T.Pos = At;
+	T.Vel = FVector::ZeroVector;
+	T.Fuse = FuseLeft;
+	if (AActor* Ac = T.Actor.Get()) Ac->SetActorLocation(At);
+}
+
+void UOutlawsCoop::SpawnGraceTestStickGo(AOutlawsPlayer* P, float FuseLeft)
+{
+	using namespace OutlawsSpawnGraceProbeLocal;
+	for (int32 i = P->Thrown.Num() - 1; i >= 0; --i)
+	{
+		if (P->Thrown[i].Type != 1) continue;
+		P->Thrown[i].Fuse = FuseLeft;
+		return;
+	}
+	Check(false, TEXT("the stick thrown before the death is still there"));
 }
 
 void UOutlawsCoop::TickHostSpawnGraceTest(double Now, AOutlawsLevelActor* L, AOutlawsPlayer* P)
@@ -240,7 +276,7 @@ void UOutlawsCoop::TickHostSpawnGraceTest(double Now, AOutlawsLevelActor* L, AOu
 			if (const FOutlawsDmPlayer* Dw = Dm.Find(Who)) UntilOf[Who] = Dw->ProtectedUntil;
 		}
 		Next(0);
-		TestStep = StepStart;
+		TestStep = OLFlags::Value(TEXT("OLSpawnGraceSticks"), StickRounds) && StickRounds > 0 ? StepSticks : StepStart;
 		UE_LOG(LogOutlawsCoop, Display, TEXT("OLSHOT spawngrace live: the client the %s, the bot the %s%s"), WhoWord(Client), WhoWord(Bot), bOld ? TEXT(" (-OLOldSpawnGrace)") : TEXT(""));
 		return;
 	}
@@ -436,13 +472,15 @@ void UOutlawsCoop::TickHostSpawnGraceTest(double Now, AOutlawsLevelActor* L, AOu
 				const FBot* B = FindBot(Target);
 				AOutlawsEnemy* E = B ? B->Brain.Get() : nullptr;
 				if (E) { E->CoopTarget = 0; BotPellet(E, 2.f, P->GetActorLocation(), BodyOf(Target), 0); }
+				bool bHarmless = false;      // (as TickBotThrown has it: a stick judged harmless sends nothing to the rules)
 				{
 					TGuardValue<int32> By(BlastShooter, Target);
 					BlastHostDealt = -1.f;
 					BlastStruckMask = 0;
 					L->Explode(P->GetActorLocation() - FVector(0.0, 0.0, 60.0));
+					bHarmless = SpawnStickHarmless(L);
 				}
-				if (BlastHostDealt > 0.f) OnMatchHit(Target, LevelEpoch(), 0, BlastHostDealt, P->GetActorLocation(), BodyOf(Target), true);
+				if (BlastHostDealt > 0.f && !bHarmless) OnMatchHit(Target, LevelEpoch(), 0, BlastHostDealt, P->GetActorLocation(), BodyOf(Target), true);
 				BlastHostDealt = -1.f;
 				BlastStruckMask = 0;
 			}
@@ -501,59 +539,147 @@ void UOutlawsCoop::TickHostSpawnGraceTest(double Now, AOutlawsLevelActor* L, AOu
 	}
 	case StepSticks:
 	{
-		// part 4: a stick is judged as it goes off, by its thrower's protection then: the bot's own list and blast, at the host's feet
-		const FVector Feet = P->GetActorLocation() - FVector(0.0, 0.0, 60.0);
+		// part 4 (REQ-SPAWNSTICK): a stick is judged at its throw.  Each thrower in turn, the bot, the client, the host (real throws, the
+		// bot's on its own list), its stick at the feet of someone unprotected: thrown after its protection ended, full; thrown before a
+		// death and set off in the protection after the respawn, full (the host stands beside it: it is neither hurt nor thrown); thrown
+		// in its protection and going off after it ended, nothing, nobody thrown.  -OLOldSpawnStick: the last two the other way
+		const int32 Th = StickThrower == 0 ? Bot : StickThrower == 1 ? Client : 0;
+		const int32 Vi = Th == 0 ? Bot : 0;
+		const FVector Feet = BodyOf(Vi) - FVector(0.0, 0.0, 60.0);
+		auto Who = [&]() { return FString(Th == 0 ? TEXT("the host") : Th == Client ? TEXT("the client") : TEXT("the bot")); };
+		auto Stout = [&]()
+		{
+			if (Vi == 0) L->TestSetHealth(1000.f);
+			else if (FBot* B = FindBot(Vi)) B->Health = 1000.f;
+		};
 		auto BaseStick = [&]()
 		{
 			BaseDealt = MatchHitsDealt;
 			BaseBlasts = L->BlastsSeen;
-			BaseHealth = L->GetHealth();
-			BaseAt = P->GetActorLocation();
+			BaseOther = HealthOf(Vi);
+			BaseHealth = HealthOf(0);
+			BaseAt = BodyOf(Vi);
 		};
+		auto Put = [&](const FVector& At, double Fuse)
+		{
+			if (Th == 0) SpawnGraceTestStick(P, At, float(Fuse));
+			else if (Th == Client) TestSayTo(Client, TEXT("sg:stick"), FMath::RoundToInt(Fuse * 1000.0));
+			else TestBotStick(Bot, At, Fuse);
+		};
+		auto Go = [&](double Fuse)
+		{
+			if (Th == 0) SpawnGraceTestStickGo(P, float(Fuse));
+			else if (Th == Client) TestSayTo(Client, TEXT("sg:stickgo"), FMath::RoundToInt(Fuse * 1000.0));
+			else TestBotStick(Bot, FVector::ZeroVector, Fuse);
+		};
+		auto Settled = [&]()
+		{
+			// the victim's body still (a blast's throw over) and on the ground, and for the client's stick long enough for the puppet it
+			// is laid under to be down too (-OLOldSpawnStick: its stick went under the floor, 3.3 m under the host, right after the bot's)
+			const FVector At = BodyOf(Vi);
+			if (FVector::Dist(At, StickLast) > 3.0 || (Vi == 0 && !P->GetCharacterMovement()->IsMovingOnGround())) { StickLast = At; StickStillAt = Wall; }
+			return Wall - StickStillAt >= (Th == Client ? 1.0 : 0.4) && !DeadOf(Vi);
+		};
+		auto Took = [&]() { return FString::Printf(TEXT("%d blast, dealt %d, health %.1f -> %.1f, moved %.0f cm, the thrower's flag %d"), L->BlastsSeen - BaseBlasts, MatchHitsDealt - BaseDealt, BaseOther, HealthOf(Vi), FVector::Dist(BodyOf(Vi), BaseAt), SpawnGraceOf(Th)); };
+		const bool bOldStick = OldSpawnStick();
+		const FOutlawsDmPlayer* DT = Dm.Find(Th);
 		switch (Phase)
 		{
 		case 0:
-		{
-			// the host alive and past any protection of its own: the only one in play is the thrower's
-			const FOutlawsDmPlayer* D = Dm.Find(0);
-			if (L->IsPlayerDead() || !D || !D->bAlive || Wall < D->ProtectedUntil + 0.2 || SpawnGraceOf(0))
+			// everyone up, past any protection
+			if (L->IsPlayerDead() || !DT || !DT->bAlive || DeadOf(Vi) || Wall < DT->ProtectedUntil + 0.2 || SpawnGraceOf(Th) || SpawnGraceOf(Vi) || !Settled())
 			{
-				if (Wall - PhaseAt > 20.0) { Check(false, TEXT("the host up for the sticks")); Finish(); }
+				if (Wall - PhaseAt > 25.0) { Check(false, FString::Printf(TEXT("%s and its victim up for the sticks"), *Who())); Finish(); }
 				return;
 			}
-			if (Wall - PhaseAt < 1.0) return;
-			TestBotStick(Bot, Feet, 60.0);
-			Kill(Bot);
+			Stout();
+			BaseStick();
+			Put(Feet, 0.3);
 			Next(1);
 			return;
-		}
 		case 1:
-			if (!Ready(Bot)) { if (Wall - PhaseAt > 20.0) { Check(false, TEXT("the bot back fresh with its stick lit")); Finish(); } return; }
-			if (const FOutlawsDmPlayer* D = Dm.Find(Bot)) Until = D->ProtectedUntil;
-			BaseStick();
-			TestBotStick(Bot, FVector::ZeroVector, 0.1);
+			if (Wall - PhaseAt < 0.9) return;
+			Check(L->BlastsSeen > BaseBlasts && MatchHitsDealt > BaseDealt && HealthOf(Vi) < BaseOther, FString::Printf(TEXT("thrown by %s after its protection, off 0.3 s on: %s"), *Who(), *Took()));
 			Next(2);
 			return;
 		case 2:
-		{
-			if (Wall - PhaseAt < 0.6) return;
-			const double Moved = FVector::Dist(P->GetActorLocation(), BaseAt);
-			Check(L->BlastsSeen > BaseBlasts && SpawnGraceOf(Bot) && MatchHitsDealt == BaseDealt && L->GetHealth() == BaseHealth && Moved < 30.0,
-				FString::Printf(TEXT("a stick lit in the bot's last life goes off in its protection at the host's feet: %d blast, dealt %d, health %.1f -> %.1f, moved %.0f cm"),
-				L->BlastsSeen - BaseBlasts, MatchHitsDealt - BaseDealt, BaseHealth, L->GetHealth(), Moved));
-			BaseStick();
-			TestBotStick(Bot, Feet, Until + 0.3 - Wall);
+			if (!Settled()) { if (Wall - PhaseAt > 25.0) { Check(false, TEXT("the victim down after the first stick")); Finish(); } return; }
+			Stout();
+			Put(Feet, 60.0);
+			StickFeet = Feet;
+			Kill(Th);
 			Next(3);
 			return;
-		}
+		case 3:
+			if (Wall - PhaseAt < 1.0) return;      // (the kill's word lands first: dying in a protection, it would read as fresh until then)
+			if (const FOutlawsDmPlayer* DW = Dm.Find(Th); DW && FMath::Fmod(Wall - PhaseAt, 0.25) < 0.02)
+				UE_LOG(LogOutlawsCoop, Log, TEXT("OLSHOT spawngrace %s waits: +%.2f s, alive %d, left %.2f, match dead %d, dead %d, health %.2f, flag %d"), *Who(), Wall - PhaseAt, DW->bAlive, DW->ProtectedUntil - Wall, MatchDead[Th], DeadOf(Th), HealthOf(Th), SpawnGraceOf(Th));
+			if (!Ready(Th)) { if (Wall - PhaseAt > 25.0) { Check(false, FString::Printf(TEXT("%s back fresh with its stick lit"), *Who())); Finish(); } return; }
+			Stout();
+			BaseStick();
+			if (Th == 0)
+			{
+				// (the thrower beside its own stick, its flash on: neither hurt nor thrown.  1.2 m to a clear side: over the victim it lands
+				// on its head and is pushed off 70 cm, capsule by capsule)
+				FVector Spot = StickFeet + FVector(0.0, 0.0, 150.0);
+				FCollisionQueryParams Q(SCENE_QUERY_STAT(OutlawsSpawnGraceSpot), false, P);
+				for (int32 a = 0; a < 8; ++a)
+				{
+					const FVector To = Spot + FRotator(0.0, 45.0 * a, 0.0).Vector() * 120.0;
+					if (!P->GetWorld()->LineTraceTestByChannel(Spot, To, ECC_Pawn, Q)) { Spot = To; break; }
+				}
+				P->SetActorLocation(Spot, false, nullptr, ETeleportType::TeleportPhysics);
+				P->GetCharacterMovement()->StopMovementImmediately();
+				BaseSelf = P->GetActorLocation();
+				L->TestSetHealth(10.f);
+			}
+			Go(0.15);
+			Next(4);
+			return;
+		case 4:
+			if (Th == 0 && L->BlastsSeen == BaseBlasts) BaseSelf = P->GetActorLocation();      // (from the blast on: the tick after the teleport can shift the body 70 cm, measured, before any blast)
+			if (Th == 0) UE_LOG(LogOutlawsCoop, Log, TEXT("OLSHOT spawngrace the host by its stick: +%.2f s, %s, speed %s, %d blast"), Wall - PhaseAt, *(P->GetActorLocation() - BaseSelf).ToCompactString(), *P->GetVelocity().ToCompactString(), L->BlastsSeen - BaseBlasts);
+			if (Wall - PhaseAt < 0.8) return;
+			Check(L->BlastsSeen > BaseBlasts && SpawnGraceOf(Th) && (bOldStick ? MatchHitsDealt == BaseDealt && HealthOf(Vi) == BaseOther : MatchHitsDealt > BaseDealt && HealthOf(Vi) < BaseOther),
+				FString::Printf(TEXT("thrown by %s before its death, off in its protection: %s"), *Who(), *Took()));
+			if (Th == 0)
+			{
+				// (put 150 cm over the stick's feet it settles straight down: a throw is sideways or up)
+				const double Moved = FVector::Dist2D(P->GetActorLocation(), BaseSelf), Rose = P->GetActorLocation().Z - BaseSelf.Z;
+				Check(L->GetHealth() == 10.f && Moved < 60.0 && Rose < 60.0, FString::Printf(TEXT("the protected host beside its own stick: health %.1f, moved %.0f cm across, %.0f cm up"), L->GetHealth(), Moved, Rose));
+			}
+			Next(5);
+			return;
+		case 5:
+			if (!Settled()) { if (Wall - PhaseAt > 25.0) { Check(false, TEXT("the victim down after the second stick")); Finish(); } return; }
+			Kill(Th);
+			Next(6);
+			return;
+		case 6:
+			if (Wall - PhaseAt < 1.0) return;      // (as case 3: case 4's thrower dies here still in the protection it came back to)
+			if (!Ready(Th)) { if (Wall - PhaseAt > 25.0) { Check(false, FString::Printf(TEXT("%s back fresh for its last stick"), *Who())); Finish(); } return; }
+			Stout();
+			if (DT) Until = DT->ProtectedUntil;
+			BaseStick();
+			Put(Feet, Until + 0.3 - Wall);
+			Next(7);
+			return;
 		default:
 			if (Wall < Until + 0.9) return;
-			Check(L->BlastsSeen > BaseBlasts && MatchHitsDealt > BaseDealt && (L->IsPlayerDead() || L->GetHealth() < BaseHealth),
-				FString::Printf(TEXT("a stick lit in the bot's protection goes off 0.3 s after it: %d blast, dealt %d, health %.1f -> %.1f"),
-				L->BlastsSeen - BaseBlasts, MatchHitsDealt - BaseDealt, BaseHealth, L->GetHealth()));
-			Part = 0;
+			Check(L->BlastsSeen > BaseBlasts && !SpawnGraceOf(Th) && (bOldStick ? MatchHitsDealt > BaseDealt : MatchHitsDealt == BaseDealt && HealthOf(Vi) == BaseOther && FVector::Dist(BodyOf(Vi), BaseAt) < 30.0),
+				FString::Printf(TEXT("thrown by %s in its protection, off 0.3 s after it: %s"), *Who(), *Took()));
+			if (++StickThrower > 2)
+			{
+				if (--StickRounds > 0) { StickThrower = 0; Next(0); return; }
+				if (StickRounds == 0) { Finish(); return; }
+				L->TestSetHealth(10.f);
+				if (FBot* B = FindBot(Bot)) B->Health = 10.f;
+				Part = 0;
+				Next(0);
+				TestStep = StepHold;
+				return;
+			}
 			Next(0);
-			TestStep = StepHold;
 			return;
 		}
 	}
@@ -715,6 +841,16 @@ void UOutlawsCoop::OnSpawnGraceTestStep(const FString& Step, int32 Arg, AOutlaws
 		TWeakObjectPtr<AOutlawsPlayer> WeakP(P);
 		FTimerHandle H;
 		P->GetWorldTimerManager().SetTimer(H, FTimerDelegate::CreateWeakLambda(this, [WeakP]() { if (AOutlawsPlayer* Pl = WeakP.Get()) Pl->RequestRespawn(false); }), 2.3f, false);
+	}
+	else if (Step == TEXT("stick"))
+	{
+		// (a real throw of this machine's, the stick laid at the host's feet as this machine draws them)
+		const AOutlawsRemotePlayer* R = PuppetOf(0);
+		if (R) SpawnGraceTestStick(P, R->ShownBody() - FVector(0.0, 0.0, 60.0), float(Arg) / 1000.f);
+	}
+	else if (Step == TEXT("stickgo"))
+	{
+		SpawnGraceTestStickGo(P, float(Arg) / 1000.f);
 	}
 	else if (Step == TEXT("fire"))
 	{
