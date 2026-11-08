@@ -38,6 +38,7 @@
 #include "OutlawsSpriteActor.h"
 #include "Camera/CameraComponent.h"
 #include "Engine/World.h"
+#include "EngineUtils.h"
 #include "GameFramework/CharacterMovementComponent.h"
 #include "HAL/PlatformMisc.h"
 #include "MotionControllerComponent.h"
@@ -665,15 +666,31 @@ void UOutlawsCoop::TickHostSpawnGraceTest(double Now, AOutlawsLevelActor* L, AOu
 			BaseStick();
 			if (Th == 0)
 			{
-				// (the thrower beside its own stick, its flash on: neither hurt nor thrown.  1.2 m to a clear side: over the victim it lands
-				// on its head and is pushed off 70 cm, capsule by capsule)
-				FVector Spot = StickFeet + FVector(0.0, 0.0, 150.0);
+				// (the thrower beside its own stick, its flash on: neither hurt nor thrown.  A side clear of walls and of every body: put by the
+				// first line clear of pawns it turned up at 575 cm/s before any blast, at 2 spots, 8 rounds of 156, old and new alike, and 70 cm
+				// across in all.  The longest clear side, 1.2 m at most, bodies out of the wall line: it starts level with a head.)
+				const FVector Over = StickFeet + FVector(0.0, 0.0, 150.0);
 				FCollisionQueryParams Q(SCENE_QUERY_STAT(OutlawsSpawnGraceSpot), false, P);
+				TArray<const AActor*> Bodies;
+				for (TActorIterator<APawn> It(P->GetWorld()); It; ++It)
+					if (*It != P) { Bodies.Add(*It); Q.AddIgnoredActor(*It); }
+				const auto NearestBody = [&Bodies](const FVector& At)
+				{
+					double Best = 1.0e6;
+					for (const AActor* A : Bodies) Best = FMath::Min(Best, FVector::Dist2D(A->GetActorLocation(), At));
+					return Best;
+				};
+				FVector Spot = Over;
+				double BestRun = 0.0;
+				int32 Side = -1;
 				for (int32 a = 0; a < 8; ++a)
 				{
-					const FVector To = Spot + FRotator(0.0, 45.0 * a, 0.0).Vector() * 120.0;
-					if (!P->GetWorld()->LineTraceTestByChannel(Spot, To, ECC_Pawn, Q)) { Spot = To; break; }
+					const FVector Dir = FRotator(0.0, 45.0 * a, 0.0).Vector();
+					FHitResult Hit;
+					const double Run = P->GetWorld()->LineTraceSingleByChannel(Hit, Over, Over + Dir * 160.0, ECC_Pawn, Q) ? FMath::Min(Hit.Distance - 40.0, 120.0) : 120.0;
+					if (Run > BestRun && NearestBody(Over + Dir * Run) >= 100.0) { BestRun = Run; Spot = Over + Dir * Run; Side = a; }
 				}
+				UE_LOG(LogOutlawsCoop, Display, TEXT("OLSHOT spawngrace the host put by its stick: side %d, %.0f cm off, the nearest body %.0f cm off"), Side, BestRun, NearestBody(Spot));
 				P->SetActorLocation(Spot, false, nullptr, ETeleportType::TeleportPhysics);
 				P->GetCharacterMovement()->StopMovementImmediately();
 				BaseSelf = P->GetActorLocation();
@@ -684,7 +701,7 @@ void UOutlawsCoop::TickHostSpawnGraceTest(double Now, AOutlawsLevelActor* L, AOu
 			return;
 		case 4:
 			if (Th == 0 && L->BlastsSeen == BaseBlasts) BaseSelf = P->GetActorLocation();      // (from the blast on: the tick after the teleport can shift the body 70 cm, measured, before any blast)
-			if (Th == 0) UE_LOG(LogOutlawsCoop, Log, TEXT("OLSHOT spawngrace the host by its stick: +%.2f s, %s, speed %s, %d blast"), Wall - PhaseAt, *(P->GetActorLocation() - BaseSelf).ToCompactString(), *P->GetVelocity().ToCompactString(), L->BlastsSeen - BaseBlasts);
+			if (Th == 0) UE_LOG(LogOutlawsCoop, Log, TEXT("OLSHOT spawngrace the host by its stick: +%.2f s, %s, speed %s, %d blast, base %s"), Wall - PhaseAt, *(P->GetActorLocation() - BaseSelf).ToCompactString(), *P->GetVelocity().ToCompactString(), L->BlastsSeen - BaseBlasts, P->GetMovementBase() && P->GetMovementBase()->GetOwner() ? *P->GetMovementBase()->GetOwner()->GetName() : TEXT("none"));
 			// (the blast's word and the flag as it landed, not a look at 0.8 s; a stall that took the blast past the protection tries nothing:
 			// the case wants a blast in it, so it is done over from the throw)
 			if (Wall - PhaseAt < 0.8 || (!bBlastSeen && Wall - PhaseAt < 5.0) || (bBlastSeen && Wall - BlastSeenAt < 0.6)) return;

@@ -45,7 +45,7 @@ namespace OutlawsBlastRifleProbeLocal
 	constexpr int32 NumCells = 9, TrialsACell = 12;
 	constexpr double BodyRadius = 32.0;
 
-	int32 Passes = 0, Fails = 0, Cell = 0, Trial = 0, Count = 0, Lo = 99, Hi = 0, Sum = 0, Phase = 0, Client = -1, Job = 0, Spent = 0;
+	int32 Passes = 0, Fails = 0, Cell = 0, Trial = 0, Count = 0, Lo = 99, Hi = 0, Sum = 0, Phase = 0, Client = -1, Job = 0, Spent = 0, Strayed = 0;
 	double PhaseAt = 0.0, NextAt = 0.0, SecondAt = 0.0;
 	TArray<int32> BotIds;
 	TArray<FString> Table;
@@ -324,8 +324,30 @@ void UOutlawsCoop::TickHostBlastRifleTest(double Now, AOutlawsLevelActor* L, AOu
 		if (Spent + G.Pellets > 18) return;
 		if (Count == 0) B->Health = 1010.f;
 		const FVector Eye = StandBeside(R->ShownBody());
+		const float HealthWas = B->Health;
 		Fire(this, L, Eye, BotIds[0], G, S);
 		Spent += G.Pellets;
+		// (a pull another body took is no hit on this one: a bot "shut in" is put at a spawn, this bot's as it may be, and stood in the line:
+		// 6 pellets on the client 14, a kill of 4 pulls, 1 run of 20.  Not counted, and the others sent away; 6 a run at most, a gun that
+		// deals nothing still fails the cell)
+		if (B->Health >= HealthWas && Strayed < 6)
+		{
+			++Strayed;
+			UE_LOG(LogOutlaws, Display, TEXT("OLSHOT blastrifle a pull taken by another body: %s, %s, bot's health %.1f, not counted (%d)"), G.Name, S.Name, B->Health, Strayed);
+			double BestAway = -1.0;
+			FVector Away = R->ShownBody();
+			for (const FOutlawsDmSpawn& Sp : Dm.GetSpawns())
+			{
+				const double D = FVector::Dist(Sp.Location, R->ShownBody());
+				if (D > BestAway) { BestAway = D; Away = Sp.Location; }
+			}
+			for (const int32 Id : BotIds)
+			{
+				const FBot* Other = Id != BotIds[0] ? FindBot(Id) : nullptr;
+				if (AOutlawsEnemy* OE = Other ? Other->Brain.Get() : nullptr) OE->SetActorLocation(Away, false, nullptr, ETeleportType::TeleportPhysics);
+			}
+			return;
+		}
 		++Count;
 		if (B->Health > 1000.f && Count < 40) return;
 		Lo = FMath::Min(Lo, Count);
