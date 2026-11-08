@@ -2,6 +2,7 @@
 // use, and the noises that wake them.
 #include "OutlawsLevelActor.h"
 #include "OutlawsFlags.h"
+#include "OutlawsMpPolish.h"
 #include "OutlawsShipSmoke.h"
 #include "OutlawsPolygon.h"
 #include "OutlawsUnlocks.h"
@@ -2008,6 +2009,17 @@ void AOutlawsLevelActor::StartMusic(const FString& Msc)
 	StopMusic();
 	WarmMusicAudio();
 	MusicCues.Reset();
+	bMusicShuffle = false;
+	if (Msc == OutlawsMpPolish::ShuffleMusic)
+	{
+		if (!DealMusicShuffle(-1)) return;
+		MusicCue = 0;
+		MusicEndReal = 0.0;
+		MusicStep = -1;
+		UE_LOG(LogOutlaws, Log, TEXT("OLRT music shuffled: %d tracks"), MusicCues.Num());
+		UpdateMusic();
+		return;
+	}
 	FString Text;
 	if (Msc.IsEmpty() || Msc.Equals(TEXT("NULL"), ESearchCase::IgnoreCase) || !AssetsRef || !AssetsRef->GetText(Msc, Text))
 	{
@@ -2048,6 +2060,40 @@ void AOutlawsLevelActor::StartMusic(const FString& Msc)
 	MusicStep = -1;          // UpdateMusic steps onto the cue's first command
 	UE_LOG(LogOutlaws, Log, TEXT("OLRT music %s: %d cues, start %d"), *Msc, MusicCues.Num(), Start);
 	UpdateMusic();
+}
+
+bool AOutlawsLevelActor::DealMusicShuffle(int32 AvoidTrackKey)
+{
+	TArray<int32> Keys;
+	OutlawsMpPolish::MusicTrackKeys(AssetsRef.Get(), Keys);
+	MusicCues.Reset();
+	bMusicShuffle = false;
+	if (Keys.Num() == 0)
+	{
+		UE_LOG(LogOutlaws, Log, TEXT("OLRT music shuffle: no tracks named in the LABs' scripts, the match stays quiet"));
+		return false;
+	}
+	static FRandomStream R{ int32(FPlatformTime::Cycles()) };     // (each player's own order)
+	TArray<int32> Order;
+	OutlawsMpPolish::ShuffleDeck(Keys.Num(), Keys.IndexOfByKey(AvoidTrackKey), R, Order);
+	FString Said;
+	for (int32 i : Order)
+	{
+		FMusicCmd C;
+		C.Track = Keys[i] / 2;
+		C.Disc = (Keys[i] & 1) ? TEXT('B') : TEXT('A');
+		MusicCues.AddDefaulted_GetRef().Add(C);
+		Said += FString::Printf(TEXT(" TRK%02d%c"), C.Track, C.Disc);
+	}
+	bMusicShuffle = true;
+	UE_LOG(LogOutlaws, Log, TEXT("OLRT music shuffle dealt:%s"), *Said);
+	return true;
+}
+
+void AOutlawsLevelActor::RestartLevelMusic()
+{
+	if (bFrontEnd) return;
+	StartMusic(OutlawsMpPolish::LevelMusic(this, LevelMusicScript));
 }
 
 TMap<FString, FString> AOutlawsLevelActor::ReadSettings()
@@ -2147,6 +2193,7 @@ void AOutlawsLevelActor::LoadSettings()
 	if (const FString* X = S.Find(TEXT("MpMicSensitivity"))) MpMicSensitivity = FMath::Clamp(FCString::Atoi(**X), 0, 2);
 	if (const FString* X = S.Find(TEXT("MpPartnerVolume"))) MpPartnerVolume = FMath::Clamp(FCString::Atoi(**X), 50, 300);
 	B(TEXT("MpVoiceFade"), bMpVoiceFade);
+	B(TEXT("MpMusic"), bMpMusic);
 	UOutlawsCoop::ApplyMicSensitivity(MpMicSensitivity);
 	// the Randomizer page (R10, user 2026-10-03): taken by a run at its New Game
 	if (const FString* X = S.Find(TEXT("RandoEnemies"))) RandoEnemies = FMath::Clamp(FCString::Atoi(**X), 0, 2);
@@ -2204,6 +2251,7 @@ void AOutlawsLevelActor::GatherSettings(TMap<FString, FString>& Out) const
 	Out.Add(TEXT("MpMicSensitivity"), FString::FromInt(MpMicSensitivity));
 	Out.Add(TEXT("MpPartnerVolume"), FString::FromInt(MpPartnerVolume));
 	Out.Add(TEXT("MpVoiceFade"), bMpVoiceFade ? TEXT("1") : TEXT("0"));
+	Out.Add(TEXT("MpMusic"), bMpMusic ? TEXT("1") : TEXT("0"));
 	Out.Add(TEXT("MpPlayerName"), bMpNameArg ? MpPlayerNameInFile : MpPlayerName);      // (a test's -OLMpName is never written)
 	Out.Add(TEXT("RandoEnemies"), FString::FromInt(RandoEnemies));
 	Out.Add(TEXT("RandoItems"), FString::FromInt(RandoItems));
@@ -2247,6 +2295,14 @@ void AOutlawsLevelActor::UpdateMusic()
 		++MusicStep;
 		if (!MusicCues.IsValidIndex(MusicCue))
 		{
+			// (REQ-MPMUSIC) the shuffle's deck played out: dealt again, its first not the track just heard
+			const int32 Last = MusicCues.Num() > 0 && MusicCues.Last().Num() > 0 ? MusicCues.Last()[0].Track * 2 + (MusicCues.Last()[0].Disc == TEXT('B') ? 1 : 0) : -1;
+			if (bMusicShuffle && DealMusicShuffle(Last))
+			{
+				MusicCue = 0;
+				MusicStep = -1;
+				continue;
+			}
 			MusicCue = -1;
 			return;
 		}

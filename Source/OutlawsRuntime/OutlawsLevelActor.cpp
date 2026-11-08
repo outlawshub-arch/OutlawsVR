@@ -2226,6 +2226,7 @@ void AOutlawsLevelActor::Build()
 	}
 	if (bGameWorld)
 	{
+		LevelMusicScript = L.Music;
 		if (!bFrontEnd) StartMusic(OutlawsMpPolish::LevelMusic(this, L.Music));          // (behind the main menu: the menu's music alone)
 		if (!bFrontEnd) PrebuildForPlay();
 		if (!bFrontEnd)
@@ -2360,6 +2361,7 @@ void AOutlawsLevelActor::BeginPlay()
 		&& !OLFlags::Param(TEXT("OLExtrasTest"))          // (REQ-EXTRAS: from the title menu)
 		&& !OLFlags::Has(TEXT("OLExtrasLayoutProbe"))     // (BUG-ACHIEVBOX: the Extras pages, from the title menu)
 		&& !OLFlags::Has(TEXT("OLMenuOverlayProbe"))      // (REQ-LEGACYKPF: the title pages shot)
+		&& !OLFlags::Has(TEXT("OLMenuPageShot"))          // (the sign-off shots of a menu page, from the title)
 		&& !OLFlags::Has(TEXT("OLNetVersionProbe"))       // (REQ-NETVERSION: a join from the title's join page)
 		&& !OLFlags::ValueIs(TEXT("OLBackClickTest"), TEXT("extras"))      // (REQ-NOUNLOCKABLES: Back on the Extras pages, from the title)
 		&& !OLFlags::HasValue(TEXT("OLTitleLoadTest"))      // (REQ-TITLEMENU: the title menu tested)

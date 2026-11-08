@@ -172,6 +172,17 @@ public:
 	 *  placed and panned, never quieter far off). */
 	int32 MpPartnerVolume = 200;
 	bool bMpVoiceFade = false;
+	/** REQ-MPMUSIC (user 8 Nov): "MpMusic" 0 / 1 (default 1): music in multiplayer maps; off, a match plays none (story levels,
+	 *  co-op's included, and the menus keep theirs).  Each player's own: nothing on the wire. */
+	bool bMpMusic = true;
+	/** The level's own MUSIC line (LVT/LVB), kept so the Multiplayer page's row can start the music again as it is changed. */
+	FString LevelMusicScript;
+	/** REQ-MPMUSIC: the level's music started again by the rules as they now stand (the Multiplayer page's row). */
+	void RestartLevelMusic();
+	/** REQ-MPMUSIC: whether the music now playing is the shuffle, and how many tracks its deck holds (tests). */
+	bool MusicIsShuffle() const { return bMusicShuffle; }
+	int32 MusicDeckSize() const { return bMusicShuffle ? MusicCues.Num() : 0; }
+	int32 MusicCueCount() const { return MusicCues.Num(); }
 	static constexpr int32 MpNameMax = 16;
 	/** A name as it may be kept and shown: no line breaks or other control characters, the ends trimmed, MpNameMax at most. */
 	static FString CleanMpName(const FString& In);
@@ -1935,6 +1946,10 @@ private:
 	// order, GOTO_CUE jumping back; stops at the end of the last cue
 	struct FMusicCmd { bool bGoto = false; int32 Track = 0; TCHAR Disc = TEXT('A'); int32 Cue = 0; };
 	TArray<TArray<FMusicCmd>> MusicCues;       // index = cue number - 1
+	/** REQ-MPMUSIC (user 8 Nov): a multiplayer map with no music of its own plays the game's tracks shuffled, one cue a track,
+	 *  dealt again (another order, its first not the last one heard) when the deck runs out: no track twice before all have played */
+	bool bMusicShuffle = false;
+	bool DealMusicShuffle(int32 AvoidTrackKey);
 	int32 MusicCue = -1;
 	int32 MusicStep = 0;
 	TWeakObjectPtr<class UAudioComponent> MusicAudio;

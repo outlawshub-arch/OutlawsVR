@@ -4,6 +4,7 @@
 // else yet.
 #include "OutlawsDeathmatch.h"
 #include "OutlawsFlags.h"
+#include "OutlawsMpPolish.h"
 #include "OutlawsBeacon.h"
 #include "OutlawsUpdate.h"
 #include "OutlawsPlayer.h"
@@ -758,6 +759,15 @@ bool AOutlawsPlayer::ShowMenuPage(const FString& File, bool bPush)
 		Up.Label = TEXT("Open my router's port automatically");
 		Up.Name = TEXT("mp_upnp");
 		Page->Items.Add(Up);
+		// REQ-MPMUSIC (user 8 Nov): music in multiplayer maps, on by default; a map with none of its own shuffles the game's tracks
+		if (!OLFlags::Param(TEXT("OLOldMpMusic")))         // (-OLOldMpMusic: the page as it was, for the sign-off's before shot)
+		{
+			FItem Mu;
+			Mu.Kind = EItemKind::Check;
+			Mu.Label = TEXT("Multiplayer music");
+			Mu.Name = TEXT("mp_music");
+			Page->Items.Add(Mu);
+		}
 	}
 	else if (File == TEXT("#voice"))
 	{
@@ -1429,6 +1439,7 @@ FString AOutlawsPlayer::MenuRowText(int32 Index) const
 		else if (I.Name == TEXT("mp_announce") || I.Name == TEXT("mp_listen")) bOn = UOutlawsBeacon::Setting(I.Name);
 		else if (I.Name == TEXT("mp_upnp")) bOn = UOutlawsCoop::UpnpSetting();
 		else if (I.Name == TEXT("mp_vfade")) bOn = L && L->bMpVoiceFade;
+		else if (I.Name == TEXT("mp_music")) bOn = L && L->bMpMusic;
 		else if (I.Name == TEXT("mp_mic"))
 		{
 			// on, but the headset's permission refused or no microphone found: said beside it (the voice chat's state)
@@ -2591,6 +2602,19 @@ void AOutlawsPlayer::MenuActivate(int32 Hand, int32 Index)
 		{
 			UOutlawsCoop::ToggleUpnp();
 			RefreshMenuRows();
+			return;
+		}
+		if (I.Name == TEXT("mp_music"))
+		{
+			// (REQ-MPMUSIC) a match's music follows at once: stopped, or started again by the rule
+			if (AOutlawsLevelActor* L = Level.Get())
+			{
+				L->bMpMusic = !L->bMpMusic;
+				UE_LOG(LogOutlaws, Log, TEXT("OLRT multiplayer: music in multiplayer %s"), L->bMpMusic ? TEXT("on") : TEXT("off"));
+				if (OutlawsMpPolish::MusicMapIsMultiplayer(L->GetLabAssets(), L->LevelName)) L->RestartLevelMusic();
+			}
+			RefreshMenuRows();
+			SaveSettings();
 			return;
 		}
 		if (I.Name == TEXT("mp_vfade"))

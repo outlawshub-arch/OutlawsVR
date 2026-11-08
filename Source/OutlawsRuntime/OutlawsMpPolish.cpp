@@ -77,11 +77,72 @@ FString OutlawsMpPolish::MusicFor(const FOutlawsAssets* A, const FString& Level,
 	return A->Has(TEXT("town.msc")) ? FString(TEXT("town.msc")) : Msc;
 }
 
+const TCHAR* const OutlawsMpPolish::ShuffleMusic = TEXT("*shuffle*");
+
+bool OutlawsMpPolish::MusicMapIsMultiplayer(const FOutlawsAssets* A, const FString& Level)
+{
+	return IsMultiplayerMap(A, Level) || (A && !Level.IsEmpty() && !A->NativeLabFor(Level).IsEmpty());
+}
+
+FString OutlawsMpPolish::MpMusicFor(const FOutlawsAssets* A, const FString& Level, const FString& Msc, bool bMusicOn)
+{
+	if (!MusicMapIsMultiplayer(A, Level)) return Msc;
+	if (!bMusicOn) return TEXT("NULL");
+	const bool bNone = Msc.IsEmpty() || Msc.Equals(TEXT("NULL"), ESearchCase::IgnoreCase);
+	if (!bNone) return Msc;
+	const FString Own = Level.ToLower() + TEXT(".msc");
+	return A->Has(Own) ? Own : FString(ShuffleMusic);
+}
+
+void OutlawsMpPolish::MusicTrackKeys(const FOutlawsAssets* A, TArray<int32>& Out)
+{
+	Out.Reset();
+	if (!A) return;
+	TArray<FString> Scripts;
+	A->ListByExtension(TEXT("msc"), Scripts);
+	TSet<int32> Seen;
+	for (const FString& S : Scripts)
+	{
+		const FString Name = FPaths::GetCleanFilename(S).ToLower();
+		if (Name == TEXT("intro.msc") || Name == TEXT("credits.msc")) continue;
+		FString Text;
+		if (!A->GetText(S, Text)) continue;
+		TArray<FString> Lines;
+		Text.ParseIntoArrayLines(Lines);
+		for (const FString& Line : Lines)
+		{
+			TArray<FString> T;
+			Line.ParseIntoArrayWS(T);
+			if (T.Num() > 2 && T[0].Equals(TEXT("CD_TRACK"), ESearchCase::IgnoreCase))
+			{
+				const int32 Track = FCString::Atoi(*T[2]);
+				if (Track > 0) Seen.Add(Track * 2 + (T[1].EndsWith(TEXT("2")) ? 1 : 0));      // (the label's last character picks the disc, as StartMusic)
+			}
+		}
+	}
+	Out = Seen.Array();
+	Out.Sort();
+}
+
+void OutlawsMpPolish::ShuffleDeck(int32 N, int32 AvoidFirst, FRandomStream& R, TArray<int32>& Out)
+{
+	Out.Reset(N);
+	for (int32 i = 0; i < N; ++i) Out.Add(i);
+	for (int32 i = N - 1; i > 0; --i) Out.Swap(i, R.RandRange(0, i));
+	if (N > 1 && Out[0] == AvoidFirst) Out.Swap(0, 1 + R.RandRange(0, N - 2));
+}
+
 FString OutlawsMpPolish::LevelMusic(const AOutlawsLevelActor* L, const FString& Msc)
 {
 	if (!L) return Msc;
-	const FString Out = MusicFor(L->GetLabAssets(), L->LevelName, Msc);
-	if (Out != Msc) UE_LOG(LogOutlaws, Log, TEXT("OLM4 music: %s is a multiplayer map with no music of its own: %s"), *L->LevelName, *Out);
+	if (OLFlags::Param(TEXT("OLOldMpMusic")))
+	{
+		const FString Old = MusicFor(L->GetLabAssets(), L->LevelName, Msc);
+		if (Old != Msc) UE_LOG(LogOutlaws, Log, TEXT("OLM4 music: %s is a multiplayer map with no music of its own: %s (-OLOldMpMusic)"), *L->LevelName, *Old);
+		return Old;
+	}
+	const FString Out = MpMusicFor(L->GetLabAssets(), L->LevelName, Msc, L->bMpMusic);
+	if (Out != Msc) UE_LOG(LogOutlaws, Log, TEXT("OLM4 music: %s is a multiplayer map, music %s: %s"), *L->LevelName, L->bMpMusic ? TEXT("on") : TEXT("off"), *Out);
 	return Out;
 }
 
@@ -176,7 +237,64 @@ void AOutlawsLevelActor::OnScoreboardPressed()
 
 bool UOutlawsMpPolishTest::ShouldCreateSubsystem(UObject* Outer) const
 {
-	return OLFlags::Param(TEXT("OLM4Test"));
+	return OLFlags::Param(TEXT("OLM4Test")) || OLFlags::Param(TEXT("OLMpMusicProbe"));
+}
+
+// (REQ-MPMUSIC) -OLMpMusicProbe: the rule on the install's own files, the decks, and this level's music as it is
+static void MpMusicProbe(AOutlawsLevelActor* L)
+{
+	int32 Passes = 0, Fails = 0;
+	auto Check = [&](bool bOk, const FString& What)
+	{
+		++(bOk ? Passes : Fails);
+		UE_LOG(LogOutlaws, Display, TEXT("OLSHOT mpmusic check %s: %s"), bOk ? TEXT("PASS") : TEXT("FAIL"), *What);
+	};
+	const FOutlawsAssets* A = L->GetLabAssets();
+	using namespace OutlawsMpPolish;
+	Check(MpMusicFor(A, TEXT("hideout"), TEXT("hideout.msc"), false) == TEXT("hideout.msc"), TEXT("a story level keeps its music with the row off"));
+	Check(MpMusicFor(A, TEXT("drygulch"), TEXT("drygulch.msc"), true) == TEXT("drygulch.msc"), TEXT("a multiplayer map's own script is kept"));
+	Check(MpMusicFor(A, TEXT("drygulch"), TEXT("drygulch.msc"), false) == TEXT("NULL"), TEXT("the row off: a multiplayer map's own script is not played"));
+	Check(MpMusicFor(A, TEXT("wilderns"), TEXT("NULL"), true) == TEXT("wilderns.msc"), TEXT("wilderns at NULL keeps the remaster's wilderns.msc"));
+	TArray<int32> Keys;
+	MusicTrackKeys(A, Keys);
+	FString Names;
+	for (int32 K : Keys) Names += FString::Printf(TEXT(" TRK%02d%c"), K / 2, (K & 1) ? TEXT('B') : TEXT('A'));
+	Check(Keys.Num() >= 6, FString::Printf(TEXT("the track list from the LABs' scripts: %d tracks:%s"), Keys.Num(), *Names));
+	// the decks: three deals of the list, each every track once, the next's first not the last heard
+	FRandomStream R(1234);
+	bool bDecks = Keys.Num() > 1;
+	int32 Last = -1;
+	for (int32 d = 0; d < 3 && bDecks; ++d)
+	{
+		TArray<int32> Order;
+		ShuffleDeck(Keys.Num(), Last, R, Order);
+		TSet<int32> Seen(Order);
+		bDecks = Order.Num() == Keys.Num() && Seen.Num() == Keys.Num() && Order[0] != Last;
+		Last = Order.Last();
+	}
+	Check(bDecks, TEXT("three shuffled decks: every track once a deck, no deck starting on the track just heard"));
+	// this level, as the game started its music
+	const bool bMp = MusicMapIsMultiplayer(A, L->LevelName);
+	const FString Rule = MpMusicFor(A, L->LevelName, L->LevelMusicScript, L->bMpMusic);
+	const bool bShuffle = Rule == ShuffleMusic;
+	Check(L->MusicIsShuffle() == bShuffle && (!bShuffle || L->MusicDeckSize() == Keys.Num()),
+		FString::Printf(TEXT("%s (%s, MUSIC %s, row %s): %s, %d cues%s"), *L->LevelName, bMp ? TEXT("a multiplayer map") : TEXT("a story level"),
+			*L->LevelMusicScript, L->bMpMusic ? TEXT("on") : TEXT("off"), L->MusicIsShuffle() ? TEXT("shuffled") : TEXT("not shuffled"),
+			L->MusicCueCount(), bShuffle ? *FString::Printf(TEXT(", want the shuffle of %d"), Keys.Num()) : TEXT("")));
+	if (bMp && !L->bMpMusic) Check(L->MusicCueCount() == 0, TEXT("the row off: no music in the match"));
+	if (bMp)
+	{
+		// the row turned over and back, as the Multiplayer page does
+		const bool bWas = L->bMpMusic;
+		L->bMpMusic = !bWas;
+		L->RestartLevelMusic();
+		const int32 Turned = L->MusicCueCount();
+		L->bMpMusic = bWas;
+		L->RestartLevelMusic();
+		Check(bWas ? Turned == 0 : Turned > 0, FString::Printf(TEXT("the row turned %s in the match: %d cues"), bWas ? TEXT("off") : TEXT("on"), Turned));
+		Check(L->MusicIsShuffle() == bShuffle, TEXT("the row turned back: the music as it was"));
+	}
+	UE_LOG(LogOutlaws, Display, TEXT("OLSHOT mpmusic RESULT %s (%d passed, %d failed)"), Fails == 0 && Passes > 0 ? TEXT("ALL PASS") : TEXT("FAIL"), Passes, Fails);
 }
 
 UWorld* UOutlawsMpPolishTest::GetTickableGameObjectWorld() const
@@ -204,6 +322,15 @@ void UOutlawsMpPolishTest::Tick(float DeltaTime)
 		if (!bOk) ++Bad;
 		UE_LOG(LogOutlaws, Log, TEXT("OLM4 test: %s: %s"), *What, bOk ? TEXT("ok") : TEXT("BAD"));
 	};
+	if (OLFlags::Param(TEXT("OLMpMusicProbe")))
+	{
+		if (Step == 0) { At = Now + 6.0; Step = 1; return; }
+		if (Now < At) return;
+		MpMusicProbe(L);
+		Step = 99;
+		FGenericPlatformMisc::RequestExit(false);
+		return;
+	}
 	switch (Step)
 	{
 	case 0:
