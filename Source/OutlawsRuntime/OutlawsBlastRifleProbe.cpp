@@ -455,6 +455,15 @@ void UOutlawsCoop::TickHostBlastRifleTest(double Now, AOutlawsLevelActor* L, AOu
 			return;
 		}
 		const float Lost = Before - (J.Target == 1 ? L->GetHealth() : B->Health);
+		if (Phase == 3)
+		{
+			// (the hit's word, not a fixed wait: a client that stalled ran its pull 1.92 s after the ask, measured, past the 1.0 s this was.
+			// Then 0.3 s more, so a second hit on its way still shows as doubled)
+			if (Lost <= 0.f && Now < TestAt + 5.0) return;
+			TestAt = Now + 0.3;
+			Phase = 4;
+			return;
+		}
 		const float Each = G.Base * (J.bHold ? WantEach(G, S) : (Old(TEXT("OLOldHitLocation")) ? 1.f : S.Mult)) * MatchDamageFor(Who, 1.f);
 		Check(Lost >= Each * 0.89f && Lost <= Each * 1.11f, FString::Printf(TEXT("the %s's %s%s at %s on the %s%s: %.2f taken, want %.2f +-10%%"), J.Pull == 2 ? TEXT("host") : TEXT("client"), G.Name, J.Pull != 0 ? TEXT(", a real trigger pull,") : TEXT(""),
 			S.Name, WhoWord(Who), J.bHold ? TEXT("") : TEXT(", no rifle in its hands"), Lost, Each));

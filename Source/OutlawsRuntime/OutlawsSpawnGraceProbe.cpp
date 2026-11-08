@@ -21,6 +21,8 @@
 // 5. A joiner comes in on a flash under way; flat shots of it, the host's hands held up with the bot in view
 //    (Saved\OLShots\ol_spawngrace_*).
 // -OLOldSpawnGrace: no flag, no flash, no shield; a protected striker deals, and its shot ends its protection.
+// A stall that jumps a protection's window does the wait over, "OLSHOT spawngrace done over: ...", counted in the host's RESULT.
+// -OLSpawnGraceStall=<ms> makes one on the host's first respawn in part 4; -OLSpawnGraceNoRedo keeps the wait from being done over.
 // Lines "OLSHOT spawngrace check PASS|FAIL: ..." and "OLSHOT spawngrace <host|client|joiner|coop> RESULT".
 
 #include "OutlawsCoop.h"
@@ -64,6 +66,11 @@ namespace OutlawsSpawnGraceProbeLocal
 	int32 StickRounds = 0;      // (-OLSpawnGraceSticks=<n>: part 4 alone, n times round, for the rates)
 	double StickStillAt = 0.0;
 	FVector StickLast = FVector::ZeroVector, StickFeet = FVector::ZeroVector, BaseSelf = FVector::ZeroVector;
+	// (a stall against a window: a wait done over (Redo), the blast as it reached the host, this phase's longest frame)
+	const int32 RedoMost = 6;
+	int32 Redos = 0, StallMs = 0;           // (-OLSpawnGraceStall=<ms>: that stall by hand, the host's frame just after its first respawn in part 4)
+	bool bStallDone = false, bBlastSeen = false, bFlagAtBlast = false;
+	double BlastSeenAt = 0.0, LastTickWall = 0.0, LongFrame = 0.0;
 
 	void Check(bool bOk, const FString& What)
 	{
@@ -122,6 +129,8 @@ void UOutlawsCoop::TickHostSpawnGraceTest(double Now, AOutlawsLevelActor* L, AOu
 {
 	using namespace OutlawsSpawnGraceProbeLocal;
 	const double Wall = FPlatformTime::Seconds();
+	if (LastTickWall > 0.0) LongFrame = FMath::Max(LongFrame, Wall - LastTickWall);
+	LastTickWall = Wall;
 	// co-op's story: none of it
 	if (!IsMatch())
 	{
@@ -217,7 +226,20 @@ void UOutlawsCoop::TickHostSpawnGraceTest(double Now, AOutlawsLevelActor* L, AOu
 		else if (IsBot(Who)) { if (const FBot* B = FindBot(Who)) BotHurt(Who, B->Health + 1.f, BodyOf(Who), BodyOf(Who), -1); }
 		else TestSayTo(Who, TEXT("sg:die"));
 	};
-	auto Next = [&](int32 NewPhase) { Phase = NewPhase; PhaseAt = Wall; };
+	auto Next = [&](int32 NewPhase) { Phase = NewPhase; PhaseAt = Wall; LongFrame = 0.0; };
+	auto Missed = [&](int32 Who)
+	{
+		// Ready's window is 1.35 s of the 3 s, from the word of the respawn to 1.5 s left.  A stall can jump all of it: 1.78 s lost on
+		// the host's frames right after its respawn, measured, then a live player with nothing to wait for.  Up, its window gone, 3 s
+		// after the kill (a respawn takes 2 to 2.3 s): the wait is done over, by a new death; RedoMost bounds it, then the wait's FAIL
+		const FOutlawsDmPlayer* D = Dm.Find(Who);
+		return !OLFlags::Param(TEXT("OLSpawnGraceNoRedo")) && Redos < RedoMost && Wall - PhaseAt >= 3.0 && D && D->bAlive && Wall >= D->ProtectedUntil - 1.5 && !MatchDead[Who] && !DeadOf(Who);
+	};
+	auto Redo = [&](int32 Who, const TCHAR* What)
+	{
+		++Redos;
+		UE_LOG(LogOutlawsCoop, Display, TEXT("OLSHOT spawngrace done over: %s, the %s, %.2f s into the wait, the longest frame %.2f s"), What, WhoWord(Who), Wall - PhaseAt, LongFrame);
+	};
 	auto Base = [&]()
 	{
 		BaseDealt = MatchHitsDealt;
@@ -229,8 +251,8 @@ void UOutlawsCoop::TickHostSpawnGraceTest(double Now, AOutlawsLevelActor* L, AOu
 	};
 	auto Finish = [&]()
 	{
-		UE_LOG(LogOutlawsCoop, Display, TEXT("OLSHOT spawngrace host RESULT %s (%d passed, %d failed%s; hits dealt %d, refused %d)"), Fails == 0 && Passes > 0 ? TEXT("ALL PASS") : TEXT("FAIL"),
-			Passes, Fails, bOld ? TEXT(", -OLOldSpawnGrace") : TEXT(""), MatchHitsDealt, MatchHitsRefused);
+		UE_LOG(LogOutlawsCoop, Display, TEXT("OLSHOT spawngrace host RESULT %s (%d passed, %d failed%s; hits dealt %d, refused %d, done over %d)"), Fails == 0 && Passes > 0 ? TEXT("ALL PASS") : TEXT("FAIL"),
+			Passes, Fails, bOld ? TEXT(", -OLOldSpawnGrace") : TEXT(""), MatchHitsDealt, MatchHitsRefused, Redos);
 		if (Client > 0) TestSayTo(Client, TEXT("sg:result"));
 		TestSay(TEXT("quit"));
 		TestStep = StepQuit;
@@ -322,7 +344,12 @@ void UOutlawsCoop::TickHostSpawnGraceTest(double Now, AOutlawsLevelActor* L, AOu
 			return;
 		case 1:
 		{
-			if (!Ready(Target)) { if (Wall - PhaseAt > 20.0) { Check(false, FString::Printf(TEXT("the %s back fresh"), WhoWord(Target))); Finish(); } return; }
+			if (!Ready(Target))
+			{
+				if (Missed(Target)) { Redo(Target, TEXT("a victim's window went by")); Kill(Target); Next(1); return; }
+				if (Wall - PhaseAt > 20.0) { Check(false, FString::Printf(TEXT("the %s back fresh"), WhoWord(Target))); Finish(); }
+				return;
+			}
 			Base();
 			Beside(Target);
 			const int32 Blood = L->BloodSpawns;
@@ -453,7 +480,12 @@ void UOutlawsCoop::TickHostSpawnGraceTest(double Now, AOutlawsLevelActor* L, AOu
 			return;
 		case 1:
 		{
-			if (!Ready(Target)) { if (Wall - PhaseAt > 20.0) { Check(false, FString::Printf(TEXT("the striker %s back fresh"), WhoWord(Target))); Finish(); } return; }
+			if (!Ready(Target))
+			{
+				if (Missed(Target)) { Redo(Target, TEXT("a striker's window went by")); Kill(Target); Next(1); return; }
+				if (Wall - PhaseAt > 20.0) { Check(false, FString::Printf(TEXT("the striker %s back fresh"), WhoWord(Target))); Finish(); }
+				return;
+			}
 			if (!Fresh(Client) && bHostStrikes && Wall - PhaseAt < 2.0) return;
 			Beside(bHostStrikes ? Client : Target);
 			Base();
@@ -559,6 +591,7 @@ void UOutlawsCoop::TickHostSpawnGraceTest(double Now, AOutlawsLevelActor* L, AOu
 			BaseOther = HealthOf(Vi);
 			BaseHealth = HealthOf(0);
 			BaseAt = BodyOf(Vi);
+			bBlastSeen = false;
 		};
 		auto Put = [&](const FVector& At, double Fuse)
 		{
@@ -583,6 +616,7 @@ void UOutlawsCoop::TickHostSpawnGraceTest(double Now, AOutlawsLevelActor* L, AOu
 		auto Took = [&]() { return FString::Printf(TEXT("%d blast, dealt %d, health %.1f -> %.1f, moved %.0f cm, the thrower's flag %d"), L->BlastsSeen - BaseBlasts, MatchHitsDealt - BaseDealt, BaseOther, HealthOf(Vi), FVector::Dist(BodyOf(Vi), BaseAt), SpawnGraceOf(Th)); };
 		const bool bOldStick = OldSpawnStick();
 		const FOutlawsDmPlayer* DT = Dm.Find(Th);
+		if (!bBlastSeen && L->BlastsSeen > BaseBlasts) { bBlastSeen = true; bFlagAtBlast = SpawnGraceOf(Th); BlastSeenAt = Wall; }
 		switch (Phase)
 		{
 		case 0:
@@ -615,7 +649,18 @@ void UOutlawsCoop::TickHostSpawnGraceTest(double Now, AOutlawsLevelActor* L, AOu
 			if (Wall - PhaseAt < 1.0) return;      // (the kill's word lands first: dying in a protection, it would read as fresh until then)
 			if (const FOutlawsDmPlayer* DW = Dm.Find(Th); DW && FMath::Fmod(Wall - PhaseAt, 0.25) < 0.02)
 				UE_LOG(LogOutlawsCoop, Log, TEXT("OLSHOT spawngrace %s waits: +%.2f s, alive %d, left %.2f, match dead %d, dead %d, health %.2f, flag %d"), *Who(), Wall - PhaseAt, DW->bAlive, DW->ProtectedUntil - Wall, MatchDead[Th], DeadOf(Th), HealthOf(Th), SpawnGraceOf(Th));
-			if (!Ready(Th)) { if (Wall - PhaseAt > 25.0) { Check(false, FString::Printf(TEXT("%s back fresh with its stick lit"), *Who())); Finish(); } return; }
+			if (Th == 0 && DT && DT->bAlive && SpawnGraceOf(Th) && !bStallDone && OLFlags::Value(TEXT("OLSpawnGraceStall"), StallMs) && StallMs > 0)
+			{
+				bStallDone = true;
+				FPlatformProcess::Sleep(float(StallMs) / 1000.f);
+				return;
+			}
+			if (!Ready(Th))
+			{
+				if (Missed(Th)) { Redo(Th, TEXT("a thrower's window went by, its stick lit")); Kill(Th); Next(3); return; }
+				if (Wall - PhaseAt > 25.0) { Check(false, FString::Printf(TEXT("%s back fresh with its stick lit"), *Who())); Finish(); }
+				return;
+			}
 			Stout();
 			BaseStick();
 			if (Th == 0)
@@ -640,8 +685,16 @@ void UOutlawsCoop::TickHostSpawnGraceTest(double Now, AOutlawsLevelActor* L, AOu
 		case 4:
 			if (Th == 0 && L->BlastsSeen == BaseBlasts) BaseSelf = P->GetActorLocation();      // (from the blast on: the tick after the teleport can shift the body 70 cm, measured, before any blast)
 			if (Th == 0) UE_LOG(LogOutlawsCoop, Log, TEXT("OLSHOT spawngrace the host by its stick: +%.2f s, %s, speed %s, %d blast"), Wall - PhaseAt, *(P->GetActorLocation() - BaseSelf).ToCompactString(), *P->GetVelocity().ToCompactString(), L->BlastsSeen - BaseBlasts);
-			if (Wall - PhaseAt < 0.8) return;
-			Check(L->BlastsSeen > BaseBlasts && SpawnGraceOf(Th) && (bOldStick ? MatchHitsDealt == BaseDealt && HealthOf(Vi) == BaseOther : MatchHitsDealt > BaseDealt && HealthOf(Vi) < BaseOther),
+			// (the blast's word and the flag as it landed, not a look at 0.8 s; a stall that took the blast past the protection tries nothing:
+			// the case wants a blast in it, so it is done over from the throw)
+			if (Wall - PhaseAt < 0.8 || (!bBlastSeen && Wall - PhaseAt < 5.0) || (bBlastSeen && Wall - BlastSeenAt < 0.6)) return;
+			if (bBlastSeen && !bFlagAtBlast && Redos < RedoMost && !OLFlags::Param(TEXT("OLSpawnGraceNoRedo")))
+			{
+				Redo(Th, TEXT("the stick's blast came after the protection"));
+				Next(2);
+				return;
+			}
+			Check(bBlastSeen && bFlagAtBlast && (bOldStick ? MatchHitsDealt == BaseDealt && HealthOf(Vi) == BaseOther : MatchHitsDealt > BaseDealt && HealthOf(Vi) < BaseOther),
 				FString::Printf(TEXT("thrown by %s before its death, off in its protection: %s"), *Who(), *Took()));
 			if (Th == 0)
 			{
@@ -658,7 +711,12 @@ void UOutlawsCoop::TickHostSpawnGraceTest(double Now, AOutlawsLevelActor* L, AOu
 			return;
 		case 6:
 			if (Wall - PhaseAt < 1.0) return;      // (as case 3: case 4's thrower dies here still in the protection it came back to)
-			if (!Ready(Th)) { if (Wall - PhaseAt > 25.0) { Check(false, FString::Printf(TEXT("%s back fresh for its last stick"), *Who())); Finish(); } return; }
+			if (!Ready(Th))
+			{
+				if (Missed(Th)) { Redo(Th, TEXT("a thrower's window went by, for its last stick")); Kill(Th); Next(6); return; }
+				if (Wall - PhaseAt > 25.0) { Check(false, FString::Printf(TEXT("%s back fresh for its last stick"), *Who())); Finish(); }
+				return;
+			}
 			Stout();
 			if (DT) Until = DT->ProtectedUntil;
 			BaseStick();
@@ -666,7 +724,7 @@ void UOutlawsCoop::TickHostSpawnGraceTest(double Now, AOutlawsLevelActor* L, AOu
 			Next(7);
 			return;
 		default:
-			if (Wall < Until + 0.9) return;
+			if (Wall < Until + 0.9 || (!bBlastSeen && Wall < Until + 5.0) || (bBlastSeen && Wall - BlastSeenAt < 0.6)) return;
 			Check(L->BlastsSeen > BaseBlasts && !SpawnGraceOf(Th) && (bOldStick ? MatchHitsDealt > BaseDealt : MatchHitsDealt == BaseDealt && HealthOf(Vi) == BaseOther && FVector::Dist(BodyOf(Vi), BaseAt) < 30.0),
 				FString::Printf(TEXT("thrown by %s in its protection, off 0.3 s after it: %s"), *Who(), *Took()));
 			if (++StickThrower > 2)
@@ -712,7 +770,12 @@ void UOutlawsCoop::TickHostSpawnGraceTest(double Now, AOutlawsLevelActor* L, AOu
 			Next(1);
 			return;
 		case 1:
-			if (!Ready(Bot) || L->IsPlayerDead()) { if (Wall - PhaseAt > 20.0) { Check(false, TEXT("the bot back fresh for the shots")); Finish(); } return; }
+			if (!Ready(Bot) || L->IsPlayerDead())
+			{
+				if (Missed(Bot)) { Redo(Bot, TEXT("the bot's window went by")); Kill(Bot); Next(1); return; }
+				if (Wall - PhaseAt > 20.0) { Check(false, TEXT("the bot back fresh for the shots")); Finish(); }
+				return;
+			}
 			DB->ProtectedUntil = Wall + 150.0;
 			DH->ProtectedUntil = Wall + 150.0;
 			Beside(Bot);
