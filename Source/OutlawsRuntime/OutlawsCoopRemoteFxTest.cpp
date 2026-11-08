@@ -15,6 +15,7 @@
 #include "OutlawsPlayer.h"
 #include "OutlawsEnemy.h"
 #include "OutlawsMpHost.h"
+#include "OutlawsFlags.h"
 #include "OutlawsFormats.h"
 #include "OutlawsLab.h"
 #include "OutlawsRemotePlayer.h"
@@ -145,6 +146,7 @@ void UOutlawsCoop::TickHostRemoteFxTest(double Now, AOutlawsLevelActor* L, AOutl
 	// 3b. (BUG-REMOTETNT) a lit stick and a knife each way: the other machine draws them with the thrower's own look
 	case 1032:
 		if (Now < TestAt) return;
+		if (OLFlags::Param(TEXT("OLBlastMixProbe"))) { TestStep = 1060; RfBlasts0 = VerbBlastsShown; RfMixRound = 0; return; }
 		RemoteFxCheck(P->TestThrowTnt(P->GetActorLocation() + FVector(0.0, 0.0, 300.0), FVector::ZeroVector, 30.f), TEXT("the host threw a lit stick"));
 		TestStep = 1033;
 		TestAt = Now + 2.5;
@@ -234,6 +236,35 @@ void UOutlawsCoop::TickHostRemoteFxTest(double Now, AOutlawsLevelActor* L, AOutl
 		TestAt = Now + 3.0;
 		return;
 	}
+	// (REQ-SPAWNSTICK's mixed pair, -OLBlastMixProbe: the client is this build or another's, which holds only the steps above.  Three
+	// rounds of a stick each way, 5 m clear of everyone, each blast with the harmless word (NoteBlast): it must land on the far machine
+	// and nobody be dropped.  An older client has no "mixend": its log says what landed there, run_mix.ps1 counts it.)
+	case 1060:
+		if (Now < TestAt) return;
+		RemoteFxCheck(P->TestThrowTnt(P->GetActorLocation() + FVector(500.0, 0.0, 150.0), FVector(0.0, 0.0, 100.0), 2.f), TEXT("the host threw a lit stick"));
+		TestStep = 1061;
+		TestAt = Now + 4.0;
+		return;
+	case 1061:
+	{
+		if (Now < TestAt) return;
+		const FVector C = PuppetOf(RfClient) ? PuppetOf(RfClient)->GetActorLocation() : P->GetActorLocation();
+		TestSayTo(RfClient, *FString::Printf(TEXT("rf:tnt:%.0f,%.0f,%.0f"), C.X + 500.0, C.Y, C.Z), 0);
+		TestStep = 1062;
+		TestAt = Now + 6.0;
+		return;
+	}
+	case 1062:
+		if (Now < TestAt) return;
+		++RfMixRound;
+		RemoteFxCheck(VerbBlastsShown - RfBlasts0 >= RfMixRound && GetLink(RfClient) != nullptr,
+			FString::Printf(TEXT("round %d: the client's sticks landed here: %d, its link %s"), RfMixRound, VerbBlastsShown - RfBlasts0, GetLink(RfClient) ? TEXT("up") : TEXT("gone")));
+		if (RfMixRound < 3) { TestStep = 1060; return; }
+		TestSayTo(RfClient, TEXT("rf:mixend"), RfMixRound);
+		UE_LOG(LogOutlawsCoop, Display, TEXT("OLSHOT rf host RESULT %s (%d failed)"), RfFails == 0 ? TEXT("ALL PASS") : TEXT("FAIL"), RfFails);
+		TestStep = 1050;
+		TestAt = Now + 3.0;
+		return;
 	case 1050:
 		if (Now < TestAt) return;
 		TestSay(TEXT("quit"), 0);
@@ -308,6 +339,11 @@ void UOutlawsCoop::OnRemoteFxTestStep(const FString& Step, int32 Arg, AOutlawsLe
 		const bool bAir = P->TestTntState(Pos, bRest);
 		if (!L->bDead) L->DamagePlayer(1e6f, 1.f, true);
 		RemoteFxCheck(L->bDead && bAir && !bRest, TEXT("the client died with its stick in the air"));
+	}
+	else if (Step == TEXT("mixend"))
+	{
+		RemoteFxCheck(VerbBlastsShown >= Arg, FString::Printf(TEXT("the host's sticks landed here: %d of %d"), VerbBlastsShown, Arg));
+		UE_LOG(LogOutlawsCoop, Display, TEXT("OLSHOT rf client RESULT %s (%d failed)"), RfFails == 0 ? TEXT("ALL PASS") : TEXT("FAIL"), RfFails);
 	}
 	else if (Step == TEXT("report"))
 	{

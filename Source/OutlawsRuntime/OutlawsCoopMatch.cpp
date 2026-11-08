@@ -753,7 +753,7 @@ void UOutlawsCoop::OnMatchHit(int32 Shooter, int32 Epoch, int32 Victim, float Da
 // REQ-SPAWNSTICK (the user's ruling of 5 Nov) a stick is judged at the throw, not when it goes off.  Thrown during protection it deals
 // none, whenever it goes off; thrown after protection ends, full; thrown before a death and going off while the thrower is protected
 // after the respawn, full.  The machine that threw it judges (FThrown, FBotFlying: bots the same) and carries that to the blast
-// (BlastStickGrace): a harmless one reports nobody, throws nobody, and tells the far machines so (ServerBlast's bGrace); one that deals
+// (BlastStickGrace): a harmless one reports nobody, throws nobody, and tells the far machines so (BlastHarmlessWord, in the blast's Stick); one that deals
 // reaches the host as a blast, and NoteHit asks nothing of the thrower's protection now.  Protection still stops the thrower being
 // hurt or thrown (SpawnGraceShields, its own stick too).  What has no throw (a stick gone off in the hand, a barrel) is judged as it
 // goes off, as ever.  -OLOldSpawnStick: every stick judged at the blast, by the rules at each hit

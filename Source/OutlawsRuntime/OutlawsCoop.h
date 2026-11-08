@@ -701,9 +701,20 @@ public:
 	void ServerLevelStats(const FOutlawsLevelStats& In);
 
 	// ---- milestone 6 (OutlawsCoopVerbs.cpp): the shared world's verbs ----
-	/** A blast on the owner's machine (Stick: the pickup number of the stick that went off, -1 none known; bGrace, REQ-SPAWNSTICK: it deals nothing and throws nobody). */
+	/** A blast on the owner's machine (Stick: the pickup number of the stick that went off, -1 none known; or BlastHarmlessWord's). */
 	UFUNCTION(Server, Reliable)
-	void ServerBlast(int32 Epoch, FVector_NetQuantize10 Where, int32 Stick, bool bGrace);
+	void ServerBlast(int32 Epoch, FVector_NetQuantize10 Where, int32 Stick);
+	/** REQ-SPAWNSTICK: a blast that deals nothing and throws nobody says so in its Stick (a bit over any pickup number, the number + 1 below it).
+	 *  Never a new argument or a new message on this link: players on different builds join each other (2b7cc38, the user's ruling, 3 Nov),
+	 *  and either one dropped the other build's player, measured: a changed signature at the first blast, a new message (fields go by their
+	 *  place in the name-sorted list) at the first call after it.  A build before this reads a pickup it does not have: it still takes the blast. */
+	static int32 BlastHarmlessWord(int32 Stick, bool bHarmless) { return bHarmless ? (1 << 30) | (Stick + 1) : Stick; }
+	static bool ReadBlastWord(int32& Stick)
+	{
+		if (Stick < (1 << 30)) return false;
+		Stick = (Stick & ~(1 << 30)) - 1;
+		return true;
+	}
 	/** A change to the level on the owner's machine (UOutlawsCoop::EBit as a number): a wall blown, a pane shattered, a
 	 *  prop's reaction or a prop taken off its shelf, a lamp's shade broken, a lamp swung. */
 	UFUNCTION(Server, Reliable)
@@ -716,7 +727,7 @@ public:
 	void ServerThrow(int32 Epoch, uint8 Kind, FVector_NetQuantize10 Pos, FVector_NetQuantize10 Vel, float Grav, float Fuse);
 	// (to a client: From is the player who did it, the host or, N1, another client whose word the host passes on)
 	UFUNCTION(Client, Reliable)
-	void ClientBlast(int32 From, int32 Epoch, FVector_NetQuantize10 Where, int32 Stick, bool bGrace);
+	void ClientBlast(int32 From, int32 Epoch, FVector_NetQuantize10 Where, int32 Stick);
 	UFUNCTION(Client, Reliable)
 	void ClientWorldBit(int32 From, int32 Epoch, uint8 Kind, int32 Index, int32 Arg, FVector_NetQuantize100 Vec, float F);
 	UFUNCTION(Client, Unreliable)
@@ -1865,7 +1876,7 @@ private:
 	FString RemoteFxExpectedPistol(const FString& Short) const;
 	TMap<int32, FString> RfHeard;                // (the test's: the sound of the last shot of each player shown here)
 	TMap<int32, FString> RfFlash3D;              // (REQ-MUZZLEFLASH3D: the kind of 3D flash each player's last shot showed here)
-	int32 RfBot = -1, RfClient = -1, RfFails = 0, RfHits0 = 0, RfBlasts0 = 0;
+	int32 RfBot = -1, RfClient = -1, RfFails = 0, RfHits0 = 0, RfBlasts0 = 0, RfMixRound = 0;
 	// ---- REQ-FLICKRELOAD test (-OLFlickNetTest; OutlawsCoopFlickTest.cpp) ----
 	void TickHostFlickNetTest(double Now, AOutlawsLevelActor* L, AOutlawsPlayer* P);
 	void OnFlickNetTestStep(const FString& Step, int32 Arg, AOutlawsLevelActor* L, AOutlawsPlayer* P);
