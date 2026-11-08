@@ -89,6 +89,9 @@ namespace OutlawsBlastRifleProbeLocal
 	FWatch WatchPlayer, WatchBot, WatchSeen;
 	FVector BlastSpot = FVector::ZeroVector, BlastStick = FVector::ZeroVector, BotLaunch = FVector::ZeroVector;
 	double BlastRoom = 0.0;
+	/** (TEST-BRGRAVTICK, 8 Nov: hn02 read x1.50 on the tick the bot landed, 6.7 s after the blast) the gravity check waits for the landing, then the bot's next tick. */
+	uint64 BotGroundFrame = 0;
+	double BotBlastAt = 0.0, BotGroundAt = 0.0;
 	int32 SeenWho = -1;
 	bool bSeenOld = false, bSeenOpen = false;
 	double SeenUntil = 0.0, SeenRoom = 0.0;
@@ -636,6 +639,8 @@ void UOutlawsCoop::TickHostBlastRifleTest(double Now, AOutlawsLevelActor* L, AOu
 			if (!E) return;
 			WatchBot.Begin(BlastSpot);
 			L->Explode(BlastStick);
+			BotBlastAt = Now;
+			BotGroundFrame = 0;
 			// (the push as BlastThrow sums it for a player: 360 cm/s a point, 12 points inside a quarter of the radius, 0.7 up)
 			BotLaunch = E->PendingKnock;
 			{
@@ -658,8 +663,13 @@ void UOutlawsCoop::TickHostBlastRifleTest(double Now, AOutlawsLevelActor* L, AOu
 			if (Now < TestAt) return;
 			if (E)
 			{
+				// (still in the air: up to 4 s more; on the ground: the landing tick is noted and the check reads the next one)
+				if (!E->GetCharacterMovement()->IsMovingOnGround() && Now < TestAt + 4.0) return;
+				if (E->GetCharacterMovement()->IsMovingOnGround() && BotGroundFrame == 0) { BotGroundFrame = GFrameCounter; BotGroundAt = Now; return; }
+				if (BotGroundFrame != 0 && GFrameCounter <= BotGroundFrame) return;
 				Check(E->GetCharacterMovement()->IsMovingOnGround() && E->GetCharacterMovement()->GravityScale == 1.f,
-					FString::Printf(TEXT("the bot down again, its own gravity back: x%.2f, on the ground %d"), E->GetCharacterMovement()->GravityScale, E->GetCharacterMovement()->IsMovingOnGround() ? 1 : 0));
+					FString::Printf(TEXT("the bot down again, its own gravity back: x%.2f, on the ground %d, seen down %.1f s after the blast, read a tick later"),
+						E->GetCharacterMovement()->GravityScale, E->GetCharacterMovement()->IsMovingOnGround() ? 1 : 0, BotGroundFrame ? BotGroundAt - BotBlastAt : -1.0));
 			}
 			// the player next: the same spot, the same stick, in the headset's gravity (the probe's body is a desktop's, 4.59 g)
 			L->bInvincible = true;              // (the throw alone: a dead view is not thrown)
