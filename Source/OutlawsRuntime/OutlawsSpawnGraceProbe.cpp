@@ -598,7 +598,8 @@ void UOutlawsCoop::TickHostSpawnGraceTest(double Now, AOutlawsLevelActor* L, AOu
 			Next(1);
 			return;
 		case 1:
-			if (Wall - PhaseAt < 0.9) return;
+			// (the blast's word, not a fixed wait: a client that stalled had the step 1.09 s late, its host's last blast 1.69 s late, measured, past 0.9 s)
+			if (Wall - PhaseAt < 0.9 || ((L->BlastsSeen == BaseBlasts || MatchHitsDealt == BaseDealt) && Wall - PhaseAt < 5.0)) return;
 			Check(L->BlastsSeen > BaseBlasts && MatchHitsDealt > BaseDealt && HealthOf(Vi) < BaseOther, FString::Printf(TEXT("thrown by %s after its protection, off 0.3 s on: %s"), *Who(), *Took()));
 			Next(2);
 			return;

@@ -411,6 +411,22 @@ void UOutlawsCoop::TickHostBlastRifleTest(double Now, AOutlawsLevelActor* L, AOu
 		}
 		if (Phase == 1)
 		{
+			// (the other bots to the spawn furthest from this job's: one that stood in the line took the client's shot, "the client struck
+			// the client 14" and the job's bot 0.00, 2 runs of 13, old fall rule and new alike)
+			const AOutlawsEnemy* JobBot = B ? B->Brain.Get() : nullptr;
+			const FVector Mark = J.Target != 1 && JobBot ? JobBot->GetActorLocation() : P->GetActorLocation();
+			double BestAway = -1.0;
+			FVector Away = Mark;
+			for (const FOutlawsDmSpawn& Sp : Dm.GetSpawns())
+			{
+				const double D = FVector::Dist(Sp.Location, Mark);
+				if (D > BestAway) { BestAway = D; Away = Sp.Location; }
+			}
+			for (const int32 Id : BotIds)
+			{
+				const FBot* Other = Id != Who ? FindBot(Id) : nullptr;
+				if (AOutlawsEnemy* OE = Other ? Other->Brain.Get() : nullptr) OE->SetActorLocation(Away, false, nullptr, ETeleportType::TeleportPhysics);
+			}
 			const FString Hold = FString::Printf(TEXT("hold:%d"), J.Pull != 0 && !G.bRifle ? 0 : J.bHold ? 1 : 0);
 			if (J.Pull == 2)
 			{
