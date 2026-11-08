@@ -50,7 +50,7 @@ OL_SHOT_TEST(OLMenuOverlayProbe, 1310)
 		{
 			const OutlawsMenu::FSource& S = *MenuSource;
 			Check(S.HasOverlay() == bWant, FString::Printf(TEXT("the overlay is %s (want %s)"), S.HasOverlay() ? TEXT("open") : TEXT("not open"), bWant ? TEXT("open") : TEXT("not open")));
-			// the 38 entries build_menu_overlay.py writes (main_game_multi and progress are the user's too, kept the stock date;
+			// the 37 entries build_menu_overlay.py writes (main_game_multi and progress are the user's too, kept the stock date;
 			// nothing here reads them yet, so they are served but not parsed)
 			static const TCHAR* const Rml[] = { TEXT("campaign"), TEXT("dialog_legal"), TEXT("difficulty"), TEXT("extras"), TEXT("lobby_main"), TEXT("main"),
 				TEXT("main_game"), TEXT("multiplayer_driver"), TEXT("multiplayer_host_start"), TEXT("multiplayer_main"), TEXT("options"), TEXT("options_display"),
@@ -60,7 +60,7 @@ OL_SHOT_TEST(OLMenuOverlayProbe, 1310)
 				TEXT("select_rcp") };
 			static const TCHAR* const Other[] = { TEXT("menu/common.rcss"), TEXT("menu/dialog.rcss"), TEXT("menu/fragtable.rcss"), TEXT("menu/menu.rcss"),
 				TEXT("fonts/Rye-Regular.ttf"), TEXT("fonts/MontaguSlab-VariableFont_opsz,wght.ttf"), TEXT("fonts/MontaguSlab_24pt-Bold.ttf"),
-				TEXT("fonts/Ultra-Regular.ttf"), TEXT("menu/assets/Main_Base.dds"), TEXT("menu/main_game_multi.rml"), TEXT("menu/progress.rml") };
+				TEXT("fonts/Ultra-Regular.ttf"), TEXT("menu/main_game_multi.rml"), TEXT("menu/progress.rml") };
 			int32 Served = 0, Parsed = 0;
 			FString NotServed, NotParsed;
 			for (const TCHAR* R : Rml)
@@ -80,17 +80,19 @@ OL_SHOT_TEST(OLMenuOverlayProbe, 1310)
 				TEXT("Main_Background (the magenta placeholder) and loc_english not in the overlay"));
 			const FString Resume = S.Loc(TEXT("$m_local_6050"));
 			Check(!Resume.IsEmpty() && !Resume.StartsWith(TEXT("$")), FString::Printf(TEXT("the strings read from Common.kpf: $m_local_6050 = \"%s\""), *Resume));
-			// the parchment: the overlay's is an uncompressed 32-bit DDS (UI.kpf's is BC7), decoded from the bytes ReadArt gave
+			// (BUG-OVLPROBE-MAINBASE, 8 Nov: the user, "use the stock image") the overlay no longer carries Main_Base: its edited title
+			// block sat in the rows the VR title page crops, so the title was cut. The parchment is UI.kpf's BC7 one, overlay or not.
+			Check(!S.FromOverlay(TEXT("menu/assets/Main_Base.dds")), TEXT("Main_Base not in the overlay (the stock UI.kpf parchment shows)"));
 			TArray<uint8> D;
 			uint32 Bits = 0;
 			int32 W = 0, H = 0;
 			const bool bArt = S.ReadArt(TEXT("menu/assets/Main_Base.dds"), D) && D.Num() > 128;
 			if (bArt) { FMemory::Memcpy(&H, D.GetData() + 12, 4); FMemory::Memcpy(&W, D.GetData() + 16, 4); FMemory::Memcpy(&Bits, D.GetData() + 88, 4); }
 			const bool bDx10 = bArt && FMemory::Memcmp(D.GetData() + 84, "DX10", 4) == 0;
-			if (bWant) Check(bArt && !bDx10 && Bits == 32, FString::Printf(TEXT("Main_Base read as menu art: %d x %d, %u-bit, %s"), W, H, Bits, bDx10 ? TEXT("BC7 (UI.kpf's)") : TEXT("uncompressed (the overlay's)")));
+			Check(bArt && bDx10, FString::Printf(TEXT("Main_Base read as menu art: %d x %d, %s"), W, H, bDx10 ? TEXT("BC7 (UI.kpf's)") : TEXT("uncompressed (an old overlay's)")));
 			UTexture2D* Art = KpfArt(TEXT("Main_Base"));
 			Check(Art && Art->GetSizeX() == W && Art->GetSizeY() == H, FString::Printf(TEXT("KpfArt(Main_Base) decoded %d x %d"), Art ? Art->GetSizeX() : 0, Art ? Art->GetSizeY() : 0));
-			if (bWant) Check(MenuParchment && MenuParchment->GetSizeX() == W, FString::Printf(TEXT("the sheet's parchment (KpfDds) is the overlay's %d px wide one"), MenuParchment ? MenuParchment->GetSizeX() : 0));
+			if (bWant) Check(MenuParchment && MenuParchment->GetSizeX() == W, FString::Printf(TEXT("the sheet's parchment (KpfDds) is UI.kpf's %d px wide one"), MenuParchment ? MenuParchment->GetSizeX() : 0));
 			// the fonts: copied out to their own folder, Noto behind each for punctuation
 			TArray<uint8> Rye;
 			S.ReadFile(TEXT("fonts/Rye-Regular.ttf"), Rye);
