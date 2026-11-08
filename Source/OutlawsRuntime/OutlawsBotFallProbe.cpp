@@ -8,6 +8,7 @@
 // (the stick the host's): the rise, the landing, the rule's damage for that drop; the client's copy of its health the same.
 // 3. In its protection a fall takes nothing.  4. A drop over 45 m kills, the client sees it.  5. A thrown bot that dies on landing is
 // the thrower's kill, as ever.  Lines "OLSHOT botfall check PASS|FAIL: ..." and "OLSHOT botfall <host|client|story> RESULT".
+// -OLOldBotFall -OLBotFallWantNew (host): the old landing judged by the new rule's checks, the gate section's FAIL on the old code.
 
 #include "OutlawsCoop.h"
 #include "OutlawsRuntime.h"
@@ -41,7 +42,8 @@ namespace OutlawsBotFallProbeLocal
 	}
 	void Result(const TCHAR* Who)
 	{
-		UE_LOG(LogOutlaws, Display, TEXT("OLSHOT botfall %s RESULT %s (%d passed, %d failed%s)"), Who, Fails == 0 && Passes > 0 ? TEXT("ALL PASS") : TEXT("FAIL"), Passes, Fails, OLFlags::Param(TEXT("OLOldBotFall")) ? TEXT(", -OLOldBotFall") : TEXT(""));
+		UE_LOG(LogOutlaws, Display, TEXT("OLSHOT botfall %s RESULT %s (%d passed, %d failed%s%s)"), Who, Fails == 0 && Passes > 0 ? TEXT("ALL PASS") : TEXT("FAIL"), Passes, Fails, OLFlags::Param(TEXT("OLOldBotFall")) ? TEXT(", -OLOldBotFall") : TEXT(""),
+			OLFlags::Param(TEXT("OLBotFallWantNew")) ? TEXT(", -OLBotFallWantNew") : TEXT(""));
 	}
 	// what the original's rule says of a drop, written out apart from the game's own code: 0.2 x (sqrt(|GRAVITY| x h) - 45), h in units
 	float Sum(float Gravity, float DropCm) { return FMath::Max(0.f, 0.2f * (FMath::Sqrt(FMath::Abs(Gravity) * DropCm / 30.f) - 45.f)); }
@@ -52,7 +54,7 @@ void UOutlawsCoop::TickHostBotFallTest(double Now, AOutlawsLevelActor* L, AOutla
 	using namespace OutlawsBotFallProbeLocal;
 	const double Wall = FPlatformTime::Seconds();
 	FOutlawsMatchFlow& F = OutlawsMpHost::Flow();
-	const bool bOld = OLFlags::Param(TEXT("OLOldBotFall"));
+	const bool bOld = OLFlags::Param(TEXT("OLOldBotFall")) && !OLFlags::Param(TEXT("OLBotFallWantNew"));
 	L->bEnemiesActive = false;          // (the bots stand where they spawned, holding their fire)
 	UWorld* W = L->GetWorld();
 	FBot* B = FindBot(Bot);

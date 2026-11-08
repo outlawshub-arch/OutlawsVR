@@ -14,6 +14,9 @@
 //     -OLCoopJoin=.. -OLBlastRifleProbe: a blast between the two takes half (6) off each, no shot strikes a player, no bots.
 //   a story level, one machine: -OLShots -OLNoFrontEnd -OLLevel=<lv> -OLBlastRifleProbe=story [-OLOldBlastPlayer]: the health a blast
 //     takes point blank (own stick, a bad guy's), by distance and through a plate, and the level's throwers.
+//   In 1's kills on the client a pull waits for the client's word on the last one.  On the host, -OLBlastRifleStall=<ms> stalls the
+//   client that long after the second pull of the shotgun's edge cell, and -OLBlastRifleNoWord fires on the old fixed 0.8 s, so the
+//   FAIL a stalled client made ("4 hits to kill, want 3-3") can be had on demand.
 // Lines "OLSHOT blastrifle check PASS|FAIL: ...", "OLSHOT blastrifle table: ..." and "OLSHOT blastrifle <host|client|story> RESULT".
 
 #include "OutlawsCoop.h"
@@ -46,7 +49,9 @@ namespace OutlawsBlastRifleProbeLocal
 	constexpr double BodyRadius = 32.0;
 
 	int32 Passes = 0, Fails = 0, Cell = 0, Trial = 0, Count = 0, Lo = 99, Hi = 0, Sum = 0, Phase = 0, Client = -1, Job = 0, Spent = 0, Strayed = 0;
-	double PhaseAt = 0.0, NextAt = 0.0, SecondAt = 0.0;
+	int32 LateWords = 0, StallMs = 0;
+	double PhaseAt = 0.0, NextAt = 0.0, SecondAt = 0.0, PullAt = 0.0;
+	bool bWordWaited = false;
 	TArray<int32> BotIds;
 	TArray<FString> Table;
 	float Before = 0.f;
@@ -193,8 +198,8 @@ void UOutlawsCoop::TickHostBlastRifleTest(double Now, AOutlawsLevelActor* L, AOu
 	auto Finish = [&]()
 	{
 		for (const FString& T : Table) UE_LOG(LogOutlaws, Display, TEXT("OLSHOT blastrifle table: %s"), *T);
-		Result(TEXT("host"), *FString::Printf(TEXT("%s%s%s%s"), bOldPush ? TEXT(", -OLOldBotPush") : TEXT(""), Old(TEXT("OLOldRifleMp")) ? TEXT(", -OLOldRifleMp") : TEXT(""),
-			Old(TEXT("OLOldHitLocation")) ? TEXT(", -OLOldHitLocation") : TEXT(""), bOldBlast ? TEXT(", -OLOldBlastPlayer") : TEXT("")));
+		Result(TEXT("host"), *FString::Printf(TEXT("%s%s%s%s; the client's late words %d"), bOldPush ? TEXT(", -OLOldBotPush") : TEXT(""), Old(TEXT("OLOldRifleMp")) ? TEXT(", -OLOldRifleMp") : TEXT(""),
+			Old(TEXT("OLOldHitLocation")) ? TEXT(", -OLOldHitLocation") : TEXT(""), bOldBlast ? TEXT(", -OLOldBlastPlayer") : TEXT(""), LateWords));
 		TestSay(TEXT("quit"));
 		TestStep = 2399;
 		TestAt = Now + 3.0;
@@ -388,12 +393,34 @@ void UOutlawsCoop::TickHostBlastRifleTest(double Now, AOutlawsLevelActor* L, AOu
 			return;
 		}
 		if (Now < NextAt) return;
+		// (the client's word on the last pull before the next one, not the fixed 0.8 s alone: a client that stalled about 1.1 s took a
+		// pull's hurts with the next pull's, its kill on the third pull of the shotgun's edge read 4, 1 run of 35.  Up to 5 s, then on)
+		const bool bWord = Count == 0 || ClientDead() || ClientHealth() < Before;
+		if (!bWord)
+		{
+			bWordWaited = true;
+			if (!Old(TEXT("OLBlastRifleNoWord")) && Now < PullAt + 5.0) return;
+		}
+		if (bWordWaited)
+		{
+			++LateWords;
+			UE_LOG(LogOutlaws, Display, TEXT("OLSHOT blastrifle %s, %s, on the client: pull %d's word %s %.2f s after it (%s)"), G.Name, S.Name, Count,
+				bWord ? TEXT("came") : TEXT("was not in"), Now - PullAt, Old(TEXT("OLBlastRifleNoWord")) ? TEXT("-OLBlastRifleNoWord: the next pull goes now") : TEXT("the fixed 0.8 s would have gone on without it"));
+			bWordWaited = false;
+		}
 		NextAt = Now + 0.8;
 		if (!ClientDead() && Count < 16)
 		{
 			const FVector Eye = StandBeside(R->ShownBody());
+			Before = ClientHealth();
+			PullAt = Now;
 			Fire(this, L, Eye, Client, G, S);
 			++Count;
+			if (Cell == 8 && Count == 2 && OLFlags::Value(TEXT("OLBlastRifleStall"), StallMs) && StallMs > 0)
+			{
+				UE_LOG(LogOutlaws, Display, TEXT("OLSHOT blastrifle %s, %s, on the client: the client asked to stall %d ms after pull %d"), G.Name, S.Name, StallMs, Count);
+				TestSayTo(Client, TEXT("ml:brstall"), StallMs);
+			}
 			return;
 		}
 		int32 WLo, WHi;
@@ -747,6 +774,13 @@ void UOutlawsCoop::OnBlastRifleTestStep(const FString& Step, int32 Arg, AOutlaws
 	const UCameraComponent* Cam = P->Camera.Get();
 	const FVector Eye = Cam ? Cam->GetComponentLocation() : P->GetActorLocation();
 	if (Step == TEXT("brhealth")) { L->TestSetHealth(float(Arg)); return; }
+	if (Step == TEXT("brstall"))
+	{
+		// (-OLBlastRifleStall on the host: this frame stalls, as a loaded machine stalled one, and the next pull's hurts wait in the socket)
+		UE_LOG(LogOutlaws, Display, TEXT("OLSHOT blastrifle client: a stall of %d ms by hand, health %.1f"), Arg, L->GetHealth());
+		FPlatformProcess::Sleep(float(FMath::Clamp(Arg, 0, 10000)) / 1000.f);
+		return;
+	}
 	if (Step == TEXT("brshot"))
 	{
 		const int32 C = Arg / 16, Who = Arg % 16;
