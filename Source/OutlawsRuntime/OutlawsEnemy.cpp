@@ -1611,6 +1611,8 @@ void AOutlawsEnemy::Knock(const FVector& Dir, float Dealt, bool bBlast)
 		V = (V.GetSafeNormal2D() + FVector(0.0, 0.0, 0.4 + 2.0 * FMath::Max(0.0, V.Z))).GetSafeNormal();
 	}
 	float Speed = Dealt * (bBlast ? 360.f : 85.f) * (IsDead() ? 1.f : 0.25f);
+	// (BUG-KNIFEFLING) a hand's blow: no harder than a throw (the edge rule below still carries a body over a near drop)
+	if (KnockCapNow > 0.f && !bBlast) Speed = FMath::Min(Speed, KnockCapNow);
 	// (user 2026-10-03, REQ-LEDGEKNOCK: "shooting an enemy ... next to an edge with a big drop ... pushed them towards that
 	// edge") the Jedi engine only pushes along the shot (computeDamagePushVelocity, x4 on the killing hit); here a drop
 	// within 1.5 m, any way round (back toward the shooter too), turns the push onto it with the speed to go over: a kill
@@ -1633,7 +1635,11 @@ void AOutlawsEnemy::Knock(const FVector& Dir, float Dealt, bool bBlast)
 	// every pellet adds; the sum goes out on the next tick (LaunchCharacter keeps only its last call)
 	// (BUG-BLASTMISS: a match bot's flinch in the throw's own frame, a client's stick's hit coming in after it, is no shot's cap on it:
 	// that throw went out at 3000, up 1720)
-	PendingKnock = (PendingKnock + V * Speed).GetClampedToMaxSize(bBlast || bKnockAsPlayer ? 5200.f : 3000.f);
+	// (BUG-KNIFEFLING, MEASURED 9 Nov: three punches in a frame by a 50 cm step each pushed 480 toward it, summed, and he went at
+	// 2880 cm/s, 43 m) a hand's blows together no harder than a throw, or the edge rule's own push where it needs more
+	float Limit = bBlast || bKnockAsPlayer ? 5200.f : 3000.f;
+	if (KnockCapNow > 0.f && !bBlast) Limit = FMath::Min(Limit, FMath::Max(KnockCapNow, Speed));
+	PendingKnock = (PendingKnock + V * Speed).GetClampedToMaxSize(Limit);
 }
 
 void AOutlawsEnemy::TickFlightAsPlayer()
@@ -1655,11 +1661,14 @@ void AOutlawsEnemy::TickFlightAsPlayer()
 }
 
 bool AOutlawsEnemy::GNextHitMelee = false;
+float AOutlawsEnemy::GNextHitPushCap = 0.f;
 
 void AOutlawsEnemy::TakeHit(float Damage, const FVector& Point, const FVector& Dir, const FVector& From, bool bBlast, float KnockScale)
 {
 	const bool bMelee = GNextHitMelee;
 	GNextHitMelee = false;
+	KnockCapNow = GNextHitPushCap;
+	GNextHitPushCap = 0.f;
 	UOutlawsStats::NoteHit(this, From);       // (the level's end panels: who struck him, a shot on target)
 	if (CoopRole == 2)
 	{

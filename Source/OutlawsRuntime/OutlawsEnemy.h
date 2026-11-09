@@ -138,6 +138,11 @@ public:
 	 *  by the caller just before it.  A boss brought down by one is taken alive (OutlawsHom.cpp), and in a Historical
 	 *  Missions session such a hit on a boss does x100 (the exe's rule: one punch drops him). */
 	static bool GNextHitMelee;
+	/** (BUG-KNIFEFLING, the user 9 Nov: a stab or a punch sent bodies flying, "it should only get pushed back about as far as it
+	 *  does if I was to throw them") the next TakeHit's push, cm/s at most (0: none); set by the hand's stab, punch and swings.
+	 *  Its damage as it was. */
+	static float GNextHitPushCap;
+	float KnockCapNow = 0.f;
 	bool bTakenAlive = false;
 	/** REQ-ENEMYFLOAT (OutlawsEnemyFloat.cpp): in water deeper than he stands a living man floats, the water line at FloatLine
 	 *  of his height over his feet, and still wades, turns and shoots; thrown or fallen in he comes up to it; held under by a

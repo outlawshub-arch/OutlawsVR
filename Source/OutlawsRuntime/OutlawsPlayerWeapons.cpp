@@ -3543,6 +3543,7 @@ void AOutlawsPlayer::UpdateThrowable(int32 Hand, float Trigger, float Dt)
 			{
 				// the jab (FIRE 2: range 8 u, 4 damage)
 				AOutlawsEnemy::GNextHitMelee = true;          // (HM1: a knife's stab is melee)
+				AOutlawsEnemy::GNextHitPushCap = MeleePushCap();     // (BUG-KNIFEFLING)
 				E->TakeHit(W.Damage * FMath::FRandRange(0.9f, 1.1f) * L->PlayerDamageScale(), Tip, HandWorldVel[Hand].GetSafeNormal(), Tip - HandWorldVel[Hand].GetSafeNormal() * 30.f);
 				UE_LOG(LogOutlaws, Log, TEXT("OLRT %s knife stab into %s at %.0f cm/s (grip %.2f): %.1f"), Hand == 0 ? TEXT("left") : TEXT("right"), *E->GetOutlawsName(), HandVelocity[Hand].Size(),
 					Axis(Hand == 0 ? TEXT("OLVR_LeftGrip") : TEXT("OLVR_RightGrip")), W.Damage);
@@ -3680,6 +3681,7 @@ void AOutlawsPlayer::UpdatePunches(float Dt)
 					if (Share > 0.f)
 					{
 						const float Damage = Share * FMath::FRandRange(0.9f, 1.1f) * FMath::Clamp(Speed / 400.f, 0.6f, 1.5f);
+						AOutlawsEnemy::GNextHitPushCap = MeleePushCap();     // (BUG-KNIFEFLING)
 						E->TakeHit(Damage * L->PlayerDamageScale(), At, Vd, At - Vd * 30.f, false, 1.2f);
 						L->PlaySoundAt(TEXT("connect"), At);
 						UE_LOG(LogOutlaws, Log, TEXT("OLRT %s swung into %s at %.0f cm/s: %.2f"), *HeldTool[H], *E->GetName(), Speed, Damage);
@@ -3751,6 +3753,7 @@ void AOutlawsPlayer::UpdatePunches(float Dt)
 			const FVector Dir = V.GetSafeNormal();
 			AOutlawsEnemy::GNextHitMelee = true;              // (HM1: a fist is melee)
 			if (E == Held) ++TutNotes.HeldPunches;            // (REQ-TUTORIAL)
+			AOutlawsEnemy::GNextHitPushCap = MeleePushCap();     // (BUG-KNIFEFLING: a punch too, the user 9 Nov)
 			E->TakeHit(Damage * L->PlayerDamageScale(), Fist, Dir, Fist - Dir * 30.f);
 			L->PlaySoundAt(TEXT("connect"), Fist);         // the fist's FIRE_SOUND
 			PulseImpact(H, float(V.Size()));
@@ -4324,6 +4327,7 @@ void AOutlawsPlayer::UpdateTools(float Dt)
 				if (Struck)
 				{
 					const float Damage = (bShovel ? 1.4f : 1.2f) * FMath::FRandRange(0.9f, 1.1f);
+					AOutlawsEnemy::GNextHitPushCap = MeleePushCap();     // (BUG-KNIFEFLING: a tool's blow too)
 					Struck->TakeHit(Damage * L->PlayerDamageScale(), At, Dir, At - Dir * 30.f);
 					L->PlaySoundAt(TEXT("connect"), At);
 					PulseImpact(H, Swing);
@@ -6144,6 +6148,19 @@ FVector AOutlawsPlayer::DefaultGunLoc(int32 Weapon, bool bLeft)
 	return FVector(At.X, bLeft ? -At.Y : At.Y, At.Z);
 }
 
+float AOutlawsPlayer::MeleePushCap()
+{
+	// (BUG-KNIFEFLING) a toss's launch at a firm swing: a 400 cm/s hand, TossGain 1.5, a man's share 0.71: about 424 cm/s.
+	// -OLOldMeleePush: none (the point-blank x4 of a stab's or a punch's push, as before)
+	static const bool bOld = OLFlags::Param(TEXT("OLOldMeleePush"));
+	return bOld ? 0.f : 400.f * TossGain * ManThrowScale;
+}
+
+float AOutlawsPlayer::WeaponDamage(int32 Weapon)
+{
+	return Weapon >= 0 && Weapon < int32(UE_ARRAY_COUNT(GWeapons)) ? GWeapons[Weapon].Damage : 0.f;
+}
+
 FString AOutlawsPlayer::WeaponLabel(int32 Weapon)
 {
 	return Weapon >= 0 && Weapon < int32(UE_ARRAY_COUNT(GWeapons)) ? FString(GWeapons[Weapon].Label) : FString();
@@ -6384,6 +6401,9 @@ void AOutlawsPlayer::LetGoEnemy(int32 Hand, bool bThrow, const FVector* Launch)
 		bHeldFaded[Hand] = false;
 		if (AOutlawsSpriteActor* Spr = E->GetSprite()) Spr->SetFade(1.f);
 	}
+	// (BUG-KNIFEFLING, the user 9 Nov: "it should take away my knife's stabbing effect ... on release"; then "half a second rather
+	// than 1 second") let go of from a hand holding the knife: that knife stabs nothing for half a second.  -OLOldMeleePush: as before
+	if (E && MeleePushCap() > 0.f && Equipped[Hand] >= 0 && GWeapons[Equipped[Hand]].Throw == 2) KnifeCool[Hand] = FMath::Max(KnifeCool[Hand], 0.5f);
 	if (E)
 	{
 		// on the move he keeps the player's own pace too, so a push or a drop running is not run into (user 2026-10-01)

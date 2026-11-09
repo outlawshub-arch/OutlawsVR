@@ -2585,6 +2585,9 @@ private:
 	/** The baked placement for "weapon:<Label>" or "tool:<item>", the right hand's (the left: Y mirrored by the caller). */
 	static bool BakedGrip(const FString& What, FVector& Out);
 	static FString WeaponLabel(int32 Weapon);
+	static float WeaponDamage(int32 Weapon);       // (tests: BUG-KNIFEFLING's probe)
+	/** (BUG-KNIFEFLING) the hand's blows push no harder than a throw: cm/s at most (0 with -OLOldMeleePush). */
+	static float MeleePushCap();
 	int32 EditHand = -1;                          // the fist moving a thing
 	TWeakObjectPtr<USceneComponent> EditComp;
 	FTransform EditRel;                           // the thing in the moving fist's frame
