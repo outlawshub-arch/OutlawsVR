@@ -1248,6 +1248,14 @@ private:
 	TObjectPtr<class UStaticMeshComponent> MenuHoverBox[2];
 	UPROPERTY(Transient)
 	TObjectPtr<class UStaticMeshComponent> MenuLaser[2];
+	float PointerClaimLen[2] = { 0.f, 0.f };
+	uint64 PointerClaimFrame[2] = { 0, 0 };
+	bool bPointerByClaim[2] = { false, false };      // (the beam is out for a pop-up, the menu shut: put away when unclaimed)
+	bool PointerClaimed(int32 Hand) const { return PointerClaimFrame[Hand] + 1 >= GFrameCounter && PointerClaimFrame[Hand] != 0; }
+	UStaticMeshComponent* EnsurePointerBeam(int32 Hand);
+	void DrawPointerBeam(int32 Hand, const FVector& Origin, const FVector& Dir, float Length);
+	/** The pop-ups' beam with the menu shut (called at the top of UpdateHands; the menu draws its own when open). */
+	void UpdateSharedPointer();
 	UPROPERTY(Transient)
 	TObjectPtr<UTextRenderComponent> MenuTitle;
 	UPROPERTY(Transient)
@@ -1430,6 +1438,14 @@ private:
 	/** The title screens' pointing hand: the dominant one, or the other while only the other is tracked (RC1.1: a player
 	 *  with one working controller must still reach the front menu). */
 	int32 MenuPointerHand() const;
+	/** (BUG-DUALLASER, the user 9 Nov: a pop-up over the menu brought a second laser out of the same hand at another angle)
+	 *  The one pointer per hand: its ray (on the title pages the pointer hand's fingertip along the finger, the other hand
+	 *  none; else the controller's aim).  False: this hand has no pointer now.  The pop-ups (the network's and the updater's
+	 *  bubble, the tutorial card) aim with it and ClaimPointer the length to what they are on; the player draws the beam,
+	 *  the menu's own (MenuLaser), out to the nearest thing on the ray.  -OLOldDualLaser: each pop-up its own beam, as before. */
+	bool PointerRay(int32 Hand, FVector& Origin, FVector& Dir) const;
+	void ClaimPointer(int32 Hand, float Length);
+	static bool OldDualLaser();
 	float Axis(const TCHAR* Name) const;
 	FVector2D MoveStick() const;
 	FVector2D TurnStick() const;

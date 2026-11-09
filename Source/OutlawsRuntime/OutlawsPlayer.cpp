@@ -4331,6 +4331,7 @@ void AOutlawsPlayer::AlignHandFrames()
 
 void AOutlawsPlayer::UpdateHands(float Dt)
 {
+	UpdateSharedPointer();
 	OL_PERF_SCOPE("Player: hands");
 	if (!bVR)
 	{

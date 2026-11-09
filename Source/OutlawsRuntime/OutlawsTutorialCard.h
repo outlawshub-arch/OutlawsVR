@@ -58,6 +58,7 @@ private:
 	TObjectPtr<UStaticMeshComponent> Plane;
 	UPROPERTY(VisibleAnywhere)
 	TObjectPtr<UStaticMeshComponent> Laser[2];
+	bool bBeamOn[2] = { false, false };      // (BUG-DUALLASER: this card has the hand's pointer beam out to it)
 	UPROPERTY(Transient)
 	TObjectPtr<UCanvasRenderTarget2D> Canvas;
 	UPROPERTY(Transient)

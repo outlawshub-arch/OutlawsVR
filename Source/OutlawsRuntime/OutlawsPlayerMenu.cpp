@@ -229,8 +229,11 @@ void AOutlawsPlayer::OpenMenu(bool bFront)
 			MenuHoverBox[H] = Box(H == 0 ? FColor(120, 88, 40) : FColor(170, 120, 50), MenuRoot);
 			MenuHoverBox[H]->SetRelativeScale3D(FVector(0.004, (PanelW - 8.f) / 100.0, (PageRowStep() - 0.6f) / 100.0));
 			MenuHoverBox[H]->SetVisibility(false);
-			MenuLaser[H] = Box(FColor(255, 40, 30), AimOf(H));
-			MenuLaser[H]->SetMaterial(0, LaserMaterial());     // (spared the menu's tone on the headset: it hid them)
+			if (OldDualLaser() || !MenuLaser[H])
+			{
+				MenuLaser[H] = Box(FColor(255, 40, 30), AimOf(H));
+				MenuLaser[H]->SetMaterial(0, LaserMaterial());     // (spared the menu's tone on the headset: it hid them)
+			}
 			MenuLaser[H]->SetVisibility(false);
 		}
 		MenuTitle = Text(4.2f, FColor(240, 210, 150));
@@ -2935,6 +2938,8 @@ void AOutlawsPlayer::UpdateMenu(float Dt)
 			}
 		}
 		if (UOutlawsBeacon::HandOnBubble(this, H)) { Row = -1; bOnBack = false; }      // (R11: the join bubble in front of the menu has this hand)
+		// (BUG-DUALLASER) a pop-up in front of the menu on this hand's ray: the one beam stops on it
+		if (!OldDualLaser() && MenuLaser[H] && !bOffHand && bVR && PointerClaimed(H)) DrawPointerBeam(H, O, D, PointerClaimLen[H]);
 		if (bOnBack != MenuBackHover[H])
 		{
 			MenuBackHover[H] = bOnBack;
@@ -6057,3 +6062,84 @@ OL_SHOT_TEST(OLTriggerStepTest, 830)
 	TriggerStepTestTick();           // (REQ-TRIGGERSTEP: OutlawsPlayerMenu.cpp)
 }
 #endif // WITH_OUTLAWS_TESTS
+
+// (BUG-DUALLASER, 9 Nov) the one pointer per hand: the menu's beam, which the pop-ups in front of it stop
+bool AOutlawsPlayer::OldDualLaser()
+{
+	static const bool bOld = OLFlags::Param(TEXT("OLOldDualLaser"));
+	return bOld;
+}
+
+bool AOutlawsPlayer::PointerRay(int32 Hand, FVector& Origin, FVector& Dir) const
+{
+	const UMotionControllerComponent* Aim = AimOf(Hand);
+	if (!Aim) return false;
+	Origin = Aim->GetComponentLocation();
+	Dir = Aim->GetForwardVector();
+	if (bMenuOpen && bMenuPistol && bVR)
+	{
+		// the title pages: the pointer hand's finger, as the menu points (UpdateMenu); the other hand has none
+		if (Hand != MenuPointerHand()) return false;
+		if (const UOutlawsBoxHand* Box = Hand == 0 ? LeftHand.Get() : RightHand.Get())
+		{
+			const FTransform Bx = Box->GetComponentTransform();
+			Origin = Bx.TransformPosition(Box->IndexTip());
+			Dir = Bx.TransformVectorNoScale(Box->IndexWay()).GetSafeNormal();
+		}
+	}
+	return true;
+}
+
+void AOutlawsPlayer::ClaimPointer(int32 Hand, float Length)
+{
+	if (Hand < 0 || Hand > 1) return;
+	// the nearest claim of the frame wins (the top-most thing on the ray)
+	if (PointerClaimFrame[Hand] == GFrameCounter) PointerClaimLen[Hand] = FMath::Min(PointerClaimLen[Hand], Length);
+	else PointerClaimLen[Hand] = Length;
+	PointerClaimFrame[Hand] = GFrameCounter;
+}
+
+UStaticMeshComponent* AOutlawsPlayer::EnsurePointerBeam(int32 Hand)
+{
+	if (!MenuLaser[Hand])
+	{
+		UStaticMeshComponent* B = NewObject<UStaticMeshComponent>(this);
+		B->SetStaticMesh(LoadObject<UStaticMesh>(nullptr, TEXT("/Engine/BasicShapes/Cube.Cube")));
+		B->SetMaterial(0, LaserMaterial());
+		B->SetCollisionEnabled(ECollisionEnabled::NoCollision);
+		B->SetCastShadow(false);
+		B->SetupAttachment(AimOf(Hand));
+		B->RegisterComponent();
+		B->SetVisibility(false);
+		MenuLaser[Hand] = B;
+	}
+	return MenuLaser[Hand];
+}
+
+void AOutlawsPlayer::DrawPointerBeam(int32 Hand, const FVector& Origin, const FVector& Dir, float Length)
+{
+	UStaticMeshComponent* B = EnsurePointerBeam(Hand);
+	if (!B) return;
+	B->SetVisibility(Length > 0.f);
+	B->SetWorldLocationAndRotation(Origin + Dir * (Length * 0.5f), Dir.Rotation());
+	B->SetWorldScale3D(FVector(Length / 100.0, 0.003, 0.003));
+}
+
+void AOutlawsPlayer::UpdateSharedPointer()
+{
+	if (OldDualLaser() || bMenuOpen) return;            // (the menu draws the beam, a pop-up's claim with it)
+	for (int32 H = 0; H < 2; ++H)
+	{
+		FVector O, D;
+		if (bVR && PointerClaimed(H) && PointerRay(H, O, D))
+		{
+			DrawPointerBeam(H, O, D, PointerClaimLen[H]);
+			bPointerByClaim[H] = true;
+		}
+		else if (bPointerByClaim[H])
+		{
+			if (MenuLaser[H]) MenuLaser[H]->SetVisibility(false);
+			bPointerByClaim[H] = false;
+		}
+	}
+}

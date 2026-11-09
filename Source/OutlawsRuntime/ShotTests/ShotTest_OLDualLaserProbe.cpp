@@ -1,9 +1,9 @@
 // -OLShots -OLDualLaserProbe (BUG-DUALLASER, 9 Nov; the user: a small pop-up over the menu, the laser already out, brought a
 // SECOND red laser out of the same hand at another angle).  The title menu opens; then, each over it, the updater's bubble and
 // the network's "is playing" bubble, and each hand pointed at the bubble's middle.  Every visible laser in the world is counted
-// (any mesh in the laser's material), each put to the hand it starts nearest.  A line per scene and hand:
+// (the engine cube a few millimetres thick), each put to the hand it starts nearest.  A line per scene and hand:
 //   "OLSHOT duallaser <scene> <hand>: <n> beam(s) [<owner>/<component> <len> cm ...], <angle> deg, <cm> cm apart PASS|FAIL"
-// (PASS: at most one beam from the hand), then "OLSHOT duallaser RESULT <n> PASS, <m> FAIL".  With -OLDualLaserShot it shoots
+// (PASS: the pointer hand one beam, ending on the bubble; the other hand none), then "OLSHOT duallaser RESULT <n> PASS, <m> FAIL".  With -OLDualLaserShot it shoots
 // Saved\OLShots\ol_duallaser_<scene>.png too.
 
 #include "ShotTestCommon.h"
@@ -51,13 +51,16 @@ OL_SHOT_TEST(OLDualLaserProbe, 2577)
 		if (Wait < 1.5f) return;
 		if (OLFlags::Param(TEXT("OLDualLaserShot")))
 			FScreenshotRequest::RequestScreenshot(FPaths::ProjectSavedDir() / TEXT("OLShots") / FString(TEXT("ol_duallaser_")) + Names[Scene] + TEXT(".png"), false, false);
-		UMaterialInterface* LM = LaserMaterial();
 		struct FBeam { FString Who; FVector From, Dir; double Len; };
 		TArray<FBeam> Beams[2];
 		for (TObjectIterator<UStaticMeshComponent> It; It; ++It)
 		{
 			UStaticMeshComponent* C = *It;
-			if (!IsValid(C) || C->GetWorld() != GetWorld() || !C->IsRegistered() || !C->IsVisible() || !LM || C->GetMaterial(0) != LM) continue;
+			// (a beam: the engine cube drawn a few millimetres thick; each owner has its own instance of the laser's colour)
+			if (!IsValid(C) || C->GetWorld() != GetWorld() || !C->IsRegistered() || !C->IsVisible() || !C->GetStaticMesh()
+				|| C->GetStaticMesh()->GetName() != TEXT("Cube")) continue;
+			const FVector Sc = C->GetComponentScale();
+			if (Sc.Y > 0.006 || Sc.Z > 0.006 || Sc.X < 0.05) continue;
 			if (C->GetOwner() && C->GetOwner()->IsHidden()) continue;
 			const FVector Dir = C->GetForwardVector();
 			const double Len = C->GetComponentScale().X * 100.0;
@@ -80,7 +83,11 @@ OL_SHOT_TEST(OLDualLaserProbe, 2577)
 				Ang = FMath::RadiansToDegrees(FMath::Acos(FMath::Clamp(FVector::DotProduct(Beams[H][0].Dir, Beams[H][1].Dir), -1.0, 1.0)));
 				Apart = FVector::Dist(Beams[H][0].From, Beams[H][1].From);
 			}
-			const bool bOk = Beams[H].Num() <= 1;
+			// the pointer hand: one beam, stopping on the bubble (not out past it to the menu); the other hand: none, as the
+			// title menu points with one finger
+			const bool bPointer = H == MenuPointerHand();
+			const double ToBub = Bub.IsValid() ? FVector::Dist(AimOf(H)->GetComponentLocation(), Bub->GetActorLocation()) : 0.0;
+			const bool bOk = bPointer ? (Beams[H].Num() == 1 && Beams[H][0].Len < ToBub + 10.0) : Beams[H].Num() == 0;
 			(bOk ? Pass : Fail)++;
 			UE_LOG(LogOutlaws, Display, TEXT("OLSHOT duallaser %s %s: %d beam(s) [%s], %.1f deg, %.1f cm apart %s (pointer hand %s)"), Names[Scene],
 				H == 0 ? TEXT("left") : TEXT("right"), Beams[H].Num(), *List, Ang, Apart, bOk ? TEXT("PASS") : TEXT("FAIL"),

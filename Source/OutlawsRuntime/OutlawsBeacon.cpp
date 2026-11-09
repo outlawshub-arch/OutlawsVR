@@ -288,10 +288,15 @@ void AOutlawsJoinBubble::Tick(float DeltaSeconds)
 	{
 		int32 On = -1;
 		float Len = 0.f;
+		// (BUG-DUALLASER) aimed with the player's one pointer for this hand, which draws the beam: none of its own
+		const bool bOld = AOutlawsPlayer::OldDualLaser();
 		const UMotionControllerComponent* Aim = P->AimOf(H);
-		if (Aim)
+		FVector O, D;
+		const bool bRay = bOld ? (Aim != nullptr) : P->PointerRay(H, O, D);
+		if (bOld && Aim) { O = Aim->GetComponentLocation(); D = Aim->GetForwardVector(); }
+		if (!bRay) Laser[H]->SetVisibility(false);
+		if (bRay)
 		{
-			const FVector O = Aim->GetComponentLocation(), D = Aim->GetForwardVector();
 			const double Den = FVector::DotProduct(D, N);
 			if (FMath::Abs(Den) > 1e-3)
 			{
@@ -305,8 +310,9 @@ void AOutlawsJoinBubble::Tick(float DeltaSeconds)
 					if (Px.X >= 0.0 && Px.X <= BubblePxW && Px.Y >= 0.0 && Px.Y <= BubblePxH) Len = float(Dist);
 				}
 			}
-			Laser[H]->SetVisibility(Len > 0.f);
-			if (Len > 0.f)
+			Laser[H]->SetVisibility(bOld && Len > 0.f);
+			if (!bOld && Len > 0.f) P->ClaimPointer(H, Len);
+			if (bOld && Len > 0.f)
 			{
 				Laser[H]->SetWorldLocationAndRotation(O + D * (Len * 0.5f), D.Rotation());
 				Laser[H]->SetWorldScale3D(FVector(Len / 100.0, 0.003, 0.003));

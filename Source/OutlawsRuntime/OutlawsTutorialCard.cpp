@@ -119,7 +119,7 @@ void AOutlawsTutorialCard::Hide()
 {
 	bUp = false;
 	SetActorHiddenInGame(true);
-	for (int32 H = 0; H < 2; ++H) Laser[H]->SetVisibility(false);
+	for (int32 H = 0; H < 2; ++H) { Laser[H]->SetVisibility(false); bBeamOn[H] = false; }
 	if (AOutlawsPlayer* P = Cast<AOutlawsPlayer>(UGameplayStatics::GetPlayerPawn(this, 0))) P->bTutCardUp = false;
 }
 
@@ -347,6 +347,7 @@ FVector AOutlawsTutorialCard::TestButtonAt(int32 Button) const
 
 bool AOutlawsTutorialCard::TestLaserShown(int32 H) const
 {
+	if (!AOutlawsPlayer::OldDualLaser()) return bBeamOn[H & 1];
 	return Laser[H & 1] && Laser[H & 1]->IsVisible();
 }
 
@@ -361,7 +362,7 @@ void AOutlawsTutorialCard::Tick(float DeltaSeconds)
 	P->bTutCardUp = bShow;
 	if (!bShow)
 	{
-		for (int32 H = 0; H < 2; ++H) Laser[H]->SetVisibility(false);
+		for (int32 H = 0; H < 2; ++H) { Laser[H]->SetVisibility(false); bBeamOn[H] = false; }
 		return;
 	}
 	Place(DeltaSeconds);
@@ -375,10 +376,15 @@ void AOutlawsTutorialCard::Tick(float DeltaSeconds)
 		int32 On = -1;
 		float Len = 0.f;
 		const bool bGunThrough = Rise < 1.f && P->HandHoldsGun(H) && !TutCardOldGunPress();      // (REQ-TUTGUNFIRE: low, the card is no button to a gun)
-		if (bGunThrough) Laser[H]->SetVisibility(false);
-		else if (const UMotionControllerComponent* Aim = P->AimOf(H))
+		// (BUG-DUALLASER) aimed with the player's one pointer for this hand, which draws the beam: none of its own
+		const bool bOld = AOutlawsPlayer::OldDualLaser();
+		const UMotionControllerComponent* Aim = P->AimOf(H);
+		FVector O, D;
+		const bool bRay = !bGunThrough && (bOld ? (Aim != nullptr) : P->PointerRay(H, O, D));
+		if (bOld && Aim) { O = Aim->GetComponentLocation(); D = Aim->GetForwardVector(); }
+		if (!bRay) { Laser[H]->SetVisibility(false); bBeamOn[H] = false; }
+		else
 		{
-			const FVector O = Aim->GetComponentLocation(), D = Aim->GetForwardVector();
 			const double Den = FVector::DotProduct(D, N);
 			if (FMath::Abs(Den) > 1e-3)
 			{
@@ -392,8 +398,10 @@ void AOutlawsTutorialCard::Tick(float DeltaSeconds)
 					if (Px.X >= 0.0 && Px.X <= CardPxW && Px.Y >= 0.0 && Px.Y <= CardPxH) Len = float(Dd);
 				}
 			}
-			Laser[H]->SetVisibility(Len > 0.f);
-			if (Len > 0.f)
+			Laser[H]->SetVisibility(bOld && Len > 0.f);
+			if (!bOld && Len > 0.f) P->ClaimPointer(H, Len);
+			bBeamOn[H] = Len > 0.f;
+			if (bOld && Len > 0.f)
 			{
 				Laser[H]->SetWorldLocationAndRotation(O + D * (Len * 0.5f), D.Rotation());
 				Laser[H]->SetWorldScale3D(FVector(Len / 100.0, 0.003, 0.003));
