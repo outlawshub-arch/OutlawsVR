@@ -63,6 +63,19 @@ namespace OlItemModel
 		}
 	}
 
+	/** The floor model's json "sprite_world_cm" (its sprite's size in the world, the size the floor draws it), 0 if none. */
+	double ItemSpriteCm(const FString& JsonPath)
+	{
+		FString Text;
+		TSharedPtr<FJsonObject> J;
+		double Cm = 0.0;
+		if (FFileHelper::LoadFileToString(Text, *JsonPath) && FJsonSerializer::Deserialize(TJsonReaderFactory<>::Create(Text), J) && J.IsValid())
+		{
+			J->TryGetNumberField(TEXT("sprite_world_cm"), Cm);
+		}
+		return Cm;
+	}
+
 	double ItemWorldScale(const FString& JsonPath)
 	{
 		FString Text;
@@ -83,6 +96,7 @@ namespace
 {
 	using OlItemModel::SmoothItemNormals;
 	using OlItemModel::ItemWorldScale;
+	using OlItemModel::ItemSpriteCm;
 	using OlItemModel::ItemModelDir;
 
 	/** One item model, loaded once: its sections at the sprite's world size with smoothed normals, and whether it is
@@ -135,9 +149,22 @@ namespace
 			return Hit->Get();
 		}
 		TSharedPtr<FItemModelData> D;
-		const FString Path = FPaths::Combine(ItemModelDir(), Stem + TEXT(".obj"));
+		FString Path = FPaths::Combine(ItemModelDir(), Stem + TEXT(".obj"));
 		OutlawsObj::FObjMesh Obj;
 		if (!OutlawsItem3d::CanPaint()) return nullptr;        // (BUG-DEVDIR2) no level's sprites yet: asked again later
+		// (BUG-HELDVSGROUND, the user 8 Nov: "in all cases, I prefer the ones in my hand") a tool on the floor is the model the hand
+		// holds (item3d's held crowbar and shovel), its paint, at the floor's size (its sprite's, as every pickup), laid flat; the pickup (its reach,
+		// what takes it) as before.  The pen stays the floor's own inkwell and quill (the user, 9 Nov: "the floor pen should be the
+		// original floor pen").  -OLOldGroundItems: the floor's own models, as before
+		static const bool bOldGround = OLFlags::Param(TEXT("OLOldGroundItems"));
+		const TCHAR* HeldStem = Stem.Equals(TEXT("GCROWBAR"), ESearchCase::IgnoreCase) ? TEXT("GCROWBAR3D")
+			: Stem.Equals(TEXT("GSHOVEL"), ESearchCase::IgnoreCase) ? TEXT("GSHOVEL3D") : nullptr;
+		bool bHeldModel = false;
+		if (HeldStem && !bOldGround)
+		{
+			const FString Hp = FPaths::Combine(OutlawsItem3d::HeldDir(), FString(HeldStem) + TEXT(".obj"));
+			if (OutlawsItem3d::Exists(Hp)) { Path = Hp; bHeldModel = true; }
+		}
 		if (OutlawsItem3d::Exists(Path) && OutlawsItem3d::Load(Path, 1.0, true, Obj))
 		{
 			// (SCOPEFACES, FACETURN) item3d's generators wound some models' tubes and shells inward (the scope, lever, crowbar and
@@ -145,9 +172,31 @@ namespace
 			// the normals are worked out from the winding, so the headset's ink shell goes round it, not inside it (the floor
 			// draws both faces, so on the PC they looked right before).  -OLOldScopeFaces: as the files have them
 			OutlawsObj::FaceItemModelOutward(Obj, FString::Printf(TEXT("OLRT item model %s"), *Stem));
+			if (bHeldModel && Obj.Bounds.GetExtent().Z < Obj.Bounds.GetExtent().Y)
+			{
+				// a held model thinnest in Z (the shovel: its blade's width in Y), the floor laying a model flat by its thin Y:
+				// turned a quarter round X to match (the crowbar is thinnest in Y already, its hook in Z: as it is)
+				Obj.Bounds = FBox(ForceInit);
+				for (TPair<FString, FOutlawsMeshSection>& Kv : Obj.Sections)
+				{
+					for (FVector& P : Kv.Value.Positions) { P = FVector(P.X, -P.Z, P.Y); Obj.Bounds += P; }
+					for (FVector& N : Kv.Value.Normals) N = FVector(N.X, -N.Z, N.Y);
+				}
+				UE_LOG(LogOutlaws, Log, TEXT("OLRT item model %s: the held %s (BUG-HELDVSGROUND), %s cm"), *Stem, HeldStem, *Obj.Bounds.GetSize().ToString());
+			}
 			D = MakeShared<FItemModelData>();
 			D->Sections = MoveTemp(Obj.Sections);
-			const double Scale = ItemWorldScale(FPaths::Combine(ItemModelDir(), Stem + TEXT(".json")));
+			// the size: every floor model is drawn at its sprite's size in the world (its json's world_scale = sprite_world_cm over
+			// its real length); the held model the same (the user, 9 Nov: "the floor shapes should be bigger like other floor
+			// objects are"): the sprite's size over the held model's own length
+			double Scale = ItemWorldScale(FPaths::Combine(ItemModelDir(), Stem + TEXT(".json")));
+			if (bHeldModel)
+			{
+				const double Sprite = ItemSpriteCm(FPaths::Combine(ItemModelDir(), Stem + TEXT(".json")));
+				const double Len = Obj.Bounds.GetSize().GetMax();
+				if (Sprite > 0.0 && Len > 1.0) Scale = Sprite / Len;
+				UE_LOG(LogOutlaws, Log, TEXT("OLRT item model %s: the held shape at the sprite's %.1f cm (x%.3f)"), *Stem, Sprite, Scale);
+			}
 			D->WorldScale = float(Scale);
 			const FVector E = Obj.Bounds.GetExtent();
 			D->bFlat = E.Y < 0.25 * FMath::Max(E.X, E.Z);
@@ -157,7 +206,7 @@ namespace
 			if (FFileHelper::LoadFileToString(Text, *FPaths::Combine(ItemModelDir(), Stem + TEXT(".json"))) && FJsonSerializer::Deserialize(TJsonReaderFactory<>::Create(Text), J)
 				&& J.IsValid())
 			{
-				if (J->TryGetStringField(TEXT("lay"), Lay)) D->bFlat = Lay.Equals(TEXT("flat"), ESearchCase::IgnoreCase);
+				if (!bHeldModel && J->TryGetStringField(TEXT("lay"), Lay)) D->bFlat = Lay.Equals(TEXT("flat"), ESearchCase::IgnoreCase);
 				double V = 0.0;
 				if (J->TryGetNumberField(TEXT("spin"), V)) D->Spin = float(V);
 				if (J->TryGetNumberField(TEXT("hover_cm"), V)) D->Hover = float(V);
@@ -173,7 +222,7 @@ namespace
 				if (FFileHelper::LoadFileToString(TexText, *FPaths::Combine(OutlawsItem3d::ShippedDir(), Stem + TEXT("_tex.json"))) && FJsonSerializer::Deserialize(TJsonReaderFactory<>::Create(TexText), Tj)
 					&& Tj.IsValid() && Tj->TryGetObjectField(TEXT("base"), TexBase) && TexBase && (*TexBase)->TryGetNumberField(TEXT("atlas_cell"), Cell))
 				{
-					D->TracedCell = int32(Cell);
+					if (!bHeldModel) D->TracedCell = int32(Cell);     // (the held model was not traced from a sprite cell)
 				}
 				if (J->TryGetBoolField(TEXT("flames"), B)) D->bFlames = B;
 				if (J->TryGetBoolField(TEXT("hang"), B)) D->bHang = B;
