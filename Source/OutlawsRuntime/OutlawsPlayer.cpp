@@ -1904,6 +1904,8 @@ void AOutlawsPlayer::Tick(float Dt)
 		if (RPC && RPC->PlayerCameraManager) { RF.Eye = RPC->PlayerCameraManager->GetCameraLocation(); RF.View = RPC->PlayerCameraManager->GetCameraRotation(); }
 		else if (Camera) { RF.Eye = Camera->GetComponentLocation(); RF.View = Camera->GetComponentRotation(); }
 		RF.Velocity = GetVelocity();
+		if (Camera) RF.HeadInSpace = Camera->GetRelativeLocation();      // (the room-scale walk: the camera hangs off VROrigin)
+		if (VROrigin) RF.Space = VROrigin->GetComponentQuat();
 		RF.bOnGround = !GetCharacterMovement() || GetCharacterMovement()->IsMovingOnGround();
 		RF.Weapon = Equipped[LeftDominant() ? 0 : 1];
 		RF.Health = LR->GetHealth();

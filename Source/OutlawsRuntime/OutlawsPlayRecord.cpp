@@ -28,13 +28,16 @@ namespace
 	constexpr double AimCone = 20.0;              // a shot's target: the opponent nearest the aim line within this
 	constexpr int64 MaxBytes = 32ll * 1024 * 1024;        // a file stops growing here (a 10 minute match is far under it)
 	constexpr float SpeedRef = 0.225f;            // the pace at the match speed of 100 % (the plan, section 2)
+	constexpr double RoomJump = 400.0;            // a room speed over this in one sample is the headset recentring, not a step
+	constexpr double StickMoving = 50.0;          // a shot "on the move" by the stick: f and s at 100 % this fast or more
+	constexpr double RoomMoving = 30.0;           // a shot "on the move" in the room: rm this fast or more
 
 	struct FShot
 	{
 		double T = 0.0;
 		int32 W = -1, Pel = 1, Tgt = -1, Hits = 0, Heads = 0, HWho = -1;
 		bool bScoped = false, bLos = false;
-		float Fw = 0.f, Sd = 0.f;
+		float Fw = 0.f, Sd = 0.f, Rm = 0.f;
 		double Td = 0.0, Ta = 0.0, Hd = 0.0;
 		FString Label;
 	};
@@ -56,6 +59,9 @@ namespace
 		float LastHp = -1.f;
 		bool bWasDead = false;
 		float Fw = 0.f, Sd = 0.f;     // this frame's speeds (at 100 %)
+		float Rm = 0.f, Rf = 0.f, Rs = 0.f;     // the last sample's room walk (real cm/s)
+		FVector LastHead = FVector::ZeroVector;
+		double LastHeadAt = -1.0;
 		bool bPending = false;
 		FShot Shot;
 		int64 Bytes = 0;
@@ -65,6 +71,7 @@ namespace
 		{
 			for (int32 i = 0; i < MaxWho; ++i) { LastSeen[i] = -100.0; bSeenNow[i] = false; }
 			Engaged = -1; EngagedSeenAt = -100.0; LastHp = -1.f; bWasDead = false; bPending = false; Char.Reset(); Dial = -1.f;
+			Rm = Rf = Rs = 0.f; LastHead = FVector::ZeroVector; LastHeadAt = -1.0;
 		}
 	};
 
@@ -130,8 +137,9 @@ namespace
 		if (!R.bPending) return;
 		R.bPending = false;
 		const FShot& S = R.Shot;
-		FString L = FString::Printf(TEXT("{\"k\":\"shot\",\"t\":%.2f,\"w\":%d,\"wl\":\"%s\",\"pel\":%d,\"sc\":%d,\"f\":%d,\"s\":%d,\"tgt\":%d"),
-			S.T, S.W, *S.Label, S.Pel, S.bScoped ? 1 : 0, FMath::RoundToInt(S.Fw), FMath::RoundToInt(S.Sd), S.Tgt);
+		const int32 Mov = (FMath::Sqrt(S.Fw * S.Fw + S.Sd * S.Sd) >= StickMoving ? 1 : 0) | (S.Rm >= RoomMoving ? 2 : 0);
+		FString L = FString::Printf(TEXT("{\"k\":\"shot\",\"t\":%.2f,\"w\":%d,\"wl\":\"%s\",\"pel\":%d,\"sc\":%d,\"f\":%d,\"s\":%d,\"rm\":%d,\"mov\":%d,\"tgt\":%d"),
+			S.T, S.W, *S.Label, S.Pel, S.bScoped ? 1 : 0, FMath::RoundToInt(S.Fw), FMath::RoundToInt(S.Sd), FMath::RoundToInt(S.Rm), Mov, S.Tgt);
 		if (S.Tgt >= 0) L += FString::Printf(TEXT(",\"td\":%.0f,\"ta\":%.1f,\"los\":%d"), S.Td, S.Ta, S.bLos ? 1 : 0);
 		L += FString::Printf(TEXT(",\"hit\":%d,\"head\":%d"), S.Hits, S.Heads);
 		if (S.HWho >= 0) L += FString::Printf(TEXT(",\"hwho\":%d,\"hd\":%.0f"), S.HWho, S.Hd);
@@ -263,7 +271,7 @@ void OutlawsPlayRecord::Tick(AOutlawsPlayer* P, AOutlawsLevelActor* L, const FFr
 #else
 		const TCHAR* Plat = TEXT("windows");
 #endif
-		Line(FString::Printf(TEXT("{\"k\":\"hdr\",\"v\":1,\"char\":\"%s\",\"map\":\"%s\",\"dial\":%.3f,\"pace\":%.4f,\"speed\":%.0f,\"hpmax\":10,\"hz\":10,\"plat\":\"%s\"}"),
+		Line(FString::Printf(TEXT("{\"k\":\"hdr\",\"v\":2,\"char\":\"%s\",\"map\":\"%s\",\"dial\":%.3f,\"pace\":%.4f,\"speed\":%.0f,\"hpmax\":10,\"hz\":10,\"plat\":\"%s\"}"),
 			*Char, *R.Map, Dial, Pace, Dial * 200.f, Plat));
 		UE_LOG(LogOutlaws, Log, TEXT("OLRT play record on (%s): %s"), R.bFlag ? TEXT("-OLRecordPlay") : TEXT("RecordPlay in the settings"), *FPaths::GetCleanFilename(R.Path));
 	}
@@ -285,6 +293,25 @@ void OutlawsPlayRecord::Tick(AOutlawsPlayer* P, AOutlawsLevelActor* L, const FFr
 	if (T >= R.NextSample)
 	{
 		R.NextSample = FMath::Max(R.NextSample + SampleEvery, T - SampleEvery);
+		// the head's own walk in the room since the last sample: the camera's move in the play space (the headset's tracking),
+		// turned into the world by the play space's turn now (a turn of the body moves nothing here), then into the view's frame.
+		// The capsule's move (the stick, and the body sliding under the head) is the velocity above, never this.
+		{
+			const FVector Hd = F.HeadInSpace;
+			if (R.LastHeadAt >= 0.0 && T > R.LastHeadAt)
+			{
+				FVector Step = F.Space.RotateVector(Hd - R.LastHead);
+				Step.Z = 0.0;
+				FVector V = Step / (T - R.LastHeadAt);
+				if (V.Size() > RoomJump) V = FVector::ZeroVector;
+				const FVector Local = FRotator(0.0, F.View.Yaw, 0.0).UnrotateVector(V);
+				R.Rm = float(V.Size());
+				R.Rf = float(Local.X);
+				R.Rs = float(Local.Y);
+			}
+			R.LastHead = Hd;
+			R.LastHeadAt = T;
+		}
 		// sight: each living opponent in the view cone with a clear line from the eyes
 		const int32 Me = C->MyIndex();
 		double BestSeen = 1e12;
@@ -310,7 +337,8 @@ void OutlawsPlayRecord::Tick(AOutlawsPlayer* P, AOutlawsLevelActor* L, const FFr
 		if (BestWho >= 0 && (R.Engaged < 0 || !R.bSeenNow[R.Engaged])) R.Engaged = BestWho;
 		if (R.Engaged >= 0 && R.bSeenNow[R.Engaged]) R.EngagedSeenAt = T;
 		if (R.Engaged >= 0 && (T - R.EngagedSeenAt > EngageHold || !Living(C->PuppetOf(R.Engaged)))) R.Engaged = -1;
-		FString M = FString::Printf(TEXT("{\"k\":\"mv\",\"t\":%.2f,\"f\":%d,\"s\":%d,\"g\":%d,\"hp\":%.1f,\"w\":%d"), Rt, FMath::RoundToInt(R.Fw), FMath::RoundToInt(R.Sd), F.bOnGround ? 1 : 0, F.Health, F.Weapon);
+		FString M = FString::Printf(TEXT("{\"k\":\"mv\",\"t\":%.2f,\"f\":%d,\"s\":%d,\"rm\":%d,\"rf\":%d,\"rs\":%d,\"g\":%d,\"hp\":%.1f,\"w\":%d"), Rt, FMath::RoundToInt(R.Fw), FMath::RoundToInt(R.Sd),
+			FMath::RoundToInt(R.Rm), FMath::RoundToInt(R.Rf), FMath::RoundToInt(R.Rs), F.bOnGround ? 1 : 0, F.Health, F.Weapon);
 		if (R.Engaged >= 0)
 		{
 			const AOutlawsRemotePlayer* Op = C->PuppetOf(R.Engaged);
@@ -342,6 +370,7 @@ void OutlawsPlayRecord::NoteShot(AOutlawsLevelActor* L, int32 Weapon, const TCHA
 	S.bScoped = bScoped;
 	S.Fw = R.Fw;
 	S.Sd = R.Sd;
+	S.Rm = R.Rm;
 	// the target: the living opponent nearest the aim line within 20 degrees
 	const FVector D = Dir.GetSafeNormal();
 	double BestA = AimCone;
