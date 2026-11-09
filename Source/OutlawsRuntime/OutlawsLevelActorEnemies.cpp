@@ -2733,23 +2733,44 @@ bool AOutlawsLevelActor::IsNaturalSurface(const FString& Stem)
 	return false;
 }
 
+bool AOutlawsLevelActor::IsStochasticFloorStem(const FString& Stem)
+{
+	// (REQ-STOCHFLOOR) the user's own list (8 Nov), matched whole: the ice caves' ice and under-water ice, granite, the cliff's
+	// stones, the hay floors, the mill's MFEX1, the dry table land
+	static const TCHAR* Named[] = { TEXT("GFDRYTBL"), TEXT("Y1FICE2"), TEXT("Y1FICE3"), TEXT("Y1CIRK2"), TEXT("Y1FIUW"), TEXT("FGRNTE01"), TEXT("FGRNTE02"),
+		TEXT("GCGRNIT1"), TEXT("GCGRNIT2"), TEXT("DFSTON2"), TEXT("DFSTON3"), TEXT("DC3"), TEXT("HFHAYFLR"), TEXT("FWHAYFLR"), TEXT("MFEX1") };
+	for (const TCHAR* N : Named) if (Stem.Equals(N, ESearchCase::IgnoreCase)) return true;
+	return IsNaturalSurface(Stem);
+}
+
 void AOutlawsLevelActor::SetStochastic(bool bOn)
 {
 	bStochastic = bOn;
-	// the world materials are keyed "<parent>|<stem>" (MaterialFor)
+	// the world materials are keyed "<parent>|<stem>" (MaterialFor); (REQ-STOCHFLOOR) a stochastic texture's floors have their
+	// own, "<parent>~f|<stem>" (under water "<parent>~w<chain>~f|<stem>"), and only those take it: never a wall or a ceiling,
+	// never an animated texture's (the builder keeps those floors with the rest). -OLOldStochAll: every surface of a natural
+	// texture, walls and ceilings too, as before
+	static const bool bOldAll = OLFlags::Param(TEXT("OLOldStochAll"));
 	int32 Natural = 0;
 	for (const TPair<FString, TObjectPtr<UMaterialInstanceDynamic>>& Kv : Materials)
 	{
 		if (!Kv.Value) continue;
-		FString Parent, Stem;
-		if (!Kv.Key.Split(TEXT("|"), &Parent, &Stem)) continue;
-		Parent.Split(TEXT("~"), &Parent, nullptr);          // (under water: "<parent>~w<chain>")
+		FString Head, Parent, Stem, KeyTags;
+		if (!Kv.Key.Split(TEXT("|"), &Head, &Stem)) continue;
+		if (!Head.Split(TEXT("~"), &Parent, &KeyTags)) Parent = Head;      // (under water: "<parent>~w<chain>"; floors "~f")
 		if (!(Parent == TEXT("M_OLR_World") || Parent == TEXT("M_OLR_WorldMasked") || Parent == TEXT("M_OLR_WorldSkyThru"))) continue;
-		const bool bNat = IsNaturalSurface(Stem);
+		bool bNat = false;
+		if (bOldAll) bNat = IsNaturalSurface(Stem);
+		else
+		{
+			const FOutlawsTexInfo* TI = TexInfoCache.Find(Stem);
+			bNat = (KeyTags.StartsWith(TEXT("f")) || KeyTags.Contains(TEXT("~f"))) && IsStochasticFloorStem(Stem) && !(TI && (TI->bAtxLoop || TI->bAtxStops));
+		}
 		Natural += bNat ? 1 : 0;
 		Kv.Value->SetScalarParameterValue(TEXT("Stochastic"), bOn && bNat ? 1.f : 0.f);
 	}
-	UE_LOG(LogOutlaws, Log, TEXT("OLRT stochastic textures %s: %d natural surfaces"), bOn ? TEXT("on") : TEXT("off"), Natural);
+	UE_LOG(LogOutlaws, Log, TEXT("OLRT stochastic textures %s: %d %s"), bOn ? TEXT("on") : TEXT("off"), Natural,
+		bOldAll ? TEXT("natural surfaces (-OLOldStochAll: walls too)") : TEXT("floor materials"));
 }
 
 void AOutlawsLevelActor::ApplyHDDefault()

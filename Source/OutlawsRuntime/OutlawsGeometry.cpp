@@ -1,4 +1,5 @@
 #include "OutlawsGeometry.h"
+#include "OutlawsLevelActor.h"          // (REQ-STOCHFLOOR: IsStochasticFloorStem)
 #include "OutlawsFlags.h"
 #include "OutlawsLevel.h"
 #include "OutlawsTriangulate.h"
@@ -280,10 +281,11 @@ namespace
 }
 
 void FOutlawsGeometry::AddTo(TMap<FString, FOutlawsMeshSection>& Map, const FString& Tex, bool bMasked, const FVector* Pts, const FVector2D* UVs, int32 N, float Brightness, bool bReverse, bool bNoCollision, bool bSwirl, int32 WaterGroup, int64 AtxWall,
-	const FIntVector& Light, bool bSkyThru)
+	const FIntVector& Light, bool bSkyThru, bool bStochFloor)
 {
 	const FString Key = FString(bNoCollision ? TEXT("~") : TEXT("")) + (bMasked ? Tex + TEXT("|m") : Tex) + (WaterGroup >= 0 ? FString::Printf(TEXT("|w%d"), WaterGroup) : FString())
-		+ (AtxWall >= 0 ? FString::Printf(TEXT("|x%lld"), AtxWall) : FString()) + (Light.X >= 0 ? FString::Printf(TEXT("|L%d,%d,%d"), Light.X, Light.Y, Light.Z) : FString()) + (bSkyThru ? TEXT("|s") : TEXT(""));
+		+ (AtxWall >= 0 ? FString::Printf(TEXT("|x%lld"), AtxWall) : FString()) + (Light.X >= 0 ? FString::Printf(TEXT("|L%d,%d,%d"), Light.X, Light.Y, Light.Z) : FString()) + (bSkyThru ? TEXT("|s") : TEXT(""))
+		+ (bStochFloor ? TEXT("|f") : TEXT(""));       // (REQ-STOCHFLOOR)
 	FOutlawsMeshSection* S = Map.Find(Key);
 	if (!S)
 	{
@@ -293,6 +295,7 @@ void FOutlawsGeometry::AddTo(TMap<FString, FOutlawsMeshSection>& Map, const FStr
 		S->WaterGroup = WaterGroup;
 		S->AtxWall = AtxWall;
 		S->bSkyThru = bSkyThru;
+		S->bStochFloor = bStochFloor;
 		S->LightElev = Light.X;
 		S->LightOff = Light.Y;
 		S->LightWall = Light.Z;
@@ -472,6 +475,14 @@ void FOutlawsGeometry::Build(const FOutlawsLevel& L, const TMap<FString, FOutlaw
 			// the texture as the original lays it (FOutlawsLevel::SurfaceUV: flat, the world x/z; sloped, the hinge's frame,
 			// BUG-DAMAFTER; -OLOldDamAfter: a slope turned by its plane's angle, as before)
 			static const bool bOldDamAfter = OLFlags::Param(TEXT("OLOldDamAfter"));
+			// (REQ-STOCHFLOOR, the user 8 Nov: stochastic textures on floors only, never walls, never animated or scrolling floors)
+			// a floor of a stochastic texture goes in a section of its own, its material apart from the walls' and ceilings' of
+			// the same texture. Not an animated texture's, not a swirling floor's, not a water surface's; a scrolling floor is
+			// built by BuildScrolls, whose materials never take the key. -OLOldStochAll: one section a texture, as before
+			static const bool bOldStochAll = OLFlags::Param(TEXT("OLOldStochAll"));
+			const bool bStochFloor = bFloor && !bWater && !bSwirl && !bOldStochAll && !TI.bAtxLoop && !TI.bAtxStops
+				&& AOutlawsLevelActor::IsStochasticFloorStem(TexStem);
+			if (bStochFloor) Stat(TEXT("stoch_floor"));
 			for (int32 t = 0; t + 2 < Tris.Num(); t += 3)
 			{
 				FVector P[3];
@@ -489,7 +500,8 @@ void FOutlawsGeometry::Build(const FOutlawsLevel& L, const TMap<FString, FOutlaw
 					Swap(P[0], P[2]);
 					Swap(UV[0], UV[2]);
 				}
-				AddTo(bWater ? Water : World, TexStem, false, P, UV, 3, Bright(Lvl), bRev, false, bSwirl, bWater ? -1 : WG, -1, bWater ? FIntVector(-1, 0, 0) : LightOf(S.Index, 0));
+				AddTo(bWater ? Water : World, TexStem, false, P, UV, 3, Bright(Lvl), bRev, false, bSwirl, bWater ? -1 : WG, -1, bWater ? FIntVector(-1, 0, 0) : LightOf(S.Index, 0), false,
+					bStochFloor);
 			}
 			Stat(bFloor ? TEXT("floor") : TEXT("ceil"));
 		}

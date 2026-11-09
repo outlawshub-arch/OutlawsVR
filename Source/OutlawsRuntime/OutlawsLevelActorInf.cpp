@@ -3025,6 +3025,7 @@ void AOutlawsLevelActor::TickMoverBatches()
 					D.bMasked = S.bMasked;
 					D.WaterGroup = S.WaterGroup;
 					D.AtxWall = S.AtxWall;
+					D.bStochFloor = S.bStochFloor;      // (REQ-STOCHFLOOR: the key "|f" keeps a door's floors apart; their own material)
 				}
 				const int32 Base = D.Positions.Num();
 				for (const FVector& V : S.Positions) D.Positions.Add(T.TransformPosition(V));

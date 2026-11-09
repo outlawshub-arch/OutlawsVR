@@ -679,16 +679,17 @@ UProceduralMeshComponent* AOutlawsLevelActor::NewMeshComponent(const TCHAR* Name
 	return M;
 }
 
-UMaterialInstanceDynamic* AOutlawsLevelActor::MaterialFor(UMaterialInterface* Parent, const FString& TexKey, int32 WaterChain, int64 AtxWall)
+UMaterialInstanceDynamic* AOutlawsLevelActor::MaterialFor(UMaterialInterface* Parent, const FString& TexKey, int32 WaterChain, int64 AtxWall, bool bStochFloor)
 {
 	if (!Parent)
 	{
 		return nullptr;
 	}
 	// key "<parent>|<stem>", under water "<parent>~w<chain>|<stem>", a wall's own ATX "<parent>~x<key>|<stem>" (the
-	// texture toggles read the stem after the bar)
+	// texture toggles read the stem after the bar); (REQ-STOCHFLOOR) a stochastic texture's floors "<parent>~f|<stem>" (after
+	// the water's chain: "<parent>~w<chain>~f|<stem>"), the instance SetStochastic switches
 	const FString Key = Parent->GetName() + (WaterChain >= 0 ? FString::Printf(TEXT("~w%d"), WaterChain) : FString())
-		+ (AtxWall >= 0 ? FString::Printf(TEXT("~x%lld"), AtxWall) : FString()) + TEXT("|") + TexKey;
+		+ (AtxWall >= 0 ? FString::Printf(TEXT("~x%lld"), AtxWall) : FString()) + (bStochFloor ? TEXT("~f") : TEXT("")) + TEXT("|") + TexKey;
 	if (TObjectPtr<UMaterialInstanceDynamic>* Found = Materials.Find(Key))
 	{
 		return *Found;
@@ -945,7 +946,7 @@ int32 AOutlawsLevelActor::AddSections(UProceduralMeshComponent* Mesh, const TMap
 			// see-through mids too (BUG-WATERMIDTINT: bars under the water kept their own colours among tinted walls;
 			// M_OLR_WorldGlass has the world's OLWaterTint node since, tools\olue\ue_olue_glass_watertint.py)
 			const bool bNoTint = Opaque != WorldMaterial || (bOldWaterMidTint && Parent == WorldGlassMaterial);
-			Mesh->SetMaterial(Index, MaterialFor(Parent, S.Texture, bNoTint ? -1 : S.WaterGroup, S.AtxWall));
+			Mesh->SetMaterial(Index, MaterialFor(Parent, S.Texture, bNoTint ? -1 : S.WaterGroup, S.AtxWall, S.bStochFloor && Parent == WorldMaterial));   // (REQ-STOCHFLOOR)
 			// (BUG-TRANSPREGRESS) the glass goes under the water wherever the eye is: with no order of their own the two meshes
 			// went by how far their centres lie from the eye, so where the world's centre was the nearer the glass came after the
 			// water and painted the bars back over its surface, sharp and unveiled, where the walls round them are seen through

@@ -136,10 +136,12 @@ public:
 	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Outlaws")
 	bool bPaletteGrades = true;
 	/** The menu's Stochastic Textures (user 2026-09-28): natural ground and rock (dirt, gravel, sand, mud, rock,
-	 *  canyon, cliff) drawn without a visible repeat; buildings and wood never. */
+	 *  canyon, cliff) drawn without a visible repeat; buildings and wood never. (REQ-STOCHFLOOR, the user 8 Nov) floors only,
+	 *  never walls or ceilings, never an animated or scrolling floor; the user's fifteen ice, granite, stone and hay floors
+	 *  too (IsStochasticFloorStem). -OLOldStochAll: every surface of a natural texture, walls too, as before. */
 	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Outlaws")
 	bool bStochastic = true;
-	/** Switch it (every world material of a natural texture takes it at once). */
+	/** Switch it (every floor material of a stochastic texture takes it at once). */
 	void SetStochastic(bool bOn);
 	/** The options' Multiplayer page (user 2026-10-02), saved at once in OutlawsSettings.ini with the rest:
 	 *  "MpMicrophone" 0 / 1 (default 0): this player's voice goes to the other player (normal loudness in the lobby,
@@ -286,6 +288,15 @@ public:
 	TMap<FString, TWeakObjectPtr<class AOutlawsSpriteActor>> CellGens;
 	/** A level texture of natural ground or rock, by its name (GFDIRTMN, GWREDROK, GWCANYON, FGRND00, GFBRN2...). */
 	static bool IsNaturalSurface(const FString& Stem);
+	/** (REQ-STOCHFLOOR) a texture whose floors take the Stochastic Textures switch: a natural one (IsNaturalSurface) or one of
+	 *  the fifteen the user named on 8 Nov (ice, granite, stone, hay floors). Floors only: never its walls or ceilings. */
+	static bool IsStochasticFloorStem(const FString& Stem);
+#if WITH_OUTLAWS_TESTS
+	/** (REQ-STOCHFLOOR, -OLStochFloorProbe) every drawn world section's faces by kind (floor, wall, ceiling) and the Stochastic
+	 *  value its material holds, checked against the rule; one line per stem asked for, the checks' counts added to Pass /
+	 *  Fail. OutSpots: per stem asked for, the middle of its biggest floor triangle (for the floor shots). */
+	void StochFloorSurvey(const TArray<FString>& Stems, int32& Pass, int32& Fail, TMap<FString, FVector>& OutSpots);
+#endif
 
 	/** The saved menu settings (Saved/OutlawsSettings.ini, key=value lines). */
 	static TMap<FString, FString> ReadSettings();
@@ -2926,7 +2937,8 @@ private:
 	void ZoneForceOff(TSet<int32>& Hide, TSet<int32>& Unseen) const;
 private:
 	/** WaterChain >= 0: the instance for that texture under that chain's water (its WaterTint / WaterSurface set). */
-	UMaterialInstanceDynamic* MaterialFor(UMaterialInterface* Parent, const FString& TexKey, int32 WaterChain = -1, int64 AtxWall = -1);
+	/** bStochFloor (REQ-STOCHFLOOR): the floors' own instance of a stochastic texture ("<parent>~f|<stem>"), the one SetStochastic switches. */
+	UMaterialInstanceDynamic* MaterialFor(UMaterialInterface* Parent, const FString& TexKey, int32 WaterChain = -1, int64 AtxWall = -1, bool bStochFloor = false);
 	/** Marks the sections to collide and cooks the mesh's collision once (TEXLOAD). */
 	static void CookCollisionOnce(UProceduralMeshComponent* Mesh, const TArray<int32>& Collide);
 	int32 AddSections(UProceduralMeshComponent* Mesh, const TMap<FString, FOutlawsMeshSection>& Sections, bool bCollision, UMaterialInterface* Opaque, UMaterialInterface* Masked, int32& OutTris, int32 FirstSection = 0, TArray<int32>* OutCollide = nullptr);
