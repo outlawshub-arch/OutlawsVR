@@ -3,6 +3,7 @@
 #include "Misc/FileHelper.h"
 #include "OutlawsUnlocks.h"
 #include "OutlawsAchievements.h"
+#include "OutlawsPlayRecord.h"
 #include "OutlawsCoopVoicePipe.h"
 #include "OutlawsDeathmatch.h"
 #include "OutlawsMpPolish.h"
@@ -1895,6 +1896,23 @@ void AOutlawsPlayer::Tick(float Dt)
 	if (StaminaProbeOn()) TickStaminaProbe(Dt);       // (REQ-STAMINA15: -OLStaminaProbe)
 	if (JumpStaminaProbeOn()) TickJumpStaminaProbe(Dt);   // (REQ-JUMPSTAMINA: -OLJumpStaminaProbe)
 	OutlawsAchievements::Tick(this, Level.Get(), Dt);     // (REQ-EXTRAS: an achievement's toast once there is somewhere to show it)
+	// (REQ-BOTMIMIC) the play recorder: it writes only in a match, and only when -OLRecordPlay or RecordPlay=1 turned it on
+	if (AOutlawsLevelActor* LR = Level.Get(); LR && (OutlawsPlayRecord::IsRecording() || UOutlawsCoop::IsMatchActive(LR)))
+	{
+		OutlawsPlayRecord::FFrame RF;
+		const APlayerController* RPC = Cast<APlayerController>(GetController());
+		if (RPC && RPC->PlayerCameraManager) { RF.Eye = RPC->PlayerCameraManager->GetCameraLocation(); RF.View = RPC->PlayerCameraManager->GetCameraRotation(); }
+		else if (Camera) { RF.Eye = Camera->GetComponentLocation(); RF.View = Camera->GetComponentRotation(); }
+		RF.Velocity = GetVelocity();
+		RF.bOnGround = !GetCharacterMovement() || GetCharacterMovement()->IsMovingOnGround();
+		RF.Weapon = Equipped[LeftDominant() ? 0 : 1];
+		RF.Health = LR->GetHealth();
+		RF.bDead = LR->IsPlayerDead();
+		RF.Character = UOutlawsCoop::KitCharacterFor(this);
+		const UOutlawsCoop* RC = UOutlawsCoop::Get(this);
+		RF.bMatchLive = RC && RC->IsMatch() && RC->bLevelBuilt && !RC->bMatchPending;
+		OutlawsPlayRecord::Tick(this, LR, RF);
+	}
 	// both sticks kept in for 1.5 s: mark this moment for the perf report (and no recenter at the release)
 #if WITH_OUTLAWS_TESTS
 	if (OLFlags::Param(TEXT("OLTestStickChord"))) TickStickChordTest();

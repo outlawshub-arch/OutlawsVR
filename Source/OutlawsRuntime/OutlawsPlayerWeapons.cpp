@@ -16,6 +16,7 @@
 #include "OutlawsDeathmatch.h"
 #include "OutlawsFormats.h"
 #include "OutlawsAchievements.h"
+#include "OutlawsPlayRecord.h"
 #include "Engine/CanvasRenderTarget2D.h"
 #include "Engine/Canvas.h"
 #include "Engine/Font.h"
@@ -7940,6 +7941,7 @@ void AOutlawsPlayer::FireGun(int32 Hand, bool bFan)
 	// every pellet (a shotgun's SHOT_MULTIPLES, both barrels' worth) scatters within SPREAD_1 about the
 	// aim; the first one is the one the flash, tracer and smoke follow
 	const int32 Pellets = FMath::Max(1, W.Pellets) * Rounds;
+	if (L) OutlawsPlayRecord::NoteShot(L, Wi, W.Label, Pellets, bScopedShot, From, ShotDir);     // (REQ-BOTMIMIC: the recorder, when it is on)
 	FCollisionQueryParams Q(SCENE_QUERY_STAT(OutlawsShot), true, this);
 	if (const AOutlawsLevelActor* LQ = Level.Get()) LQ->IgnoreHiddenOverlaps(Q);     // the hidden side of overlapping rooms
 	FHitResult Hit;

@@ -11,6 +11,7 @@
 // Story co-op never sees any of it: AOutlawsCoopSession::MatchClass stays 0 and every hook asks IsMatch() first.
 #include "OutlawsCoop.h"
 #include "OutlawsAchievements.h"
+#include "OutlawsPlayRecord.h"
 #include "OutlawsFlags.h"
 #include "OutlawsRuntime.h"
 #include "OutlawsLevelActor.h"
@@ -657,6 +658,7 @@ bool UOutlawsCoop::ShotAtPlayers(AOutlawsLevelActor* L, const FVector& From, con
 	UE_LOG(LogOutlawsCoop, Log, TEXT("OLMATCH shot hits the %s at %.0f m for %.1f%s (%s)"), WhoWord(Best), BestT / 100.0, Damage, Blow == uint8(EOutlawsMatchBlow::ScopedHead) ? TEXT(", scoped, in the head") : bScoped ? TEXT(", scoped") : TEXT(""),
 		C->IsHost() ? TEXT("the host deals it") : TEXT("reported to the host"));
 	if (!C->SpawnGraceOf(Best) && !C->SpawnGraceOf(C->MyIndex())) L->SpawnBlood(OutAt, Dir, 2);      // (REQ-SPAWNGRACE: it will deal nothing)
+	OutlawsPlayRecord::NoteHit(Best, BestT, C->InDrawnHead(Best, BestP));     // (REQ-BOTMIMIC: the recorder's hit, head or body, when it is on)
 	if (C->IsHost()) C->OnMatchHit(0, C->LevelEpoch(), Best, Damage, OutAt, From, false, Blow, Spot);
 	else if (AOutlawsCoopLink* Mine = C->GetLink(C->MyIndex())) Mine->ServerPlayerHit(C->LevelEpoch(), Best, Damage, OutAt, From, false, Blow, Spot);
 	return true;
