@@ -142,6 +142,9 @@ public:
 	 *  does if I was to throw them") the next TakeHit's push, cm/s at most (0: none); set by the hand's stab, punch and swings.
 	 *  Its damage as it was. */
 	static float GNextHitPushCap;
+	/** (BUG-MELEEDAMAGE, the user 9 Nov: "Use the base damage") the next TakeHit is a hand's blow (the knife's jab, a punch, a tool's
+	 *  or the lantern's swing): no point-blank x4 on its damage or its push; the height bonus as for any hit.  -OLOldMeleeDamage. */
+	static bool GNextHitHand;
 	float KnockCapNow = 0.f;
 	bool bTakenAlive = false;
 	/** REQ-ENEMYFLOAT (OutlawsEnemyFloat.cpp): in water deeper than he stands a living man floats, the water line at FloatLine

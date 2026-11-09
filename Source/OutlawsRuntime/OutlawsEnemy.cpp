@@ -1662,6 +1662,7 @@ void AOutlawsEnemy::TickFlightAsPlayer()
 
 bool AOutlawsEnemy::GNextHitMelee = false;
 float AOutlawsEnemy::GNextHitPushCap = 0.f;
+bool AOutlawsEnemy::GNextHitHand = false;
 
 void AOutlawsEnemy::TakeHit(float Damage, const FVector& Point, const FVector& Dir, const FVector& From, bool bBlast, float KnockScale)
 {
@@ -1669,6 +1670,10 @@ void AOutlawsEnemy::TakeHit(float Damage, const FVector& Point, const FVector& D
 	GNextHitMelee = false;
 	KnockCapNow = GNextHitPushCap;
 	GNextHitPushCap = 0.f;
+	static const bool bOldMeleeDamage = OLFlags::Param(TEXT("OLOldMeleeDamage"));
+	const bool bHandBase = GNextHitHand && !bOldMeleeDamage;      // (BUG-MELEEDAMAGE: a hand's blow, no point-blank x4)
+	GNextHitHand = false;
+	const float PointBlank = bHandBase ? 1.f : 4.f;
 	UOutlawsStats::NoteHit(this, From);       // (the level's end panels: who struck him, a shot on target)
 	if (CoopRole == 2)
 	{
@@ -1687,7 +1692,7 @@ void AOutlawsEnemy::TakeHit(float Damage, const FVector& Point, const FVector& D
 	{
 		// the rest of a shotgun's pellets and later blasts still push the body, and it still bleeds
 		if (AOutlawsLevelActor* L = Level.Get()) L->SpawnBlood(Point, Dir, 1);
-		Knock(Dir, Damage * KnockScale * (FVector::Dist(From, GetActorLocation()) < 7.0 * UnitCm ? 4.f : 1.f), bBlast);
+		Knock(Dir, Damage * KnockScale * (FVector::Dist(From, GetActorLocation()) < 7.0 * UnitCm ? PointBlank : 1.f), bBlast);
 		return;
 	}
 	// [EXE 0x140088150]: the outer third of the body x0.5, the chest (middle band above mid height)
@@ -1698,7 +1703,7 @@ void AOutlawsEnemy::TakeHit(float Damage, const FVector& Point, const FVector& D
 	const bool bHigh = Point.Z > Centre.Z;
 	float Mult = Across > 2.0 / 3.0 ? 0.5f : (bHigh && Across < 1.0 / 3.0 ? 2.f : 1.f);
 	if (IsDucking()) Mult *= 0.5f;
-	if (FVector::Dist(From, Centre) < 7.0 * UnitCm) Mult *= 4.f;
+	if (FVector::Dist(From, Centre) < 7.0 * UnitCm) Mult *= PointBlank;
 	if (bBlast) Mult = 1.f;          // a blast's falloff already set its damage
 	if (bMelee && bBoss)
 	{

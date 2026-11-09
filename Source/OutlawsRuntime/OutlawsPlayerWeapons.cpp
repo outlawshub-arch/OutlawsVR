@@ -3543,7 +3543,7 @@ void AOutlawsPlayer::UpdateThrowable(int32 Hand, float Trigger, float Dt)
 			{
 				// the jab (FIRE 2: range 8 u, 4 damage)
 				AOutlawsEnemy::GNextHitMelee = true;          // (HM1: a knife's stab is melee)
-				AOutlawsEnemy::GNextHitPushCap = MeleePushCap();     // (BUG-KNIFEFLING)
+				AOutlawsEnemy::GNextHitPushCap = MeleePushCap(); AOutlawsEnemy::GNextHitHand = true;     // (BUG-KNIFEFLING)
 				E->TakeHit(W.Damage * FMath::FRandRange(0.9f, 1.1f) * L->PlayerDamageScale(), Tip, HandWorldVel[Hand].GetSafeNormal(), Tip - HandWorldVel[Hand].GetSafeNormal() * 30.f);
 				UE_LOG(LogOutlaws, Log, TEXT("OLRT %s knife stab into %s at %.0f cm/s (grip %.2f): %.1f"), Hand == 0 ? TEXT("left") : TEXT("right"), *E->GetOutlawsName(), HandVelocity[Hand].Size(),
 					Axis(Hand == 0 ? TEXT("OLVR_LeftGrip") : TEXT("OLVR_RightGrip")), W.Damage);
@@ -3681,7 +3681,7 @@ void AOutlawsPlayer::UpdatePunches(float Dt)
 					if (Share > 0.f)
 					{
 						const float Damage = Share * FMath::FRandRange(0.9f, 1.1f) * FMath::Clamp(Speed / 400.f, 0.6f, 1.5f);
-						AOutlawsEnemy::GNextHitPushCap = MeleePushCap();     // (BUG-KNIFEFLING)
+						AOutlawsEnemy::GNextHitPushCap = MeleePushCap(); AOutlawsEnemy::GNextHitHand = true;     // (BUG-KNIFEFLING)
 						E->TakeHit(Damage * L->PlayerDamageScale(), At, Vd, At - Vd * 30.f, false, 1.2f);
 						L->PlaySoundAt(TEXT("connect"), At);
 						UE_LOG(LogOutlaws, Log, TEXT("OLRT %s swung into %s at %.0f cm/s: %.2f"), *HeldTool[H], *E->GetName(), Speed, Damage);
@@ -3753,7 +3753,7 @@ void AOutlawsPlayer::UpdatePunches(float Dt)
 			const FVector Dir = V.GetSafeNormal();
 			AOutlawsEnemy::GNextHitMelee = true;              // (HM1: a fist is melee)
 			if (E == Held) ++TutNotes.HeldPunches;            // (REQ-TUTORIAL)
-			AOutlawsEnemy::GNextHitPushCap = MeleePushCap();     // (BUG-KNIFEFLING: a punch too, the user 9 Nov)
+			AOutlawsEnemy::GNextHitPushCap = MeleePushCap(); AOutlawsEnemy::GNextHitHand = true;     // (BUG-KNIFEFLING: a punch too, the user 9 Nov)
 			E->TakeHit(Damage * L->PlayerDamageScale(), Fist, Dir, Fist - Dir * 30.f);
 			L->PlaySoundAt(TEXT("connect"), Fist);         // the fist's FIRE_SOUND
 			PulseImpact(H, float(V.Size()));
@@ -4331,7 +4331,7 @@ void AOutlawsPlayer::UpdateTools(float Dt)
 				if (Struck)
 				{
 					const float Damage = (bShovel ? 1.4f : 1.2f) * FMath::FRandRange(0.9f, 1.1f);
-					AOutlawsEnemy::GNextHitPushCap = MeleePushCap();     // (BUG-KNIFEFLING: a tool's blow too)
+					AOutlawsEnemy::GNextHitPushCap = MeleePushCap(); AOutlawsEnemy::GNextHitHand = true;     // (BUG-KNIFEFLING: a tool's blow too)
 					Struck->TakeHit(Damage * L->PlayerDamageScale(), At, Dir, At - Dir * 30.f);
 					L->PlaySoundAt(TEXT("connect"), At);
 					PulseImpact(H, Swing);
