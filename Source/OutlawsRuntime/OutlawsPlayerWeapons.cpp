@@ -4066,6 +4066,10 @@ void AOutlawsPlayer::BuildToolModel(int32 Hand, bool bShovel)
 		{
 			TSharedPtr<OutlawsObj::FObjMesh> Obj = MakeShared<OutlawsObj::FObjMesh>();
 			if (!OutlawsItem3d::Exists(P) || !OutlawsItem3d::Load(P, 1.0, true, *Obj, Level.Get())) Obj.Reset();
+			// (REQ-SPRITEPAINT, the user 9 Nov: "Yes, original paint") the original floor crowbar's and shovel's paint on these,
+			// from the player's own install.  -OLOldHeldPaint: item3d's flat colours, as before
+			static const bool bSpritePaint = !OLFlags::Param(TEXT("OLOldHeldPaint"));
+			if (Obj.IsValid() && bSpritePaint && !bPen) OutlawsItem3d::PaintFromFloorSprite(*Obj, bShovel ? TEXT("GSHOVEL") : TEXT("GCROWBAR"), Level.Get());
 			Cached = &GObjCache.Add(P, Obj);
 		}
 		UMaterialInterface* Base = HeldBase();

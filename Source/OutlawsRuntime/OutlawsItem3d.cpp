@@ -1904,3 +1904,120 @@ UTexture2D* OutlawsItem3d::Texture(const FString& Key, AOutlawsLevelActor* L)
 	}
 	return T;
 }
+
+bool OutlawsItem3d::PaintFromFloorSprite(OutlawsObj::FObjMesh& M, const FString& FloorStem, AOutlawsLevelActor* L)
+{
+	SetLevel(L);
+	const FString Key = FPaths::Combine(ShippedDir(), FloorStem + TEXT(".png"));
+	const FString Recipe = RecipeOf(Key);
+	const TSharedPtr<FJsonObject> J = LoadJson(Recipe);
+	if (!J.IsValid() || !M.Bounds.IsValid) return false;
+	TArray<FColor> Px;
+	int32 W = 0, H = 0;
+	FString Err;
+	if (!Paint(GLevel.Get(), Recipe, Px, W, H, Err) || W <= 0 || H <= 0) return false;
+	if (OLFlags::Param(TEXT("OLSpritePaintDump")))
+	{
+		// (the preview's own look at the painted texture: Saved\OLShots\spritepaint_<stem>.png; the player's own sprite, local only)
+		TArray64<uint8> Png;
+		FImageUtils::PNGCompressImageArray(W, H, TArrayView64<const FColor>(Px.GetData(), Px.Num()), Png);
+		FFileHelper::SaveArrayToFile(Png, *(FPaths::ProjectSavedDir() / TEXT("OLShots") / (TEXT("spritepaint_") + FloorStem + TEXT(".png"))));
+	}
+	// the sprite's rectangle in the texture (the recipe's base), then its solid texels' box within it
+	int32 Ax = 0, Ay = 0, Aw = W, Ah = H;
+	const TSharedPtr<FJsonObject>* Base = nullptr;
+	if (J->TryGetObjectField(TEXT("base"), Base) && Base)
+	{
+		const TArray<TSharedPtr<FJsonValue>>* At = nullptr;
+		const TArray<TSharedPtr<FJsonValue>>* Sz = nullptr;
+		if ((*Base)->TryGetArrayField(TEXT("at"), At) && At->Num() == 2) { Ax = int32((*At)[0]->AsNumber()); Ay = int32((*At)[1]->AsNumber()); }
+		if ((*Base)->TryGetArrayField(TEXT("size"), Sz) && Sz->Num() == 2) { Aw = int32((*Sz)[0]->AsNumber()); Ah = int32((*Sz)[1]->AsNumber()); }
+	}
+	int32 X0 = INT32_MAX, X1 = -1, Y0 = INT32_MAX, Y1 = -1;
+	TArray<int32> ColTall;
+	ColTall.Init(0, Aw);
+	for (int32 y = Ay; y < FMath::Min(H, Ay + Ah); ++y)
+	{
+		for (int32 x = Ax; x < FMath::Min(W, Ax + Aw); ++x)
+		{
+			if (Px[y * W + x].A <= 127) continue;
+			X0 = FMath::Min(X0, x); X1 = FMath::Max(X1, x); Y0 = FMath::Min(Y0, y); Y1 = FMath::Max(Y1, y);
+			++ColTall[x - Ax];
+		}
+	}
+	if (X1 < X0 || Y1 < Y0) return false;
+	// the heavy end: the sprite's taller end (the shovel's blade, the crowbar's hook) against the model's wider end
+	const int32 Slice = FMath::Max(1, (X1 - X0 + 1) * 15 / 100);
+	int32 SpLeft = 0, SpRight = 0;
+	for (int32 i = 0; i < Slice; ++i) { SpLeft += ColTall[X0 - Ax + i]; SpRight += ColTall[X1 - Ax - i]; }
+	const FVector Ext = M.Bounds.GetSize();
+	// (a recipe with a tall block, the crowbar's rust-spotted bar strip the floor model's own paint is made of: the sprite draws
+	// the bar at a slant, so the held bar takes the strip along its length instead, its thin side across)
+	const TArray<TSharedPtr<FJsonValue>>* Blocks = nullptr;
+	if (J->TryGetArrayField(TEXT("blocks"), Blocks) && Blocks->Num() > 0)
+	{
+		const TSharedPtr<FJsonObject> Bo = (*Blocks)[0]->AsObject();
+		const TArray<TSharedPtr<FJsonValue>>* R = nullptr;
+		if (Bo.IsValid() && Bo->TryGetArrayField(TEXT("rect"), R) && R->Num() == 4)
+		{
+			const int32 Bx0 = int32((*R)[0]->AsNumber()), By0 = int32((*R)[1]->AsNumber()), Bx1 = int32((*R)[2]->AsNumber()), By1 = int32((*R)[3]->AsNumber());
+			if (By1 - By0 > 2 * (Bx1 - Bx0))
+			{
+				const double MinX2 = M.Bounds.Min.X, LenX2 = FMath::Max(1e-3, Ext.X);
+				const double MinY2 = M.Bounds.Min.Y, LenY2 = FMath::Max(1e-3, Ext.Y);
+				for (TPair<FString, FOutlawsMeshSection>& Kv : M.Sections)
+				{
+					FOutlawsMeshSection& S = Kv.Value;
+					S.UVs.SetNum(S.Positions.Num());
+					for (int32 v = 0; v < S.Positions.Num(); ++v)
+					{
+						const FVector& P = S.Positions[v];
+						const double Along = (P.X - MinX2) / LenX2, Across = (P.Y - MinY2) / LenY2;
+						S.UVs[v] = FVector2D((Bx0 + 0.5 + Across * (Bx1 - Bx0 - 1)) / double(W), (By0 + 0.5 + Along * (By1 - By0 - 1)) / double(H));
+					}
+					S.Texture = Key;
+				}
+				UE_LOG(LogOutlaws, Log, TEXT("OLRT sprite paint preview: %s over the held model, its bar strip %d,%d..%d,%d of %dx%d along its length"), *FloorStem, Bx0, By0, Bx1, By1, W, H);
+				return true;
+			}
+		}
+	}
+	const bool bUseZ = Ext.Z > Ext.Y;                 // (the side view: the model's length and its larger other extent)
+	const double MinX = M.Bounds.Min.X, LenX = FMath::Max(1e-3, Ext.X);
+	const double MinB = bUseZ ? M.Bounds.Min.Z : M.Bounds.Min.Y, LenB = FMath::Max(1e-3, bUseZ ? Ext.Z : Ext.Y);
+	double LoB[2] = { 1e9, 1e9 }, HiB[2] = { -1e9, -1e9 };
+	for (const TPair<FString, FOutlawsMeshSection>& Kv : M.Sections)
+	{
+		for (const FVector& P : Kv.Value.Positions)
+		{
+			const double T = (P.X - MinX) / LenX;
+			const double B = bUseZ ? P.Z : P.Y;
+			for (int32 e = 0; e < 2; ++e)
+			{
+				if ((e == 0 && T <= 0.15) || (e == 1 && T >= 0.85)) { LoB[e] = FMath::Min(LoB[e], B); HiB[e] = FMath::Max(HiB[e], B); }
+			}
+		}
+	}
+	const bool bModelHeavyHigh = (HiB[1] - LoB[1]) > (HiB[0] - LoB[0]);
+	const bool bSpriteHeavyRight = SpRight > SpLeft;
+	static const bool bFlipU = OLFlags::Param(TEXT("OLSpritePaintFlipU")), bFlipV = OLFlags::Param(TEXT("OLSpritePaintFlipV"));
+	const bool bReverseU = (bModelHeavyHigh != bSpriteHeavyRight) != bFlipU;
+	for (TPair<FString, FOutlawsMeshSection>& Kv : M.Sections)
+	{
+		FOutlawsMeshSection& S = Kv.Value;
+		S.UVs.SetNum(S.Positions.Num());
+		for (int32 v = 0; v < S.Positions.Num(); ++v)
+		{
+			const FVector& P = S.Positions[v];
+			double T = (P.X - MinX) / LenX;
+			double B = ((bUseZ ? P.Z : P.Y) - MinB) / LenB;
+			if (bReverseU) T = 1.0 - T;
+			if (!bFlipV) B = 1.0 - B;                   // (the picture's rows run down)
+			S.UVs[v] = FVector2D((X0 + 0.5 + T * (X1 - X0)) / double(W), (Y0 + 0.5 + B * (Y1 - Y0)) / double(H));
+		}
+		S.Texture = Key;
+	}
+	UE_LOG(LogOutlaws, Log, TEXT("OLRT sprite paint preview: %s over the held model (%s side view), sprite box %d..%d x %d..%d of %dx%d, %s"),
+		*FloorStem, bUseZ ? TEXT("X-Z") : TEXT("X-Y"), X0, X1, Y0, Y1, W, H, bReverseU ? TEXT("turned end for end") : TEXT("as it lies"));
+	return true;
+}

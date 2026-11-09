@@ -42,6 +42,11 @@ namespace OutlawsItem3d
 	OUTLAWSRUNTIME_API void SetLevel(AOutlawsLevelActor* L);
 	/** False while the shipped form is read and no level has been seen yet (a model looked for then is not "none"). */
 	OUTLAWSRUNTIME_API bool CanPaint();
+	/** (REQ-SPRITEPAINT, the user 9 Nov: the original floor crowbar's and shovel's paint on the hand's models; -OLOldHeldPaint: off)
+	 *  M (a held model, cm, its length along X) given the floor model FloorStem's painted texture (its sprite, from the player's
+	 *  install): its side view laid over the sprite's solid area, its heavy end (the blade, the hook) on the sprite's.  False:
+	 *  no paint (left as it was). */
+	OUTLAWSRUNTIME_API bool PaintFromFloorSprite(OutlawsObj::FObjMesh& M, const FString& FloorStem, AOutlawsLevelActor* L);
 
 	/** Pillow's Image.resize(size, LANCZOS) of RGBA texels (premultiplied as Pillow does): olue_export's for an HD frame
 	 *  whose size is not 4x its cell's (the sprites the generators traced were made so). */

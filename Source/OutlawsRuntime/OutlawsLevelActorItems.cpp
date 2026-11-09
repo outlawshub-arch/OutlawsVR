@@ -172,6 +172,9 @@ namespace
 			// the normals are worked out from the winding, so the headset's ink shell goes round it, not inside it (the floor
 			// draws both faces, so on the PC they looked right before).  -OLOldScopeFaces: as the files have them
 			OutlawsObj::FaceItemModelOutward(Obj, FString::Printf(TEXT("OLRT item model %s"), *Stem));
+			// (REQ-SPRITEPAINT) the held shape with the floor model's own sprite paint, as in the hand.  -OLOldHeldPaint: flat colours
+			static const bool bSpritePaint = !OLFlags::Param(TEXT("OLOldHeldPaint"));
+			if (bHeldModel && bSpritePaint) OutlawsItem3d::PaintFromFloorSprite(Obj, Stem.ToUpper(), nullptr);
 			if (bHeldModel && Obj.Bounds.GetExtent().Z < Obj.Bounds.GetExtent().Y)
 			{
 				// a held model thinnest in Z (the shovel: its blade's width in Y), the floor laying a model flat by its thin Y:
