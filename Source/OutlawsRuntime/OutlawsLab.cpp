@@ -17,6 +17,7 @@
 #include "OutlawsLevelActor.h"         // the settings file (InstallPath=)
 #include "OutlawsUpdate.h"             // REQ-AUTOUPDATE: an update's native maps on the Quest
 #include "OutlawsInstallWindows.h"
+#include "OutlawsLanguage.h"          // REQ-LANGUAGE: the language LABs
 #if PLATFORM_ANDROID
 #include <dirent.h>                    // (BUG-QUESTNATIVEMAPS: the native maps listing's diagnosis)
 #include <errno.h>
@@ -163,6 +164,10 @@ int32 FOutlawsAssets::Open(const FString& InRoot)
 	NativeLevels.Reset();
 	Overlay.Reset();
 	OverlayOwner = nullptr;
+	// (REQ-LANGUAGE) none until UseLanguage below
+	Language = TEXT("en");
+	LangLabs.Reset();
+	LangIndex.Reset();
 	bOldNativeMount = OldNativeMount();
 	if (NumStockLabs > 0)
 	{
@@ -211,7 +216,81 @@ int32 FOutlawsAssets::Open(const FString& InRoot)
 			}
 		}
 	}
+	// (REQ-LANGUAGE) the language in force now, so a menu or a file read before the first level build reads it too
+	if (NumStockLabs > 0) UseLanguage(OLLanguage::Current());
 	return Labs.Num();
+}
+
+bool FOutlawsAssets::UseLanguage(const FString& Code)
+{
+	const FString Want = OLLanguage::Old() ? FString(TEXT("en")) : OLLanguage::Normalize(Code).IsEmpty() ? FString(TEXT("en")) : OLLanguage::Normalize(Code);
+	if (Want == Language && (Want != TEXT("en") || LangLabs.Num() == 0)) return false;
+	const FString Was = Language;
+	const int32 WasLabs = LangLabs.Num();
+	LangLabs.Reset();                                        // (the old language's handles closed)
+	LangIndex.Reset();
+	TArray<FString> Names;
+	for (const FString& Lab : OLLanguage::LabsFor(Want))
+	{
+		const FString Candidates[2] = { FPaths::Combine(Root, Lab), FPaths::Combine(Root, TEXT("assets"), Lab) };
+		for (const FString& P : Candidates)
+		{
+			if (!FPaths::FileExists(P)) continue;
+			TSharedPtr<FOutlawsLabFile> File = MakeShared<FOutlawsLabFile>();
+			if (!File->Open(P)) break;
+			const int32 At = LangLabs.Add(File);
+			Names.Add(Lab);
+			for (const TPair<FString, int32>& Kv : File->GetIndex())
+			{
+				if (!LangIndex.Contains(Kv.Key)) LangIndex.Add(Kv.Key, TPair<int32, int32>(At, Kv.Value));
+			}
+			break;
+		}
+	}
+	if (Want != TEXT("en") && LangLabs.Num() == 0)
+	{
+		UE_LOG(LogOutlaws, Log, TEXT("OLRT language: %s asked, none of its LABs (%s) is in %s: English"), *Want, *FString::Join(OLLanguage::LabsFor(Want), TEXT(", ")), *Root);
+	}
+	Language = LangLabs.Num() > 0 ? Want : FString(TEXT("en"));
+	if (Language == Was && WasLabs == 0 && LangLabs.Num() == 0) return false;
+	GOverlaySerial.Increment();
+	UE_LOG(LogOutlaws, Log, TEXT("OLRT language: %s (%s), LABs %s (%d names) in front of the stock order, was %s"), *Language, *OLLanguage::Source(),
+		Names.Num() ? *FString::Join(Names, TEXT(", ")) : TEXT("none"), LangIndex.Num(), *Was);
+	return true;
+}
+
+TArray<FString> FOutlawsAssets::MountedOrder() const
+{
+	TArray<FString> Out;
+	if (Overlay) Out.Add(FPaths::GetCleanFilename(Overlay->GetPath()));
+	for (const TSharedPtr<FOutlawsLabFile>& Lab : LangLabs) Out.Add(FPaths::GetCleanFilename(Lab->GetPath()));
+	for (int32 i = 0; i < NumStockLabs && i < Labs.Num(); ++i) Out.Add(FPaths::GetCleanFilename(Labs[i]->GetPath()));
+	return Out;
+}
+
+bool FOutlawsAssets::GetTextFrom(ELayer Layer, const FString& Name, FString& Out) const
+{
+	const FString Key = Name.ToLower();
+	TArray<uint8> Bytes;
+	bool bGot = false;
+	if (Layer == ELayer::Overlay)
+	{
+		const int32* E = Overlay ? Overlay->GetIndex().Find(Key) : nullptr;
+		bGot = E && Overlay->Read(*E, Bytes);
+	}
+	else
+	{
+		const TPair<int32, int32>* Hit = Layer == ELayer::Language ? LangIndex.Find(Key) : Index.Find(Key);
+		const TArray<TSharedPtr<FOutlawsLabFile>>& From = Layer == ELayer::Language ? LangLabs : Labs;
+		bGot = Hit && From[Hit->Key]->Read(Hit->Value, Bytes);
+	}
+	if (!bGot) return false;
+	// latin-1, as GetText
+	TArray<TCHAR>& Chars = Out.GetCharArray();
+	Chars.SetNumUninitialized(Bytes.Num() + 1);
+	for (int32 i = 0; i < Bytes.Num(); ++i) Chars[i] = TCHAR(Bytes[i]);
+	Chars[Bytes.Num()] = 0;
+	return true;
 }
 
 bool FOutlawsAssets::OldNativeMount()
@@ -337,7 +416,7 @@ bool FOutlawsAssets::GetSound(const FString& Name, bool bHD, TArray<uint8>& Out)
 bool FOutlawsAssets::Has(const FString& Name) const
 {
 	const FString Key = Name.ToLower();
-	return (Overlay && Overlay->GetIndex().Contains(Key)) || Index.Contains(Key);
+	return (Overlay && Overlay->GetIndex().Contains(Key)) || LangIndex.Contains(Key) || Index.Contains(Key);
 }
 
 bool FOutlawsAssets::Get(const FString& Name, TArray<uint8>& Out) const
@@ -347,6 +426,8 @@ bool FOutlawsAssets::Get(const FString& Name, TArray<uint8>& Out) const
 	{
 		if (const int32* E = Overlay->GetIndex().Find(Name.ToLower())) return Overlay->Read(*E, Out);
 	}
+	// (REQ-LANGUAGE) then the language's LABs
+	if (const TPair<int32, int32>* Lang = FindLang(Name.ToLower())) return LangLabs[Lang->Key]->Read(Lang->Value, Out);
 	const TPair<int32, int32>* Hit = Index.Find(Name.ToLower());
 	if (!Hit)
 	{
@@ -376,6 +457,7 @@ bool FOutlawsAssets::GetText(const FString& Name, FString& Out) const
 FString FOutlawsAssets::Where(const FString& Name) const
 {
 	if (Overlay && Overlay->GetIndex().Contains(Name.ToLower())) return FPaths::GetCleanFilename(Overlay->GetPath());
+	if (const TPair<int32, int32>* Lang = FindLang(Name.ToLower())) return FPaths::GetCleanFilename(LangLabs[Lang->Key]->GetPath());   // (REQ-LANGUAGE)
 	const TPair<int32, int32>* Hit = Index.Find(Name.ToLower());
 	return Hit ? FPaths::GetCleanFilename(Labs[Hit->Key]->GetPath()) : FString();
 }

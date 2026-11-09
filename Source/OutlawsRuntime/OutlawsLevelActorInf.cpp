@@ -63,6 +63,7 @@ struct FSoundQualityInfo
 #include "EngineUtils.h"
 #include "Misc/Paths.h"
 #include "HAL/IConsoleManager.h"
+#include "OutlawsLanguage.h"          // REQ-LANGUAGE: the message merge
 
 // a 3D one-shot from farther than this (cm) from the eye is not started (user 2026-10-03; the attenuation ends at 38 m); 0 = play all
 static TAutoConsoleVariable<float> CVarOLFarSoundDistance(TEXT("ol.FarSoundDistance"), 4000.f,
@@ -125,17 +126,27 @@ void AOutlawsLevelActor::LoadGameTables()
 {
 	// read once per actor: message text and the inventory item table do not change between levels
 	// local.msg lines: 801  5:  "You need the brass key."   (id, priority, text)
+	// (REQ-LANGUAGE, user 9 Nov) merged id by id: the stock order's (English) file, the language LABs' over it, a native map's
+	// own over both, so a line the language lacks (German and Spanish have no 13 of the Handful of Missions' lines) reads
+	// English.  -OLOldLanguage mounts no language LAB, so this is the old first-file read.
 	FString Msg;
-	if (UserMessages.Num() == 0 && AssetsRef && AssetsRef->GetText(TEXT("local.msg"), Msg))
+	if (UserMessages.Num() == 0 && AssetsRef)
 	{
-		TArray<FString> Lines;
-		Msg.ParseIntoArrayLines(Lines);
-		for (const FString& Line : Lines)
+		int32 FromLang = 0;
+		if (AssetsRef->GetTextFrom(FOutlawsAssets::ELayer::Stock, TEXT("local.msg"), Msg)) { OLLanguage::ParseLocalMsg(Msg, UserMessages); }
+		const int32 English = UserMessages.Num();
+		if (AssetsRef->GetTextFrom(FOutlawsAssets::ELayer::Language, TEXT("local.msg"), Msg))
 		{
-			const FString T = Line.TrimStart();
-			int32 Q0, Q1;
-			if (T.IsEmpty() || !FChar::IsDigit(T[0]) || !T.FindChar(TEXT('"'), Q0) || !T.FindLastChar(TEXT('"'), Q1) || Q1 <= Q0) continue;
-			UserMessages.Add(FCString::Atoi(*T), T.Mid(Q0 + 1, Q1 - Q0 - 1));
+			TMap<int32, FString> Lang;
+			OLLanguage::ParseLocalMsg(Msg, Lang);
+			FromLang = Lang.Num();
+			UserMessages.Append(Lang);
+		}
+		if (AssetsRef->GetTextFrom(FOutlawsAssets::ELayer::Overlay, TEXT("local.msg"), Msg)) { OLLanguage::ParseLocalMsg(Msg, UserMessages); }
+		if (FromLang > 0)
+		{
+			UE_LOG(LogOutlaws, Log, TEXT("OLRT language: local.msg %s, %d lines from %s over %d English (%d in all)"), *AssetsRef->GetLanguage(), FromLang,
+				*AssetsRef->Where(TEXT("local.msg")), English, UserMessages.Num());
 		}
 	}
 	// inventory items (FUNC Inv_GenericObject / Inv_HealthObject / the weapons): "INT USE_ID 101 ...

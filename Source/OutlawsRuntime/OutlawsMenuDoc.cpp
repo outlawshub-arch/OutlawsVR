@@ -4,6 +4,7 @@
 #include "OutlawsRuntime.h"
 #include "OutlawsFlags.h"
 #include "OutlawsLevelActor.h"
+#include "OutlawsLanguage.h"          // REQ-LANGUAGE: the menu strings
 #include "HAL/PlatformFileManager.h"
 #include "GenericPlatform/GenericPlatformFile.h"
 #include "Misc/Paths.h"
@@ -283,20 +284,24 @@ namespace OutlawsMenu
 		}
 		// key = "value" lines; /// and // lines are comments
 		FString Loc;
-		if (Kpf.ReadText(TEXT("localization/loc_english.txt"), Loc))
-		{
-			TArray<FString> Lines;
-			Loc.ParseIntoArrayLines(Lines);
-			for (const FString& Line : Lines)
-			{
-				int32 Eq, Q0, Q1;
-				if (!Line.FindChar(TEXT('='), Eq) || !Line.FindChar(TEXT('"'), Q0) || !Line.FindLastChar(TEXT('"'), Q1) || Q1 <= Q0 || Q0 < Eq) continue;
-				const FString Key = Line.Left(Eq).TrimStartAndEnd();
-				if (Key.IsEmpty() || Key.StartsWith(TEXT("/"))) continue;
-				Strings.Add(Key.ToLower(), Line.Mid(Q0 + 1, Q1 - Q0 - 1).Replace(TEXT("\\n"), TEXT(" ")));
-			}
-		}
+		if (Kpf.ReadText(TEXT("localization/loc_english.txt"), Loc)) OLLanguage::ParseLoc(Loc, Strings);
 		UE_LOG(LogOutlaws, Log, TEXT("OLRT menu: %d English strings"), Strings.Num());
+		// (REQ-LANGUAGE, user 9 Nov) the language's loc file over English, key by key: a key it lacks (French has no
+		// m_map_followoff, none of them m_vault_restart_video) reads English.  -OLOldLanguage: English alone.
+		Language = OLLanguage::Current();
+		if (Language != TEXT("en") && Kpf.ReadText(OLLanguage::LocFile(Language), Loc))
+		{
+			TMap<FString, FString> Lang;
+			OLLanguage::ParseLoc(Loc, Lang);
+			const int32 English = Strings.Num();
+			Strings.Append(Lang);
+			UE_LOG(LogOutlaws, Log, TEXT("OLRT menu: %d %s strings from %s over %d English (%d in all)"), Lang.Num(), *Language, *OLLanguage::LocFile(Language), English, Strings.Num());
+		}
+		else if (Language != TEXT("en"))
+		{
+			UE_LOG(LogOutlaws, Log, TEXT("OLRT menu: no %s in Common.kpf, the menus read English"), *OLLanguage::LocFile(Language));
+			Language = TEXT("en");
+		}
 		return true;
 	}
 

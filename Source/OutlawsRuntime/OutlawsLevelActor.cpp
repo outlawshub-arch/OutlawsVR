@@ -38,6 +38,7 @@
 #include "Components/AudioComponent.h"
 #include "Components/TextRenderComponent.h"
 #include "OutlawsPlayer.h"
+#include "OutlawsLanguage.h"          // REQ-LANGUAGE
 #include "OutlawsMovieScreen.h"
 #include "GameFramework/CharacterMovementComponent.h"
 #include "GameFramework/Character.h"
@@ -1161,6 +1162,10 @@ void AOutlawsLevelActor::Build()
 	// (REQ-NATIVEMAPS) a native map's level opens its own LAB in front of the stock order (a stock level none), here before any
 	// file of it is read: the only place the overlay changes, between levels.  A change lets go of every file held by name.
 	if (Assets->UseLevelOverlay(LevelName, this)) ForgetLabFiles(*FString::Printf(TEXT("%s built"), *LevelName));
+	// (REQ-LANGUAGE, user 9 Nov: a language change applies at the next level start) the language's LABs in front of the stock
+	// order, changed only here, before any file of the level is read; a change lets go of every file held by name, the
+	// messages (LOCAL.MSG) with them, so LoadGameTables below merges them again in the new language
+	if (Assets->UseLanguage(OLLanguage::Current())) ForgetLabFiles(*FString::Printf(TEXT("%s built, language %s"), *LevelName, *Assets->GetLanguage()));
 	const double T1 = FPlatformTime::Seconds();
 
 	// ---- level text ----------------------------------------------------------------------------

@@ -99,6 +99,8 @@ namespace OutlawsMenu
 		bool HasOverlay() const { return Overlay.IsOpen(); }
 		/** "$m_local_6050" -> "Resume"; plain text passes through. */
 		FString Loc(const FString& Text) const;
+		/** (REQ-LANGUAGE) the language the strings were read in (loc_english under loc_<l>, key by key). */
+		const FString& GetLanguage() const { return Language; }
 
 	private:
 		FKpf Kpf;
@@ -107,5 +109,6 @@ namespace OutlawsMenu
 		// with the game, so the VR menus look the same on a stock install; same entry names as Common.kpf, read first
 		FKpf Overlay;
 		TMap<FString, FString> Strings;
+		FString Language = TEXT("en");
 	};
 }

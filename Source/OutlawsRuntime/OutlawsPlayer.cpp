@@ -5208,7 +5208,8 @@ UTexture2D* AOutlawsPlayer::ItemCard(const FString& Item, bool bOn)
 bool AOutlawsPlayer::WristIcon(const FString& Key, FWristIconSrc& Out)
 {
 	AOutlawsLevelActor* L = Level.Get();
-	const FString CacheKey = Key + (L && L->bHDTextures ? TEXT("#hd") : TEXT("#sd"));
+	// (REQ-LANGUAGE) the language's LABs hold their own item pictures: a picture is kept per language
+	const FString CacheKey = Key + (L && L->bHDTextures ? TEXT("#hd") : TEXT("#sd")) + (L && L->GetAssets() ? TEXT("#") + L->GetAssets()->GetLanguage() : FString());
 	static const bool bOldCache = OLFlags::Param(TEXT("OLOldWristCache"));     // (the raw cache, for the probe's before/after only)
 	if (const FWristIconHeld* Hit = WristIconCache.Find(CacheKey))
 	{

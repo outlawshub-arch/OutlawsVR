@@ -68,6 +68,21 @@ public:
 	bool GetSound(const FString& Name, bool bHD, TArray<uint8>& Out) const;
 	/** Which archive a name resolves to (for diagnostics). */
 	FString Where(const FString& Name) const;
+	/** (REQ-LANGUAGE) the language's LABs (OLLanguage::LabsFor) open in front of the stock order, behind a native map's own
+	 *  LAB: a name they hold is theirs, any other name the stock one's.  Open mounts OLLanguage::Current(); the level build
+	 *  calls it again (AOutlawsLevelActor::Build, before it reads a file), so a change applies at the next level start, never
+	 *  mid-level.  True when the mounted set changed: the caller forgets every file it holds by name (ForgetLabFiles), and
+	 *  OverlaySerial moves on.  A language whose LABs are not in the install mounts none (English).  -OLOldLanguage: never
+	 *  any. */
+	bool UseLanguage(const FString& Code);
+	/** The language whose LABs are mounted now ("en" when none). */
+	const FString& GetLanguage() const { return Language; }
+	/** The search order as it stands: the native map's LAB (when one is open), the language's, then the stock ones. */
+	TArray<FString> MountedOrder() const;
+	/** (REQ-LANGUAGE, the message merge) one layer's copy of a text file: the stock order's alone (English), the language
+	 *  LABs' alone, or the native map's alone.  False when that layer has none. */
+	enum class ELayer : uint8 { Stock, Language, Overlay };
+	bool GetTextFrom(ELayer Layer, const FString& Name, FString& Out) const;
 	/** Every name with the given extension (lower case, e.g. ".lvt"), from the install's LABs (not the native maps'). */
 	void ListByExtension(const FString& LowerExt, TArray<FString>& Out) const;
 	/** (REQ-MAPQUICK) The native maps' folder (one sub-folder a map: its LAB, RCM and readme): -OLNativeMaps=<dir>, else
@@ -160,4 +175,10 @@ private:
 	TMap<FString, int32> NativeLevels;          // lower level name -> NativeLabs index
 	TSharedPtr<FOutlawsLabFile> Overlay;
 	const void* OverlayOwner = nullptr;
+	// (REQ-LANGUAGE) the language's LABs and their names (lower name -> (LangLabs index, entry index)), searched after the
+	// overlay and before Index
+	FString Language = TEXT("en");
+	TArray<TSharedPtr<FOutlawsLabFile>> LangLabs;
+	TMap<FString, TPair<int32, int32>> LangIndex;
+	const TPair<int32, int32>* FindLang(const FString& Key) const { return LangIndex.Find(Key); }
 };
