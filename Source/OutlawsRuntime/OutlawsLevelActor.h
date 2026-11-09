@@ -2126,6 +2126,7 @@ private:
 	TArray<FSpark> Sparks;
 	TArray<FString> ObjectSounds;                                   // outlaws.lab sounds.lst
 	float BlastRadius = 50.f, BlastWallRadius = 15.f, BlastDamage = 12.f;   // pdynam.itm
+	static constexpr float BossBlastDamage = 3.f;   // (BUG-BOSSBLAST) what a blast deals a boss, flat, as in the original
 	FString BlastSprite = TEXT("tntboom.nwx"), BlastSound = TEXT("explode");
 	void LoadShootTables();
 	void CollectPanes(const FOutlawsLevel& L, FOutlawsBuildFilter& StaticFilter);

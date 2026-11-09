@@ -1190,7 +1190,11 @@ void AOutlawsLevelActor::Explode(const FVector& Where)
 				UE_LOG(LogOutlawsAI, Log, TEXT("OLRT %s: his own stick spares him (%.0f cm from it, %.2f by the falloff)"), *E->GetOutlawsName(), D, BlastDamage * Falloff(D));
 				continue;
 			}
-			E->TakeHit(BlastDamage * Falloff(D) * BlastScale, E->GetActorLocation(), (E->GetActorLocation() - Where).GetSafeNormal(), Where, true);
+			// (BUG-BOSSBLAST, the user 9 Nov: "match the original": a blast deals a boss a flat 3, wherever in its reach he stands)
+			// -OLOldBossBlast: the falloff's damage, as for anyone
+			static const bool bOldBossBlast = OLFlags::Param(TEXT("OLOldBossBlast"));
+			const float Dealt = E->bBoss && !bOldBossBlast ? BossBlastDamage : float(BlastDamage * Falloff(D) * BlastScale);
+			E->TakeHit(Dealt, E->GetActorLocation(), (E->GetActorLocation() - Where).GetSafeNormal(), Where, true);
 			BlastKills += E->IsDead() && !E->bVoiceOnly && !E->bNotBadGuy ? 1 : 0;
 		}
 	}
