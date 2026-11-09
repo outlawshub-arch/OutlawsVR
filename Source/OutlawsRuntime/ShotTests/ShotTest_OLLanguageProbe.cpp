@@ -329,7 +329,7 @@ namespace
 	}
 }
 
-OL_SHOT_TEST(OLLanguageProbe, 2588)
+OL_SHOT_TEST(OLLanguageProbe, 2595)
 {
 	// -1 the first build, 0..5 the six languages, 6 the Options page, 7 the old rule, 8 done; within a language stage, Phase 0
 	// waits for its level, 1 for its movie
