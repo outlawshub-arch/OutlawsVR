@@ -1,7 +1,8 @@
 // -OLMenuPageShot=<page> (8 Nov, the sign-off shots: the user signs off a visible change from before / after pictures): the
 // title menu opens, the page is shown as the player reaches it (Options, then the page), and Saved\OLShots\ol_menupage_<page>.png
 // is taken; then the run ends.  <page> is a menu file (options_display.rml) or one of ours (#mp, #voice, #vr).  The line
-// "OLSHOT menupage shot <file>: page <page>, <n> rows: <labels>".
+// "OLSHOT menupage shot <file>: page <page>, <n> rows: <labels>".  -OLMenuPageSample: the accent sample's two lines added
+// under the rows (REQ-LANGUAGE).
 #include "OutlawsPlayer.h"
 #include "OutlawsLevelActor.h"
 #include "OutlawsRuntime.h"
@@ -36,6 +37,18 @@ OL_SHOT_TEST(OLMenuPageShot, 2560)
 		// (-OLMenuPageScroll=<n>: a long page scrolled down n rows first, for a row under the fold)
 		FString Sc;
 		if (OLFlags::Value(TEXT("OLMenuPageScroll"), Sc) && Sc.IsNumeric()) { MenuScroll = FCString::Atoi(*Sc); RefreshMenuRows(); }
+		// (REQ-LANGUAGE, -OLMenuPageSample: the accent sample's two lines added under the page's rows, for the accents sign-off)
+		if (OLFlags::Has(TEXT("OLMenuPageSample")) && MenuPage)
+		{
+			for (const TCHAR* Line : { TEXT("Fran\u00E7ais, Espa\u00F1ol, Portugu\u00EAs, Activ\u00E9"), TEXT("\u00DCberpr\u00FCfen, A\u00E7\u00E3o, Perch\u00E9") })
+			{
+				OutlawsMenu::FItem H;
+				H.Kind = OutlawsMenu::EItemKind::Heading;
+				H.Label = Line;
+				MenuPage->Items.Add(H);
+			}
+			RefreshMenuRows();
+		}
 		Stage = 1; Waited = 0.f;
 		return;
 	}

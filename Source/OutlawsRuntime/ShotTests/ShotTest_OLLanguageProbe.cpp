@@ -29,6 +29,11 @@
 // plus the first start's reading of a kexengine.cfg line.  Lines "OLSHOT language <lang> <check>: <got> want <want> PASS|FAIL", then
 // "OLSHOT language RESULT ALL PASS (n passed, 0 failed)" or "OLSHOT language RESULT FAIL (n passed, m failed)".  The settings file
 // is the run's own (-userdir) and is put back as it was at the end.
+//   accents: (the user 9 Nov, "Draw the accent over the menu font's own letter") the menu's title and row fonts, for each accented
+//           letter of the sample (Francais, Espanol, Portugues, Active, Uberprufen, Acao, Perche with their accents) and then every letter the composer covers:
+//           outside the font's Noto ranges, in the face file it draws with, and (the overlay's fonts, composed) the glyph beginning
+//           with the face's own base letter's outline.  -OLOldMenuAccents must FAIL these (the letters from Noto).
+// -OLLanguageProbe=accents: the accents checks only (a short run; with -OLOldMenuAccents it must FAIL).
 // -OLLanguageProbe=flag: no switching, the first level start only, for a run given -OLLanguage=<code> (its order, where, 801 and
 // the source "flag").  A run with -OLOldLanguage must FAIL (every language reads English, the page's rows are gone).
 // -OLLanguageHudShot: the level's message 801 on the HUD, Saved\OLShots\ol_language_hud_<lang>.png, then the run ends (sign-off).
@@ -36,6 +41,8 @@
 #include "ShotTestCommon.h"
 #include "OutlawsLanguage.h"
 #include "OutlawsMovieScreen.h"
+#include "OutlawsFontCompose.h"
+#include "Engine/Font.h"
 
 #if WITH_OUTLAWS_TESTS
 
@@ -51,6 +58,43 @@ namespace
 	{
 		(bOk ? GLangPass : GLangFail)++;
 		UE_LOG(LogOutlaws, Display, TEXT("OLSHOT language %s %s: %s want %s %s"), *Lang, What, *Got.Left(90), *Want.Left(90), bOk ? TEXT("PASS") : TEXT("FAIL"));
+	}
+
+	// (REQ-LANGUAGE accents) one menu font against the accent sample: each accented letter outside the font's Noto ranges, in
+	// the face file the font draws with, and (a composed face) that glyph beginning with the face's own base letter's outline
+	const TCHAR* AccentSample = TEXT("Fran\u00E7ais, Espa\u00F1ol, Portugu\u00EAs, Activ\u00E9, \u00DCberpr\u00FCfen, A\u00E7\u00E3o, Perch\u00E9");
+	void CheckAccentFont(const UFont* F, const TCHAR* Which)
+	{
+		const FString Tag = TEXT("accents");
+		if (!F || F->CompositeFont.DefaultTypeface.Fonts.Num() == 0) { LangCheck(Tag, Which, false, TEXT("no font"), TEXT("the menu font")); return; }
+		const FString Face = F->CompositeFont.DefaultTypeface.Fonts[0].Font.GetFontFilename();
+		TArray<uint8> Bytes;
+		FFileHelper::LoadFileToArray(Bytes, *Face, FILEREAD_Silent);
+		const bool bComposed = Face.EndsWith(TEXT(".accents.ttf"));
+		TSet<uint32> Seen;
+		for (const TCHAR* C = AccentSample; *C; ++C)
+		{
+			const uint32 Cp = uint32(*C);
+			if (Cp < 0x80 || Seen.Contains(Cp)) continue;
+			Seen.Add(Cp);
+			bool bNoto = false;
+			for (const FCompositeSubFont& Sub : F->CompositeFont.SubTypefaces) for (const FInt32Range& R : Sub.CharacterRanges) bNoto = bNoto || R.Contains(int32(Cp));
+			const bool bHas = OLFontCompose::HasChar(Bytes, Cp);
+			const bool bBase = OLFontCompose::StartsWithBase(Bytes, Cp, OLFontCompose::BaseOf(Cp));
+			const FString Got = FString::Printf(TEXT("%c: %s, %s, %s"), TCHAR(Cp), bNoto ? TEXT("Noto range") : TEXT("theme range"),
+				bHas ? TEXT("in the face") : TEXT("not in the face"), bBase ? TEXT("its base letter's outline + mark") : bComposed ? TEXT("not built on its base") : TEXT("the face's own glyph"));
+			LangCheck(Tag, *FString::Printf(TEXT("%s %c"), Which, TCHAR(Cp)), !bNoto && bHas && (bBase || !bComposed), Got, TEXT("theme range, in the face, built on its base"));
+		}
+		// every letter the composer covers, as one line
+		int32 Ok = 0, All = 0;
+		for (uint32 Cp : OLFontCompose::Letters())
+		{
+			bool bNoto = false;
+			for (const FCompositeSubFont& Sub : F->CompositeFont.SubTypefaces) for (const FInt32Range& R : Sub.CharacterRanges) bNoto = bNoto || R.Contains(int32(Cp));
+			++All;
+			if (!bNoto && OLFontCompose::HasChar(Bytes, Cp) && (!bComposed || OLFontCompose::StartsWithBase(Bytes, Cp, OLFontCompose::BaseOf(Cp)))) ++Ok;
+		}
+		LangCheck(Tag, *FString::Printf(TEXT("%s all letters"), Which), Ok == All, FString::Printf(TEXT("%d of %d (%s)"), Ok, All, *FPaths::GetCleanFilename(Face)), FString::Printf(TEXT("%d of %d"), All, All));
 	}
 
 	bool OpenLab(const FString& Root, const FString& Lab, FOutlawsLabFile& File)
@@ -354,6 +398,16 @@ OL_SHOT_TEST(OLLanguageProbe, 2588)
 		const FString Kex = OLLanguage::RemasterLanguage(&CfgFile);
 		UE_LOG(LogOutlaws, Display, TEXT("OLSHOT language remaster setting: %s (%s); this run %s from %s"), Kex.IsEmpty() ? TEXT("<none>") : *Kex,
 			CfgFile.IsEmpty() ? TEXT("no kexengine.cfg") : TEXT("the remaster's kexengine.cfg"), *OLLanguage::Current(), *OLLanguage::Source());
+		if (Mode.Equals(TEXT("accents"), ESearchCase::IgnoreCase))
+		{
+			// (-OLLanguageProbe=accents) the menu fonts only: open the menu (it makes them), check, done
+			if (!MenuTitleFont) { OpenMenu(false); if (!MenuTitleFont) return; }
+			CheckAccentFont(MenuTitleFont, TEXT("title font"));
+			CheckAccentFont(MenuRowFont, TEXT("row font"));
+			CloseMenu();
+			Finish();
+			return;
+		}
 		if (bFlag)
 		{
 			FString Asked;
@@ -389,6 +443,8 @@ OL_SHOT_TEST(OLLanguageProbe, 2588)
 			OLLanguage::TestForget();
 		}
 		if (!bMenuOpen) OpenMenu(false);
+		CheckAccentFont(MenuTitleFont, TEXT("title font"));
+		CheckAccentFont(MenuRowFont, TEXT("row font"));
 		MenuStack.Reset();
 		MenuStack.Add(TEXT("#front"));
 		ShowMenuPage(TEXT("options.rml"), false);

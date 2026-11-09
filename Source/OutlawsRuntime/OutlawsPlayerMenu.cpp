@@ -8,6 +8,7 @@
 #include "OutlawsBeacon.h"
 #include "OutlawsUpdate.h"
 #include "OutlawsPlayer.h"
+#include "OutlawsFontCompose.h"
 #include "OutlawsPerfTest.h"
 #include "OutlawsStats.h"
 #include "OutlawsBoxHand.h"
@@ -1581,21 +1582,53 @@ UFont* AOutlawsPlayer::KpfFont(const FString& KpfPath, int32 Size)
 	UFont* F = NewObject<UFont>(this);
 	F->FontCacheType = EFontCacheType::Runtime;
 	F->LegacyFontSize = Size;
-	FTypefaceEntry& E = F->CompositeFont.DefaultTypeface.Fonts.AddDefaulted_GetRef();
-	E.Name = TEXT("Regular");
-	E.Font = FFontData(Disk, EFontHinting::Default, EFontLoadingPolicy::LazyLoad);
 	// the remaster's display fonts carry only letters and digits (66 glyphs): punctuation and anything
 	// else comes from a full font in the same file, as the remaster's own fallback does
 	TArray<uint8> Full;
 	const FString FullPath = TEXT("fonts/NotoSans-ExtraCondensedMedium.ttf");
-	if (MenuSource->ReadFile(FullPath, Full) && Full.Num() > 0)
+	const bool bFull = MenuSource->ReadFile(FullPath, Full) && Full.Num() > 0;
+	// (REQ-LANGUAGE, the user 9 Nov: "Draw the accent over the menu font's own letter") a font with no accented letters (the
+	// menu overlay's) is used through a copy holding them, each its own base letter with Noto's mark scaled over it, so a word
+	// reads in one face; those letters (or a font's own accented letters) then leave the Noto ranges below.
+	// -OLOldMenuAccents: the font as it is, every accented letter from Noto.
+	FString FaceDisk = Disk;
+	TArray<uint32> Composed;
+	if (bFull && !OLFontCompose::OldAccents())
+	{
+		TArray<uint8> WithAccents;
+		if (OLFontCompose::Compose(Bytes, Full, WithAccents, Composed))
+		{
+			FaceDisk = FPaths::GetBaseFilename(Disk, false) + TEXT(".accents.ttf");
+			TArray<uint8> Have;
+			if (!FFileHelper::LoadFileToArray(Have, *FaceDisk, FILEREAD_Silent) || Have != WithAccents) FFileHelper::SaveArrayToFile(WithAccents, *FaceDisk);
+		}
+		else
+		{
+			// (a font with its own accented letters, the remaster's: those letters from it too, not from Noto)
+			Composed.Reset();
+			for (uint32 Cp : OLFontCompose::Letters()) if (OLFontCompose::HasChar(Bytes, Cp)) Composed.Add(Cp);
+		}
+	}
+	FTypefaceEntry& E = F->CompositeFont.DefaultTypeface.Fonts.AddDefaulted_GetRef();
+	E.Name = TEXT("Regular");
+	E.Font = FFontData(FaceDisk, EFontHinting::Default, EFontLoadingPolicy::LazyLoad);
+	if (bFull)
 	{
 		const FString FullDisk = FPaths::ProjectSavedDir() / TEXT("KpfCache") / FPaths::GetCleanFilename(FullPath);
 		if (IFileManager::Get().FileSize(*FullDisk) != Full.Num()) FFileHelper::SaveArrayToFile(Full, *FullDisk);
 		FCompositeSubFont& Sub = F->CompositeFont.SubTypefaces.AddDefaulted_GetRef();
+		Composed.Sort();
 		for (const FIntPoint& R : { FIntPoint(0x21, 0x2F), FIntPoint(0x3A, 0x40), FIntPoint(0x5B, 0x60), FIntPoint(0x7B, 0xFFFF) })
 		{
-			Sub.CharacterRanges.Add(FInt32Range(FInt32Range::BoundsType::Inclusive(R.X), FInt32Range::BoundsType::Inclusive(R.Y)));
+			// (REQ-LANGUAGE) each range with the composed letters cut out of it
+			int32 From = R.X;
+			for (uint32 Cp : Composed)
+			{
+				if (int32(Cp) < From || int32(Cp) > R.Y) continue;
+				if (int32(Cp) > From) Sub.CharacterRanges.Add(FInt32Range(FInt32Range::BoundsType::Inclusive(From), FInt32Range::BoundsType::Inclusive(int32(Cp) - 1)));
+				From = int32(Cp) + 1;
+			}
+			if (From <= R.Y) Sub.CharacterRanges.Add(FInt32Range(FInt32Range::BoundsType::Inclusive(From), FInt32Range::BoundsType::Inclusive(R.Y)));
 		}
 		FTypefaceEntry& FE = Sub.Typeface.Fonts.AddDefaulted_GetRef();
 		FE.Name = TEXT("Regular");

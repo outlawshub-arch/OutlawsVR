@@ -2,6 +2,7 @@
 #include "OutlawsFlags.h"
 #include "OutlawsRuntime.h"
 #include "OutlawsLevelActor.h"         // the settings file (Language=)
+#include "OutlawsShipLog.h"           // (the Quest: the settings file the installer can reach)
 #include "HAL/PlatformMisc.h"
 #include "Misc/FileHelper.h"
 #include "Misc/Paths.h"
@@ -76,6 +77,29 @@ namespace
 			if (!N.IsEmpty()) { GCode = N; GSource = TEXT("settings"); }
 			else UE_LOG(LogOutlaws, Log, TEXT("OLRT language: Language=%s in the settings is none of the six, read as unset"), **Set);
 		}
+#if PLATFORM_ANDROID
+		if (GCode.IsEmpty())
+		{
+			// (REQ-LANGUAGE, the Quest's first start takes the PC's language at install) the installer writes Language= into the
+			// settings file under the external files folder, the one adb can reach.  A Development build keeps its Saved there
+			// (read above already); a Shipping build keeps it in internal storage and copies that file in once only
+			// (CarryOverDevelopmentSaved), so a Language= the player has not set on the headset is read from it here
+			const FString Ext = OLShipLog::ReportSavedDir() / TEXT("OutlawsSettings.ini");
+			FString Text;
+			if (!FPaths::IsSamePath(Ext, FPaths::ProjectSavedDir() / TEXT("OutlawsSettings.ini")) && FFileHelper::LoadFileToString(Text, *Ext))
+			{
+				TArray<FString> Lines;
+				Text.ParseIntoArrayLines(Lines);
+				for (const FString& Line : Lines)
+				{
+					FString K, V;
+					if (!Line.Split(TEXT("="), &K, &V) || K.TrimStartAndEnd() != TEXT("Language")) continue;
+					const FString N = OLLanguage::Normalize(V.TrimStartAndEnd().TrimQuotes());
+					if (!N.IsEmpty()) { GCode = N; GSource = TEXT("install"); }
+				}
+			}
+		}
+#endif
 		if (GCode.IsEmpty())
 		{
 			// the first start (user 9 Nov): the player's remaster language, so the game opens in the language they play it in

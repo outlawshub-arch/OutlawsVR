@@ -23,7 +23,7 @@ namespace OLLanguage
 	OUTLAWSRUNTIME_API bool Old();
 	/** The language in force now (see above); always one of Codes(). */
 	OUTLAWSRUNTIME_API FString Current();
-	/** Where Current came from: "old", "test", "flag", "settings", "remaster", "default". */
+	/** Where Current came from: "old", "test", "flag", "settings", "install" (the Quest: the installer's Language=), "remaster", "default". */
 	OUTLAWSRUNTIME_API FString Source();
 	/** Pick a language (the Options page's later step): kept for this run and, with bSave, written as Language= into
 	 *  OutlawsSettings.ini.  It applies at the next level start.  An unknown code is ignored (false). */
