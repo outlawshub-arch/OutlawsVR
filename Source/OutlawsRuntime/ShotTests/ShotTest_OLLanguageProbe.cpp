@@ -37,6 +37,8 @@
 // -OLLanguageProbe=flag: no switching, the first level start only, for a run given -OLLanguage=<code> (its order, where, 801 and
 // the source "flag").  A run with -OLOldLanguage must FAIL (every language reads English, the page's rows are gone).
 // -OLLanguageHudShot: the level's message 801 on the HUD, Saved\OLShots\ol_language_hud_<lang>.png, then the run ends (sign-off).
+// -OLLanguageSubShot[=<movie>]: the cutscene (default in_shb, the intro) played as the level plays it, shot at 12.5 s of its own
+// time (the intro's second line), Saved\OLShots\ol_language_sub_<lang>.png, then the run ends (sign-off).
 
 #include "ShotTestCommon.h"
 #include "OutlawsLanguage.h"
@@ -574,6 +576,45 @@ OL_SHOT_TEST(OLLanguageHudShot, 2589)
 	{
 		if (Waited < 1.5f) return;
 		FScreenshotRequest::RequestScreenshot(FPaths::ProjectSavedDir() / TEXT("OLShots") / (TEXT("ol_language_hud_") + OLLanguage::Current() + TEXT(".png")), false, false);
+		Stage = 2; Waited = 0.f;
+		return;
+	}
+	if (Waited < 2.f) return;
+	Stage = 3;
+	FGenericPlatformMisc::RequestExit(false);
+}
+
+// -OLLanguageSubShot[=<movie>] (sign-off): one cutscene subtitle on screen in the run's language; the movie as the level plays it
+// (PlayMovie: the converted mp4, the subtitles file OLLanguage picks), shot when its own clock is at 12.5 s (in_shb's second line)
+OL_SHOT_MATCH(OLLanguageSubShot) { return OLFlags::Has(TEXT("OLLanguageSubShot")); }
+
+OL_SHOT_TEST(OLLanguageSubShot, 2590)
+{
+	static int32 Stage = 0;
+	static float Waited = 0.f;
+	if (Stage >= 3 || !L) return;
+	Waited += Dt;
+	FString Name;
+	if (!OLFlags::Value(TEXT("OLLanguageSubShot"), Name) || Name.IsEmpty()) Name = TEXT("in_shb");
+	const float At = Name == TEXT("in_shb") ? 12.5f : 6.f;
+	if (Stage == 0)
+	{
+		if (Waited < 8.f) return;
+		const bool bOk = L->PlayMovie(Name, true);
+		UE_LOG(LogOutlaws, Display, TEXT("OLSHOT language sub %s: PlayMovie(%s) %d"), *OLLanguage::Current(), *Name, bOk ? 1 : 0);
+		if (!bOk) { Stage = 2; Waited = 0.f; return; }
+		Stage = 1; Waited = 0.f;
+		return;
+	}
+	if (Stage == 1)
+	{
+		AOutlawsMovieScreen* M = L->GetMovieScreen();
+		const float T = M ? M->GetTime() : -1.f;
+		if (T < At && Waited < 60.f) return;
+		FScreenshotRequest::RequestScreenshot(FPaths::ProjectSavedDir() / TEXT("OLShots") / (TEXT("ol_language_sub_") + OLLanguage::Current() + TEXT(".png")), false, false);
+		UE_LOG(LogOutlaws, Display, TEXT("OLSHOT language sub %s: movie time %.2f, subtitles %s, shown %d, own voice %d, track %d of %d"),
+			*OLLanguage::Current(), T, M ? *FPaths::GetCleanFilename(M->GetSubtitlePath()) : TEXT("-"), M && M->AreSubtitlesShown() ? 1 : 0,
+			M && M->IsOwnVoice() ? 1 : 0, M ? M->GetAudioTrack() : -1, M ? M->GetAudioTrackCount() : -1);
 		Stage = 2; Waited = 0.f;
 		return;
 	}
