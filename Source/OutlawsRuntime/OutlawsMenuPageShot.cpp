@@ -33,6 +33,9 @@ OL_SHOT_TEST(OLMenuPageShot, 2560)
 		MenuStack.Add(TEXT("#front"));
 		MenuStack.Add(TEXT("options.rml"));
 		ShowMenuPage(Page, false);
+		// (-OLMenuPageScroll=<n>: a long page scrolled down n rows first, for a row under the fold)
+		FString Sc;
+		if (OLFlags::Value(TEXT("OLMenuPageScroll"), Sc) && Sc.IsNumeric()) { MenuScroll = FCString::Atoi(*Sc); RefreshMenuRows(); }
 		Stage = 1; Waited = 0.f;
 		return;
 	}

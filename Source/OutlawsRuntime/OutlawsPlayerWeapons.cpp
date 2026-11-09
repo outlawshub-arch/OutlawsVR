@@ -4976,7 +4976,9 @@ void AOutlawsPlayer::UpdateThrown(float Dt)
 					const FVector Cur = T.Vel / Speed;
 					const FVector Want = (Aim - T.Pos).GetSafeNormal();
 					const float Ang = FMath::Acos(FMath::Clamp(static_cast<float>(FVector::DotProduct(Cur, Want)), -1.f, 1.f));
-					const float MaxTurn = FMath::DegreesToRadians(200.f) * FMath::Sqrt(T.Grav) * Dt;     // (paced with the flight; 200: up to a 4 m miss closes)
+					// (TEMP-AIMTUNE: the knife's turn scaled with the slider, 6 degrees the turn as it is, 0 none)
+					const float Tune = AimTuneOn() ? AimTuneDeg / 6.f : 1.f;
+					const float MaxTurn = FMath::DegreesToRadians(200.f) * Tune * FMath::Sqrt(T.Grav) * Dt;     // (paced with the flight; 200: up to a 4 m miss closes)
 					if (Ang > 1e-4f)
 					{
 						T.Vel = FMath::Lerp(Cur, Want, FMath::Min(1.f, MaxTurn / Ang)).GetSafeNormal() * Speed;
@@ -7891,22 +7893,11 @@ void AOutlawsPlayer::FireGun(int32 Hand, bool bFan)
 	{
 		ShotDir = ScopeAim.GetForwardVector();
 	}
-	if (!bScopedShot && bFan)
+	if (!bScopedShot)
 	{
-		// fanning's reward: the shot flies at the bad guy nearest the middle of the view
-		if (AOutlawsEnemy* E = FindFanTarget(Hand))
-		{
-			ShotDir = (E->GetActorLocation() + FVector(0.0, 0.0, 25.0) - Muzzle).GetSafeNormal();
-		}
-	}
-	else if (AOutlawsEnemy* E = bScopedShot ? nullptr : FindViewTarget(AimAssistViewCone, W.RangeCm, Muzzle))
-	{
-		// aim assist: the bad guy being looked at takes a shot aimed near enough to him
-		const FVector To = (E->GetActorLocation() + FVector(0.0, 0.0, 25.0) - Muzzle).GetSafeNormal();
-		if (FVector::DotProduct(To, ShotDir) >= FMath::Cos(FMath::DegreesToRadians(AimAssistBoreCone)))
-		{
-			ShotDir = To;
-		}
+		// the aim assist (TEMP-AIMTUNE: by where the gun points; -OLOldAimPick: by the view, as before)
+		FVector To;
+		if (AimAssistPick(Hand, Muzzle, ShotDir, bFan, To)) ShotDir = To;
 	}
 	// the barrel at one's own head (user 2026-10-02): the bore's line through the head, the muzzle within arm's reach of
 	// it: death at once, once the shot is done (next tick: the gun is still in use below)
@@ -8975,6 +8966,83 @@ AOutlawsEnemy* AOutlawsPlayer::FindFanTarget(int32 Hand) const
 		return nullptr;
 	}
 	return FindViewTarget(FanViewCone, GWeapons[Wi].RangeCm, WeaponMesh[Hand]->GetComponentLocation());
+}
+
+bool AOutlawsPlayer::OldAimPick()
+{
+	static const bool bOld = OLFlags::Param(TEXT("OLOldAimPick"));
+	return bOld;
+}
+
+bool AOutlawsPlayer::AimTuneOn()
+{
+#if PLATFORM_ANDROID
+	return false;                    // (never on the Quest: no dev rows there)
+#else
+	static const bool bOn = OLFlags::Param(TEXT("OLAimTune"));
+	return bOn;
+#endif
+}
+
+AOutlawsEnemy* AOutlawsPlayer::AimAssistPick(int32 Hand, const FVector& Muzzle, const FVector& Bore, bool bFan, FVector& OutDir) const
+{
+	const int32 Wi = Equipped[Hand];
+	const float Range = Wi >= 0 ? GWeapons[Wi].RangeCm : 10000.f;
+	auto Chest = [](const AOutlawsEnemy* E) { return E->GetActorLocation() + FVector(0.0, 0.0, 25.0); };
+	if (OldAimPick())
+	{
+		// as before: the bad guy nearest the middle of the VIEW; the fan takes him (no barrel check), the trigger only within
+		// the bore cone of him
+		if (bFan)
+		{
+			AOutlawsEnemy* E = FindViewTarget(FanViewCone, Range, Muzzle);
+			if (E) OutDir = (Chest(E) - Muzzle).GetSafeNormal();
+			return E;
+		}
+		AOutlawsEnemy* E = FindViewTarget(AimAssistViewCone, Range, Muzzle);
+		if (!E) return nullptr;
+		const FVector To = (Chest(E) - Muzzle).GetSafeNormal();
+		if (FVector::DotProduct(To, Bore) < FMath::Cos(FMath::DegreesToRadians(AimAssistBoreCone))) return nullptr;
+		OutDir = To;
+		return E;
+	}
+	// (TEMP-AIMTUNE) by where the gun points: the trigger within N degrees of the bore, a fan within 2N
+	const float Cone = AimBoreDeg() * (bFan ? 2.f : 1.f);
+	if (Cone <= 0.f) return nullptr;
+	AOutlawsEnemy* E = FindBoreTarget(Muzzle, Bore, Cone, Range);
+	if (E) OutDir = (Chest(E) - Muzzle).GetSafeNormal();
+	return E;
+}
+
+AOutlawsEnemy* AOutlawsPlayer::FindBoreTarget(const FVector& Muzzle, const FVector& Bore, float ConeDeg, float RangeCm) const
+{
+	const AOutlawsLevelActor* L = Level.Get();
+	if (!L || !GetWorld() || ConeDeg <= 0.f) return nullptr;
+	const FVector B = Bore.GetSafeNormal();
+	const double MinDot = FMath::Cos(FMath::DegreesToRadians(ConeDeg));
+	AOutlawsEnemy* Best = nullptr;
+	double BestAng = 1e9, BestDist = 1e18;
+	FCollisionQueryParams Q(SCENE_QUERY_STAT(OutlawsBoreAim), true, this);
+	for (const TWeakObjectPtr<AOutlawsEnemy>& Wk : L->GetEnemies())
+	{
+		AOutlawsEnemy* E = Wk.Get();
+		if (!E || E->IsDead() || E->IsDormant()) continue;
+		const FVector Chest = E->GetActorLocation() + FVector(0.0, 0.0, 25.0);
+		const double Dist = FVector::Dist(Chest, Muzzle);
+		if (Dist > RangeCm || Dist < 1.0) continue;
+		const double Dot = FVector::DotProduct((Chest - Muzzle) / Dist, B);
+		if (Dot < MinDot) continue;
+		const double Ang = FMath::RadiansToDegrees(FMath::Acos(FMath::Clamp(Dot, -1.0, 1.0)));
+		// the least angle off the bore; within a degree of the best so far, the nearer (a man behind another on the line)
+		const bool bBetter = !Best || Ang < BestAng - 1.0 || (FMath::Abs(Ang - BestAng) <= 1.0 && Dist < BestDist);
+		if (!bBetter) continue;
+		FHitResult Hit;
+		if (GetWorld()->LineTraceSingleByChannel(Hit, Muzzle, Chest, ECC_Visibility, Q) && Hit.GetActor() != E) continue;
+		Best = E;
+		BestAng = Ang;
+		BestDist = Dist;
+	}
+	return Best;
 }
 
 AOutlawsEnemy* AOutlawsPlayer::FindViewTarget(float ConeDeg, float RangeCm, const FVector& From) const

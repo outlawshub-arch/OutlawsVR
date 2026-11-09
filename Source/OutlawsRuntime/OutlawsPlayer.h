@@ -1982,6 +1982,20 @@ private:
 	void PressAReleased();
 	void UpdateGuns(float Dt);
 	class AOutlawsEnemy* FindFanTarget(int32 Hand) const;
+	/** (TEMP-AIMTUNE, the user 9 Nov: the gun on someone with the head turned, the shot went to a further bad guy, the one
+	 *  nearest the middle of the view) the aim assist's pick by where the GUN points: the live bad guy whose chest is the least
+	 *  angle off the bore from the muzzle, within ConeDeg, in range, in plain sight of the muzzle; within a degree of each other
+	 *  the nearer one.  The head's view no longer picks. */
+	class AOutlawsEnemy* FindBoreTarget(const FVector& Muzzle, const FVector& Bore, float ConeDeg, float RangeCm) const;
+	/** The aim assist for a shot from Muzzle along Bore (the trigger's, or a fan's at twice its cone): the bad guy it goes to,
+	 *  OutDir the way to his chest; null, the shot goes along the bore.  -OLOldAimPick: the view pick as before. */
+	class AOutlawsEnemy* AimAssistPick(int32 Hand, const FVector& Muzzle, const FVector& Bore, bool bFan, FVector& OutDir) const;
+	static bool OldAimPick();
+	/** (TEMP-AIMTUNE: to be REMOVED before 0.97 ships, RELEASE_PROMISES) -OLAimTune on the PC only: a VR page row, the trigger
+	 *  shot's barrel cone 0..12 degrees (the fan's twice it, the knife's homing turn in step); never on the Quest. */
+	static bool AimTuneOn();
+	float AimTuneDeg = 6.f;
+	float AimBoreDeg() const { return AimTuneOn() ? AimTuneDeg : AimAssistBoreCone; }
 	/** The living bad guy nearest the middle of the view within ConeDeg, in range of From and in sight. */
 	class AOutlawsEnemy* FindViewTarget(float ConeDeg, float RangeCm, const FVector& From) const;
 	float BaseGravityScale = 1.5f;

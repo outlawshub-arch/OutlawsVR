@@ -538,6 +538,14 @@ bool AOutlawsPlayer::ShowMenuPage(const FString& File, bool bPush)
 		// (MenuRowText: "Reload button:  Y / B" or "Tap X / A"), still an on/off row underneath, ButtonLayout in the settings
 		Add(EItemKind::Check, TEXT("Reload button"), TEXT("vr_facereload"), {});
 		Add(EItemKind::Action, TEXT("Restore defaults"), TEXT("defaults:vr"), {});
+		// (TEMP-AIMTUNE, PC only behind -OLAimTune, REMOVED before 0.97: RELEASE_PROMISES) the aim assist's strength to try
+		if (AimTuneOn())
+		{
+			Add(EItemKind::Heading, TEXT("Test (removed before release)"), TEXT(""), {});
+			TArray<FString> Deg;
+			for (int32 d = 0; d <= 12; ++d) Deg.Add(d == 0 ? FString(TEXT("Off")) : FString::Printf(TEXT("%d deg, fan %d deg"), d, d * 2));
+			Add(EItemKind::Select, TEXT("Aim assist (test)"), TEXT("aim_tune"), Deg);
+		}
 	}
 	else if (File == TEXT("#levels"))
 	{
@@ -1409,6 +1417,7 @@ FString AOutlawsPlayer::MenuRowText(int32 Index) const
 		else if (I.Name == TEXT("vr_locomotion")) Shown = bTeleportMove ? 1 : 0;
 		else if (I.Name == TEXT("vr_domhand")) Shown = LeftDominant() ? 1 : 0;
 		else if (I.Name == TEXT("vr_onectrl")) Shown = OneController;
+		else if (I.Name == TEXT("aim_tune")) Shown = FMath::Clamp(FMath::RoundToInt(AimTuneDeg), 0, 12);
 		else if (I.Name == TEXT("difficulty")) Shown = Level.IsValid() ? int32(Level->Difficulty) : 0;
 		else if (I.Name == TEXT("solo_badguys")) Shown = Level.IsValid() ? FMath::Clamp(FMath::RoundToInt(Level->SoloBadGuys * 4.f) - 4, 0, 12) : 0;
 		else if (I.Name == TEXT("autosave_minutes"))
@@ -2563,6 +2572,14 @@ void AOutlawsPlayer::MenuActivate(int32 Hand, int32 Index)
 			}
 			RefreshMenuRows();
 			SaveSettings();
+			return;
+		}
+		if (I.Name == TEXT("aim_tune"))
+		{
+			// (TEMP-AIMTUNE) this run only, never saved
+			AimTuneDeg = float(StepIndex(FMath::Clamp(FMath::RoundToInt(AimTuneDeg), 0, 12), 13, true));
+			UE_LOG(LogOutlaws, Log, TEXT("OLRT aim tune: trigger %.0f deg, fan %.0f deg, knife turn x%.2f"), AimTuneDeg, AimTuneDeg * 2.f, AimTuneDeg / 6.f);
+			RefreshMenuRows();
 			return;
 		}
 		if (I.Name == TEXT("vr_onectrl"))
