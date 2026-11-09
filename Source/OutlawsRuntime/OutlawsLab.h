@@ -75,6 +75,11 @@ public:
 	 *  OverlaySerial moves on.  A language whose LABs are not in the install mounts none (English).  -OLOldLanguage: never
 	 *  any. */
 	bool UseLanguage(const FString& Code);
+	/** (REQ-LANGUAGE step 4) the LAB GetSound would read a sound from (for the probe): the native map's, the language's
+	 *  taunts (oltaunt_<l>), an HD set or the stock order's; empty when none holds it. */
+	FString WhereSound(const FString& Name, bool bHD) const;
+	/** The language's taunt LAB mounted now (oltaunt_<l>.lab), empty when none (English, French, or not in the install). */
+	FString GetTauntLab() const;
 	/** The language whose LABs are mounted now ("en" when none). */
 	const FString& GetLanguage() const { return Language; }
 	/** The search order as it stands: the native map's LAB (when one is open), the language's, then the stock ones. */
@@ -180,5 +185,9 @@ private:
 	FString Language = TEXT("en");
 	TArray<TSharedPtr<FOutlawsLabFile>> LangLabs;
 	TMap<FString, TPair<int32, int32>> LangIndex;
+	// (step 4) the language's taunts and voice lines (oltaunt_<l>.lab): GetSound looks here before the stock sets, in both
+	// the HD and the classic branch (they hold WAV only, the originals' quality; a name they lack goes on as before)
+	TSharedPtr<FOutlawsLabFile> TauntLab;
+	const FOutlawsLabFile* FindSound(const FString& Name, bool bHD, int32& OutEntry) const;
 	const TPair<int32, int32>* FindLang(const FString& Key) const { return LangIndex.Find(Key); }
 };

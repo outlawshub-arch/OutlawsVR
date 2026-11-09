@@ -289,6 +289,7 @@ namespace OutlawsMenu
 		// (REQ-LANGUAGE, user 9 Nov) the language's loc file over English, key by key: a key it lacks (French has no
 		// m_map_followoff, none of them m_vault_restart_video) reads English.  -OLOldLanguage: English alone.
 		Language = OLLanguage::Current();
+		Asked = Language;
 		if (Language != TEXT("en") && Kpf.ReadText(OLLanguage::LocFile(Language), Loc))
 		{
 			TMap<FString, FString> Lang;
@@ -329,6 +330,72 @@ namespace OutlawsMenu
 		return FString::Join(Words, TEXT(" "));
 	}
 
+	namespace
+	{
+		// (REQ-LANGUAGE step 5) the overlay's 16 English labels (MEASURED 9 Nov: the text nodes of every page in the shipped
+		// MenuOverlay.kpf): the remaster key each reads from, or none (Story, Players, Extras, Graphics: our own words, the
+		// user 9 Nov, near the remaster's own terms: "Histoire principale", "Joueurs :", "Graphismes / Interface")
+		struct FBaked { const TCHAR* Label; const TCHAR* Key; const TCHAR* Fr; const TCHAR* De; const TCHAR* It; const TCHAR* Es; const TCHAR* Pt; };
+		const FBaked GBaked[] = {
+			{ TEXT("Main Game"), TEXT("m_local_6000") },
+			{ TEXT("Load"), TEXT("m_local_6003") },
+			{ TEXT("Extras"), nullptr, TEXT("Bonus"), TEXT("Extras"), TEXT("Extra"), TEXT("Extras"), TEXT("Extras") },
+			{ TEXT("MAIN GAME"), TEXT("m_local_6000") },
+			{ TEXT("Story"), nullptr, TEXT("Histoire"), TEXT("Geschichte"), TEXT("Storia"), TEXT("Historia"), TEXT("Hist\u00F3ria") },
+			{ TEXT("Good"), TEXT("m_local_6010") },
+			{ TEXT("Bad"), TEXT("m_local_6011") },
+			{ TEXT("Ugly"), TEXT("m_local_6012") },
+			{ TEXT("EXTRAS"), nullptr, TEXT("BONUS"), TEXT("EXTRAS"), TEXT("EXTRA"), TEXT("EXTRAS"), TEXT("EXTRAS") },
+			{ TEXT("PLAYERS"), nullptr, TEXT("JOUEURS"), TEXT("SPIELER"), TEXT("GIOCATORI"), TEXT("JUGADORES"), TEXT("JOGADORES") },
+			{ TEXT("Controls"), TEXT("m_local_6070") },
+			{ TEXT("Graphics"), nullptr, TEXT("Graphismes"), TEXT("Grafik"), TEXT("Grafica"), TEXT("Gr\u00E1ficos"), TEXT("Gr\u00E1ficos") },
+			{ TEXT("Volume"), TEXT("m_local_7507") },
+			{ TEXT("CONTROLS"), TEXT("m_local_6070") },
+			{ TEXT("GRAPHICS"), nullptr, TEXT("GRAPHISMES"), TEXT("GRAFIK"), TEXT("GRAFICA"), TEXT("GR\u00C1FICOS"), TEXT("GR\u00C1FICOS") },
+			{ TEXT("VOLUME"), TEXT("m_local_7507") },
+		};
+	}
+
+	FString FSource::UpperLatin(const FString& Text)
+	{
+		FString Out = Text.ToUpper();
+		for (TCHAR& C : Out.GetCharArray())
+		{
+			// a-grave .. thorn, bar the division sign (0xF7); sharp s and y-umlaut stay as they are
+			if (C >= 0xE0 && C <= 0xFE && C != 0xF7) C = TCHAR(C - 0x20);
+		}
+		return Out;
+	}
+
+	void FSource::BakedLabels(TArray<TPair<FString, FString>>& Out)
+	{
+		Out.Reset();
+		for (const FBaked& B : GBaked) Out.Emplace(FString(B.Label), FString(B.Key ? B.Key : TEXT("")));
+	}
+
+	FString FSource::Baked(const FString& English) const
+	{
+		if (Language == TEXT("en")) return English;
+		const FString T = English.TrimStartAndEnd();
+		for (const FBaked& B : GBaked)
+		{
+			if (!T.Equals(B.Label, ESearchCase::CaseSensitive)) continue;
+			// the title forms (MAIN GAME, CONTROLS...) in capitals, as the page spells them
+			const bool bUpper = T.Equals(UpperLatin(T), ESearchCase::CaseSensitive);
+			if (B.Key)
+			{
+				const FString* S = Strings.Find(B.Key);
+				if (!S) return English;
+				const FString V = S->TrimStartAndEnd();          // (pt-BR's m_local_6003 is " Carregar")
+				return bUpper ? UpperLatin(V) : V;
+			}
+			const TCHAR* Own = Language == TEXT("fr") ? B.Fr : Language == TEXT("de") ? B.De : Language == TEXT("it") ? B.It : Language == TEXT("es") ? B.Es
+				: Language == TEXT("pt-BR") ? B.Pt : nullptr;
+			return Own ? FString(Own) : English;
+		}
+		return English;
+	}
+
 	bool FSource::GetPage(const FString& File, FPage& Out) const
 	{
 		FString Text;
@@ -344,6 +411,10 @@ namespace OutlawsMenu
 		}
 		Out = FPage();
 		Out.File = File;
+		// (REQ-LANGUAGE step 5) the overlay's pages spell 16 labels out in English: in another language each reads its own
+		// (Baked); the overlay file itself is never changed.  Common.kpf's own pages use $keys throughout.
+		const bool bOverlayPage = FromOverlay(TEXT("menu/") + File);
+		auto Loc = [this, bOverlayPage](const FString& Text) { const FString S = this->Loc(Text); return bOverlayPage ? Baked(S) : S; };
 		// platform-only entries that a PC build hides
 		auto Hidden = [](const FNode& N)
 		{
@@ -420,6 +491,7 @@ namespace OutlawsMenu
 						const FString Type = In->Get(TEXT("type"));
 						I.Name = In->Get(TEXT("name"));
 						I.Kind = Type == TEXT("range") ? EItemKind::Range : Type == TEXT("radio") ? EItemKind::Radio : EItemKind::Check;
+						I.Value = In->Get(TEXT("value"));
 						if (I.Kind == EItemKind::Range)
 						{
 							I.Min = FCString::Atof(*In->Get(TEXT("min")));
@@ -441,6 +513,7 @@ namespace OutlawsMenu
 					I.Name = C.Get(TEXT("name"));
 					I.Label = Loc(AllText(C));
 					I.Kind = Type == TEXT("range") ? EItemKind::Range : Type == TEXT("radio") ? EItemKind::Radio : EItemKind::Check;
+					I.Value = C.Get(TEXT("value"));          // (REQ-LANGUAGE: the language radios' codes)
 					if (I.Kind == EItemKind::Range)
 					{
 						I.Min = FCString::Atof(*C.Get(TEXT("min")));

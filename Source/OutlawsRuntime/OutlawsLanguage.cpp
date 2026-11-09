@@ -5,6 +5,7 @@
 #include "HAL/PlatformMisc.h"
 #include "Misc/FileHelper.h"
 #include "Misc/Paths.h"
+#include "HAL/FileManager.h"
 #if PLATFORM_WINDOWS
 #include "Windows/AllowWindowsPlatformTypes.h"
 #include <ShlObj.h>
@@ -20,14 +21,17 @@ namespace
 		const TCHAR* Code;
 		const TCHAR* LocName;       // loc_<name>.txt in Common.kpf
 		const TCHAR* TextLab;       // the LAB with its LOCAL.MSG, intro.txt and item NWX (plan 2.2)
+		bool bVoice;                // (step 4) an oltaunt_<code>.lab of its own (French has none)
+		const TCHAR* Track;         // (step 8) its audio track's language as a player reports it (WMF: two letters)
+		const TCHAR* Track3;        // the same in three letters (ISO 639-2, what an mp4 stores)
 	};
 	const FLangRow GRows[] = {
-		{ TEXT("en"), TEXT("english"), nullptr },
-		{ TEXT("fr"), TEXT("french"), TEXT("oliptch2") },
-		{ TEXT("de"), TEXT("german"), TEXT("olintl") },
-		{ TEXT("it"), TEXT("italian"), TEXT("oliptch2") },
-		{ TEXT("es"), TEXT("spanish"), TEXT("olintl") },
-		{ TEXT("pt-BR"), TEXT("portuguese_br"), TEXT("oliptch2") },
+		{ TEXT("en"), TEXT("english"), nullptr, false, TEXT("en"), TEXT("eng") },
+		{ TEXT("fr"), TEXT("french"), TEXT("oliptch2"), false, TEXT("fr"), TEXT("fre") },
+		{ TEXT("de"), TEXT("german"), TEXT("olintl"), true, TEXT("de"), TEXT("ger") },
+		{ TEXT("it"), TEXT("italian"), TEXT("oliptch2"), true, TEXT("it"), TEXT("ita") },
+		{ TEXT("es"), TEXT("spanish"), TEXT("olintl"), true, TEXT("es"), TEXT("spa") },
+		{ TEXT("pt-BR"), TEXT("portuguese_br"), TEXT("oliptch2"), true, TEXT("pt"), TEXT("por") },
 	};
 
 	const FLangRow* Row(const FString& Code)
@@ -44,6 +48,22 @@ namespace
 	FString GTestCode;
 	int32 GTestOld = -1;
 #endif
+	// (step 7) the subtitles switch, read once from the settings, changed by SetSubtitles
+	int32 GSubtitles = -1;
+	// (steps 7-8) the language and install the level's files were last mounted from
+	FString GApplied = TEXT("en");
+	FString GAppliedRoot;
+
+	bool HasFile(const FString& Root, const FString& Lab)
+	{
+		return FPaths::FileExists(FPaths::Combine(Root, Lab)) || FPaths::FileExists(FPaths::Combine(Root, TEXT("assets"), Lab));
+	}
+
+	// a subtitle file that is there and not empty (the install's RAM_<l>.srt are 0 bytes)
+	bool UsableSrt(const FString& File)
+	{
+		return !File.IsEmpty() && IFileManager::Get().FileSize(*File) > 0;
+	}
 
 	void Choose()
 	{
@@ -154,6 +174,117 @@ TArray<FString> OLLanguage::LabsFor(const FString& Code)
 	return Out;
 }
 
+FString OLLanguage::TauntLab(const FString& Code)
+{
+	const FLangRow* R = Row(Code);
+	return R && R->bVoice ? FString::Printf(TEXT("oltaunt_%s.lab"), R->Code) : FString();
+}
+
+bool OLLanguage::Installed(const FString& Code, const FString& Root)
+{
+	const FString N = Normalize(Code);
+	if (N == TEXT("en")) return true;
+	if (N.IsEmpty() || Root.IsEmpty()) return false;
+	for (const FString& Lab : LabsFor(N)) if (HasFile(Root, Lab)) return true;
+	return false;
+}
+
+bool OLLanguage::Subtitles()
+{
+	if (Old()) return true;
+	if (GSubtitles < 0)
+	{
+		const TMap<FString, FString> Settings = AOutlawsLevelActor::ReadSettings();
+		const FString* V = Settings.Find(TEXT("CutsceneSubtitles"));
+		GSubtitles = V && V->TrimQuotes().Equals(TEXT("Off"), ESearchCase::IgnoreCase) ? 0 : 1;
+	}
+	return GSubtitles != 0;
+}
+
+void OLLanguage::SetSubtitles(bool bOn, bool bSave)
+{
+	GSubtitles = bOn ? 1 : 0;
+	if (bSave)
+	{
+		TMap<FString, FString> Settings = AOutlawsLevelActor::ReadSettings();
+		Settings.Add(TEXT("CutsceneSubtitles"), bOn ? TEXT("On") : TEXT("Off"));
+		AOutlawsLevelActor::WriteSettings(Settings);
+	}
+	UE_LOG(LogOutlaws, Log, TEXT("OLRT language: cutscene subtitles %s%s"), bOn ? TEXT("on") : TEXT("off"), bSave ? TEXT(", saved") : TEXT(""));
+}
+
+const FString& OLLanguage::Applied()
+{
+	static const FString En = TEXT("en");
+	return Old() ? En : GApplied;
+}
+
+const FString& OLLanguage::AppliedRoot()
+{
+	return GAppliedRoot;
+}
+
+void OLLanguage::NoteApplied(const FString& Code, const FString& Root)
+{
+	const FString N = Normalize(Code);
+	GApplied = N.IsEmpty() ? FString(TEXT("en")) : N;
+	GAppliedRoot = Root;
+}
+
+FString OLLanguage::SubtitleFile(const FString& MovieFile, const FString& Code, const FString& InstallRoot)
+{
+	const FString Dir = FPaths::GetPath(MovieFile);
+	const FString Base = FPaths::GetBaseFilename(MovieFile);
+	const FString N = Old() ? FString(TEXT("en")) : Normalize(Code);
+	if (!N.IsEmpty() && N != TEXT("en"))
+	{
+		// beside the movie (the converter copies <name>_<l>.srt there, the Quest gets them pushed beside the mp4), then on a
+		// PC the install's own movies folder, where the remaster keeps them (<NAME>_<l>.srt)
+		TArray<FString> Tries = { FPaths::Combine(Dir, Base + TEXT("_") + N + TEXT(".srt")), FPaths::Combine(Dir, Base + TEXT("_") + N.ToLower() + TEXT(".srt")) };
+		if (!InstallRoot.IsEmpty())
+		{
+			Tries.Add(FPaths::Combine(InstallRoot, TEXT("movies"), Base.ToUpper() + TEXT("_") + N + TEXT(".srt")));
+			Tries.Add(FPaths::Combine(InstallRoot, TEXT("Movies"), Base.ToUpper() + TEXT("_") + N + TEXT(".srt")));
+		}
+		for (const FString& T : Tries) if (UsableSrt(T)) return T;
+	}
+	const FString English = FPaths::Combine(Dir, Base + TEXT(".srt"));
+	return UsableSrt(English) ? English : FString();
+}
+
+int32 OLLanguage::PickAudioTrack(const TArray<FString>& TrackLanguages, const FString& Code, bool& bOwn)
+{
+	auto Matches = [](const FString& Tag, const FLangRow* R)
+	{
+		if (!R) return false;
+		const FString T = Tag.TrimStartAndEnd().ToLower();
+		if (T.IsEmpty()) return false;
+		if (T == R->Code || T == FString(R->Code).ToLower() || T == R->Track || T == R->Track3) return true;
+		if (T.StartsWith(FString(R->Track) + TEXT("-")) || T.StartsWith(FString(R->Track) + TEXT("_"))) return true;     // ("pt-br")
+		// the other three-letter forms (ISO 639-2/T): deu, fra
+		return (FCString::Strcmp(R->Code, TEXT("de")) == 0 && T == TEXT("deu")) || (FCString::Strcmp(R->Code, TEXT("fr")) == 0 && T == TEXT("fra"));
+	};
+	const FString N = Old() ? FString(TEXT("en")) : Normalize(Code).IsEmpty() ? FString(TEXT("en")) : Normalize(Code);
+	bOwn = false;
+	for (int32 i = 0; i < TrackLanguages.Num(); ++i)
+	{
+		if (Matches(TrackLanguages[i], Row(N))) { bOwn = true; return i; }
+	}
+	for (int32 i = 0; i < TrackLanguages.Num(); ++i)
+	{
+		if (Matches(TrackLanguages[i], Row(TEXT("en")))) { bOwn = N == TEXT("en"); return i; }
+	}
+	// no tags at all (an old one-track mp4): the first, the English one the converter always kept
+	bOwn = N == TEXT("en");
+	return 0;
+}
+
+bool OLLanguage::ShowSubtitles(const FString& Code, bool bOwnVoice)
+{
+	if (Old()) return true;
+	return Subtitles() || (!bOwnVoice && Normalize(Code) != TEXT("en"));
+}
+
 FString OLLanguage::ParseKexLanguage(const FString& CfgText)
 {
 	// seta g_language "de"   (the last one wins, as the remaster reads the file top to bottom)
@@ -241,5 +372,13 @@ void OLLanguage::TestSet(const FString& Code)
 void OLLanguage::TestSetOld(int32 bOld)
 {
 	GTestOld = bOld;
+}
+
+void OLLanguage::TestForget()
+{
+	GChosen = false;
+	GCode.Reset();
+	GSource.Reset();
+	GSubtitles = -1;
 }
 #endif

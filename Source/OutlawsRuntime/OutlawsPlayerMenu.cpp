@@ -24,6 +24,7 @@
 #include "OutlawsDeviceProfile.h"
 #include "OutlawsMpHost.h"
 #include "OutlawsDevChecks.h"
+#include "OutlawsLanguage.h"            // REQ-LANGUAGE: the Options > Language page
 #include "HAL/IConsoleManager.h"
 #include "Camera/CameraComponent.h"
 #include "GameFramework/CharacterMovementComponent.h"
@@ -134,9 +135,15 @@ namespace
 
 bool AOutlawsPlayer::LoadMenuSource()
 {
-	if (MenuSource && MenuSource->IsLoaded())
+	// (REQ-LANGUAGE, user 9 Nov: the menus change at once) a source read in another language than the one in force is
+	// read again, so the next page shown is in the new one
+	if (MenuSource && MenuSource->IsLoaded() && MenuSource->GetAsked() == OLLanguage::Current())
 	{
 		return true;
+	}
+	if (MenuSource && MenuSource->IsLoaded())
+	{
+		UE_LOG(LogOutlaws, Log, TEXT("OLRT menu: the strings read again, %s to %s"), *MenuSource->GetAsked(), *OLLanguage::Current());
 	}
 	MenuSource = MakeShared<OutlawsMenu::FSource>();
 	const AOutlawsLevelActor* L = Level.Get();
@@ -1070,6 +1077,17 @@ bool AOutlawsPlayer::ShowMenuPage(const FString& File, bool bPush)
 		for (const FItem& It : Page->Items) Rows += (Rows.IsEmpty() ? TEXT("") : TEXT(" | ")) + It.Label;
 		UE_LOG(LogOutlaws, Log, TEXT("OLRT pause page rows (%d, %s): %s"), Page->Items.Num(), Page->Items.Num() > MenuRowsShown ? TEXT("scrolls") : TEXT("no scroll"), *Rows);
 	}
+	if (File == TEXT("options_language.rml"))
+	{
+		// (REQ-LANGUAGE step 6) a language whose files the install lacks (a headset without them pushed) is greyed: its row
+		// says "(not installed)" and a press does nothing
+		const AOutlawsLevelActor* LG = Level.Get();
+		const FString Root = LG && LG->GetAssets() ? LG->GetAssets()->GetRoot() : FString();
+		for (OutlawsMenu::FItem& It : Page->Items)
+		{
+			if (It.Name == TEXT("g_language") && !OLLanguage::Installed(It.Value, Root)) It.Classes += TEXT(" disabled");
+		}
+	}
 	if (File == TEXT("options.rml"))
 	{
 		// ours: the VR settings page, first in the list
@@ -1298,7 +1316,10 @@ bool AOutlawsPlayer::ItemWorks(const OutlawsMenu::FItem& I, TSet<FString>& Visit
 	case EItemKind::Select:
 	case EItemKind::Range:
 		return Settings.Contains(I.Name) || I.Name.StartsWith(TEXT("vr_")) || I.Name.StartsWith(TEXT("cheat_")) || I.Name.StartsWith(TEXT("autosave"))
-			|| I.Name == TEXT("solo_badguys") || I.Name == TEXT("endonboss") || I.Name == TEXT("update_check");
+			|| I.Name == TEXT("solo_badguys") || I.Name == TEXT("endonboss") || I.Name == TEXT("update_check")
+			|| (I.Name == TEXT("cc_enable") && !OLLanguage::Old());          // (REQ-LANGUAGE step 6: the cutscene subtitles)
+	case EItemKind::Radio:
+		return I.Name == TEXT("g_language") && !OLLanguage::Old();           // (REQ-LANGUAGE step 6: the six languages)
 	case EItemKind::Heading:
 		return true;           // kept only when something under it stays (ScrubPage)
 	default:
@@ -1419,6 +1440,7 @@ FString AOutlawsPlayer::MenuRowText(int32 Index) const
 		else if (I.Name == TEXT("vr_onectrl")) Shown = OneController;
 		else if (I.Name == TEXT("aim_tune")) Shown = FMath::Clamp(FMath::RoundToInt(AimTuneDeg), 0, 12);
 		else if (I.Name == TEXT("difficulty")) Shown = Level.IsValid() ? int32(Level->Difficulty) : 0;
+		else if (I.Name == TEXT("cc_enable")) Shown = OLLanguage::Subtitles() ? 1 : 0;      // (REQ-LANGUAGE: Off, On as the page lists them)
 		else if (I.Name == TEXT("solo_badguys")) Shown = Level.IsValid() ? FMath::Clamp(FMath::RoundToInt(Level->SoloBadGuys * 4.f) - 4, 0, 12) : 0;
 		else if (I.Name == TEXT("autosave_minutes"))
 		{
@@ -1462,6 +1484,14 @@ FString AOutlawsPlayer::MenuRowText(int32 Index) const
 		return FString::Printf(TEXT("%s:  %s"), *I.Label, bOn ? TEXT("On") : TEXT("Off"));
 	}
 	case EItemKind::Radio:
+		if (I.Name == TEXT("g_language"))
+		{
+			// (REQ-LANGUAGE step 6) the language in force marked; one whose files the install lacks said so (and greyed)
+			const AOutlawsLevelActor* LG = Level.Get();
+			const bool bHere = OLLanguage::Installed(I.Value, LG && LG->GetAssets() ? LG->GetAssets()->GetRoot() : FString());
+			return FString::Printf(TEXT("%s %s%s"), OLLanguage::Normalize(I.Value) == OLLanguage::Current() ? TEXT("(o)") : TEXT("( )"), *I.Label,
+				bHere ? TEXT("") : TEXT("  (not installed)"));
+		}
 		return FString::Printf(TEXT("%s %s"), (V && *V) ? TEXT("(o)") : TEXT("( )"), *I.Label);
 	case EItemKind::Range:
 	{
@@ -2100,6 +2130,31 @@ void AOutlawsPlayer::MenuActivate(int32 Hand, int32 Index)
 	if (I.Name.StartsWith(TEXT("mphost")))
 	{
 		MpHostPress(I.Name);                             // (M1: the Host Game page's rows, OutlawsPlayerMpHost.cpp)
+		return;
+	}
+	if (I.Name == TEXT("g_language") && I.Kind == EItemKind::Radio)
+	{
+		// (REQ-LANGUAGE step 6, user 9 Nov) a language picked: saved (Language= in the settings), the menus in it at once, the
+		// game's own files (text, voices, item art, cutscenes) from the next level start
+		const FString Code = OLLanguage::Normalize(I.Value);
+		const AOutlawsLevelActor* LG = Level.Get();
+		if (!Code.IsEmpty() && Code != OLLanguage::Current() && OLLanguage::Set(Code, true))
+		{
+			LoadMenuSource();
+			bMenuRebuild = true;
+			if (LG && !LG->IsFrontEnd())
+			{
+				MenuToastText(TEXT("The game's text and voices change at the next level start."));
+				MenuToastLeft = 4.f;
+			}
+		}
+		return;
+	}
+	if (I.Name == TEXT("cc_enable") && I.Kind == EItemKind::Select)
+	{
+		// (REQ-LANGUAGE step 7) the cutscene subtitles On / Off, saved; the next cutscene follows it
+		OLLanguage::SetSubtitles(!OLLanguage::Subtitles(), true);
+		RefreshMenuRows();
 		return;
 	}
 	switch (I.Kind)

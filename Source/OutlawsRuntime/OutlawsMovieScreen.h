@@ -81,6 +81,16 @@ public:
 	void SetSkipHold(float Held, float Need, int32 Buttons = 1);
 	bool IsPlaying() const { return !bFinished; }
 	float GetTime() const;
+	/** (REQ-LANGUAGE, for the probe) the cutscene's audio tracks (-1 until open), the one picked for its language, that
+	 *  track's language tag, whether it is the language's own voice, the subtitles file and its cue count, and whether they
+	 *  show. */
+	int32 GetAudioTrackCount() const { return AudioTracks; }
+	int32 GetAudioTrack() const { return AudioTrack; }
+	const FString& GetAudioTrackLanguage() const { return AudioTrackLanguage; }
+	bool IsOwnVoice() const { return bOwnVoice; }
+	const FString& GetSubtitlePath() const { return SubtitlePath; }
+	int32 GetCueCount() const { return Cues.Num(); }
+	bool AreSubtitlesShown() const { return bShowSubtitles; }
 	void SetVolume(float Volume);
 	/** (REQ-MOVIE43) the picture's width over its height as the media gave it (0 until it is open), and the screen's size (cm). */
 	float GetPictureAspect() const { return PictureAspect; }
@@ -294,7 +304,19 @@ private:
 
 	void LoadSubtitles(const FString& SrtFile);
 	void Finish();
+	// (REQ-LANGUAGE steps 7-8) the cutscene's language: its subtitles file, the audio track picked for it once the media is
+	// open (HandleOpened, then Play), and whether the subtitles show (the switch, or the voice is not the language's own)
+	FString MovieLanguage = TEXT("en");
+	FString SubtitlePath;
+	int32 AudioTracks = -1;            // (-1 until the media is open)
+	int32 AudioTrack = -1;
+	FString AudioTrackLanguage;
+	bool bOwnVoice = true;
+	bool bShowSubtitles = true;
+	bool bPickTrack = false;           // (the media opens paused; HandleOpened picks the track and plays it)
 
+	UFUNCTION()
+	void HandleOpened(FString Url);
 	UFUNCTION()
 	void HandleEnd();
 	UFUNCTION()

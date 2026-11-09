@@ -168,6 +168,7 @@ int32 FOutlawsAssets::Open(const FString& InRoot)
 	Language = TEXT("en");
 	LangLabs.Reset();
 	LangIndex.Reset();
+	TauntLab.Reset();
 	bOldNativeMount = OldNativeMount();
 	if (NumStockLabs > 0)
 	{
@@ -224,11 +225,16 @@ int32 FOutlawsAssets::Open(const FString& InRoot)
 bool FOutlawsAssets::UseLanguage(const FString& Code)
 {
 	const FString Want = OLLanguage::Old() ? FString(TEXT("en")) : OLLanguage::Normalize(Code).IsEmpty() ? FString(TEXT("en")) : OLLanguage::Normalize(Code);
-	if (Want == Language && (Want != TEXT("en") || LangLabs.Num() == 0)) return false;
+	if (Want == Language && (Want != TEXT("en") || LangLabs.Num() == 0))
+	{
+		OLLanguage::NoteApplied(Language, Root);
+		return false;
+	}
 	const FString Was = Language;
 	const int32 WasLabs = LangLabs.Num();
 	LangLabs.Reset();                                        // (the old language's handles closed)
 	LangIndex.Reset();
+	TauntLab.Reset();
 	TArray<FString> Names;
 	for (const FString& Lab : OLLanguage::LabsFor(Want))
 	{
@@ -252,10 +258,24 @@ bool FOutlawsAssets::UseLanguage(const FString& Code)
 		UE_LOG(LogOutlaws, Log, TEXT("OLRT language: %s asked, none of its LABs (%s) is in %s: English"), *Want, *FString::Join(OLLanguage::LabsFor(Want), TEXT(", ")), *Root);
 	}
 	Language = LangLabs.Num() > 0 ? Want : FString(TEXT("en"));
+	// (step 4) the language's voice: oltaunt_<l>.lab when it has one (not French) and its text LABs are here
+	const FString Taunts = Language != TEXT("en") ? OLLanguage::TauntLab(Language) : FString();
+	if (!Taunts.IsEmpty())
+	{
+		for (const FString& P : { FPaths::Combine(Root, Taunts), FPaths::Combine(Root, TEXT("assets"), Taunts) })
+		{
+			if (!FPaths::FileExists(P)) continue;
+			TSharedPtr<FOutlawsLabFile> File = MakeShared<FOutlawsLabFile>();
+			if (File->Open(P)) TauntLab = File;
+			break;
+		}
+		if (!TauntLab) UE_LOG(LogOutlaws, Log, TEXT("OLRT language: %s has no %s in the install: its voice is English"), *Language, *Taunts);
+	}
+	OLLanguage::NoteApplied(Language, Root);
 	if (Language == Was && WasLabs == 0 && LangLabs.Num() == 0) return false;
 	GOverlaySerial.Increment();
-	UE_LOG(LogOutlaws, Log, TEXT("OLRT language: %s (%s), LABs %s (%d names) in front of the stock order, was %s"), *Language, *OLLanguage::Source(),
-		Names.Num() ? *FString::Join(Names, TEXT(", ")) : TEXT("none"), LangIndex.Num(), *Was);
+	UE_LOG(LogOutlaws, Log, TEXT("OLRT language: %s (%s), LABs %s (%d names) in front of the stock order, voice %s, was %s"), *Language, *OLLanguage::Source(),
+		Names.Num() ? *FString::Join(Names, TEXT(", ")) : TEXT("none"), LangIndex.Num(), TauntLab ? *FString::Printf(TEXT("%s (%d names)"), *Taunts, TauntLab->GetIndex().Num()) : TEXT("English"), *Was);
 	return true;
 }
 
@@ -374,18 +394,24 @@ bool FOutlawsAssets::CloseOverlay(const void* Owner)
 	return true;
 }
 
-bool FOutlawsAssets::GetSound(const FString& Name, bool bHD, TArray<uint8>& Out) const
+const FOutlawsLabFile* FOutlawsAssets::FindSound(const FString& Name, bool bHD, int32& OutEntry) const
 {
+	const FString Key = Name.ToLower();
 	// (REQ-NATIVEMAPS) the level's own LAB first, in either set: a map's own sound is the one its author meant (Bankrupt_RM
 	// keeps its dog1/dog2/chaching.wav over the stock ones)
 	if (Overlay)
 	{
-		if (const int32* E = Overlay->GetIndex().Find(Name.ToLower())) return Overlay->Read(*E, Out);
+		if (const int32* E = Overlay->GetIndex().Find(Key)) { OutEntry = *E; return Overlay.Get(); }
+	}
+	// (REQ-LANGUAGE step 4) the language's taunts and voice lines, with the HD sounds on or off: oltaunt_<l> holds WAV only
+	// and only names the English oltaunt holds (MEASURED 9 Nov: none of olsfx's), so a name it lacks goes on as before
+	if (TauntLab)
+	{
+		if (const int32* E = TauntLab->GetIndex().Find(Key)) { OutEntry = *E; return TauntLab.Get(); }
 	}
 	if (bHD)
 	{
 		// the Remastered sets first: olsfxhd keeps the names, oltaunthd holds the taunts as .ogg
-		const FString Key = Name.ToLower();
 		const FString Ogg = FPaths::GetBaseFilename(Key) + TEXT(".ogg");
 		for (const TSharedPtr<FOutlawsLabFile>& Lab : Labs)
 		{
@@ -393,24 +419,39 @@ bool FOutlawsAssets::GetSound(const FString& Name, bool bHD, TArray<uint8>& Out)
 			if (Base != TEXT("olsfxhd.lab") && Base != TEXT("oltaunthd.lab")) continue;
 			const int32* E = Lab->GetIndex().Find(Key);
 			if (!E) E = Lab->GetIndex().Find(Ogg);
-			if (E) return Lab->Read(*E, Out);
+			if (E) { OutEntry = *E; return Lab.Get(); }
 		}
 	}
 	if (!bHD)
 	{
 		// the first archive holding it that is not one of the HD sound sets
-		const FString Key = Name.ToLower();
 		for (const TSharedPtr<FOutlawsLabFile>& Lab : Labs)
 		{
 			const FString Base = FPaths::GetCleanFilename(Lab->GetPath()).ToLower();
 			if (Base == TEXT("olsfxhd.lab") || Base == TEXT("oltaunthd.lab")) continue;
-			if (const int32* E = Lab->GetIndex().Find(Key))
-			{
-				return Lab->Read(*E, Out);
-			}
+			if (const int32* E = Lab->GetIndex().Find(Key)) { OutEntry = *E; return Lab.Get(); }
 		}
 	}
+	return nullptr;
+}
+
+bool FOutlawsAssets::GetSound(const FString& Name, bool bHD, TArray<uint8>& Out) const
+{
+	int32 Entry = INDEX_NONE;
+	if (const FOutlawsLabFile* Lab = FindSound(Name, bHD, Entry)) return Lab->Read(Entry, Out);
 	return Get(Name, Out);
+}
+
+FString FOutlawsAssets::WhereSound(const FString& Name, bool bHD) const
+{
+	int32 Entry = INDEX_NONE;
+	if (const FOutlawsLabFile* Lab = FindSound(Name, bHD, Entry)) return FPaths::GetCleanFilename(Lab->GetPath());
+	return Where(Name);
+}
+
+FString FOutlawsAssets::GetTauntLab() const
+{
+	return TauntLab ? FPaths::GetCleanFilename(TauntLab->GetPath()) : FString();
 }
 
 bool FOutlawsAssets::Has(const FString& Name) const

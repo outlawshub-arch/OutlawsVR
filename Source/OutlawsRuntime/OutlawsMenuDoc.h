@@ -42,6 +42,7 @@ namespace OutlawsMenu
 		float Min = 0.f, Max = 1.f, Step = 0.1f;   // Range
 		FString Name;                 // the cvar a control edits (g_autoAim, snd_volume...)
 		FString Classes;              // its class attribute ("pc_only chicken": Exit clucks when pointed at)
+		FString Value;                // (REQ-LANGUAGE) a radio button's value attribute (options_language.rml: en fr de it es pt-BR)
 	};
 
 	struct FPage
@@ -101,6 +102,17 @@ namespace OutlawsMenu
 		FString Loc(const FString& Text) const;
 		/** (REQ-LANGUAGE) the language the strings were read in (loc_english under loc_<l>, key by key). */
 		const FString& GetLanguage() const { return Language; }
+		/** (REQ-LANGUAGE) the language asked for when they were read (GetLanguage is English when its loc file is missing). */
+		const FString& GetAsked() const { return Asked; }
+		/** (REQ-LANGUAGE step 5) one of the 16 labels the menu overlay's pages spell out in English (Main Game, Load, Extras,
+		 *  MAIN GAME, Story, Good, Bad, Ugly, EXTRAS, PLAYERS, Controls, Graphics, Volume, CONTROLS, GRAPHICS, VOLUME) in the
+		 *  strings' language: the remaster's own key's text where it has one (upper case for the title forms), our own
+		 *  translation for Story, Players, Extras and Graphics (user 9 Nov).  Any other text, and English, as given. */
+		FString Baked(const FString& English) const;
+		/** The 16 labels, and the remaster key each reads from (empty: our own translation). */
+		static void BakedLabels(TArray<TPair<FString, FString>>& Out);
+		/** Upper case for the Latin-1 letters too (FString::ToUpper is ASCII only): "Contr\u00f4les" -> "CONTR\u00d4LES". */
+		static FString UpperLatin(const FString& Text);
 
 	private:
 		FKpf Kpf;
@@ -110,5 +122,6 @@ namespace OutlawsMenu
 		FKpf Overlay;
 		TMap<FString, FString> Strings;
 		FString Language = TEXT("en");
+		FString Asked = TEXT("en");
 	};
 }

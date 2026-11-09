@@ -28,6 +28,7 @@
 #include "ImageUtils.h"
 #include "PixelFormat.h"
 #include "OutlawsMenuDoc.h"
+#include "OutlawsLanguage.h"          // REQ-LANGUAGE: the cutscene's voice and subtitles
 #include "HAL/FileManager.h"
 #include "OutlawsFormats.h"
 #include "Engine/Texture2D.h"
@@ -190,10 +191,23 @@ bool AOutlawsMovieScreen::Play(const FString& File, const FVector& Eye, const FV
 		Finish();
 		return false;
 	}
-	LoadSubtitles(FPaths::ChangeExtension(File, TEXT("srt")));
+	// (REQ-LANGUAGE steps 7-8, user 9 Nov) the language the level's files are in: its subtitles (<name>_<l>.srt, else the
+	// English), and its own voice picked among the movie's audio tracks once it is open, before it plays (WMF and Android's
+	// player both take a track change best before the start).  French, or a pick that fails: the English voice, with the
+	// subtitles on whatever the switch says.  -OLOldLanguage: <name>.srt and the first track, playing at once, as before.
+	const bool bOldLanguage = OLLanguage::Old();
+	MovieLanguage = OLLanguage::Applied();
+	SubtitlePath = bOldLanguage ? FPaths::ChangeExtension(File, TEXT("srt")) : OLLanguage::SubtitleFile(File, MovieLanguage, OLLanguage::AppliedRoot());
+	LoadSubtitles(SubtitlePath);
+	AudioTracks = AudioTrack = -1;
+	AudioTrackLanguage.Reset();
+	bOwnVoice = MovieLanguage == TEXT("en");
+	bShowSubtitles = OLLanguage::ShowSubtitles(MovieLanguage, bOwnVoice);
+	bPickTrack = !bOldLanguage;
 	Player = NewObject<UMediaPlayer>(this);
-	Player->PlayOnOpen = true;
+	Player->PlayOnOpen = bOldLanguage;
 	Player->SetLooping(false);
+	Player->OnMediaOpened.AddDynamic(this, &AOutlawsMovieScreen::HandleOpened);
 	Player->OnEndReached.AddDynamic(this, &AOutlawsMovieScreen::HandleEnd);
 	Player->OnMediaOpenFailed.AddDynamic(this, &AOutlawsMovieScreen::HandleOpenFailed);
 	Texture = NewObject<UMediaTexture>(this);
@@ -210,8 +224,48 @@ bool AOutlawsMovieScreen::Play(const FString& File, const FVector& Eye, const FV
 		Finish();
 		return false;
 	}
-	UE_LOG(LogOutlaws, Log, TEXT("OLRT movie %s playing (%d subtitle cues)"), *File, Cues.Num());
+	UE_LOG(LogOutlaws, Log, TEXT("OLRT movie %s playing (%d subtitle cues from %s, language %s)"), *File, Cues.Num(),
+		SubtitlePath.IsEmpty() ? TEXT("no file") : *FPaths::GetCleanFilename(SubtitlePath), *MovieLanguage);
 	return true;
+}
+
+void AOutlawsMovieScreen::HandleOpened(FString Url)
+{
+	if (!Player) return;
+	const int32 N = Player->GetNumTracks(EMediaPlayerTrack::Audio);
+	AudioTracks = N;
+	if (!bPickTrack)
+	{
+		AudioTrack = Player->GetSelectedTrack(EMediaPlayerTrack::Audio);
+		return;
+	}
+	bPickTrack = false;
+	// (REQ-LANGUAGE step 8) the language's own track by its tag (the converter keeps them all: en it de es pt-BR in the
+	// remaster's order), else the English one
+	TArray<FString> TrackTags;
+	for (int32 t = 0; t < N; ++t) TrackTags.Add(Player->GetTrackLanguage(EMediaPlayerTrack::Audio, t));
+	bool bOwn = false;
+	int32 Pick = N > 0 ? OLLanguage::PickAudioTrack(TrackTags, MovieLanguage, bOwn) : INDEX_NONE;
+	bool bPicked = true;
+	if (Pick != INDEX_NONE && N > 1 && Player->GetSelectedTrack(EMediaPlayerTrack::Audio) != Pick)
+	{
+		bPicked = Player->SelectTrack(EMediaPlayerTrack::Audio, Pick);
+		if (!bPicked)
+		{
+			// (decision 5: a player that cannot switch plays the first track, the English one, with subtitles)
+			Player->SelectTrack(EMediaPlayerTrack::Audio, 0);
+			Pick = 0;
+			bOwn = MovieLanguage == TEXT("en");
+		}
+	}
+	AudioTrack = Pick;
+	AudioTrackLanguage = TrackTags.IsValidIndex(Pick) ? TrackTags[Pick] : FString();
+	bOwnVoice = bOwn;
+	bShowSubtitles = OLLanguage::ShowSubtitles(MovieLanguage, bOwnVoice);
+	UE_LOG(LogOutlaws, Log, TEXT("OLRT movie audio: track %d of %d (%s) for %s%s; subtitles %s"), Pick, N, AudioTrackLanguage.IsEmpty() ? TEXT("no tag") : *AudioTrackLanguage,
+		*MovieLanguage, bPicked ? (bOwn ? TEXT(", its own voice") : TEXT(", the English voice")) : TEXT(", the switch failed: the English voice"),
+		bShowSubtitles ? TEXT("shown") : TEXT("off"));
+	if (!bPaused && !bFinished) Player->Play();
 }
 
 void AOutlawsMovieScreen::SetVolume(float Volume)
@@ -365,7 +419,7 @@ void AOutlawsMovieScreen::Tick(float DeltaSeconds)
 	if (Cue != ShownCue)
 	{
 		ShownCue = Cue;
-		Subtitle->SetText(FText::FromString(Cue >= 0 ? Cues[Cue].Text : FString()));
+		Subtitle->SetText(FText::FromString(Cue >= 0 && bShowSubtitles ? Cues[Cue].Text : FString()));      // (REQ-LANGUAGE: the switch)
 	}
 	// a player that never gets going (no decoder) must not hold the game
 	if (!bStarted && Age > 8.f)
