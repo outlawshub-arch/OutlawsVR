@@ -60,6 +60,12 @@
 // %LOCALAPPDATA%/OutlawsVR/media: the cutscenes and music converted from the player's install (olvr_install.py's cache)
 static FString OutlawsMediaDir()
 {
+#if WITH_OUTLAWS_TESTS
+	// -OLTestMediaDir=<dir> (tests only, never in Shipping): a media folder of the test's own in place of the converter's
+	// cache, so a test movie is never copied over the player's
+	FString TestDir;
+	if (OLFlags::Value(TEXT("OLTestMediaDir"), TestDir) && !TestDir.IsEmpty()) return TestDir;
+#endif
 	return FPaths::Combine(FPlatformProcess::UserSettingsDir(), TEXT("OutlawsVR"), TEXT("media"));
 }
 
@@ -3382,6 +3388,14 @@ AOutlawsSpriteActor* AOutlawsLevelActor::MakeLooseSprite(const FString& Anim, co
 
 FString AOutlawsLevelActor::DataFile(const TCHAR* Folder, const FString& File) const
 {
+#if WITH_OUTLAWS_TESTS && PLATFORM_WINDOWS
+	// -OLTestMediaDir: the test's folder ahead of everything (beside the install too), so nothing of the player's is touched
+	if (OLFlags::HasValue(TEXT("OLTestMediaDir")))
+	{
+		const FString Test = FPaths::ConvertRelativePathToFull(FPaths::Combine(OutlawsMediaDir(), Folder, File));
+		if (FPaths::FileExists(Test)) return Test;
+	}
+#endif
 	if (AssetsRef)
 	{
 		const FString Beside = FPaths::ConvertRelativePathToFull(FPaths::Combine(AssetsRef->GetRoot(), Folder, File));

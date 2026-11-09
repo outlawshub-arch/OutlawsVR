@@ -246,9 +246,11 @@ void AOutlawsMovieScreen::HandleOpened(FString Url)
 	for (int32 t = 0; t < N; ++t) TrackTags.Add(Player->GetTrackLanguage(EMediaPlayerTrack::Audio, t));
 	bool bOwn = false;
 	int32 Pick = N > 0 ? OLLanguage::PickAudioTrack(TrackTags, MovieLanguage, bOwn) : INDEX_NONE;
-	bool bPicked = true;
+	bool bPicked = true, bSwitched = false;
+	const int32 Wanted = Pick;
 	if (Pick != INDEX_NONE && N > 1 && Player->GetSelectedTrack(EMediaPlayerTrack::Audio) != Pick)
 	{
+		bSwitched = true;
 		bPicked = Player->SelectTrack(EMediaPlayerTrack::Audio, Pick);
 		if (!bPicked)
 		{
@@ -258,6 +260,10 @@ void AOutlawsMovieScreen::HandleOpened(FString Url)
 			bOwn = MovieLanguage == TEXT("en");
 		}
 	}
+	// every track's tag as the player reports it, the pick and whether the switch took (the file's name only, no path)
+	UE_LOG(LogOutlaws, Log, TEXT("OLRT movie %s audio tracks: [%s], language %s, picked %d (own voice %d, selected %d%s)"),
+		*FPaths::GetCleanFilename(Url), *FString::JoinBy(TrackTags, TEXT(", "), [](const FString& T) { return T.IsEmpty() ? FString(TEXT("-")) : T; }),
+		*MovieLanguage, Wanted, bOwn ? 1 : 0, bPicked ? 1 : 0, bSwitched ? TEXT("") : TEXT(", no switch needed"));
 	AudioTrack = Pick;
 	AudioTrackLanguage = TrackTags.IsValidIndex(Pick) ? TrackTags[Pick] : FString();
 	bOwnVoice = bOwn;
