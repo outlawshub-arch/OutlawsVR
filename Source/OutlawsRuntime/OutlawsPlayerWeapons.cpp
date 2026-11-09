@@ -7708,7 +7708,8 @@ void AOutlawsPlayer::KeepDrawnOverWorld(UPrimitiveComponent* C)
 	C->SetRenderCustomDepth(true);
 	C->SetCustomDepthStencilValue(1);        // held gear: the ink line post-process outlines stencil 1
 	// the headset has no post process: a shell instead, as the hands have (0.15 cm, theirs 0.14)
-	if (OutlawsInk::Wanted())
+	static const bool bNoGearInk = OLFlags::Param(TEXT("OLNoGearInk"));     // (BUG-SHOVELHEAD's measure: no shell on held gear)
+	if (OutlawsInk::Wanted() && !bNoGearInk)
 	{
 		AOutlawsPlayer* Self = Cast<AOutlawsPlayer>(C->GetOwner());     // (static: the gear's owner is the player)
 		UProceduralMeshComponent* P = Cast<UProceduralMeshComponent>(C);

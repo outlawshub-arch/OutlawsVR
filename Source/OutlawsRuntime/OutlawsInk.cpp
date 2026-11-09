@@ -71,6 +71,8 @@ namespace
 
 	/** One section's shell: its corners pushed out Local along their faces' normals, wound the other way; faces that
 	 *  show see-through texels of Mask (when given) have none. */
+	int32 GShellWrong = 0;           // (BUG-SHOVELHEAD: corners put out against every face at them, the shell in front of them)
+
 	bool HullOf(const FProcMeshSection& Sec, double Local, TArray<FVector>& Pos, TArray<FVector>& Nrm, TArray<FVector2D>& UV, TArray<int32>& Tris, const OutlawsObj::FSolidMask* Mask)
 	{
 		const TArray<FProcMeshVertex>& Vb = Sec.ProcVertexBuffer;
@@ -116,7 +118,25 @@ namespace
 					}
 				}
 				FVector N = Sum.GetSafeNormal();
+				// (BUG-SHOVELHEAD, MEASURED 9 Nov: the held shovel's blade drew black on the headset, its shell in front of it.  A
+				// corner whose file normal points against every face there (item3d's loose triangles, the blade's) got none of
+				// them above and went out along that normal: the shell on the face's front side, wound to show, over it.)  Out
+				// along the faces' own fronts then, as every other corner goes.  -OLOldShellNormals: the file normal, as before
+				static const bool bOldShellNormals = OLFlags::Param(TEXT("OLOldShellNormals"));
+				const auto* FacesHere = FacesAt.Find(PlaceOf(Vb[V].Position));
+				if (N.IsNearlyZero() && !bOldShellNormals && FacesHere)
+				{
+					for (const FVector& F : *FacesHere) Sum += F;
+					N = Sum.GetSafeNormal();
+				}
 				if (N.IsNearlyZero()) N = Own3.GetSafeNormal();
+				if (FacesHere)
+				{
+					// the measure: out against every face at this corner (its shell on their fronts)
+					bool bAny = false;
+					for (const FVector& F : *FacesHere) bAny |= FVector::DotProduct(F, N) > 0.0;
+					if (!bAny) ++GShellWrong;
+				}
 				Out[k] = Pos.Add(Vb[V].Position + N * Local);
 				Nrm.Add(-N);
 				UV.Add(FVector2D(0.5, 0.5));
@@ -129,6 +149,13 @@ namespace
 		}
 		return Tris.Num() > 0;
 	}
+}
+
+int32 OutlawsInk::ShellWrongCorners(bool bReset)
+{
+	const int32 N = GShellWrong;
+	if (bReset) GShellWrong = 0;
+	return N;
 }
 
 bool OutlawsInk::Wanted()

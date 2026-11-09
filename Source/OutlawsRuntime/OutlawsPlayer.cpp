@@ -794,7 +794,11 @@ void AOutlawsPlayer::UpdateHeldLight(float Dt)
 	}
 	HeldLight = Next;
 	HeldGrace = Grace;
-	const float Shown = FMath::Lerp(HeldLight, UOutlawsCoop::SpawnGraceBright, Grace);
+	float Shown = FMath::Lerp(HeldLight, UOutlawsCoop::SpawnGraceBright, Grace);
+#if WITH_OUTLAWS_TESTS
+	static const bool bNoDim = OLFlags::Param(TEXT("OLHeldNoDim"));     // (BUG-SHOVELHEAD's measure: the room light's dimming off)
+	if (bNoDim) Shown = 1.f;
+#endif
 	for (UMaterialInstanceDynamic* M : HeldMids)
 	{
 		if (M) M->SetScalarParameterValue(TEXT("Brightness"), Shown);

@@ -16,6 +16,9 @@ namespace OutlawsInk
 {
 	/** The mobile renderer (the headset): no post process, so shells instead. */
 	OUTLAWSRUNTIME_API bool Wanted();
+	/** (BUG-SHOVELHEAD, tests) the shell corners put out against every face at them since the last reset (0: every shell behind
+	 *  its faces); bReset sets it back to 0. */
+	OUTLAWSRUNTIME_API int32 ShellWrongCorners(bool bReset);
 	/** Shell M's sections (again, if it was shelled before: the old shell goes). Thickness in cm, world. */
 	OUTLAWSRUNTIME_API void AddShell(UProceduralMeshComponent* M, float Thickness, UMaterialInterface* Ink);
 	/** A mesh cleared and built again: its shells forgotten, so the next AddShell counts all its sections as its own. */
