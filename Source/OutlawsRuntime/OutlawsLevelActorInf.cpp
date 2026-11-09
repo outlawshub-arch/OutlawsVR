@@ -5119,11 +5119,24 @@ void AOutlawsLevelActor::CarryBySectors(float Dt)
 	}
 }
 
+// (BUG-MPUNDERWATER, MEASURED 9 Nov: a level with no .inf has no Inf, and 14 of the 19 native community maps have none; 3way,
+// aband2s, arizonas, beerforh, budville and zekes have water.  The eyes there were never "under", so no breath, no gauge, no
+// drowning, and the gun fired under the water; swimming, which reads LevelData when there is no Inf, went on.)  The water's
+// sector: the live level (its elevators moved) when the level has an INF, else the parsed level, as WaterSurfaceAt does.
+// -OLOldNoInfWater: the INF's only, as before
+const FOutlawsLevel* AOutlawsLevelActor::WaterLevel() const
+{
+	static const bool bOld = OLFlags::Param(TEXT("OLOldNoInfWater"));
+	if (Inf) return &Inf->Live;
+	return bOld ? nullptr : LevelData.Get();
+}
+
 bool AOutlawsLevelActor::WaterHueAt(const FVector& P, FLinearColor& OutHue) const
 {
 	// the sector the point is in, as the faces are grouped: by the sector, never by a test of position
-	if (!Inf) return false;
-	const FOutlawsSector* S = Inf->Live.SectorAt(FOutlawsGeometry::ToOutlaws(P));
+	const FOutlawsLevel* Lw = WaterLevel();
+	if (!Lw) return false;
+	const FOutlawsSector* S = Lw->SectorAt(FOutlawsGeometry::ToOutlaws(P));
 	const int32* C = S ? FOutlawsGeometry::SectorWaterGroup.Find(S->Index) : nullptr;
 	if (!C || !WaterChainHue.IsValidIndex(*C)) return false;
 	OutHue = WaterChainHue[*C];
@@ -5331,8 +5344,9 @@ void AOutlawsLevelActor::UpdateBubbles(float Dt)
 
 bool AOutlawsLevelActor::UnderwaterTintAt(const FVector& Eye, FLinearColor& OutTint) const
 {
-	if (!Inf || WaterTints.Num() == 0) return false;
-	const FOutlawsSector* S = Inf->Live.SectorAt(FOutlawsGeometry::ToOutlaws(Eye));
+	const FOutlawsLevel* Lw = WaterLevel();
+	if (!Lw || WaterTints.Num() == 0) return false;
+	const FOutlawsSector* S = Lw->SectorAt(FOutlawsGeometry::ToOutlaws(Eye));
 	const FLinearColor* T = S ? WaterTints.Find(S->Index) : nullptr;
 	if (!T) return false;
 	OutTint = *T;
@@ -5349,12 +5363,13 @@ FString AOutlawsLevelActor::DebugSectorPaletteAt(const FVector& At) const
 
 int32 AOutlawsLevelActor::DebugWaterSector() const
 {
-	if (!Inf) return -1;
+	const FOutlawsLevel* Lw = WaterLevel();
+	if (!Lw) return -1;
 	int32 Best = -1;
 	double Deep = 0.0;
 	for (const TPair<int32, FLinearColor>& Kv : WaterTints)
 	{
-		const FOutlawsSector* S = Inf->Live.Sector(Kv.Key);
+		const FOutlawsSector* S = Lw->Sector(Kv.Key);
 		if (S && S->Ceil.Y - S->Floor.Y > Deep) { Deep = S->Ceil.Y - S->Floor.Y; Best = Kv.Key; }
 	}
 	return Best;

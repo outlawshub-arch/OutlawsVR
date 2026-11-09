@@ -1589,6 +1589,7 @@ public:
 	void DebugLogElevatorStates(const TCHAR* Tag) const;
 	void DebugScrambleElevators();
 	const class FOutlawsInfRuntime* DebugInf() const { return Inf.Get(); }
+	const FOutlawsLevel* DebugLevelData() const { return LevelData.Get(); }     // (tests: the parsed level, a level with no .inf too)
 	/** (REQ-SECTORLIGHT, tests) A CHANGE_LIGHT elevator's drawn faces, the sprites and models standing in its sectors, the
 	 *  level last drawn (-1 none), its first face's vertex brightness; the time the light updates took and how many. */
 	struct FLightStats
@@ -2362,6 +2363,8 @@ private:
 	int32 HurtSector = -1;                  // the damaging sector last logged
 	TSharedPtr<FOutlawsInfRuntime> Inf;
 	TSharedPtr<FOutlawsLevel> LevelData;              // the parsed level, for water and sector queries
+	/** (BUG-MPUNDERWATER) the level the water's sectors are read from: the INF's live one, else LevelData (no .inf). */
+	const FOutlawsLevel* WaterLevel() const;
 	TSharedPtr<FOutlawsAssets> AssetsRef;
 	TMap<FString, FOutlawsTexInfo> TexInfoCache;
 	// ---- ATX, the animated textures (user 2026-09-29: the train's wheels, switches, the stone key slots): a looping

@@ -230,7 +230,8 @@ void AOutlawsPlayer::BeginPlay()
 	{
 		SmokeTime = 0.f;
 	}
-	if (OLFlags::Param(TEXT("OLShots")))
+	// (BUG-MPUNDERWATER: -OLUnderwaterProbe alone on a co-op client, which joins as a player does: -OLShots skips its title menu)
+	if (OLFlags::Param(TEXT("OLShots")) || OLFlags::Param(TEXT("OLUnderwaterProbe")))
 	{
 		ShotTime = 0.f;
 	}
@@ -5460,7 +5461,8 @@ void AOutlawsPlayer::UpdateWrist()
 	// when that wrist is raised in front of the face (-OLWristTest: held in front of the desktop camera)
 	UpdateBadgeIcon();
 	WristText->SetVisibility(false);
-	const bool bTest = OLFlags::Param(TEXT("OLWristTest")) || OLFlags::Has(TEXT("OLWristCrashProbe")) || OLFlags::Has(TEXT("OLWristGaugeProbe"));     // (BUG-WRISTCRASH's and REQ-WRISTGAUGE's probes too)
+	const bool bTest = OLFlags::Param(TEXT("OLWristTest")) || OLFlags::Has(TEXT("OLWristCrashProbe")) || OLFlags::Has(TEXT("OLWristGaugeProbe"))     // (BUG-WRISTCRASH's and REQ-WRISTGAUGE's probes too)
+		|| OLFlags::Has(TEXT("OLUnderwaterShot"));     // (BUG-MPUNDERWATER's sign-off picture)
 	static const bool bHandTest = OLFlags::Param(TEXT("OLChestTest"));     // (REQ-CHESTPLATE: on the off hand, on the desktop)
 	if (!bVR && !bTest && !bHandTest)
 	{
