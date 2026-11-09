@@ -8,6 +8,7 @@
 
 #include "ShotTestCommon.h"
 #include "OutlawsBeacon.h"
+#include "OutlawsCoop.h"
 #include "UObject/UObjectIterator.h"
 
 #if WITH_OUTLAWS_TESTS
@@ -102,6 +103,77 @@ OL_SHOT_TEST(OLDualLaserProbe, 2577)
 	UE_LOG(LogOutlaws, Display, TEXT("OLSHOT duallaser RESULT %d PASS, %d FAIL"), Pass, Fail);
 	Scene = -1;
 	FGenericPlatformMisc::RequestExit(false);
+}
+
+// -OLShots -OLBubbleOrderProbe (BUG-DUALLASER, the user 9 Nov: the pop-up "a little further and a little higher", at about the
+// kill feed's height, and still in front of every other thing on screen).  In a match: the kill feed's lines, the HUD, then the
+// scoreboard too, with the network's bubble up.  Every visible thing that draws as screen furniture (the foreground group, or a
+// see-through thing sorted 5 or more) is listed with its group and sort; one drawn after the bubble is a FAIL:
+//   "OLSHOT bubbleorder <scene>: bubble <group>/<sort> at <cm> cm, <deg> deg over the view line; after it: <list> PASS|FAIL"
+// then "OLSHOT bubbleorder RESULT ...".  Shots: Saved\OLShots\ol_bubbleorder_<scene>.png.
+OL_SHOT_MATCH(OLBubbleOrderProbe) { return OLFlags::Param(TEXT("OLBubbleOrderProbe")); }
+
+OL_SHOT_TEST(OLBubbleOrderProbe, 2578)
+{
+	static int32 Step = 0, Pass = 0, Fail = 0;
+	static float Wait = 0.f, InLevel = 0.f;
+	static TWeakObjectPtr<AOutlawsJoinBubble> Bub;
+	if (Step < 0 || !L) return;
+	if (L->IsFrontEnd() || bMenuOpen) { InLevel = 0.f; return; }
+	InLevel += Dt;
+	Wait += Dt;
+	if (Step == 0)
+	{
+		if (InLevel < 6.f) return;
+		FActorSpawnParameters SP;
+		SP.ObjectFlags |= RF_Transient;
+		Bub = GetWorld()->SpawnActor<AOutlawsJoinBubble>(AOutlawsJoinBubble::StaticClass(), FTransform::Identity, SP);
+		if (Bub.IsValid()) Bub->Show(EOutlawsBubbleKind::Offer, TEXT("Someone is playing Hideout nearby"), TEXT("Join"), TEXT("X"));
+		Step = 1; Wait = 0.f;
+	}
+	// the feed kept full
+	while (KillLines.Num() < 3) KillLines.Add({ KillLines.Num() == 0 ? TEXT("James killed Doc") : KillLines.Num() == 1 ? TEXT("Doc killed Bob") : TEXT("You killed James"), 30.f, KillLines.Num() == 2 });
+	auto Judge = [&](const TCHAR* Scene)
+	{
+		UPrimitiveComponent* Plane = Bub.IsValid() ? Bub->FindComponentByClass<UStaticMeshComponent>() : nullptr;
+		for (UActorComponent* AC : Bub.IsValid() ? Bub->GetComponents().Array() : TArray<UActorComponent*>())
+			if (UStaticMeshComponent* M = Cast<UStaticMeshComponent>(AC)) if (M->GetName() == TEXT("Plane")) Plane = M;
+		if (!Plane) { UE_LOG(LogOutlaws, Display, TEXT("OLSHOT bubbleorder %s: no bubble FAIL"), Scene); ++Fail; return; }
+		const int32 Bg = Plane->DepthPriorityGroup, Bs = Plane->TranslucencySortPriority;
+		const FVector Eye = Camera->GetComponentLocation(), C = Plane->GetComponentLocation();
+		const double Cm = FVector::Dist(Eye, C);
+		const double Deg = FMath::RadiansToDegrees(FMath::Asin(FMath::Clamp((C.Z - Eye.Z) / FMath::Max(Cm, 1.0), -1.0, 1.0)));
+		FString After, Seen;
+		int32 NSeen = 0;
+		for (TObjectIterator<UPrimitiveComponent> It; It; ++It)
+		{
+			UPrimitiveComponent* Pc = *It;
+			if (!IsValid(Pc) || Pc == Plane || Pc->GetWorld() != GetWorld() || !Pc->IsRegistered() || !Pc->IsVisible()) continue;
+			if (Pc->GetOwner() && Pc->GetOwner()->IsHidden()) continue;
+			if (Pc->GetOwner() == Bub.Get()) continue;
+			const int32 G = Pc->DepthPriorityGroup, S = Pc->TranslucencySortPriority;
+			if (G != SDPG_Foreground && S < 5) continue;
+			++NSeen;
+			const FString Who = FString::Printf(TEXT("%s/%s %d/%d"), Pc->GetOwner() ? *Pc->GetOwner()->GetClass()->GetName() : TEXT("none"), *Pc->GetName(), G, S);
+			if (Seen.Len() < 900) Seen += (Seen.IsEmpty() ? TEXT("") : TEXT(", ")) + Who;
+			if (G > Bg || (G == Bg && S >= Bs)) After += (After.IsEmpty() ? TEXT("") : TEXT(", ")) + Who;
+		}
+		const bool bOk = After.IsEmpty();
+		(bOk ? Pass : Fail)++;
+		UE_LOG(LogOutlaws, Display, TEXT("OLSHOT bubbleorder %s: bubble %d/%d at %.0f cm, %.1f deg over the view line; %d UI things; after it: [%s] %s"), Scene, Bg, Bs, Cm, Deg, NSeen,
+			*After, bOk ? TEXT("PASS") : TEXT("FAIL"));
+		UE_LOG(LogOutlaws, Display, TEXT("OLSHOT bubbleorder %s seen: %s"), Scene, *Seen);
+		FScreenshotRequest::RequestScreenshot(FPaths::ProjectSavedDir() / TEXT("OLShots") / FString(TEXT("ol_bubbleorder_")) + Scene + TEXT(".png"), false, false);
+	};
+	if (Step == 1 && Wait > 2.f) { Judge(TEXT("feed")); Step = 2; Wait = 0.f; }
+	else if (Step == 2 && Wait > 1.f) { UOutlawsCoop::ToggleScoreboard(this, TEXT("bubble order probe")); Step = 3; Wait = 0.f; }
+	else if (Step == 3 && Wait > 2.f) { Judge(TEXT("scoreboard")); Step = 4; Wait = 0.f; }
+	else if (Step == 4 && Wait > 1.f)
+	{
+		UE_LOG(LogOutlaws, Display, TEXT("OLSHOT bubbleorder RESULT %d PASS, %d FAIL"), Pass, Fail);
+		Step = -1;
+		FGenericPlatformMisc::RequestExit(false);
+	}
 }
 
 #endif // WITH_OUTLAWS_TESTS

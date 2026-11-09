@@ -60,7 +60,15 @@ namespace
 	constexpr double QuietNeeded = 1.0;
 	constexpr int32 BubblePxW = 1024, BubblePxH = 360;
 	constexpr float BubbleW = 36.f;                           // cm across (its height by the canvas's shape)
-	constexpr float BubbleDist = 60.f, BubbleDrop = 15.f;     // cm out, degrees under the view line
+	constexpr float BubbleDist = 60.f, BubbleDrop = 15.f;     // cm out, degrees under the view line (-OLOldBubblePlace)
+	// (BUG-DUALLASER, the user 9 Nov: "a little further from the player and a little higher", at about the height of the kill
+	// feed's text, 18.5 degrees over the middle of the view: OutlawsPlayerKillFeed.cpp KillFeedUpDeg), still in front of all
+	constexpr float BubbleDistNew = 75.f, BubbleUpNew = 18.5f;
+	bool OldBubblePlace()
+	{
+		static const bool bOld = OLFlags::Param(TEXT("OLOldBubblePlace"));
+		return bOld;
+	}
 
 	bool BeaconTest(FString& Role)
 	{
@@ -148,6 +156,14 @@ void AOutlawsJoinBubble::Redraw()
 		if (Base)
 		{
 			Plane->SetTranslucentSortPriority(20);
+			// (BUG-DUALLASER, the user 9 Nov: in front of every other thing on screen) the kill feed, the HUD's text and plate are
+			// drawn in the foreground group, after the whole world group the bubble was in: so in it too, and sorted last there
+			// (30: over the feed's and the HUD's 8; the scoreboard and the tutorial card are 20 in the world group)
+			if (!OldBubblePlace())
+			{
+				Plane->SetDepthPriorityGroup(SDPG_Foreground);
+				Plane->SetTranslucentSortPriority(30);
+			}
 			Mid = UMaterialInstanceDynamic::Create(Base, this);
 			Mid->SetTextureParameterValue(TEXT("Tex"), Canvas);
 			Plane->SetMaterial(0, Mid);
@@ -262,8 +278,8 @@ void AOutlawsJoinBubble::Place(float Dt)
 	constexpr float Wn = 4.5f;
 	YawVel += ((bFollow ? Wn * Wn * Err : 0.f) - 2.f * Wn * YawVel) * Step;
 	Yaw = FRotator::NormalizeAxis(Yaw + YawVel * Step);
-	const FVector Ahead = FRotator(-BubbleDrop, Yaw, 0.f).Vector();
-	const FVector Centre = Eye + Ahead * BubbleDist;
+	const FVector Ahead = FRotator(OldBubblePlace() ? -BubbleDrop : BubbleUpNew, Yaw, 0.f).Vector();
+	const FVector Centre = Eye + Ahead * (OldBubblePlace() ? BubbleDist : BubbleDistNew);
 	// (the plane's face is its +Z, turned to the eye: X to the bubble's right, Y down)
 	const FVector ToEye = (Eye - Centre).GetSafeNormal();
 	const FVector F = FVector(Ahead.X, Ahead.Y, 0.0).GetSafeNormal();
