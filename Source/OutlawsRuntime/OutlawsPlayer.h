@@ -639,6 +639,8 @@ private:
 	bool NearForegrip(int32 Hand, bool bAnyDistance = false) const;
 	/** This (empty) hand is close enough to the other hand's shovel shaft to take it two-handed. */
 	bool NearToolShaft(int32 Hand) const;
+	/** (BUG-TOOLSWAP) the hand-to-hand squeezes of the hand update, H squeezing with grip G. */
+	void HandSwapSqueezes(int32 H, float G);
 	FVector SupportAnchor[2] = { FVector::ZeroVector, FVector::ZeroVector };   // where the front hand took this hand's long gun (model space)
 	/** The gatling is out: it stands on the ground, and the player stands behind it. */
 	bool IsMountedGun() const;

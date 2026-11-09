@@ -3350,114 +3350,8 @@ void AOutlawsPlayer::Climbing(float Dt)
 		{
 			bToolSupport[H] = false;
 		}
-		// a hand squeezing on the other hand's shovel shaft takes it two-handed (user 2026-09-28), empty or not
-		if (!bSupport[H] && !bToolSupport[H] && G > 0.6f && bGripArmed[H] && NearToolShaft(H))
-		{
-			bToolSupport[H] = true;
-			bGripArmed[H] = false;
-			Pulse(H, 0.3f);
-		}
-		// an empty hand squeezing on the other hand's long gun takes its forend (and nothing else)
-		if (!bSupport[H] && G > 0.6f && bGripArmed[H] && NearForegrip(H))
-		{
-			bSupport[H] = true;
-			bGripArmed[H] = false;
-			// the hand snaps to the forend's spot, wherever along it the hand closed (user 2026-09-27)
-			SupportAnchor[1 - H] = ForendSpot(Equipped[1 - H]);
-			Pulse(H, 0.3f);
-		}
-		// a bottle in one hand and a weapon in the other, squeezed with the hands together: they trade hands (user
-		// 2026-09-28), the bottle flying into the other fist and the weapon, rounds and all, into this one
-		if (G > 0.6f && bGripArmed[H] && GrabHand != H && GrabHand != 1 - H && !bWheelHeld[H] && !bWheelHeld[1 - H]
-			&& ((HeldBottle[H] && Equipped[1 - H] >= 0) || (Equipped[H] >= 0 && HeldBottle[1 - H]))
-			&& FVector::Dist(GripOf(H)->GetComponentLocation(), GripOf(1 - H)->GetComponentLocation()) < SwapReach())
-		{
-			bGripArmed[H] = false;
-			const int32 Bh = HeldBottle[H] ? H : 1 - H;
-			PassBottle(Bh, 1 - Bh);
-			SwapWeaponHands(1 - Bh, Bh);
-			Pulse(H, 0.4f);
-			Pulse(1 - H, 0.4f);
-		}
-		// a fist squeezed against the other hand while that one holds a weapon: the weapon changes hands, as if
-		// passed from one to the other (user 2026-09-28); the forend grip above comes first for a long gun
-		if (!bSupport[H] && G > 0.6f && bGripArmed[H] && Equipped[H] < 0 && Equipped[1 - H] >= 0 && !HeldItem[H].IsValid() && !HeldBottle[H]
-			&& HeldTool[H].IsEmpty() && GrabHand != H && GrabHand != 1 - H && !bWheelHeld[H] && !bWheelHeld[1 - H]
-			&& FVector::Dist(GripOf(H)->GetComponentLocation(), GripOf(1 - H)->GetComponentLocation()) < SwapReach())
-		{
-			bGripArmed[H] = false;
-			SwapWeaponHands(1 - H, H);
-			Pulse(H, 0.4f);
-			Pulse(1 - H, 0.2f);
-		}
-		// ... and a bottle the same way (user 2026-09-28)
-		if (!bSupport[H] && G > 0.6f && bGripArmed[H] && Equipped[H] < 0 && !HeldBottle[H] && HeldBottle[1 - H] && !HeldItem[H].IsValid()
-			&& HeldTool[H].IsEmpty() && GrabHand != H && GrabHand != 1 - H && !bWheelHeld[H]
-			&& FVector::Dist(GripOf(H)->GetComponentLocation(), GripOf(1 - H)->GetComponentLocation()) < SwapReach())
-		{
-			bGripArmed[H] = false;
-			PassBottle(1 - H, H);
-			Pulse(H, 0.4f);
-			Pulse(1 - H, 0.2f);
-		}
-		// two different one-handed weapons (a revolver and dynamite...): the same squeeze with the hands together trades
-		// them (user 2026-09-28)
-		if (!bSupport[H] && G > 0.6f && bGripArmed[H] && Equipped[H] >= 0 && Equipped[1 - H] >= 0 && Equipped[H] != Equipped[1 - H]
-			&& GrabHand != H && GrabHand != 1 - H && !bWheelHeld[H] && !bWheelHeld[1 - H]
-			&& FVector::Dist(GripOf(H)->GetComponentLocation(), GripOf(1 - H)->GetComponentLocation()) < SwapReach() && TradeWeapons())
-		{
-			bGripArmed[H] = false;
-			Pulse(H, 0.4f);
-			Pulse(1 - H, 0.4f);
-		}
-		// the held gear (the lantern, the plate, the map) changes hands as a weapon does (user 2026-10-01): a free fist
-		// squeezed against the hand holding it takes it; with a weapon in the other hand the two trade
-		if (!bSupport[H] && G > 0.6f && bGripArmed[H] && GrabHand != H && GrabHand != 1 - H && !bWheelHeld[H] && !bWheelHeld[1 - H]
-			&& !HeldItem[H].IsValid() && !HeldBottle[H] && !HeldItem[1 - H].IsValid()
-			&& FVector::Dist(GripOf(H)->GetComponentLocation(), GripOf(1 - H)->GetComponentLocation()) < SwapReach())
-		{
-			const bool bTake = IsGear(HeldTool[1 - H]) && HeldTool[H].IsEmpty() && Equipped[H] < 0 && !HeldBottle[1 - H];
-			const bool bGiveHere = IsGear(HeldTool[H]) && Equipped[1 - H] >= 0;          // gear here, a weapon there
-			// a weapon here, gear there (not while that hand holds this weapon's forend, the lantern hanging under it)
-			const bool bTakeThere = IsGear(HeldTool[1 - H]) && Equipped[H] >= 0 && !bSupport[1 - H];
-			// gear here and a bottle or a prop there (held by its grip: this hand squeezes): they trade (user 2026-10-01: the
-			// shield would not change hands with other things)
-			const bool bForBottle = IsGear(HeldTool[H]) && HeldBottle[1 - H] != nullptr;
-			// gear and a tool or other gear, one in each hand: they trade
-			const bool bToolTrade = !HeldTool[H].IsEmpty() && !HeldTool[1 - H].IsEmpty() && HeldTool[H] != HeldTool[1 - H]
-				&& (IsGear(HeldTool[H]) || IsGear(HeldTool[1 - H]));
-			if (bForBottle || bToolTrade)
-			{
-				bGripArmed[H] = false;
-				const FString Here = HeldTool[H], There = HeldTool[1 - H];
-				DropTool(H);
-				if (bForBottle)
-				{
-					PassBottle(1 - H, H);
-				}
-				else
-				{
-					DropTool(1 - H);
-					EquipTool(H, There);
-				}
-				EquipTool(1 - H, Here);
-				Pulse(H, 0.4f);
-				Pulse(1 - H, 0.4f);
-				UE_LOG(LogOutlaws, Log, TEXT("OLRT the %s traded for the %s"), *Here, bForBottle ? TEXT("held thing") : *There);
-			}
-			else if (bTake || bGiveHere || bTakeThere)
-			{
-				bGripArmed[H] = false;
-				const int32 Gh = bGiveHere ? H : 1 - H;       // the hand with the gear
-				const FString Item = HeldTool[Gh];
-				DropTool(Gh);
-				if (!bTake) SwapWeaponHands(1 - Gh, Gh);
-				EquipTool(1 - Gh, Item);
-				Pulse(H, 0.4f);
-				Pulse(1 - H, 0.3f);
-				UE_LOG(LogOutlaws, Log, TEXT("OLRT the %s changes hands%s"), *Item, bTake ? TEXT("") : TEXT(" (traded for the weapon)"));
-			}
-		}
+		// (BUG-TOOLSWAP, 9 Nov) the hand-to-hand squeezes, in their order, in one place the -OLToolSwapProbe calls too
+		HandSwapSqueezes(H, G);
 		if (G > 0.6f && bGripArmed[H] && Equipped[H] >= 0 && GrabHand != H && !bWheelHeld[H])
 		{
 			// a hand holding a gun takes whatever glows for it as an empty hand does (user 2026-10-01): the gun set aside
@@ -6072,3 +5966,122 @@ void AOutlawsPlayer::TickStickChordTest()
 	else if (Step == 4 && T > 14.0) { ++Step; UE_LOG(LogOutlaws, Log, TEXT("OLRT stick chord test: done")); FGenericPlatformMisc::RequestExit(false); }
 }
 #endif // WITH_OUTLAWS_TESTS
+
+// (BUG-TOOLSWAP, 9 Nov) the squeezes that move things from hand to hand, moved out of the hand update unchanged so the
+// -OLToolSwapProbe can run them: the shovel shaft and a long gun's forend taken, then the trades and passes.  H squeezes.
+void AOutlawsPlayer::HandSwapSqueezes(int32 H, float G)
+{
+	// a hand squeezing on the other hand's shovel shaft takes it two-handed (user 2026-09-28), empty or not
+	if (!bSupport[H] && !bToolSupport[H] && G > 0.6f && bGripArmed[H] && NearToolShaft(H))
+	{
+		bToolSupport[H] = true;
+		bGripArmed[H] = false;
+		Pulse(H, 0.3f);
+	}
+	// an empty hand squeezing on the other hand's long gun takes its forend (and nothing else)
+	if (!bSupport[H] && G > 0.6f && bGripArmed[H] && NearForegrip(H))
+	{
+		bSupport[H] = true;
+		bGripArmed[H] = false;
+		// the hand snaps to the forend's spot, wherever along it the hand closed (user 2026-09-27)
+		SupportAnchor[1 - H] = ForendSpot(Equipped[1 - H]);
+		Pulse(H, 0.3f);
+	}
+	// a bottle in one hand and a weapon in the other, squeezed with the hands together: they trade hands (user
+	// 2026-09-28), the bottle flying into the other fist and the weapon, rounds and all, into this one
+	if (G > 0.6f && bGripArmed[H] && GrabHand != H && GrabHand != 1 - H && !bWheelHeld[H] && !bWheelHeld[1 - H]
+		&& ((HeldBottle[H] && Equipped[1 - H] >= 0) || (Equipped[H] >= 0 && HeldBottle[1 - H]))
+		&& FVector::Dist(GripOf(H)->GetComponentLocation(), GripOf(1 - H)->GetComponentLocation()) < SwapReach())
+	{
+		bGripArmed[H] = false;
+		const int32 Bh = HeldBottle[H] ? H : 1 - H;
+		PassBottle(Bh, 1 - Bh);
+		SwapWeaponHands(1 - Bh, Bh);
+		Pulse(H, 0.4f);
+		Pulse(1 - H, 0.4f);
+	}
+	// a fist squeezed against the other hand while that one holds a weapon: the weapon changes hands, as if
+	// passed from one to the other (user 2026-09-28); the forend grip above comes first for a long gun
+	if (!bSupport[H] && G > 0.6f && bGripArmed[H] && Equipped[H] < 0 && Equipped[1 - H] >= 0 && !HeldItem[H].IsValid() && !HeldBottle[H]
+		&& HeldTool[H].IsEmpty() && GrabHand != H && GrabHand != 1 - H && !bWheelHeld[H] && !bWheelHeld[1 - H]
+		&& FVector::Dist(GripOf(H)->GetComponentLocation(), GripOf(1 - H)->GetComponentLocation()) < SwapReach())
+	{
+		bGripArmed[H] = false;
+		SwapWeaponHands(1 - H, H);
+		Pulse(H, 0.4f);
+		Pulse(1 - H, 0.2f);
+	}
+	// ... and a bottle the same way (user 2026-09-28)
+	if (!bSupport[H] && G > 0.6f && bGripArmed[H] && Equipped[H] < 0 && !HeldBottle[H] && HeldBottle[1 - H] && !HeldItem[H].IsValid()
+		&& HeldTool[H].IsEmpty() && GrabHand != H && GrabHand != 1 - H && !bWheelHeld[H]
+		&& FVector::Dist(GripOf(H)->GetComponentLocation(), GripOf(1 - H)->GetComponentLocation()) < SwapReach())
+	{
+		bGripArmed[H] = false;
+		PassBottle(1 - H, H);
+		Pulse(H, 0.4f);
+		Pulse(1 - H, 0.2f);
+	}
+	// two different one-handed weapons (a revolver and dynamite...): the same squeeze with the hands together trades
+	// them (user 2026-09-28)
+	if (!bSupport[H] && G > 0.6f && bGripArmed[H] && Equipped[H] >= 0 && Equipped[1 - H] >= 0 && Equipped[H] != Equipped[1 - H]
+		&& GrabHand != H && GrabHand != 1 - H && !bWheelHeld[H] && !bWheelHeld[1 - H]
+		&& FVector::Dist(GripOf(H)->GetComponentLocation(), GripOf(1 - H)->GetComponentLocation()) < SwapReach() && TradeWeapons())
+	{
+		bGripArmed[H] = false;
+		Pulse(H, 0.4f);
+		Pulse(1 - H, 0.4f);
+	}
+	// the held gear (the lantern, the plate, the map) changes hands as a weapon does (user 2026-10-01): a free fist
+	// squeezed against the hand holding it takes it; with a weapon in the other hand the two trade.  (BUG-TOOLSWAP, the
+	// user 9 Nov) the tools too, the crowbar, the pen and the shovel, against anything in the other hand: the fists
+	// together (a hand on the shovel's or the crowbar's shaft takes it two-handed, above, before this).  A grabbed body
+	// still blocks it.  -OLOldToolSwap: a tool traded only with gear, as before
+	static const bool bOldToolSwap = OLFlags::Param(TEXT("OLOldToolSwap"));
+	auto Passes = [](const FString& Item) { return IsGear(Item) || (!bOldToolSwap && IsTool(Item)); };
+	if (!bSupport[H] && G > 0.6f && bGripArmed[H] && GrabHand != H && GrabHand != 1 - H && !bWheelHeld[H] && !bWheelHeld[1 - H]
+		&& !HeldItem[H].IsValid() && !HeldBottle[H] && !HeldItem[1 - H].IsValid()
+		&& FVector::Dist(GripOf(H)->GetComponentLocation(), GripOf(1 - H)->GetComponentLocation()) < SwapReach())
+	{
+		const bool bTake = Passes(HeldTool[1 - H]) && HeldTool[H].IsEmpty() && Equipped[H] < 0 && !HeldBottle[1 - H];
+		const bool bGiveHere = Passes(HeldTool[H]) && Equipped[1 - H] >= 0;          // gear here, a weapon there
+		// a weapon here, gear there (not while that hand holds this weapon's forend, the lantern hanging under it)
+		const bool bTakeThere = Passes(HeldTool[1 - H]) && Equipped[H] >= 0 && !bSupport[1 - H];
+		// gear here and a bottle or a prop there (held by its grip: this hand squeezes): they trade (user 2026-10-01: the
+		// shield would not change hands with other things)
+		const bool bForBottle = Passes(HeldTool[H]) && HeldBottle[1 - H] != nullptr;
+		// gear or a tool in each hand (before BUG-TOOLSWAP: one of them gear): they trade
+		const bool bToolTrade = !HeldTool[H].IsEmpty() && !HeldTool[1 - H].IsEmpty() && HeldTool[H] != HeldTool[1 - H]
+			&& (Passes(HeldTool[H]) || Passes(HeldTool[1 - H]));
+		if (bForBottle || bToolTrade)
+		{
+			bGripArmed[H] = false;
+			const FString Here = HeldTool[H], There = HeldTool[1 - H];
+			DropTool(H);
+			if (bForBottle)
+			{
+				PassBottle(1 - H, H);
+			}
+			else
+			{
+				DropTool(1 - H);
+				EquipTool(H, There);
+			}
+			EquipTool(1 - H, Here);
+			Pulse(H, 0.4f);
+			Pulse(1 - H, 0.4f);
+			UE_LOG(LogOutlaws, Log, TEXT("OLRT the %s traded for the %s"), *Here, bForBottle ? TEXT("held thing") : *There);
+		}
+		else if (bTake || bGiveHere || bTakeThere)
+		{
+			bGripArmed[H] = false;
+			const int32 Gh = bGiveHere ? H : 1 - H;       // the hand with the gear
+			const FString Item = HeldTool[Gh];
+			DropTool(Gh);
+			if (!bTake) SwapWeaponHands(1 - Gh, Gh);
+			EquipTool(1 - Gh, Item);
+			Pulse(H, 0.4f);
+			Pulse(1 - H, 0.3f);
+			UE_LOG(LogOutlaws, Log, TEXT("OLRT the %s changes hands%s"), *Item, bTake ? TEXT("") : TEXT(" (traded for the weapon)"));
+		}
+	}
+}
