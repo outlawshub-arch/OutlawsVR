@@ -296,6 +296,11 @@ public:
 	 *  value its material holds, checked against the rule; one line per stem asked for, the checks' counts added to Pass /
 	 *  Fail. OutSpots: per stem asked for, the middle of its biggest floor triangle (for the floor shots). */
 	void StochFloorSurvey(const TArray<FString>& Stems, int32& Pass, int32& Fail, TMap<FString, FVector>& OutSpots);
+	/** (-OLStochFloorShots) places to stand and look low and far across a stem's floor: its lit sectors with that floor
+	 *  (light at least 20, or the brightest it has), the biggest first; in each, from near a corner toward the far corner
+	 *  across the floor, the longest look first. OutMaxLight: the brightest of the stem's floor sectors. */
+	struct FStochView { FVector Feet = FVector::ZeroVector; float Yaw = 0.f; int32 Sector = -1; double Area = 0.0; int32 Light = 0; double AcrossCm = 0.0; };
+	void StochFloorViews(const FString& Stem, TArray<FStochView>& Out, int32& OutMaxLight, int32& OutSectors) const;
 #endif
 
 	/** The saved menu settings (Saved/OutlawsSettings.ini, key=value lines). */

@@ -7,12 +7,16 @@
 // "OLSHOT stochfloor <level> <stem>: floor <n> wall <n> ceil <n> triangles ..." per stem of the fifteen there, the level's
 // sections and materials, and "OLSHOT stochfloor RESULT <n> PASS, <m> FAIL".  -OLOldStochAll (as before: every surface of a
 // natural texture, walls too, none of the fifteen) must FAIL.
-// -OLStochFloorShots: also a look at the floor of each of the fifteen in its level, from over its biggest floor triangle
-// (stochfloor_<stem>_<level>.png in Saved\OLShots), and the GPU frame time there with the option on and off ("OLSHOT
-// stochfloor gpu").  Bad guys are hidden and stilled so nothing stands in the view.
+// -OLStochFloorShots: also a look at the floor of each of the fifteen in its level (stochfloor_<stem>_<level>.png in
+// Saved\OLShots), standing at eye height near one corner of its biggest lit floor sector and looking low (pitch -20) and far
+// across it, so the texture's repeat shows; a view with a pickup in it is passed over for the next ("OLSHOT stochfloor view"
+// says the sector, its light and area, the look's length and the pickups passed); and the GPU frame time there with the
+// option on and off ("OLSHOT stochfloor gpu").  Bad guys are hidden and stilled so nothing stands in the view.
 
 #include "ShotTestCommon.h"
 #include "RHI.h"
+#include "OutlawsLevel.h"
+#include "OutlawsGeometry.h"
 
 #if WITH_OUTLAWS_TESTS
 
@@ -148,6 +152,89 @@ void AOutlawsLevelActor::StochFloorSurvey(const TArray<FString>& Stems, int32& P
 		*LevelName, WorldSections, Materials.Num(), FloorMats, ScrollMeshes.Num(), Bad.Num() ? *FString::Join(Bad, TEXT(" ")) : TEXT("none"));
 }
 
+void AOutlawsLevelActor::StochFloorViews(const FString& Stem, TArray<FStochView>& Out, int32& OutMaxLight, int32& OutSectors) const
+{
+	Out.Reset();
+	OutMaxLight = -1;
+	OutSectors = 0;
+	const FOutlawsLevel* Lv = LevelData.Get();
+	if (!Lv) return;
+	const double U = FOutlawsGeometry::UnitsToCm;
+	struct FCand { int32 Si; double Area; int32 Light; };
+	TArray<FCand> Cands;
+	for (const FOutlawsSector& S : Lv->Sectors)
+	{
+		if (S.Verts.Num() < 3 || !Lv->TexStem(S.Floor.Tex).Equals(Stem, ESearchCase::IgnoreCase)) continue;
+		double A2 = 0.0;    // over the walls, holes taken off
+		for (const FOutlawsWall& W : S.Walls)
+		{
+			if (!S.Verts.IsValidIndex(W.V1) || !S.Verts.IsValidIndex(W.V2)) continue;
+			const FVector2D& P = S.Verts[W.V1];
+			const FVector2D& Q = S.Verts[W.V2];
+			A2 += P.X * Q.Y - Q.X * P.Y;
+		}
+		const int32 Light = FOutlawsLevel::LightLevel(S.Ambient);
+		++OutSectors;
+		OutMaxLight = FMath::Max(OutMaxLight, Light);
+		Cands.Add({ S.Index, FMath::Abs(A2) * 0.5, Light });
+	}
+	Cands.Sort([](const FCand& A, const FCand& B) { return A.Area > B.Area; });
+	FString List;
+	for (int32 c = 0; c < Cands.Num() && c < 8; ++c) List += FString::Printf(TEXT(" %d:%.0f/%d"), Cands[c].Si, Cands[c].Area, Cands[c].Light);
+	UE_LOG(LogOutlaws, Display, TEXT("OLSHOT stochfloor sectors %s (sector:area/light, biggest first):%s"), *Stem, *List);
+	const int32 Lit = FMath::Min(16, OutMaxLight);
+	Cands.RemoveAll([Lit](const FCand& C) { return C.Light < Lit; });
+	for (int32 c = 0; c < Cands.Num() && c < 4; ++c)
+	{
+		const FOutlawsSector& S = *Lv->Sector(Cands[c].Si);
+		FVector2D Mid(0.0, 0.0);
+		for (const FVector2D& V : S.Verts) Mid += V;
+		Mid /= double(S.Verts.Num());
+		TArray<FStochView> Views;
+		for (const FVector2D& V : S.Verts)
+		{
+			// stand in from the corner, toward the middle (a sixth of the way, at least 2 units), inside the sector and with room
+			// to stand, so the corner's walls stay at the sides of the view
+			const FVector2D In = (Mid - V).GetSafeNormal();
+			const double Sixth = FMath::Max(2.0, FVector2D::Distance(Mid, V) / 6.0);
+			FVector2D At = V;
+			bool bIn = false;
+			for (double Step : { Sixth, 2.0, 3.5, 5.0, 8.0, 1.0 })
+			{
+				At = V + In * Step;
+				if (Lv->ContainsXZ(S, At.X, At.Y) && (Lv->SurfaceY(S, At, false) - Lv->SurfaceY(S, At, true)) * U > 120.0) { bIn = true; break; }
+			}
+			if (!bIn) continue;
+			// the far corner seen across the floor (the way there inside the sector)
+			double Best = 0.0;
+			FVector2D To = Mid;
+			for (const FVector2D& W : S.Verts)
+			{
+				const double D = FVector2D::Distance(At, W);
+				if (D <= Best) continue;
+				bool bAcross = true;
+				for (double f : { 0.2, 0.4, 0.6, 0.8 })
+				{
+					const FVector2D P = FMath::Lerp(At, W, f);
+					if (!Lv->ContainsXZ(S, P.X, P.Y)) { bAcross = false; break; }
+				}
+				if (bAcross) { Best = D; To = W; }
+			}
+			if (Best <= 0.0) { To = Mid; Best = FVector2D::Distance(At, Mid); }
+			FStochView& Vw = Views.AddDefaulted_GetRef();
+			Vw.Feet = FOutlawsGeometry::ToUE(At, Lv->SurfaceY(S, At, true));
+			const FVector Dir = FOutlawsGeometry::ToUE(To, 0.0) - FOutlawsGeometry::ToUE(At, 0.0);
+			Vw.Yaw = float(FMath::RadiansToDegrees(FMath::Atan2(Dir.Y, Dir.X)));
+			Vw.Sector = S.Index;
+			Vw.Area = Cands[c].Area;
+			Vw.Light = Cands[c].Light;
+			Vw.AcrossCm = Best * U;
+		}
+		Views.Sort([](const FStochView& A, const FStochView& B) { return A.AcrossCm > B.AcrossCm; });
+		Out.Append(Views);
+	}
+}
+
 OL_SHOT_MATCH(OLStochFloorProbe) { return OLFlags::Param(TEXT("OLStochFloorProbe")); }
 
 OL_SHOT_TEST(OLStochFloorProbe, 2588)
@@ -158,6 +245,8 @@ OL_SHOT_TEST(OLStochFloorProbe, 2588)
 	static double Since = 0.0, GpuOn = 0.0, GpuOff = 0.0;
 	static TArray<FString> ShotStems;
 	static TMap<FString, FVector> Spots;
+	static TArray<AOutlawsLevelActor::FStochView> Views;
+	static int32 ViewAt = 0, ViewMaxLight = 0, ViewSectors = 0, Passed = 0;
 	static const bool bShots = OLFlags::Param(TEXT("OLStochFloorShots"));
 	if (!L) return;
 	const double Now = FPlatformTime::Seconds();
@@ -189,7 +278,7 @@ OL_SHOT_TEST(OLStochFloorProbe, 2588)
 	{
 		for (const TWeakObjectPtr<AOutlawsEnemy>& Wk : L->GetEnemies())
 		{
-			if (AOutlawsEnemy* E = Wk.Get()) { E->SetActorHiddenInGame(true); E->SetActorTickEnabled(false); }
+			if (AOutlawsEnemy* E = Wk.Get()) { E->SetActorHiddenInGame(true); E->SetActorTickEnabled(false); if (AActor* Sp = E->GetSprite()) Sp->SetActorHiddenInGame(true); }
 		}
 	};
 	if (Step == 0)
@@ -213,19 +302,112 @@ OL_SHOT_TEST(OLStochFloorProbe, 2588)
 		Since = Now;
 		return;
 	}
-	// the shots: one stem at a time, over its biggest floor triangle, looking down at it
+	// the shots: one stem at a time, standing at one corner of its biggest lit floor sector, looking low and far across it
 	const FString Stem = ShotStems.IsValidIndex(0) ? ShotStems[0] : FString();
 	if (Stem.IsEmpty()) { Next(); return; }
 	if (Step == 1)
 	{
 		Still();
-		TeleportTo(Spots[Stem] + FVector(0.0, 0.0, 92.0), GetActorRotation(), false, true);
-		if (Controller) Controller->SetControlRotation(FRotator(-50.0, GetActorRotation().Yaw, 0.0));
+		L->StochFloorViews(Stem, Views, ViewMaxLight, ViewSectors);
+		ViewAt = 0;
+		Passed = 0;
+		Step = 4;
+	}
+	if (Step == 4)
+	{
+		// the next view to try (a floor triangle's middle, looking down, when the stem has no sector view)
+		Still();
+		if (Views.IsValidIndex(ViewAt))
+		{
+			const AOutlawsLevelActor::FStochView& Vw = Views[ViewAt];
+			TeleportTo(Vw.Feet + FVector(0.0, 0.0, 92.0), FRotator(0.0, Vw.Yaw, 0.0), false, true);
+			if (Controller) Controller->SetControlRotation(FRotator(-20.0, Vw.Yaw, 0.0));
+		}
+		else
+		{
+			TeleportTo(Spots[Stem] + FVector(0.0, 0.0, 92.0), GetActorRotation(), false, true);
+			if (Controller) Controller->SetControlRotation(FRotator(-50.0, GetActorRotation().Yaw, 0.0));
+		}
 		Step = 2;
 		Since = Now;
 	}
+	else if (Step == 5 && Now - Since > 0.5)
+	{
+		Step = 2;
+		Since = Now - 10.0;
+	}
 	else if (Step == 2 && Now - Since > 2.0)
 	{
+		// a pickup in the view: the next view (the last one is taken anyway, said so)
+		const APlayerCameraManager* Cm = UGameplayStatics::GetPlayerCameraManager(this, 0);
+		FString InView;
+		if (Cm && Views.IsValidIndex(ViewAt))
+		{
+			const FVector Eye = Cm->GetCameraLocation();
+			const FRotator Rot = Cm->GetCameraRotation();
+			const double HalfH = FMath::DegreesToRadians(Cm->GetFOVAngle() * 0.5 + 8.0);
+			const double HalfV = FMath::Atan(FMath::Tan(HalfH) * 720.0 / 1280.0) + FMath::DegreesToRadians(8.0);
+			const FRotationMatrix Rm(Rot);
+			const FVector Fw = Rm.GetScaledAxis(EAxis::X), Rt = Rm.GetScaledAxis(EAxis::Y), Up = Rm.GetScaledAxis(EAxis::Z);
+			TArray<AOutlawsLevelActor::FPickupDebug> Items;
+			L->DebugPickups(Items);
+			for (const AOutlawsLevelActor::FPickupDebug& It : Items)
+			{
+				if (!It.Actor || It.Actor->IsHidden()) continue;
+				if (FVector::Dist(It.Where, Eye) < 400.0)
+					UE_LOG(LogOutlaws, Display, TEXT("OLSHOT stochfloor near %s %s: %s %.0f cm from the eye, %.0f cm below it"), *L->LevelName, *Stem, *It.Ground, FVector::Dist(It.Where, Eye), Eye.Z - It.Where.Z);
+				// its bottom, middle and top (a sprite stands up from where it lies; one near the feet shows only its top)
+				FVector BoxMid, BoxHalf;
+				It.Actor->GetActorBounds(true, BoxMid, BoxHalf);
+				if (BoxHalf.IsNearlyZero()) { BoxMid = It.Where + FVector(0.0, 0.0, 20.0); BoxHalf = FVector(20.0); }
+				for (double Lift : { -0.8, 0.0, 0.8 })
+				{
+					const FVector D = BoxMid + FVector(0.0, 0.0, Lift * BoxHalf.Z) - Eye;
+					const double F = D | Fw;
+					if (F < 0.0 || F > 8000.0) continue;
+					if (FMath::Abs(FMath::Atan2(D | Rt, F)) > HalfH || FMath::Abs(FMath::Atan2(D | Up, F)) > HalfV) continue;
+					FCollisionQueryParams Q(SCENE_QUERY_STAT(OutlawsStochView), true, this);
+					Q.AddIgnoredActor(It.Actor);
+					FHitResult Hit;
+					if (GetWorld()->LineTraceSingleByChannel(Hit, Eye, Eye + D, ECC_Visibility, Q)) continue;
+					InView = It.Ground;
+				}
+				if (!InView.IsEmpty()) break;
+			}
+		}
+		if (!InView.IsEmpty() && ViewAt + 1 < Views.Num() && Passed < 24)
+		{
+			++ViewAt;
+			++Passed;
+			UE_LOG(LogOutlaws, Display, TEXT("OLSHOT stochfloor view %s %s: %s in view, the next"), *L->LevelName, *Stem, *InView);
+			Step = 4;
+			return;
+		}
+		if (!InView.IsEmpty())
+		{
+			// every view has one: the pickups in it hidden for the shot, said so
+			TArray<AOutlawsLevelActor::FPickupDebug> Items;
+			L->DebugPickups(Items);
+			const APlayerCameraManager* Cm2 = UGameplayStatics::GetPlayerCameraManager(this, 0);
+			for (const AOutlawsLevelActor::FPickupDebug& It : Items)
+				if (It.Actor && Cm2 && FVector::Dist(It.Where, Cm2->GetCameraLocation()) < 8000.0) It.Actor->SetActorHiddenInGame(true);
+			UE_LOG(LogOutlaws, Display, TEXT("OLSHOT stochfloor view %s %s: pickups in every view, those within 80 m hidden for the shot"), *L->LevelName, *Stem);
+			InView = TEXT("none (hidden)");
+			Step = 5;
+			Since = Now;
+			return;
+		}
+		if (Views.IsValidIndex(ViewAt))
+		{
+			const AOutlawsLevelActor::FStochView& Vw = Views[ViewAt];
+			UE_LOG(LogOutlaws, Display, TEXT("OLSHOT stochfloor view %s %s: sector %d, light %d (brightest of its %d floor sectors %d), area %.0f sq units, across %.0f cm, yaw %.0f pitch -20, %d views passed for pickups%s"),
+				*L->LevelName, *Stem, Vw.Sector, Vw.Light, ViewSectors, ViewMaxLight, Vw.Area, Vw.AcrossCm, Vw.Yaw, Passed,
+				TEXT(""));
+		}
+		else
+		{
+			UE_LOG(LogOutlaws, Display, TEXT("OLSHOT stochfloor view %s %s: no sector view (%d floor sectors), over its biggest floor triangle"), *L->LevelName, *Stem, ViewSectors);
+		}
 		FScreenshotRequest::RequestScreenshot(FPaths::ProjectSavedDir() / TEXT("OLShots") / FString::Printf(TEXT("stochfloor_%s_%s.png"), *Stem, *L->LevelName.ToLower()), false, false);
 		Step = 3;
 		Since = Now;
