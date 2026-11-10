@@ -43,8 +43,12 @@ public:
 	void Build(TFunctionRef<UMaterialInterface*(const FColor&)> MakeMaterial);
 	/** REQ-MARYNAILS: the nails' section in another flat-colour material (a character's polish). */
 	void SetNailMaterial(UMaterialInterface* M);
+	/** REQ-CHIEFHANDS: the lit and shade sections in other flat-colour materials (a character's own skin tone). */
+	void SetSkinMaterials(UMaterialInterface* Lit, UMaterialInterface* Shade);
 	bool HasMesh() const { return Mesh != nullptr; }
 	static FColor NaturalNail();
+	static FColor NaturalLit();
+	static FColor NaturalShade();
 
 	/** 0 = open, 1 = closed. */
 	UFUNCTION(BlueprintCallable, Category = "Hand")
@@ -116,4 +120,6 @@ private:
 	/** The joints turned by the curl, every corner placed; Upload sends them to the mesh. */
 	void Pose(float Trigger, float Grip);
 	void Upload(bool bCreate);
+	/** A section's material swapped on the built mesh (Upload's numbering). */
+	void SetSectionMaterial(int32 Sec, UMaterialInterface* M);
 };

@@ -422,14 +422,35 @@ FColor UOutlawsBoxHand::NaturalNail()
 	return NailColour;
 }
 
-void UOutlawsBoxHand::SetNailMaterial(UMaterialInterface* M)
+FColor UOutlawsBoxHand::NaturalLit()
+{
+	return SkinLit;
+}
+
+FColor UOutlawsBoxHand::NaturalShade()
+{
+	return SkinShade;
+}
+
+void UOutlawsBoxHand::SetSectionMaterial(int32 Sec, UMaterialInterface* M)
 {
 	if (!M) return;
-	Sections[SecNail].Material = M;
-	if (!Mesh || Sections[SecNail].Tris.Num() == 0) return;
+	Sections[Sec].Material = M;
+	if (!Mesh || Sections[Sec].Tris.Num() == 0) return;
 	int32 Index = 0;                                   // (Upload's numbering: the sections with triangles, in order)
-	for (int32 i = 0; i < SecNail; ++i) if (Sections[i].Tris.Num() > 0 && Sections[i].Material) ++Index;
+	for (int32 i = 0; i < Sec; ++i) if (Sections[i].Tris.Num() > 0 && Sections[i].Material) ++Index;
 	Mesh->SetMaterial(Index, M);
+}
+
+void UOutlawsBoxHand::SetNailMaterial(UMaterialInterface* M)
+{
+	SetSectionMaterial(SecNail, M);
+}
+
+void UOutlawsBoxHand::SetSkinMaterials(UMaterialInterface* Lit, UMaterialInterface* Shade)
+{
+	SetSectionMaterial(SecLit, Lit);
+	SetSectionMaterial(SecShade, Shade);
 }
 
 void UOutlawsBoxHand::SetCurl(float Trigger, float Grip)

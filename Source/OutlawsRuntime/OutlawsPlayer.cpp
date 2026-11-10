@@ -214,7 +214,7 @@ void AOutlawsPlayer::BeginPlay()
 		|| OLFlags::Param(TEXT("OLKnifeTest")) || OLFlags::Param(TEXT("OLFanTest"))
 		|| OLFlags::Param(TEXT("OLTntTest")) || OLFlags::Param(TEXT("OLTntDeathTest")) || OLFlags::Param(TEXT("OLArcStuckTest")) || OLFlags::Param(TEXT("OLRemoteFxTest")) || OLFlags::Param(TEXT("OLLanternSwimTest"))
 		|| OLFlags::Param(TEXT("OLFlickTest")) || OLFlags::Param(TEXT("OLFlickNetTest")) || OLFlags::Param(TEXT("OLReloadGripProbe"))
-		|| OLFlags::Param(TEXT("OLCharLoadoutTest")) || (OLFlags::Has(TEXT("OLTreadTest"))) || OLFlags::Has(TEXT("OLVb2Test"))
+		|| OLFlags::Param(TEXT("OLCharLoadoutTest")) || OLFlags::Param(TEXT("OLChiefHandsProbe")) || (OLFlags::Has(TEXT("OLTreadTest"))) || OLFlags::Has(TEXT("OLVb2Test"))
 		|| OLFlags::Has(TEXT("OLWaterHandsTest")) || OLFlags::Has(TEXT("OLWheelTopTest")) || OLFlags::Has(TEXT("OLHurtTintTest"))
 		|| OLFlags::Param(TEXT("OLLevelCarryTest")) || OLFlags::ValueIs(TEXT("OLCoopTest"), TEXT("levelcarry")) || OLFlags::Param(TEXT("OLSpawnGraceProbe")))
 	{
@@ -834,11 +834,51 @@ void AOutlawsPlayer::BuildHands()
 	LeftHand->Build(Make);
 	RightHand->Build(Make);
 	NailsWorn = 0;
+	SkinWorn = 0;
 	if (const AOutlawsLevelActor* L = Level.Get()) WearNails(L->WornCharacter);     // (REQ-MARYNAILS: the kit came first)
+}
+
+void AOutlawsPlayer::WearSkin(const FString& Short)
+{
+	// REQ-CHIEFHANDS: the lit and shade sections take the character's own tone, read off its sprite at runtime, where its row
+	// asks (the Chief); the others keep the hands' own tan.  The held material, a flat colour, as every hand part
+	static const bool bOld = OLFlags::Param(TEXT("OLOldChiefHands"));     // (the before: every character the hands' own tan)
+	const FOutlawsMpCharacter* Ch = Short.IsEmpty() ? nullptr : FOutlawsMpCharacter::Find(Short);
+	FColor Lit = UOutlawsBoxHand::NaturalLit(), Shade = UOutlawsBoxHand::NaturalShade();
+	int32 Px = 0;
+	bool bOwn = false;
+	if (Ch && Ch->SkinFromSprite && !bOld)
+	{
+		FColor SL, SS;
+		if (AOutlawsLevelActor* L = Level.Get())
+			if (L->SpriteSkinTone(Ch->Nwx, SL, SS, Px)) { Lit = SL; Shade = SS; bOwn = true; }
+	}
+	const uint32 Key = 0x1000000u | (uint32(Lit.R) << 16) | (uint32(Lit.G) << 8) | Lit.B;
+	if (Key == SkinWorn || !LeftHand || !RightHand || !LeftHand->HasMesh()) return;
+	SkinWorn = Key;
+	SkinLitWorn = Lit;
+	SkinShadeWorn = Shade;
+	auto Make = [this](const FColor& C)
+	{
+		UMaterialInterface* M = HeldSolidMaterial(C);
+		if (UMaterialInstanceDynamic* Mid = Cast<UMaterialInstanceDynamic>(M))
+		{
+			Mid->SetScalarParameterValue(TEXT("Cel"), 0.f);
+			if (HeldLight >= 0.f) Mid->SetScalarParameterValue(TEXT("Brightness"), HeldLight);
+		}
+		return M;
+	};
+	UMaterialInterface* ML = Make(Lit);
+	UMaterialInterface* MS = Make(Shade);
+	LeftHand->SetSkinMaterials(ML, MS);
+	RightHand->SetSkinMaterials(ML, MS);
+	UE_LOG(LogOutlaws, Log, TEXT("OLRT skin: lit #%02X%02X%02X shade #%02X%02X%02X, %s (%s)"), Lit.R, Lit.G, Lit.B, Shade.R, Shade.G, Shade.B,
+		bOwn ? *FString::Printf(TEXT("from the sprite, %d px"), Px) : TEXT("the hands' own"), Ch ? Ch->Name : TEXT("no character"));
 }
 
 void AOutlawsPlayer::WearNails(const FString& Short)
 {
+	WearSkin(Short);                                     // (REQ-CHIEFHANDS: the skin with the nails, wherever the nails are worn)
 	// REQ-MARYNAILS: the nails are their own section of the hand mesh with their own flat colour, so a character's polish is
 	// that section's colour and nothing more (no texture, no new material: the held one, a 2x2 colour as every hand part)
 	const FOutlawsMpCharacter* Ch = Short.IsEmpty() ? nullptr : FOutlawsMpCharacter::Find(Short);

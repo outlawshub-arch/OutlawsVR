@@ -27,6 +27,7 @@ struct OUTLAWSRUNTIME_API FOutlawsMpCharacter
 	float DamageMult;        // DAMAGE_MULTIPLIER (1 where the ITM has none)
 	uint32 NailRGB;          // REQ-MARYNAILS: the VR hands' nail colour (0xRRGGBB; 0: the hands' own)
 	uint8 StartPistols;      // REQ-SANCHEZDUAL: revolvers in the start kit at least (0: the ITM's count); two are drawn as a pair
+	uint8 SkinFromSprite;    // REQ-CHIEFHANDS: 1: the VR hands' lit and shade tones sampled from the sprite (AOutlawsLevelActor::SpriteSkinTone); 0: the hands' own tan
 
 	static const FOutlawsMpCharacter* All(int32& OutCount);
 	/** By short name (San, Jam, Two, Doc, Bob, Mar), case ignored; nullptr when none. */

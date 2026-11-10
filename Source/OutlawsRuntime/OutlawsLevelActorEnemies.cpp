@@ -134,6 +134,70 @@ TSharedPtr<OutlawsTextures::FSpriteAtlas> AOutlawsLevelActor::GetAtlas(const FSt
 	return Atlas;
 }
 
+bool AOutlawsLevelActor::SpriteSkinTone(const FString& Nwx, FColor& OutLit, FColor& OutShade, int32& OutPx)
+{
+	// REQ-CHIEFHANDS (user 8 Nov: the Chief's VR hands darker, from his sprite): the hands are flat colours, so the character's
+	// skin is two flat colours too, read here at runtime from the character's own art (nothing shipped).  Every frame his
+	// stand choreography shows (all 32 views), the upper three fifths of each drawing (the head, the arms, a bare chest; the
+	// trousers and boots under it), the pixels whose palette colour is warm and skin-like (hue 8..45 degrees, saturation
+	// 0.25..0.85, value 0.3 and up); sorted by brightness, Lit is the mean of the brighter half, Shade of the darker half.
+	// For the Chief (bare chested) that is his skin; for the dressed characters it takes in tan cloth and leather too
+	auto Out = [&](const FIntVector& V)
+	{
+		OutLit = FColor(uint8(V.X >> 16), uint8(V.X >> 8), uint8(V.X), 255);
+		OutShade = FColor(uint8(V.Y >> 16), uint8(V.Y >> 8), uint8(V.Y), 255);
+		OutPx = V.Z;
+		return V.Z > 0;
+	};
+	const FString Key = Nwx.ToLower();
+	if (const FIntVector* Found = SkinToneCache.Find(Key)) return Out(*Found);
+	FIntVector V(0, 0, 0);
+	const TSharedPtr<OutlawsTextures::FSpriteAtlas> A = GetAtlas(Nwx, true);
+	if (A && A->Indices.Num() == A->AtlasW * A->AtlasH && A->Alpha.Num() == A->Indices.Num() && SpritePalette.Num() >= 256 && A->CellW > 0 && A->CellH > 0)
+	{
+		TSet<int32> Cells;
+		for (int32 C : A->Grid) Cells.Add(C);
+		TArray<FColor> Px;
+		for (int32 C : Cells)
+		{
+			const int32 CX = (C % A->Cols) * A->CellW, CY = (C / A->Cols) * A->CellH;
+			if (C < 0 || CX + A->CellW > A->AtlasW || CY + A->CellH > A->AtlasH) continue;
+			int32 Top = -1, Bot = -1;
+			for (int32 y = 0; y < A->CellH; ++y)
+				for (int32 x = 0; x < A->CellW; ++x)
+					if (A->Alpha[(CY + y) * A->AtlasW + CX + x]) { if (Top < 0) Top = y; Bot = y; break; }
+			if (Top < 0) continue;
+			const int32 Last = Top + int32((Bot - Top) * 0.6f);
+			for (int32 y = Top; y < Last; ++y)
+				for (int32 x = 0; x < A->CellW; ++x)
+				{
+					const int32 i = (CY + y) * A->AtlasW + CX + x;
+					if (!A->Alpha[i] || A->Indices[i] == 0) continue;
+					const FColor P = SpritePalette[A->Indices[i]];
+					const FLinearColor Hsv = FLinearColor(P.R / 255.f, P.G / 255.f, P.B / 255.f).LinearRGBToHSV();
+					if (Hsv.R >= 8.f && Hsv.R <= 45.f && Hsv.G >= 0.25f && Hsv.G <= 0.85f && Hsv.B >= 0.3f) Px.Add(P);
+				}
+		}
+		if (Px.Num() >= 64)
+		{
+			auto Lum = [](const FColor& P) { return 0.299f * P.R + 0.587f * P.G + 0.114f * P.B; };
+			Px.StableSort([&Lum](const FColor& X, const FColor& Y) { return Lum(X) < Lum(Y); });
+			auto Mean = [&Px](int32 From, int32 To)
+			{
+				double R = 0, G = 0, B = 0;
+				for (int32 i = From; i < To; ++i) { R += Px[i].R; G += Px[i].G; B += Px[i].B; }
+				const double N = FMath::Max(1, To - From);
+				return (int32(FMath::RoundToDouble(R / N)) << 16) | (int32(FMath::RoundToDouble(G / N)) << 8) | int32(FMath::RoundToDouble(B / N));
+			};
+			const int32 Half = Px.Num() / 2;
+			V = FIntVector(Mean(Half, Px.Num()), Mean(0, Half), Px.Num());
+		}
+	}
+	SkinToneCache.Add(Key, V);
+	UE_LOG(LogOutlaws, Log, TEXT("OLRT skin tone %s: %s"), *Nwx, V.Z > 0 ? *FString::Printf(TEXT("lit #%06X, shade #%06X (%d px)"), V.X, V.Y, V.Z) : TEXT("none read"));
+	return Out(V);
+}
+
 AOutlawsSpriteActor* AOutlawsLevelActor::MakeSprite(const TSharedPtr<OutlawsTextures::FSpriteAtlas>& Atlas, const FString& Name, const FVector& FeetLoc, float Yaw, int32 Light)
 {
 	UWorld* World = GetWorld();

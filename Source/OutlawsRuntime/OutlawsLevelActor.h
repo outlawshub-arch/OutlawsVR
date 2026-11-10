@@ -1163,6 +1163,10 @@ public:
 	const TArray<TWeakObjectPtr<AOutlawsEnemy>>& GetEnemies() const { return Enemies; }
 	/** (M1) A sprite set with all its chors (a multiplayer character's, by its NWX). */
 	TSharedPtr<OutlawsTextures::FSpriteAtlas> LoadSpriteSet(const FString& Nwx) { return GetAtlas(Nwx, true); }
+	/** REQ-CHIEFHANDS: a character's skin tone read off its sprite (every frame of its stand choreography, the upper three
+	 *  fifths of each drawing, the warm skin-like palette colours): Lit the mean of the brighter half, Shade of the darker.
+	 *  False when the sprite is missing or shows too few such pixels.  OutPx: the pixels counted.  Kept per NWX. */
+	bool SpriteSkinTone(const FString& Nwx, FColor& OutLit, FColor& OutShade, int32& OutPx);
 	UFUNCTION(BlueprintCallable, Category = "Outlaws|Enemies")
 	int32 GetKills() const { return Kills; }
 	int32 DebugTotalBadGuys() const { return TotalBadGuys; }      // (tests, BUG-SAMENEMY) the bad guys counted at the load
@@ -2181,6 +2185,7 @@ private:
 	FString TauntSuffix;                                            // level ITM TAUNT_TYPE: t / m / c
 	TMap<FString, TSharedPtr<OutlawsTextures::FSpriteAtlas>> AtlasCache;   // "nwx" or "all:nwx" -> atlas
 	TArray<FColor> SpritePalette;
+	TMap<FString, FIntVector> SkinToneCache;                         // (REQ-CHIEFHANDS) nwx -> (lit, shade, px), lit/shade 0xRRGGBB
 	TSharedPtr<OutlawsTextures::FSpriteAtlas> GetAtlas(const FString& Anim, bool bAllChors);
 		AOutlawsSpriteActor* MakeSprite(const TSharedPtr<OutlawsTextures::FSpriteAtlas>& Atlas, const FString& Name, const FVector& FeetLoc, float Yaw, int32 Light);
 	public:

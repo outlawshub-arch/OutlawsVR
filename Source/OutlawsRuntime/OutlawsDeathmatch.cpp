@@ -36,12 +36,12 @@
 namespace
 {
 	const FOutlawsMpCharacter GMpCharacters[] = {
-		{ TEXT("San"), TEXT("Spit'n Jack"), TEXT("cidsanch.itm"), TEXT("sanchez.nwx"), TEXT("szdie"), 1.15f, 0u, 2 },      // (REQ-SANCHEZDUAL: his pair; the ITM gives one)
-		{ TEXT("Jam"), TEXT("James Anderson"), TEXT("cidjames.itm"), TEXT("james.nwx"), TEXT("jadie"), 1.0f, 0u, 0 },
-		{ TEXT("Two"), TEXT("Two-Feathers"), TEXT("cidfeath.itm"), TEXT("twofeath.nwx"), TEXT("tfdie"), 0.90f, 0u, 0 },
-		{ TEXT("Doc"), TEXT("Dr. Death"), TEXT("ciddeath.itm"), TEXT("drdeath.nwx"), TEXT("drdie"), 1.05f, 0u, 0 },
-		{ TEXT("Bob"), TEXT("Bob Graham"), TEXT("cidbob.itm"), TEXT("bobgrahm.nwx"), TEXT("bodie"), 0.95f, 0u, 0 },
-		{ TEXT("Mar"), TEXT("'Bloody' Mary"), TEXT("cidmary.itm"), TEXT("mary.nwx"), TEXT("bmdie"), 0.80f, 0xA8141Eu, 0 } };      // (REQ-MARYNAILS: Bloody Mary's red nails)
+		{ TEXT("San"), TEXT("Spit'n Jack"), TEXT("cidsanch.itm"), TEXT("sanchez.nwx"), TEXT("szdie"), 1.15f, 0u, 2, 0 },      // (REQ-SANCHEZDUAL: his pair; the ITM gives one)
+		{ TEXT("Jam"), TEXT("James Anderson"), TEXT("cidjames.itm"), TEXT("james.nwx"), TEXT("jadie"), 1.0f, 0u, 0, 0 },
+		{ TEXT("Two"), TEXT("Two-Feathers"), TEXT("cidfeath.itm"), TEXT("twofeath.nwx"), TEXT("tfdie"), 0.90f, 0u, 0, 1 },      // (REQ-CHIEFHANDS: his darker skin, from his sprite)
+		{ TEXT("Doc"), TEXT("Dr. Death"), TEXT("ciddeath.itm"), TEXT("drdeath.nwx"), TEXT("drdie"), 1.05f, 0u, 0, 0 },
+		{ TEXT("Bob"), TEXT("Bob Graham"), TEXT("cidbob.itm"), TEXT("bobgrahm.nwx"), TEXT("bodie"), 0.95f, 0u, 0, 0 },
+		{ TEXT("Mar"), TEXT("'Bloody' Mary"), TEXT("cidmary.itm"), TEXT("mary.nwx"), TEXT("bmdie"), 0.80f, 0xA8141Eu, 0, 0 } };      // (REQ-MARYNAILS: Bloody Mary's red nails)
 
 	const TCHAR* PhaseName(EOutlawsDmPhase P)
 	{

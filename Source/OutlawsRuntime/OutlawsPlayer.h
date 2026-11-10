@@ -1162,6 +1162,11 @@ private:
 	/** REQ-MARYNAILS: the hands' nails in the character's colour (FOutlawsMpCharacter::NailRGB; the hands' own for none). */
 	void WearNails(const FString& Short);
 	uint32 NailsWorn = 0;
+	/** REQ-CHIEFHANDS: the hands' lit and shade skin in the character's own tone where its row says so (SkinFromSprite: read
+	 *  off its sprite), else the hands' own tan; -OLOldChiefHands: always the hands' own.  WearNails wears it too. */
+	void WearSkin(const FString& Short);
+	uint32 SkinWorn = 0;                 // (0: not yet) 0x1000000 | lit 0xRRGGBB of the skin worn
+	FColor SkinLitWorn = FColor::Black, SkinShadeWorn = FColor::Black;
 	/** -OLShots -OLCharLoadoutTest (BUG-CHARLOADOUT): each multiplayer character's kit made and worn in turn: the first weapon
 	 *  drawn, the counts and the revolver's sound and damage, checked against its ITMs (OutlawsPlayerWeapons.cpp). */
 	void CharLoadoutTestTick();
