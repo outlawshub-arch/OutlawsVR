@@ -211,7 +211,7 @@ AActor* AOutlawsLevelActor::DropCarried(const FString& InItem, const FVector& Ey
 	}
 	// made as the death drop makes its guns: the other machine is told the name with the contents (NoteGroundItem)
 	C->GroundNameSuffix = TEXT("#") + OutWhat;
-	AActor* A = SpawnGroundItem(Ground, Feet);
+	AActor* A = SpawnDropItem(Ground, Feet, Feet);      // (REQ-DROPSCATTER: grows there and hops out)
 	C->GroundNameSuffix.Reset();
 	if (!A)
 	{

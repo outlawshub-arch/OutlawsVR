@@ -1150,6 +1150,57 @@ public:
 	void OnScoreboardPressed();
 	/** Drop a ground item (DROP_ITEM gdrop1, gcanteen...) at a place as a pickup; null if none. */
 	AActor* SpawnGroundItem(const FString& Name, const FVector& FeetPos);
+	/** (REQ-DROPSCATTER, user 9 Nov) A drop from a body (a bad guy's, a bot's, a player's death, the wheel's): it grows from
+	 *  Body (the body's feet), flies out a random way, lands and bounces once on floor the body's side of any wall; Slot of
+	 *  Slots spreads several round one body.  A co-op client asks the host where it lands.  -OLOldDropScatter: made at OldAt
+	 *  as before.  (OutlawsDropScatter.cpp) */
+	AActor* SpawnDropItem(const FString& Name, const FVector& OldAt, const FVector& Body, int32 Slot = 0, int32 Slots = 1);
+	static bool OldDropScatter();
+	/** Where a pickup lies: its flight's rest spot while it flies, else where it is (a save, a late joiner's copy). */
+	FVector DropRestAt(const AActor* A) const;
+	/** The told name's flight part for the drop being made (",olfly=0/..."; "" for none); NoteGroundItem adds it. */
+	FString DropFlightTag(bool bHost, const FVector& FeetPos) const;
+	/** Split a told ground name's flight part off; true with OutOffset (the start's offset from At) or bOutAsk (a client's ask:
+	 *  the host picks the spot round At) when there was one. */
+	static bool SplitDropFlight(FString& InOutName, FVector& OutOffset, bool& bOutAsk);
+	/** A copy of another machine's drop: flies in to where it now lies from there + Offset. */
+	void StartDropFlightFrom(AActor* A, const FVector& Offset);
+	/** The host's answer to this client's ask: fly the waiting copy to At. */
+	void OnDropLandingTold(AActor* A, const FVector& At);
+	void TickDropFlights(float Dt);
+	bool IsDropFlying(const AActor* A) const;
+	struct FDropFlight
+	{
+		TWeakObjectPtr<AActor> Actor;
+		TWeakObjectPtr<USceneComponent> Base;    // the lift or carrying door it lands on (the points are in its frame), or none
+		FVector From = FVector::ZeroVector, Touch = FVector::ZeroVector, Rest = FVector::ZeroVector, Body = FVector::ZeroVector;
+		double Apex = 0.0, Hop = 0.0;            // over the start; the bounce's height over the touch
+		float T1 = 0.f, T2 = 0.f, T = 0.f;       // the first leg's time, the bounce's, time in the air
+		FVector Scale = FVector::OneVector;
+		FVector ModelScale = FVector::ZeroVector;   // a sprite's 3D stand-in (its own world scale, not the actor's), or none
+		bool bWaiting = false;                   // a client's copy waiting for the host's landing spot
+		bool bAsk = false;                       // (the drop being made: a client's, the host asked)
+		float Waited = 0.f;
+		int32 Bounces = 0;
+		float MinScale = 1.f;
+		bool bInPlace = false;                   // no spot passed: today's spot, a hop
+	};
+	TArray<FDropFlight> DropFlights;
+	/** A landing spot round a body's floor (the checks: OutlawsDropScatter.cpp); false when none passes. */
+	bool PickDropLanding(const FVector& Floor, int32 Slot, int32 Slots, FVector& OutRest, FVector& OutTouch, double& OutApex) const;
+	void StartDropFlight(AActor* A, const FDropFlight& F);
+	bool bDropMaking = false;                    // SpawnDropItem's flight, while SpawnGroundItem makes the drop (NoteGroundItem reads it)
+	FDropFlight DropMaking;
+	int32 DropFlightsMade = 0, DropFlightsLanded = 0, DropScatterFallbacks = 0;
+#if WITH_OUTLAWS_TESTS
+	struct FDropFlightDone { TWeakObjectPtr<AActor> Actor; FVector Body = FVector::ZeroVector, Rest = FVector::ZeroVector; int32 Bounces = 0; float MinScale = 1.f, Time = 0.f; bool bInPlace = false; };
+	TArray<FDropFlightDone> DropFlightsDone;     // (-OLDropScatterProbe)
+	/** (-OLDropScatterProbe) A pickup's state by its actor: false when it is no pickup (taken, gone); its items emptied from the pockets
+	 *  first when bMakeRoom, so a walk over it takes it. */
+	bool DebugDropPickup(const AActor* A, bool& bOutHeld, int32& OutCoopId, bool bMakeRoom = false);
+	/** (-OLDropScatterProbe) A drop that gives Contents ("isgun=1,ishells=17"), told as a dead player's gun is. */
+	AActor* DebugDropWithContents(const FString& Name, const FString& Contents, const FVector& Feet);
+#endif
 	/** A pickup just put down by the player: not walked over and taken again until the player has stepped away. */
 	void HoldPickupTillClear(AActor* A) { for (FPickup& P : Pickups) if (P.Actor.Get() == A) P.bWaitClear = true; }
 	/** (user 2026-10-02) The wheel's drop: one of a carried thing (a weapon with what it carries, the plate with its armour

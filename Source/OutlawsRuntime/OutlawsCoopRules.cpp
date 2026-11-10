@@ -319,7 +319,8 @@ void UOutlawsCoop::OnLocalDeath(AOutlawsLevelActor* L, AOutlawsPlayer* P)
 		const FString Ground = GroundItemFor(L, Kv.Key);
 		for (int32 k = 0; k < Kv.Value && !Ground.IsEmpty(); ++k)
 		{
-			if (AActor* KeyA = L->SpawnGroundItem(Ground, RingAt()))
+			const int32 KeySlot = Slot;
+			if (AActor* KeyA = L->SpawnDropItem(Ground, RingAt(), Feet, KeySlot, Total))     // (REQ-DROPSCATTER: out from the feet)
 			{
 				HideDeathDrop(KeyA);                 // (REQ-DEATHDROPHIDE: not before this player's own eyes till it is up)
 				++Made;
@@ -335,7 +336,8 @@ void UOutlawsCoop::OnLocalDeath(AOutlawsLevelActor* L, AOutlawsPlayer* P)
 	{
 		// (the other machine is told the name with the contents, so its copy gives the same: NoteGroundItem)
 		GroundNameSuffix = TEXT("#") + G.Contents;
-		AActor* A = L->SpawnGroundItem(G.Ground, RingAt());
+		const int32 GunSlot = Slot;
+		AActor* A = L->SpawnDropItem(G.Ground, RingAt(), Feet, GunSlot, Total);     // (REQ-DROPSCATTER)
 		GroundNameSuffix.Reset();
 		if (!A) continue;
 		ApplyGroundContents(L, A, G.Contents);

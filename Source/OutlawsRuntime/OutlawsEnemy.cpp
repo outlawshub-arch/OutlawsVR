@@ -2653,7 +2653,9 @@ void AOutlawsEnemy::Tick(float Dt)
 			bDropped = true;
 			if (!Def.DropItem.IsEmpty())
 			{
-				L->SpawnGroundItem(Def.DropItem, GetActorLocation() - FVector(0.0, 0.0, GetCapsuleComponent()->GetScaledCapsuleHalfHeight()));
+				// (REQ-DROPSCATTER: it grows from the body and flies out, OutlawsDropScatter.cpp)
+				const FVector Feet = GetActorLocation() - FVector(0.0, 0.0, GetCapsuleComponent()->GetScaledCapsuleHalfHeight());
+				L->SpawnDropItem(Def.DropItem, Feet, Feet);
 			}
 		}
 		if (Sprite) Sprite->OutlawsYaw = Heading;

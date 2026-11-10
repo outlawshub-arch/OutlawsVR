@@ -1018,7 +1018,7 @@ void UOutlawsCoop::BotDeathDrop(const FBot& B, const AOutlawsEnemy* E)
 			At = bFloor ? FVector(Ring.ImpactPoint) : Feet;
 		}
 		GroundNameSuffix = TEXT("#") + D.Contents;
-		AActor* A = L->SpawnGroundItem(D.Ground, At);
+		AActor* A = L->SpawnDropItem(D.Ground, At, Feet, i, Drops.Num());     // (REQ-DROPSCATTER: out from the feet)
 		GroundNameSuffix.Reset();
 		if (!A) continue;
 		ApplyGroundContents(L, A, D.Contents);

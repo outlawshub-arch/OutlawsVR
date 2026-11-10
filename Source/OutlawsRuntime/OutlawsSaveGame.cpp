@@ -452,7 +452,7 @@ bool AOutlawsLevelActor::BuildSaveText(AOutlawsPlayer* P, FString& OutText, int3
 			// (co-op R7: the number both machines know it by, so a player joining late numbers it the same)
 			if (Pk.CoopId >= 0) J->SetNumberField(TEXT("coop_id"), Pk.CoopId);
 		}
-		SetVec(*J, A->GetActorLocation());
+		SetVec(*J, DropRestAt(A));                     // (REQ-DROPSCATTER: one in the air, where it comes to rest)
 		Ps.Add(MakeShared<FJsonValueObject>(J));
 	}
 	O->SetArrayField(TEXT("pickups"), Ps);

@@ -388,7 +388,13 @@ void UOutlawsCoop::NoteGroundItem(AOutlawsLevelActor* L, AActor* A, const FStrin
 	const int32 i = PickupIndexOf(L, A);
 	if (i < 0) return;                          // (not a pickup: nothing to share)
 	// (2026-10-02: a dead player's gun carries what it gives, "gsgun#isgun=1,ishells=17": the other machine's copy gives the same)
-	const FString Told = Name + C->GroundNameSuffix;
+	FString Told = Name + C->GroundNameSuffix;
+	// (REQ-DROPSCATTER) a drop flying from a body: where it starts (the host's), or the client's ask for its landing spot
+	// (the host takes a client's name of 32 characters at most: an ask that does not fit is not made, the host's answer then
+	// puts it where it was made, a hop in place)
+	const FString Fly = L->DropFlightTag(C->IsHost(), FeetPos);
+	const FString WithFly = Told + (Told.Contains(TEXT("#")) ? TEXT(",") : TEXT("#")) + Fly;
+	if (!Fly.IsEmpty() && (C->IsHost() || WithFly.Len() <= 32)) Told = WithFly;
 	if (C->IsHost())
 	{
 		const int32 Id = C->NextGroundId++;
@@ -469,11 +475,23 @@ void UOutlawsCoop::OnGroundItemRequest(int32 Who, const FString& Name, const FVe
 	{
 		AOutlawsLevelActor* L = FindLevel();
 		if (!L) return;
+		// (REQ-DROPSCATTER) the client's drop asks where it lands: picked here, round its body, and its copy there flies to it
+		FString Plain = Name;
+		FVector Unused;
+		bool bAsk = false;
+		const bool bFly = AOutlawsLevelActor::SplitDropFlight(Plain, Unused, bAsk) && bAsk && !AOutlawsLevelActor::OldDropScatter();
 		FString Contents;
-		const FString Base = SplitGroundName(Name, Contents);
+		const FString Base = SplitGroundName(Plain, Contents);
 		bApplyingRemote = true;
-		AActor* A = L->SpawnGroundItem(Base, At);
+		AActor* A = bFly ? L->SpawnDropItem(Base, At, At) : L->SpawnGroundItem(Base, At);
 		bApplyingRemote = false;
+		const FVector Rest = bFly && A ? L->DropRestAt(A) : At;
+		FString Others = Plain;
+		if (bFly && A)
+		{
+			const FVector D = A->GetActorLocation() - Rest;      // (it is at its start now)
+			Others += (Others.Contains(TEXT("#")) ? TEXT(",") : TEXT("#")) + FString::Printf(TEXT("olfly=0/%d/%d/%d"), FMath::RoundToInt(D.X), FMath::RoundToInt(D.Y), FMath::RoundToInt(D.Z));
+		}
 		const int32 Id = NextGroundId++;
 		const int32 i = PickupIndexOf(L, A);
 		if (i >= 0)
@@ -482,12 +500,12 @@ void UOutlawsCoop::OnGroundItemRequest(int32 Who, const FString& Name, const FVe
 			if (IsStickName(Base)) L->AddLooseDynamite(A);        // (as the dropper's own: a blast or a shot sets it off)
 			ApplyGroundContents(L, A, Contents);                  // (a dropped gun: what the dead player carried)
 		}
-		UE_LOG(LogOutlawsCoop, Log, TEXT("OLCOOP ground item %d %s made by the %s, made here too at %s%s"), Id, *Name, WhoName(Who), *At.ToString(),
+		UE_LOG(LogOutlawsCoop, Log, TEXT("OLCOOP ground item %d %s made by the %s, made here too at %s%s"), Id, *Name, WhoName(Who), *Rest.ToString(),
 			i < 0 ? TEXT(" (no pickup of that name here)") : TEXT(""));
 		if (bAuto) TestClientDropId = Id;
 		const int32 Epoch = LevelEpoch();
-		if (AOutlawsCoopLink* CL = GetLink(Who)) CL->ClientGroundItem(Id, Name, At, Tag, Epoch);
-		ForClients([&](AOutlawsCoopLink& K) { K.ClientGroundItem(Id, Name, At, 0, Epoch); }, Who);     // (N1: made on the other clients too)
+		if (AOutlawsCoopLink* CL = GetLink(Who)) CL->ClientGroundItem(Id, Plain, Rest, Tag, Epoch);
+		ForClients([&](AOutlawsCoopLink& K) { K.ClientGroundItem(Id, Others, Rest, 0, Epoch); }, Who);     // (N1: made on the other clients too)
 	});
 }
 
@@ -583,6 +601,7 @@ void UOutlawsCoop::OnGroundItem(int32 Id, const FString& Name, const FVector& At
 			const int32 i = PickupIndexOf(L, Ours.Get());
 			if (i >= 0) L->Pickups[i].CoopId = Id;
 			UE_LOG(LogOutlawsCoop, Log, TEXT("OLCOOP ground item %d: our %s numbered by the host (tag %d)"), Id, *Name, Tag);
+			if (i >= 0) L->OnDropLandingTold(Ours.Get(), At);       // (REQ-DROPSCATTER: where the host has it land)
 			if (PendingGroundTaken.Remove(Tag) > 0)
 			{
 				UE_LOG(LogOutlawsCoop, Log, TEXT("OLCOOP pickup %d taken by client before its number came: the host told"), Id);
@@ -590,11 +609,17 @@ void UOutlawsCoop::OnGroundItem(int32 Id, const FString& Name, const FVector& At
 			}
 			return;
 		}
+		// (REQ-DROPSCATTER) a drop flying from a body there flies here too, from the same start to the same spot
+		FString Plain = Name;
+		FVector FlyFrom;
+		bool bAsk = false;
+		const bool bFly = AOutlawsLevelActor::SplitDropFlight(Plain, FlyFrom, bAsk) && !bAsk;
 		FString Contents;
-		const FString Base = SplitGroundName(Name, Contents);
+		const FString Base = SplitGroundName(Plain, Contents);
 		bApplyingRemote = true;
 		const double MadeFrom = FPlatformTime::Seconds();
 		AActor* A = L->SpawnGroundItem(Base, At);
+		if (bFly && A && PickupIndexOf(L, A) >= 0) L->StartDropFlightFrom(A, FlyFrom);
 		const double MadeMs = (FPlatformTime::Seconds() - MadeFrom) * 1000.0;
 		bApplyingRemote = false;
 		const int32 i = PickupIndexOf(L, A);
