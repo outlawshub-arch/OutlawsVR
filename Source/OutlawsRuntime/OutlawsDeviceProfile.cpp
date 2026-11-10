@@ -1,5 +1,6 @@
 // Which headset this is, the Quest 2 profile and the Graphics page's performance rows: see OutlawsDeviceProfile.h.
 #include "OutlawsDeviceProfile.h"
+#include "OutlawsPlusColour.h"
 #include "OutlawsFlags.h"
 #include "OutlawsRuntime.h"
 #include "OutlawsLevelActor.h"
@@ -482,7 +483,7 @@ FString OutlawsDeviceProfile::RefreshHint()
 bool OutlawsDeviceProfile::IsRow(const FString& Name)
 {
 	return Name == TEXT("r_resolution") || Name == TEXT("r_refresh") || Name == TEXT("r_lamps") || Name == TEXT("r_perfhud") || Name == TEXT("r_grabglow") || Name == TEXT("r_objdetail") || Name == TEXT("r_pcview")
-		|| Name == TEXT("r_quest2mode");
+		|| Name == TEXT("r_quest2mode") || Name == TEXT("r_pluscolour");
 }
 
 bool OutlawsDeviceProfile::IsReleaseBuild() { return OL_RELEASE_BUILD != 0; }
@@ -524,6 +525,7 @@ FString OutlawsDeviceProfile::RowValue(const FString& Name)
 	if (Name == TEXT("r_objdetail")) return OldpDetailName[OldpChosenDetail >= 0 ? OldpChosenDetail : 1];
 	if (Name == TEXT("r_pcview")) return OldpPcViewName[OldpPcView];
 	if (Name == TEXT("r_quest2mode")) return bOldpQuest2 ? TEXT("On") : TEXT("Off");
+	if (Name == TEXT("r_pluscolour")) return OutlawsPlusColour::RedChosen() ? TEXT("Red") : TEXT("Blue");
 	return FString();
 }
 
@@ -583,6 +585,12 @@ FString OutlawsDeviceProfile::PressRow(const FString& Name)
 			: TEXT("Back to this headset's own settings.");
 		UE_LOG(LogOutlaws, Log, TEXT("OLRT graphics: Quest 2 Mode %s (menu), profile %s"), bOldpQuest2Mode ? TEXT("on") : TEXT("off"), OldpProfileName());
 	}
+	else if (Name == TEXT("r_pluscolour"))
+	{
+		// (REQ-REDPLUS) the cross on the canteen and the medical bags: red (the Red Plus Items look) or the remaster's blue
+		OutlawsPlusColour::SetRedChosen(!OutlawsPlusColour::RedChosen());
+		Hint = TEXT("The cross on canteens and medical bags. 3D ones change at the next level.");
+	}
 	Apply(TEXT("menu"));
 	return Hint;
 }
@@ -598,6 +606,7 @@ void OutlawsDeviceProfile::RestoreDefaults()
 	OldpBright = 1.f;
 	OldpPcView = 0;
 	bOldpQuest2Mode = false;
+	OutlawsPlusColour::SetRedChosen(true);
 	OldpRedecide(false);
 	Apply(TEXT("defaults restored"));
 }
@@ -678,6 +687,8 @@ void OutlawsDeviceProfile::LoadSettings(const TMap<FString, FString>& S, const T
 	OldpPcView = Pv && Pv->Equals(TEXT("steady"), ESearchCase::IgnoreCase) ? 1 : 0;
 	const FString* Q2 = S.Find(TEXT("Quest2Mode"));
 	bOldpQuest2Mode = Q2 && Q2->ToBool();
+	const FString* Plus = S.Find(TEXT("PlusColour"));           // (REQ-REDPLUS: Red or Blue; absent, Red)
+	OutlawsPlusColour::SetRedChosen(!Plus || !Plus->Equals(TEXT("blue"), ESearchCase::IgnoreCase));
 	OldpRedecide(false);
 	Apply(Why);
 }
@@ -694,6 +705,7 @@ void OutlawsDeviceProfile::GatherSettings(TMap<FString, FString>& Out)
 	else Out.Add(TEXT("Brightness"), FString::Printf(TEXT("%.1f"), OldpBright));     // (REQ-GAMMA12: the row as shown, in tenths)
 	Out.Add(TEXT("PcWindowView"), OldpPcView != 0 ? TEXT("steady") : TEXT("headset"));   // (written both ways: the save merges into the file's old keys)
 	Out.Add(TEXT("Quest2Mode"), bOldpQuest2Mode ? TEXT("true") : TEXT("false"));
+	Out.Add(TEXT("PlusColour"), OutlawsPlusColour::RedChosen() ? TEXT("Red") : TEXT("Blue"));
 }
 
 void OutlawsDeviceProfile::Apply(const TCHAR* Why)

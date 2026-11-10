@@ -5,6 +5,7 @@
 #include "OutlawsLab.h"
 #include "OutlawsFormats.h"
 #include "OutlawsPerf.h"
+#include "OutlawsPlusColour.h"
 #include "Async/ParallelFor.h"
 #include "Engine/Texture2D.h"
 #include "TextureResource.h"
@@ -1289,16 +1290,27 @@ UTexture* OutlawsTextures::BuildSpriteAtlasHD(UObject* Outer, const FOutlawsAsse
 	TArray<FPreparedTex> Prepared;
 	Prepared.SetNum(Cells.Num());
 	OL_PERF_SCOPE("Sprites: HD cells + draws");
+	// (REQ-REDPLUS) the canteen's and the medical bags' crosses red: their cells decoded and recoloured, made BGRA8
+	const bool bPlus = OutlawsPlusColour::IsPlusItem(Atlas.Nwx) && OutlawsPlusColour::Active();
+	std::atomic<int32> PlusTexels{ 0 };
 	ParallelFor(Cells.Num(), [&](int32 i)
 	{
 		const FSprxFrame& F = Frames[Cells[i]];
 		const int32 Layers = 1 + ((F.Flags & 1) ? 1 : 0) + ((F.Flags & 2) ? 1 : 0);
 		const int32 PerLayer = (F.End - F.Offset) / Layers;
-		if (F.Offset >= 0 && F.Offset + PerLayer <= Spx.Num())
+		if (bPlus && F.Offset >= 0 && F.Offset + Bc7MipBytes(F.W, F.H) <= Spx.Num() && Bc7MipBytes(F.W, F.H) <= PerLayer)
+		{
+			TArray<FColor> Px;
+			Bc7::DecodeImage(Spx.GetData() + F.Offset, F.W, F.H, Px);
+			PlusTexels += OutlawsPlusColour::RecolourPixels(Atlas.Nwx, Px);
+			PrepareBGRA(F.W, F.H, Px, F.Mips > 1, TF_Bilinear, TA_Wrap, Prepared[i]);
+		}
+		else if (F.Offset >= 0 && F.Offset + PerLayer <= Spx.Num())
 		{
 			PrepareBC7(F.W, F.H, F.Mips, Spx.GetData() + F.Offset, PerLayer, TF_Bilinear, Prepared[i]);
 		}
 	}, OLFlags::Param(TEXT("OLTexSerial")));
+	if (bPlus) UE_LOG(LogOutlaws, Log, TEXT("OLRT plus colour %s: %d texels of %d cells red (HD atlas)"), *Atlas.Nwx, PlusTexels.load(), Cells.Num());
 	TMap<int32, UTexture2D*> CellTex;
 	TArray<TStrongObjectPtr<UTexture2D>> Keep;      // alive until the draws have run
 	for (int32 i = 0; i < Cells.Num(); ++i)
@@ -1371,6 +1383,7 @@ bool OutlawsTextures::DecodeSpriteAtlasHdPixels(const FOutlawsAssets& A, const F
 			return false;
 		}
 		Bc7::DecodeImage(Spx.GetData() + F.Offset, F.W, F.H, Cell);
+		OutlawsPlusColour::Apply(Atlas.Nwx, Cell);       // (REQ-REDPLUS: the 3D canteen and bag painted from it, the icons)
 		const int32 CW = N.W * HdCellScale, CH = N.H * HdCellScale;
 		if (bOdd)
 		{

@@ -3,6 +3,7 @@
 // laser and the trigger picks; B or Y goes back a page.  Controls change what they show and nothing
 // else yet.
 #include "OutlawsDeathmatch.h"
+#include "OutlawsPlusColour.h"
 #include "OutlawsFlags.h"
 #include "OutlawsMpPolish.h"
 #include "OutlawsBeacon.h"
@@ -1250,6 +1251,8 @@ bool AOutlawsPlayer::ShowMenuPage(const FString& File, bool bPush)
 			if (OutlawsDeviceProfile::ShowQuest2ModeRow()) Row(TEXT("Quest 2 Mode"), TEXT("r_quest2mode"), true);
 			Row(TEXT("Performance HUD"), TEXT("r_perfhud"), true);
 			Row(TEXT("Grab Glow"), TEXT("r_grabglow"), true);
+			// (REQ-REDPLUS, the user 8 Nov) the cross on the canteen and the medical bags: Red (the default) or the remaster's Blue
+			Row(TEXT("Plus Colour"), TEXT("r_pluscolour"), false);
 #if !PLATFORM_ANDROID
 			// (REQ-SPECCAM) the PC window's view, only with a headset on the PC (the desktop game's window is its own view)
 			if (bVR || SpecCamDesktop()) Row(TEXT("PC Window View"), TEXT("r_pcview"), false);
@@ -1309,7 +1312,8 @@ bool AOutlawsPlayer::ItemWorks(const OutlawsMenu::FItem& I, TSet<FString>& Visit
 	static const TSet<FString> Actions = { TEXT("ev_close_menu"), TEXT("ev_restart_level"), TEXT("ev_end_game"), TEXT("ev_quit"), TEXT("ev_dialog_close"),
 		TEXT("ev_restart_level_confirm"), TEXT("ev_quit_confirm"), TEXT("ev_save_game_confirm"), TEXT("ev_load_game_confirm"), TEXT("ev_exit_game_confirm") };
 	static const TSet<FString> Settings = { TEXT("r_remasteredmode"), TEXT("r_tinting"), TEXT("r_stochastic"), TEXT("snd_remastered"), TEXT("snd_mastervolume"),
-		TEXT("snd_volume"), TEXT("snd_musicvolume"), TEXT("snd_movievolume"), TEXT("r_resolution"), TEXT("r_refresh"), TEXT("r_lamps"), TEXT("r_perfhud"), TEXT("r_grabglow"), TEXT("r_objdetail"), TEXT("r_gamma"), TEXT("r_pcview"), TEXT("r_quest2mode") };
+		TEXT("snd_volume"), TEXT("snd_musicvolume"), TEXT("snd_movievolume"), TEXT("r_resolution"), TEXT("r_refresh"), TEXT("r_lamps"), TEXT("r_perfhud"), TEXT("r_grabglow"), TEXT("r_objdetail"), TEXT("r_gamma"), TEXT("r_pcview"), TEXT("r_quest2mode"),
+		TEXT("r_pluscolour") };
 	switch (I.Kind)
 	{
 	case EItemKind::Link:
@@ -2460,7 +2464,9 @@ void AOutlawsPlayer::MenuActivate(int32 Hand, int32 Index)
 				if (L->bHDTextures != OutlawsDeviceProfile::DefaultHDTextures()) L->SetHDTextures(OutlawsDeviceProfile::DefaultHDTextures());
 				L->bPaletteGrades = true;
 				L->SetStochastic(true);
+				const bool bPlusWas = OutlawsPlusColour::RedChosen();
 				OutlawsDeviceProfile::RestoreDefaults();
+				if (bPlusWas != OutlawsPlusColour::RedChosen()) L->RefreshPlusColour();
 			}
 			RefreshMenuRows();
 			SaveSettings();
@@ -2698,6 +2704,7 @@ void AOutlawsPlayer::MenuActivate(int32 Hand, int32 Index)
 		{
 			// the Graphics page's performance rows: the next value, applied at once, with a line on what it does
 			const FString Hint = OutlawsDeviceProfile::PressRow(I.Name);
+			if (I.Name == TEXT("r_pluscolour")) if (AOutlawsLevelActor* L = Level.Get()) L->RefreshPlusColour();
 			RefreshMenuRows();
 			SaveSettings();
 			MenuToastText(Hint);

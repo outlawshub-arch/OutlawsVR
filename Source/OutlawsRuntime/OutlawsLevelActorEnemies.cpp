@@ -2,6 +2,7 @@
 // use, and the noises that wake them.
 #include "OutlawsLevelActor.h"
 #include "OutlawsFlags.h"
+#include "OutlawsPlusColour.h"
 #include "OutlawsMpPolish.h"
 #include "OutlawsShipSmoke.h"
 #include "OutlawsHQSound.h"
@@ -2847,6 +2848,22 @@ void AOutlawsLevelActor::SetHDTextures(bool bOn)
 	ApplyGradientSkyLook();         // (BUG-TRAINSKY8BIT: the dome's flat 8-bit sky, or the gradient)
 	SyncSkyThru();                  // (REQ-SKYTHRU: the sky's picture may have changed look; the walls' masks stay the 8-bit ones)
 	UE_LOG(LogOutlaws, Log, TEXT("OLRT remastered graphics %s (%d of %d textures have an HD version)"), bOn ? TEXT("on") : TEXT("off"), TexturesHd.Num(), TexturesLo.Num());
+}
+
+int32 AOutlawsLevelActor::RefreshPlusColour()
+{
+	int32 N = 0;
+	for (const TPair<FString, TSharedPtr<OutlawsTextures::FSpriteAtlas>>& Kv : AtlasCache)
+	{
+		if (!Kv.Value || !OutlawsPlusColour::IsPlusItem(Kv.Value->Nwx) || !Kv.Value->bHdTried) continue;
+		Kv.Value->bHdTried = false;
+		SpriteAtlasesHd.Remove(Kv.Value->TextureHd);
+		Kv.Value->TextureHd = nullptr;
+		++N;
+	}
+	if (N > 0 && bHDTextures) SetHDTextures(true);       // (the sprites in the level take the new look)
+	UE_LOG(LogOutlaws, Log, TEXT("OLRT plus colour %s: %d HD atlases made again"), OutlawsPlusColour::Active() ? TEXT("red") : TEXT("blue"), N);
+	return N;
 }
 
 void AOutlawsLevelActor::ApplyGradientSkyLook()

@@ -97,8 +97,11 @@ Isla Pinar: T4H_Dingle
 
 
 # (REQ-HQSOUND, user 8 Nov) the HQ Sound Pack, a release asset (sound files only, never in the source)
+# (REQ-REDPLUS, user 8 Nov) the red cross on the canteen and the medical bags, the look of the launcher's mod (recoloured at
+# runtime, no art of the mod ships)
 ~Mods
 HQ Sound Pack by T4H_Dingle and Dxierzan
+Red Plus Items by T4H_Dingle
 
 
 

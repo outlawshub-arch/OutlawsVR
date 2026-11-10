@@ -314,6 +314,9 @@ public:
 
 	/** The menu's Remastered Graphics switch: every level texture swaps at once, no rebuild. */
 	void SetHDTextures(bool bOn);
+	/** (REQ-REDPLUS) the Plus Colour row changed: the canteen's and the medical bags' HD sprites made again in its colour (the
+	 *  3D ones painted from them take it at the next level).  Returns the atlases made again. */
+	int32 RefreshPlusColour();
 	/** The player pressed Remastered Graphics (saved as RemasteredGraphicsChosen): until then the headset's default
 	 *  holds (off under the Quest 2 profile, OutlawsDeviceProfile), and the file's RemasteredGraphics is kept as it was. */
 	bool bHDChosen = false;

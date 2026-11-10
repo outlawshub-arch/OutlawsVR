@@ -27,6 +27,8 @@
  *  - Quest 2 Mode (Quest2Mode, QSPEED-5, user 2026-10-20): the Quest 2 profile on any other headset (or the PC), to see
  *    the Quest 2's look and speed on a Quest 3; off by default, live, not shown on a Quest 2 itself. The command line
  *    and ol.Quest2Profile still win over it.
+ *  - Plus Colour (PlusColour, Red or Blue; REQ-REDPLUS, the user 8 Nov): the cross on the canteen and the medical bags,
+ *    red by default (OutlawsPlusColour.h); the sprites change at once, the 3D ones at the next level.
  */
 namespace OutlawsDeviceProfile
 {
