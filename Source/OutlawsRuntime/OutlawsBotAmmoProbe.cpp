@@ -239,7 +239,7 @@ OL_SHOT_TEST(OLBotAmmoProbe, 2145)
 				return;
 			}
 			const AActor* A = C->BotDropNotes[TakeIdx].Actor.Get();
-			const FVector At = A->GetActorLocation();
+			const FVector At = L->DropRestAt(A);       // (REQ-DROPSCATTER: one still in the air, where it comes down)
 			TeleportTo(At + FVector(0.0, 0.0, GetCapsuleComponent()->GetScaledCapsuleHalfHeight() + 5.0), GetActorRotation(), false, true);
 			StageAt = Now;
 			return;

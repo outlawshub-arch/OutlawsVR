@@ -233,7 +233,7 @@ void AOutlawsPlayer::BeginPlay()
 		SmokeTime = 0.f;
 	}
 	// (BUG-MPUNDERWATER: -OLUnderwaterProbe alone on a co-op client, which joins as a player does: -OLShots skips its title menu)
-	if (OLFlags::Param(TEXT("OLShots")) || OLFlags::Param(TEXT("OLUnderwaterProbe")))
+	if (OLFlags::Param(TEXT("OLShots")) || OLFlags::Param(TEXT("OLUnderwaterProbe")) || OLFlags::Param(TEXT("OLDropScatterProbe")))
 	{
 		ShotTime = 0.f;
 	}
