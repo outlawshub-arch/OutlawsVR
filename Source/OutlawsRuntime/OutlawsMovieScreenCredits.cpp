@@ -193,7 +193,7 @@ bool AOutlawsMovieScreen::TickCredits(float DeltaSeconds)
 		const double HoldAt = Length > 1.0 ? FMath::Min(CreditsHoldAt, Length - Margin) : CreditsHoldAt;
 		if (GetTime() >= HoldAt) HoldCreditsPicture(TEXT("its hold point"));
 	}
-	CreditsAge += DeltaSeconds;
+	CreditsAge += DeltaSeconds * ScrollRate;          // (REQ-SCROLLSPEED: the roll at the player's speed)
 	if (CrawlCanvas) CrawlCanvas->UpdateResource();
 	if (CreditsAge >= CreditsSeconds())
 	{

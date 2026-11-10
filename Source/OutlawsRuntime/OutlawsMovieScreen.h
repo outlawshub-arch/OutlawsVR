@@ -158,9 +158,26 @@ public:
 	DECLARE_MULTICAST_DELEGATE(FOnMovieFinished);
 	FOnMovieFinished OnFinished;
 
+	/** REQ-SCROLLSPEED (user 3 Nov): scrolling text on show (a crawl, or the credits rolling): the player's stick sets its speed
+	 *  (AOutlawsPlayer::UpdateScrollSpeed) as a share of the usual, 0 (stopped) to 4.  bVR picks the hint's words: the first
+	 *  scrolling text in a run says how, for ScrollHintSeconds under the picture.  -OLOldScrollSpeed: always 1, no hint. */
+	bool IsScrollingText() const { return !bFinished && (bCrawl || bCreditsRolling); }
+	void SetScrollRate(float Rate, bool bVR);
+	float ScrollRateNow() const { return ScrollRate; }
+	bool ScrollHintShown() const { return ScrollHintLeft > 0.f; }
+	static bool OldScrollSpeed();
+	static constexpr float MaxScrollRate = 4.f;
+	static constexpr float ScrollHintSeconds = 4.f;
+	/** (tests) the crawl's clock (its lines' place is this x its speed). */
+	float CrawlAgeNow() const { return Age; }
+
 	virtual void Tick(float DeltaSeconds) override;
 
 private:
+	float ScrollRate = 1.f;
+	float ScrollRateLogged = 1.f;
+	float ScrollHintLeft = 0.f;
+	FString ScrollHintText;
 	UPROPERTY(VisibleAnywhere)
 	TObjectPtr<UStaticMeshComponent> Screen;
 	UPROPERTY(VisibleAnywhere)

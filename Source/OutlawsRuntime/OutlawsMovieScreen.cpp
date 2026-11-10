@@ -134,11 +134,12 @@ void AOutlawsMovieScreen::SetSkipHold(float Held, float Need, int32 Buttons)
 	{
 		if (C && C->IsVisible() != bShow) C->SetVisibility(bShow);
 	}
-	const int32 Label = bShow ? FMath::Clamp(Buttons, 1, 9) : 0;
+	// (REQ-SCROLLSPEED) the scroll speed's hint in the same place while nothing is held (-2)
+	const int32 Label = bShow ? FMath::Clamp(Buttons, 1, 9) : ScrollHintLeft > 0.f ? -2 : 0;
 	if (Label != ShownHoldSteps)
 	{
 		ShownHoldSteps = Label;
-		Prompt->SetText(Label == 0 ? FText::GetEmpty()
+		Prompt->SetText(Label == 0 ? FText::GetEmpty() : Label == -2 ? FText::FromString(ScrollHintText)
 			: FText::FromString(Label > 1 ? FString::Printf(TEXT("Hold to skip  x%d"), Label) : FString(TEXT("Hold to skip"))));
 	}
 	if (!bShow) return;
@@ -342,6 +343,32 @@ void AOutlawsMovieScreen::SetTone(float Tone)
 	for (UMaterialInstanceDynamic* M : StatsMids) if (M) M->SetScalarParameterValue(TEXT("Tone"), Tone);
 }
 
+bool AOutlawsMovieScreen::OldScrollSpeed()
+{
+	static const bool bOld = OLFlags::Param(TEXT("OLOldScrollSpeed"));     // (REQ-SCROLLSPEED's before: the one speed)
+	return bOld;
+}
+
+void AOutlawsMovieScreen::SetScrollRate(float Rate, bool bVR)
+{
+	if (OldScrollSpeed() || !IsScrollingText()) Rate = 1.f;
+	ScrollRate = FMath::Clamp(Rate, 0.f, MaxScrollRate);
+	if (FMath::Abs(ScrollRate - ScrollRateLogged) >= 0.25f || (ScrollRate != ScrollRateLogged && (ScrollRate == 1.f || ScrollRate == 0.f || ScrollRate == MaxScrollRate)))
+	{
+		ScrollRateLogged = ScrollRate;
+		UE_LOG(LogOutlaws, Log, TEXT("OLRT scrolling text at x%.2f"), ScrollRate);
+	}
+	// the first scrolling text in this run says how, once
+	static bool bHintDone = false;
+	if (!bHintDone && !OldScrollSpeed() && IsScrollingText() && !bPaused)
+	{
+		bHintDone = true;
+		ScrollHintLeft = ScrollHintSeconds;
+		ScrollHintText = bVR ? TEXT("Stick up: faster    Stick down: slower") : TEXT("Mouse wheel or Up / Down: faster, slower");
+		UE_LOG(LogOutlaws, Log, TEXT("OLRT scrolling text: the speed hint shows (%s)"), *ScrollHintText);
+	}
+}
+
 void AOutlawsMovieScreen::Skip()
 {
 	UE_LOG(LogOutlaws, Log, TEXT("OLRT movie skipped at %.1f s"), GetTime());
@@ -358,7 +385,8 @@ void AOutlawsMovieScreen::Tick(float DeltaSeconds)
 		return;
 	}
 	if (bPaused) return;                // (held behind the pause menu: no age, no turning after the head)
-	Age += DeltaSeconds;
+	Age += bCrawl ? DeltaSeconds * ScrollRate : DeltaSeconds;      // (REQ-SCROLLSPEED: the crawl at the player's speed)
+	if (ScrollHintLeft > 0.f) ScrollHintLeft = FMath::Max(0.f, ScrollHintLeft - DeltaSeconds);
 	if (bStats)
 	{
 		// (co-op: the other machine's last counts may still be on their way: looked at twice a second)

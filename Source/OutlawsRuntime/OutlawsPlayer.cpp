@@ -33,6 +33,7 @@
 #include "OutlawsRuntime.h"
 #include "OutlawsBoxHand.h"
 #include "OutlawsLevelActor.h"
+#include "OutlawsMovieScreen.h"
 #include "OutlawsLevel.h"
 #include "OutlawsCoop.h"
 #include "OutlawsTextures.h"
@@ -1070,6 +1071,36 @@ void AOutlawsPlayer::DesktopPauseKey()
 	else PressMenu();
 }
 
+void AOutlawsPlayer::UpdateScrollSpeed(AOutlawsLevelActor* LM)
+{
+	// REQ-SCROLLSPEED (user 3 Nov): the turn stick over scrolling text: up to 4x pushed all the way up, stopped all the way down
+	// (never backwards), the usual speed let go; past a small dead zone, in proportion.  The desktop's Up / Down held count as the
+	// stick all the way; a mouse wheel notch is half a step, kept till the text is gone
+	AOutlawsMovieScreen* M = LM ? LM->GetMovieScreen() : nullptr;
+	if (!M) return;
+	if (!M->IsScrollingText() || AOutlawsMovieScreen::OldScrollSpeed())
+	{
+		DeskScrollRate = 1.f;
+		M->SetScrollRate(1.f, bVR);
+		return;
+	}
+	const FVector2D S = OneHand() >= 0 ? OneStick() : TurnStick();
+	constexpr float Dead = 0.15f;
+	float Y = FMath::Abs(S.Y) < Dead ? 0.f : (S.Y - FMath::Sign(S.Y) * Dead) / (1.f - Dead);
+#if !PLATFORM_ANDROID
+	if (const APlayerController* PC = Cast<APlayerController>(GetController()); PC && !bVR)
+	{
+		if (PC->IsInputKeyDown(EKeys::Up)) Y = 1.f;
+		else if (PC->IsInputKeyDown(EKeys::Down)) Y = -1.f;
+		if (PC->WasInputKeyJustPressed(EKeys::MouseScrollUp)) DeskScrollRate = FMath::Min(AOutlawsMovieScreen::MaxScrollRate, DeskScrollRate + 0.5f);
+		if (PC->WasInputKeyJustPressed(EKeys::MouseScrollDown)) DeskScrollRate = FMath::Max(0.f, DeskScrollRate - 0.5f);
+	}
+#endif
+	Y = FMath::Clamp(Y, -1.f, 1.f);
+	const float Rate = Y > 0.f ? 1.f + (AOutlawsMovieScreen::MaxScrollRate - 1.f) * Y : Y < 0.f ? 1.f + Y : DeskScrollRate;
+	M->SetScrollRate(Rate, bVR);
+}
+
 bool AOutlawsPlayer::DesktopSkipHeld()
 {
 	// (BUG-DESKSKIP) a cutscene's hold to skip on the desktop: the left mouse button, counted once it has been up in this movie
@@ -2044,6 +2075,7 @@ void AOutlawsPlayer::Tick(float Dt)
 			bDeskSkipArmed = false;              // (BUG-DESKSKIP: a left button down from before counts once let go)
 		}
 		UpdateMovieCard(Dt, LM);             // (REQ-HANDCARDHOLD: OutlawsPlayerMovieCard.cpp)
+		UpdateScrollSpeed(LM);               // (REQ-SCROLLSPEED: before the skip's bar, whose place the hint shares)
 		// watching the story movie: nothing else. Any button or trigger held for 3 s skips it, never in its
 		// first second; the screen says to keep holding, with a bar (user 2026-09-27); each more button held fills it
 		// faster (two: twice as fast; user 2026-09-28).  (REQ-HANDCARDHOLD, user 4 Nov: "we should maybe give that a half second

@@ -1750,6 +1750,12 @@ private:
 	void DesktopPauseKey();
 	/** (BUG-DESKSKIP) a cutscene's hold to skip on the desktop: the left mouse button down, once it has been up in this movie. */
 	bool DesktopSkipHeld();
+	/** REQ-SCROLLSPEED (user 3 Nov): over scrolling text (the credits, the Marshal Training crawl, any crawl) the turn stick
+	 *  pushed up speeds it, up to 4x all the way; pulled down slows it, stopped all the way (never backwards); let go, the
+	 *  usual speed.  The desktop: Up / Down held as the stick all the way, the mouse wheel a half step a notch (kept till the
+	 *  text ends).  Nothing turns meanwhile (a movie's frame turns nobody).  -OLOldScrollSpeed: the usual speed always. */
+	void UpdateScrollSpeed(class AOutlawsLevelActor* LM);
+	float DeskScrollRate = 1.f;
 	bool bDeskSkipArmed = false;         // (BUG-DESKSKIP) the left button seen up since this movie began (or came back from the menu)
 	/** REQ-SWIMUPDOWN's stacking (user 3 Nov: arm swimming on top of the stick's nearly doubled the speed), REQ-SWIMUPDOWN2's
 	 *  reading ("measured against the stick's speed"): both together go at most max(arms, (1 + SwimStackShare()) x stick);
