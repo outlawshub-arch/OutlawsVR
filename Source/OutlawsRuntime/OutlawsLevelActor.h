@@ -788,6 +788,13 @@ public:
 	static bool CollectBoxSpot(const FString& Level, FVector& OutFeet, FVector& OutWalkFrom, int32& OutSector, FString* OutWhy = nullptr);
 	/** Placement's safety (the sector the feet pick, overlaps, zone gates) as found at placement; empty when not placed. */
 	const FString& CollectBoxSafety() const { return CollectBoxSafe; }
+	/** (REQ-BOXART) how the placed box is drawn: "art <file>" (the 1997 big box from the release's BoxArt.png), or "today (<why>)". */
+	const FString& CollectBoxLook() const { return CollectBoxLookWhy; }
+	bool CollectBoxHasArt() const { return bCollectBoxArt; }
+#if WITH_OUTLAWS_TESTS
+	/** (REQ-BOXART probe) no walk takes the box while set (while its pictures are taken). */
+	bool bTestKeepCollectBox = false;
+#endif
 	/** PathRoute / PathRouteWhy by the player's rules while set (fences pass, every door and lift opens: a key's doors with
 	 *  the key the level holds); off, the bad guys' and bots' as ever.  The box test's reachability walk. */
 	mutable bool bRoutePlayer = false;
@@ -1874,6 +1881,8 @@ private:
 	FVector CollectBoxRest = FVector::ZeroVector;
 	float CollectBoxTime = 0.f;
 	FString CollectBoxSafe;
+	FString CollectBoxLookWhy;
+	bool bCollectBoxArt = false;
 	void CollectBoxTaken(const TCHAR* How);
 
 	UPROPERTY(Transient)

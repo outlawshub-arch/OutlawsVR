@@ -13,6 +13,13 @@
 // one opening (no way through it), holding the original's own pickups (a player is meant to get there), off the way from the
 // start to the level's outlaw, out of any sector that shares space with another (the pick by the feet is that sector alone) and
 // out of the mill's zone gate.  The test: -OLShots -OLNoFrontEnd -OLCollectBoxTest[=vr] (ShotTests/ShotTest_OLCollectBoxTest.cpp).
+//
+// REQ-BOXART (the user, 9 Nov): the box is drawn as the user's own 1997 Outlaws big box at its real size (23.5 cm high, 18.4 wide,
+// 3.5 deep), its six faces from one 2048x1024 atlas, BoxArt.png.  The art is the user's photo of the retail box: it ships in the
+// release zip only (Tools\BoxArt.png; the Quest: beside its LABs, where Install on Quest.bat pushes it, or its updated data
+// folder), never in the source or its history, so a run without it (a source build, the editor) draws today's box, and so does
+// a file that is not a 2048x1024 PNG.  -OLOldBoxArt: today's box.  The way it is taken, its glint, turn and bob are as before.
+// The guard: -OLShots -OLNoFrontEnd -OLBoxArtProbe=art|today (ShotTests/ShotTest_OLBoxArtProbe.cpp, weekgate boxart_check).
 
 #include "OutlawsLevelActor.h"
 #include "OutlawsLevel.h"
@@ -24,6 +31,13 @@
 #include "OutlawsPlayer.h"
 #include "OutlawsRuntime.h"
 #include "OutlawsTextures.h"
+#include "OutlawsLab.h"
+#include "OutlawsUpdate.h"
+#include "IImageWrapper.h"
+#include "IImageWrapperModule.h"
+#include "Misc/FileHelper.h"
+#include "Misc/Paths.h"
+#include "Modules/ModuleManager.h"
 #include "ProceduralMeshComponent.h"
 #include "Components/CapsuleComponent.h"
 #include "Components/StaticMeshComponent.h"
@@ -95,8 +109,111 @@ namespace
 		return false;
 	}
 
-	// the box: upright, as a game box stands on a shelf (cm)
+	// the box: upright, as a game box stands on a shelf (cm).  Today's placeholder; its sizes also set how near a walk or a hand
+	// takes the box, the art box's too (the way it is taken is as it was)
 	constexpr double BoxW = 26.0, BoxH = 32.0, BoxD = 8.0, BoxHover = 6.0;
+	// (REQ-BOXART) the 1997 big box, as measured (tools/olue boxart_measurements.json): high, wide, deep (cm)
+	constexpr double ArtH = 23.5, ArtW = 18.4, ArtD = 3.5;
+	constexpr int32 ArtTexW = 2048, ArtTexH = 1024;
+	struct FArtFace
+	{
+		FVector N, AU, AV;          // the face's normal; the box's own directions the atlas's +U and +V run along on it
+		float U0, V0, U1, V1;       // its rect in the atlas (T_BoxArt_Atlas_uv.json: 0..1, top-left, inside the 4 px gutter)
+		const TCHAR* Name;
+	};
+	// The front looks along +X, the width runs along Y, the height along Z.  Each face as seen from outside the upright box: "left"
+	// is the side on the left as one faces the front; top and bottom are stored turned 90 degrees clockwise (the face's own top
+	// edge to +U; the top's front edge at its own bottom, the bottom's at its own top).
+	const FArtFace GArtFaces[6] =
+	{
+		{ FVector(1, 0, 0), FVector(0, -1, 0), FVector(0, 0, -1), 0.001953125f, 0.00390625f, 0.388671875f, 0.99609375f, TEXT("front") },
+		{ FVector(-1, 0, 0), FVector(0, 1, 0), FVector(0, 0, -1), 0.392578125f, 0.00390625f, 0.779296875f, 0.99609375f, TEXT("back") },
+		{ FVector(0, 1, 0), FVector(1, 0, 0), FVector(0, 0, -1), 0.783203125f, 0.00390625f, 0.857421875f, 0.99609375f, TEXT("left_side") },
+		{ FVector(0, -1, 0), FVector(-1, 0, 0), FVector(0, 0, -1), 0.861328125f, 0.00390625f, 0.935546875f, 0.99609375f, TEXT("right_side") },
+		{ FVector(0, 0, 1), FVector(-1, 0, 0), FVector(0, -1, 0), 0.939453125f, 0.00390625f, 0.998046875f, 0.49609375f, TEXT("top") },
+		{ FVector(0, 0, -1), FVector(1, 0, 0), FVector(0, -1, 0), 0.939453125f, 0.50390625f, 0.998046875f, 0.99609375f, TEXT("bottom") },
+	};
+
+	// where BoxArt.png is: the PC package's Tools, the Quest's updated data folder, beside the install's LABs (the headset's
+	// files/Outlaws), the first that exists; -OLBoxArtFile=<png> (tests only) that file and no other, there or not
+	FString ArtFile(const FString& InstallRoot)
+	{
+#if WITH_OUTLAWS_TESTS
+		FString Arg;
+		if (OLFlags::Value(TEXT("OLBoxArtFile"), Arg, /*bShouldStopOnSeparator*/ false)) return FPaths::ConvertRelativePathToFull(Arg.TrimQuotes());
+#endif
+		TArray<FString> Tries;
+		Tries.Add(FPaths::ConvertRelativePathToFull(FPaths::Combine(FPaths::RootDir(), TEXT("Tools"), TEXT("BoxArt.png"))));
+		const FString Updated = OLUpdate::UpdatedDataDir();
+		if (!Updated.IsEmpty()) Tries.Add(FPaths::Combine(Updated, TEXT("BoxArt.png")));
+		if (!InstallRoot.IsEmpty()) Tries.Add(FPaths::Combine(InstallRoot, TEXT("BoxArt.png")));
+		for (const FString& T : Tries) if (FPaths::FileExists(T)) return T;
+		return FString();
+	}
+
+	// the art as a texture, read once a run (every level's box shares it); null, with why, when there is none to use.  The Quest
+	// keeps it at half size (1024x512: a quarter of the memory; the box is a hand's span across)
+	UTexture2D* ArtTexture(const FString& InstallRoot, FString& OutWhy)
+	{
+		static TWeakObjectPtr<UTexture2D> Made;
+		static FString MadeFrom, FailedFor;
+		const FString Path = ArtFile(InstallRoot);
+		if (Path.IsEmpty()) { OutWhy = TEXT("no BoxArt.png"); return nullptr; }
+		if (Made.IsValid() && Path == MadeFrom) { OutWhy = Path; return Made.Get(); }
+		const int64 Size = IFileManager::Get().FileSize(*Path);
+		const FString Key = FString::Printf(TEXT("%s|%lld"), *Path, Size);
+		if (Key == FailedFor) { OutWhy = FString::Printf(TEXT("%s unusable (as before)"), *Path); return nullptr; }
+		FailedFor = Key;
+		const double T0 = FPlatformTime::Seconds();
+		TArray<uint8> Bytes;
+		if (Size <= 0 || !FFileHelper::LoadFileToArray(Bytes, *Path)) { OutWhy = FString::Printf(TEXT("%s missing or unreadable"), *Path); return nullptr; }
+		IImageWrapperModule& Mod = FModuleManager::LoadModuleChecked<IImageWrapperModule>(TEXT("ImageWrapper"));
+		TSharedPtr<IImageWrapper> Png = Mod.CreateImageWrapper(EImageFormat::PNG);
+		TArray<uint8> Raw;
+		if (!Png.IsValid() || !Png->SetCompressed(Bytes.GetData(), Bytes.Num()) || !Png->GetRaw(ERGBFormat::BGRA, 8, Raw))
+		{
+			OutWhy = FString::Printf(TEXT("%s is not a PNG"), *Path);
+			return nullptr;
+		}
+		const int32 W = int32(Png->GetWidth()), H = int32(Png->GetHeight());
+		if (W != ArtTexW || H != ArtTexH || Raw.Num() != W * H * 4)
+		{
+			OutWhy = FString::Printf(TEXT("%s is %dx%d, not %dx%d"), *Path, W, H, ArtTexW, ArtTexH);
+			return nullptr;
+		}
+		TArray<FColor> Px;
+		int32 TW = W, TH = H;
+		const FColor* Src = reinterpret_cast<const FColor*>(Raw.GetData());
+#if PLATFORM_ANDROID
+		TW = W / 2;
+		TH = H / 2;
+		Px.SetNumUninitialized(TW * TH);
+		for (int32 y = 0; y < TH; ++y)
+		{
+			for (int32 x = 0; x < TW; ++x)
+			{
+				const FColor& A = Src[(2 * y) * W + 2 * x];
+				const FColor& B = Src[(2 * y) * W + 2 * x + 1];
+				const FColor& C = Src[(2 * y + 1) * W + 2 * x];
+				const FColor& D = Src[(2 * y + 1) * W + 2 * x + 1];
+				Px[y * TW + x] = FColor(uint8((A.R + B.R + C.R + D.R + 2) / 4), uint8((A.G + B.G + C.G + D.G + 2) / 4), uint8((A.B + B.B + C.B + D.B + 2) / 4), 255);
+			}
+		}
+#else
+		Px.SetNumUninitialized(W * H);
+		for (int32 i = 0; i < W * H; ++i) Px[i] = FColor(Src[i].R, Src[i].G, Src[i].B, 255);
+#endif
+		UTexture2D* T = OutlawsTextures::MakeTextureBGRA(TW, TH, Px, true, TF_Trilinear, TA_Clamp);
+		if (!T) { OutWhy = FString::Printf(TEXT("%s: no texture made"), *Path); return nullptr; }
+		T->AddToRoot();
+		if (UTexture2D* Old = Made.Get()) Old->RemoveFromRoot();
+		Made = T;
+		MadeFrom = Path;
+		FailedFor.Reset();
+		UE_LOG(LogOutlaws, Log, TEXT("OLBOX art %s read as %dx%d in %.0f ms"), *Path, TW, TH, (FPlatformTime::Seconds() - T0) * 1000.0);
+		OutWhy = Path;
+		return T;
+	}
 	constexpr float BoxSpinDeg = 35.f, GlintEvery = 2.4f, GlintFor = 0.35f;
 
 	// its picture: cardboard with a darker edge, a cream label with a five-pointed star on the front; the side strip plain
@@ -166,6 +283,8 @@ FString AOutlawsLevelActor::PlaceCollectBox(const FOutlawsLevel& Lv)
 	CollectBoxActor.Reset();
 	CollectBoxGlint.Reset();
 	CollectBoxSafe.Reset();
+	CollectBoxLookWhy.Reset();
+	bCollectBoxArt = false;
 	UWorld* World = GetWorld();
 	const FBoxSpot* S = SpotOf(LevelName);
 	if (!World || !World->IsGameWorld() || bFrontEnd) return TEXT("collectible box: none (no game)");
@@ -207,8 +326,15 @@ FString AOutlawsLevelActor::PlaceCollectBox(const FOutlawsLevel& Lv)
 	TArray<FVector2D> UV;
 	TArray<FLinearColor> Col;
 	TArray<int32> Tri;
-	const FVector E(BoxD * 0.5, BoxW * 0.5, BoxH * 0.5);
-	const FVector Mid(0.0, 0.0, BoxHover + BoxH * 0.5);
+	// (REQ-BOXART) the 1997 big box when its art is there (and no -OLOldBoxArt), else today's box
+	UTexture2D* Art = nullptr;
+	FString ArtWhy = TEXT("-OLOldBoxArt");
+	if (!OLFlags::Param(TEXT("OLOldBoxArt"))) Art = ArtTexture(GetAssets() ? GetAssets()->GetRoot() : FString(), ArtWhy);
+	bCollectBoxArt = Art != nullptr;
+	CollectBoxLookWhy = Art ? FString::Printf(TEXT("art %s"), *ArtWhy) : FString::Printf(TEXT("today (%s)"), *ArtWhy);
+	const double DD = Art ? ArtD : BoxD, DW = Art ? ArtW : BoxW, DH = Art ? ArtH : BoxH;
+	const FVector E(DD * 0.5, DW * 0.5, DH * 0.5);
+	const FVector Mid(0.0, 0.0, BoxHover + DH * 0.5);
 	auto Face = [&](const FVector& N, const FVector& U, const FVector& V, bool bFront)
 	{
 		// corners at Mid + N*e + (+-)U*e + (+-)V*e; UVs: the front art (u 0..0.75) or the side strip (0.75..1)
@@ -230,12 +356,38 @@ FString AOutlawsLevelActor::PlaceCollectBox(const FOutlawsLevel& Lv)
 		if (bFlip) Tri.Append({ B0, B0 + 2, B0 + 1, B0, B0 + 3, B0 + 2 });
 		else Tri.Append({ B0, B0 + 1, B0 + 2, B0, B0 + 2, B0 + 3 });
 	};
-	Face(FVector(1, 0, 0), FVector(0, -1, 0), FVector(0, 0, 1), true);     // the front
-	Face(FVector(-1, 0, 0), FVector(0, 1, 0), FVector(0, 0, 1), true);     // the back
-	Face(FVector(0, 1, 0), FVector(1, 0, 0), FVector(0, 0, 1), false);
-	Face(FVector(0, -1, 0), FVector(-1, 0, 0), FVector(0, 0, 1), false);
-	Face(FVector(0, 0, 1), FVector(0, 1, 0), FVector(1, 0, 0), false);
-	Face(FVector(0, 0, -1), FVector(0, 1, 0), FVector(-1, 0, 0), false);
+	// (REQ-BOXART) an art face: its corners as Face's, its UVs its rect in the atlas, +U along AU and +V along AV
+	auto ArtFace = [&](const FArtFace& F)
+	{
+		const double En = FMath::Abs(FVector::DotProduct(F.N, E)), Eu = FMath::Abs(FVector::DotProduct(F.AU, E)), Ev = FMath::Abs(FVector::DotProduct(F.AV, E));
+		const int32 B0 = Pos.Num();
+		const float Lit = FMath::SmoothStep(0.12f, 0.24f, float(FVector::DotProduct(F.N, LightDir)));
+		const float Shade = Bright * FMath::Lerp(0.66f, 1.f, Lit);
+		const FVector2D Q[4] = { FVector2D(-1, -1), FVector2D(1, -1), FVector2D(1, 1), FVector2D(-1, 1) };
+		for (const FVector2D& K : Q)
+		{
+			Pos.Add(Mid + F.N * En + F.AU * (Eu * K.X) + F.AV * (Ev * K.Y));
+			Nrm.Add(F.N);
+			UV.Add(FVector2D(FMath::Lerp(F.U0, F.U1, float(K.X + 1.0) * 0.5f), FMath::Lerp(F.V0, F.V1, float(K.Y + 1.0) * 0.5f)));
+			Col.Add(FLinearColor(Shade, Shade, Shade, 1.f));
+		}
+		const bool bFlip = FVector::DotProduct(FVector::CrossProduct(F.AU, F.AV), F.N) > 0.0;
+		if (bFlip) Tri.Append({ B0, B0 + 2, B0 + 1, B0, B0 + 3, B0 + 2 });
+		else Tri.Append({ B0, B0 + 1, B0 + 2, B0, B0 + 2, B0 + 3 });
+	};
+	if (Art)
+	{
+		for (const FArtFace& F : GArtFaces) ArtFace(F);
+	}
+	else
+	{
+		Face(FVector(1, 0, 0), FVector(0, -1, 0), FVector(0, 0, 1), true);     // the front
+		Face(FVector(-1, 0, 0), FVector(0, 1, 0), FVector(0, 0, 1), true);     // the back
+		Face(FVector(0, 1, 0), FVector(1, 0, 0), FVector(0, 0, 1), false);
+		Face(FVector(0, -1, 0), FVector(-1, 0, 0), FVector(0, 0, 1), false);
+		Face(FVector(0, 0, 1), FVector(0, 1, 0), FVector(1, 0, 0), false);
+		Face(FVector(0, 0, -1), FVector(0, 1, 0), FVector(-1, 0, 0), false);
+	}
 	UProceduralMeshComponent* M = NewObject<UProceduralMeshComponent>(A, TEXT("BoxMesh"), RF_Transient);
 	M->bUseAsyncCooking = false;
 	M->SetCollisionEnabled(ECollisionEnabled::NoCollision);
@@ -249,7 +401,7 @@ FString AOutlawsLevelActor::PlaceCollectBox(const FOutlawsLevel& Lv)
 	if (Base)
 	{
 		UMaterialInstanceDynamic* Mat = UMaterialInstanceDynamic::Create(Base, A);
-		if (UTexture2D* T = BoxTexture()) Mat->SetTextureParameterValue(TEXT("Tex"), T);
+		if (UTexture2D* T = Art ? Art : BoxTexture()) Mat->SetTextureParameterValue(TEXT("Tex"), T);
 		M->SetMaterial(0, Mat);
 	}
 	M->SetRenderCustomDepth(true);          // the ink outline's world-item stencil (as the item models)
@@ -264,7 +416,7 @@ FString AOutlawsLevelActor::PlaceCollectBox(const FOutlawsLevel& Lv)
 		G->SetCastShadow(false);
 		G->SetupAttachment(M);
 		G->RegisterComponent();
-		G->SetRelativeLocation(Mid + FVector(BoxD * 0.5 + 0.5, BoxW * 0.5 - 2.0, BoxH * 0.5 - 2.0));
+		G->SetRelativeLocation(Mid + FVector(DD * 0.5 + 0.5, DW * 0.5 - 2.0, DH * 0.5 - 2.0));
 		G->SetRelativeScale3D(FVector(0.001));
 		if (UMaterialInterface* GlowBase = LoadObject<UMaterialInterface>(nullptr, TEXT("/Game/Outlaws/Runtime/M_OLR_FxGlow.M_OLR_FxGlow")))
 		{
@@ -278,8 +430,8 @@ FString AOutlawsLevelActor::PlaceCollectBox(const FOutlawsLevel& Lv)
 	CollectBoxActor = A;
 	CollectBoxRest = Feet;
 	CollectBoxTime = float(FMath::Frac(S->X * 0.37));         // (each level's glint and turn start at their own phase)
-	UE_LOG(LogOutlaws, Log, TEXT("OLBOX placed in %s at %s (%s): %s"), S->Level, *Feet.ToCompactString(), *CollectBoxSafe, S->Why);
-	return FString::Printf(TEXT("collectible box: placed at %s (%s)"), *Feet.ToCompactString(), *CollectBoxSafe);
+	UE_LOG(LogOutlaws, Log, TEXT("OLBOX placed in %s at %s (%s), drawn %s: %s"), S->Level, *Feet.ToCompactString(), *CollectBoxSafe, *CollectBoxLookWhy, S->Why);
+	return FString::Printf(TEXT("collectible box: placed at %s (%s), drawn %s"), *Feet.ToCompactString(), *CollectBoxSafe, Art ? TEXT("from its art") : TEXT("as today"));
 }
 
 void AOutlawsLevelActor::UpdateCollectBox(float Dt)
@@ -299,6 +451,9 @@ void AOutlawsLevelActor::UpdateCollectBox(float Dt)
 	APlayerController* PC = World ? World->GetFirstPlayerController() : nullptr;
 	AOutlawsPlayer* P = PC ? Cast<AOutlawsPlayer>(PC->GetPawn()) : nullptr;
 	if (!P || bDead) return;
+#if WITH_OUTLAWS_TESTS
+	if (bTestKeepCollectBox) return;
+#endif
 	const UCapsuleComponent* Cap = P->GetCapsuleComponent();
 	const double R = Cap ? Cap->GetScaledCapsuleRadius() : 40.0, Half = Cap ? Cap->GetScaledCapsuleHalfHeight() : 90.0;
 	const FVector Body = P->GetActorLocation();
@@ -315,7 +470,7 @@ void AOutlawsLevelActor::UpdateCollectBox(float Dt)
 		Q.AddIgnoredActor(P);
 		FHitResult Hit;
 		const FVector Chest = Body + FVector(0.0, 0.0, Half * 0.4);
-		if (World->LineTraceSingleByChannel(Hit, Chest, CollectBoxRest + FVector(0.0, 0.0, BoxHover + BoxH * 0.5), ECC_Visibility, Q)) return;
+		if (World->LineTraceSingleByChannel(Hit, Chest, CollectBoxRest + FVector(0.0, 0.0, BoxHover + (bCollectBoxArt ? ArtH : BoxH) * 0.5), ECC_Visibility, Q)) return;
 	}
 	CollectBoxTaken(TEXT("walked into"));
 }
@@ -324,7 +479,7 @@ bool AOutlawsLevelActor::TakeCollectBoxByHand(const FVector& Eye, const FVector&
 {
 	AActor* A = CollectBoxActor.Get();
 	if (!A || bDead) return false;
-	const FVector Centre = A->GetActorLocation() + FVector(0.0, 0.0, BoxHover + BoxH * 0.5);
+	const FVector Centre = A->GetActorLocation() + FVector(0.0, 0.0, BoxHover + (bCollectBoxArt ? ArtH : BoxH) * 0.5);
 	// to the box's surface (its longest half-side counted), and in sight of the eyes (not through a wall)
 	if (FVector::Dist(Hand, Centre) - BoxH * 0.5 > Radius) return false;
 	if (!CanSee(Eye, Centre, A)) return false;
