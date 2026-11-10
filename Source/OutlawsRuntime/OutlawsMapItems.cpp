@@ -1,13 +1,14 @@
 // REQ-MAPITEMS (user 16 Oct; 20 Oct: "build it with your own placement, I'll adjust after"): the keys, stones, gears,
 // crowbars, shovels and the other quest and utility items go on the map (the wheel's and the held one) once the player has
-// seen them: within 5 m of the eyes, inside 45 degrees of where they look, nothing in the way.  Each is drawn as the
-// game's own inventory sprite for it (ibrsskey.nwx, HD when Remastered is on; else its ground sprite, else the wheel's
-// card) with a dark rim, its longer side 3.5 page cm (about 1.9 cm on the wheel's resting page, a little over the arrow),
-// at its place on the page, over the walls and under the arrow and the others' marks; two close together are eased
+// seen them: within 5 m of the eyes, inside 45 degrees of where they look, nothing in the way.  Each is drawn as its
+// ground sprite, the one the world draws it with (REQ-MAPSPRITE, user 6 Nov; else the game's own inventory sprite for it,
+// ibrsskey.nwx, else the wheel's card; -OLOldMapSprite: the inventory sprite first, as before) with a dark rim, its
+// longer side 3.5 page cm (about 1.9 cm on the wheel's resting page, a little over the arrow), at its place on the page, over the walls and under the arrow and the others' marks; two close together are eased
 // apart.  Taken, it leaves the map (it is in the inventory then); dropped again it shows once seen again.  A lock item
 // seen loses its hint blob to its picture.  Per level, kept in saves ("map_seen" on the pickup; an older save has none
 // seen); in co-op each machine keeps its own player's (a client taking the host's world keeps none of the host's).
-// Test: -OLShots -OLLevel=hideout -OLNoFrontEnd -OLMapItemsTest[=vr] (the seen rule, save and load, pickup; the shots).
+// Test: -OLShots -OLLevel=hideout -OLNoFrontEnd -OLMapItemsTest[=vr] (the seen rule, save and load, pickup; the shots);
+// -OLMapSpriteProbe[=vr] (REQ-MAPSPRITE: each mark its ground sprite, size, rim, the picked-up rule).
 #include "OutlawsPlayer.h"
 #include "OutlawsLevelActor.h"
 #include "OutlawsLevel.h"
@@ -152,6 +153,25 @@ bool AOutlawsLevelActor::DebugIsMapItemSeen(const AActor* A) const
 
 // ---- the player's page ------------------------------------------------------------------------------------------------
 
+#if WITH_OUTLAWS_TESTS
+namespace
+{
+	/** (REQ-MAPSPRITE) each seen item's mark as last drawn on the map: its picture, its ground sprite's, the size, the rim */
+	struct FMapSpriteDrawn
+	{
+		FString Item;
+		UTexture* Tex = nullptr;
+		UTexture* Ground = nullptr;
+		FVector2D UV0 = FVector2D::ZeroVector, GroundUV0 = FVector2D::ZeroVector;
+		FVector2D Size = FVector2D::ZeroVector;
+		double IconPx = 0.0;
+		int32 Rim = 0;
+		const TCHAR* Source = TEXT("");
+	};
+	TArray<FMapSpriteDrawn> MapSpriteDrawn;
+}
+#endif
+
 void AOutlawsPlayer::RefreshMapMarks(float Dt)
 {
 	MapSpotsWait -= Dt;
@@ -178,7 +198,7 @@ void AOutlawsPlayer::DrawMapItems(UCanvas* Canvas, int32 Width, int32 Height, do
 	// arrow's 1.5 (the sprites carry some clear border), so the item reads beside it at rest and plainly when zoomed
 	constexpr double IconCm = 3.5;
 	const double IconPx = IconCm * K;
-	struct FPlaced { FVector2D At; FVector2D Size; float Alpha; UTexture* Tex; FVector2D UV0, UV1; const TCHAR* Source; };
+	struct FPlaced { FVector2D At; FVector2D Size; float Alpha; UTexture* Tex; FVector2D UV0, UV1; const TCHAR* Source; FString Item; UTexture* Ground; FVector2D GroundUV0; };
 	TArray<FPlaced> Placed;
 	for (const AOutlawsLevelActor::FMapItemMark& M : Marks)
 	{
@@ -190,23 +210,26 @@ void AOutlawsPlayer::DrawMapItems(UCanvas* Canvas, int32 Width, int32 Height, do
 		FPlaced P;
 		P.At = FVector2D(Width * 0.5 + Q.X * K, Height * 0.5 - Q.Y * K);
 		if (P.At.X < 0.0 || P.At.Y < 0.0 || P.At.X > Width || P.At.Y > Height) continue;
-		// the game's own inventory sprite for it (ibrsskey.nwx: upright, as the original's inventory drew it; HD with
-		// Remastered), else its ground sprite (a key lying flat reads as a thin sliver), else the wheel's card
+		// REQ-MAPSPRITE (user 6 Nov): its ground sprite, the one the world draws it with (HD with Remastered, as the world's),
+		// else the game's own inventory sprite for it (ibrsskey.nwx, upright as the original's inventory drew it), else the
+		// wheel's card.  -OLOldMapSprite: the inventory sprite first, as before
+		static const bool bOldMapSprite = OLFlags::Param(TEXT("OLOldMapSprite"));
 		double Asp = 1.0;
 		FWristIconSrc Inv;
-		if (WristIcon(TEXT("nwx:") + M.Item, Inv) && Inv.Tex && Inv.Tex->GetResource())
-		{
-			P.Tex = Inv.Tex;
-			P.UV0 = Inv.Offset;
-			P.UV1 = Inv.Offset + Inv.Scale;
-			Asp = Inv.Aspect;
-		}
-		else if (M.Tex)
+		const bool bInv = (bOldMapSprite || !M.Tex || !M.Tex->GetResource()) && WristIcon(TEXT("nwx:") + M.Item, Inv) && Inv.Tex && Inv.Tex->GetResource();
+		if (M.Tex && M.Tex->GetResource() && !bInv)
 		{
 			P.Tex = M.Tex;
 			P.UV0 = M.UV0;
 			P.UV1 = M.UV1;
 			Asp = M.Aspect;
+		}
+		else if (bInv)
+		{
+			P.Tex = Inv.Tex;
+			P.UV0 = Inv.Offset;
+			P.UV1 = Inv.Offset + Inv.Scale;
+			Asp = Inv.Aspect;
 		}
 		else
 		{
@@ -216,9 +239,12 @@ void AOutlawsPlayer::DrawMapItems(UCanvas* Canvas, int32 Width, int32 Height, do
 			Asp = 152.0 / 216.0;
 		}
 		if (!P.Tex || !P.Tex->GetResource()) continue;
-		P.Source = P.Tex == Inv.Tex ? TEXT("inventory sprite") : P.Tex == M.Tex ? TEXT("ground sprite") : TEXT("wheel card");
+		P.Source = bInv && P.Tex == Inv.Tex ? TEXT("inventory sprite") : P.Tex == M.Tex ? TEXT("ground sprite") : TEXT("wheel card");
 		P.Size = Asp >= 1.0 ? FVector2D(IconPx, IconPx / Asp) : FVector2D(IconPx * Asp, IconPx);
 		P.Alpha = S->Layer == MapLayer ? 1.f : 0.55f;
+		P.Item = M.Item;
+		P.Ground = M.Tex;
+		P.GroundUV0 = M.UV0;
 		Placed.Add(P);
 	}
 	// two close together eased apart (each kept on the page), so neither hides the other
@@ -256,6 +282,11 @@ void AOutlawsPlayer::DrawMapItems(UCanvas* Canvas, int32 Width, int32 Height, do
 		I.BlendMode = SE_BLEND_Translucent;
 		Canvas->DrawItem(I);
 	}
+#if WITH_OUTLAWS_TESTS
+	// (REQ-MAPSPRITE's probe: what each mark was drawn with)
+	MapSpriteDrawn.Reset();
+	for (const FPlaced& P : Placed) MapSpriteDrawn.Add({ P.Item, P.Tex, P.Ground, P.UV0, P.GroundUV0, P.Size, IconPx, 8, P.Source });
+#endif
 	FString Sources;
 	for (const FPlaced& P : Placed) Sources += FString::Printf(TEXT("%s%s"), Sources.IsEmpty() ? TEXT("") : TEXT(", "), P.Source);
 	UE_LOG(LogOutlaws, Log, TEXT("OLRT map items drawn: %d of %d seen, %.0f px each (%.1f page cm): %s"), Placed.Num(), Marks.Num(), IconPx, IconCm, *Sources);
@@ -612,5 +643,132 @@ OL_SHOT_MATCH(OLMapItemsTest) { return OLFlags::Has(TEXT("OLMapItemsTest")); }
 OL_SHOT_TEST(OLMapItemsTest, 285)
 {
 	MapItemsTestTick();              // (REQ-MAPITEMS: OutlawsMapItems.cpp)
+}
+
+// ---- -OLShots -OLLevel=hideout -OLNoFrontEnd -OLMapSpriteProbe[=vr] (REQ-MAPSPRITE) ---------------------------------------
+// Every map item marked seen, the wheel's map opened: each mark drawn is its ground sprite (the texture and cell the world
+// draws it with), its longer side 3.5 page cm, its dark rim (eight shadows round it); the map at rest and zoomed photographed
+// (ol_mapsprite_<level>_<mode>_rest / _zoom); then one item picked up: off the map, one mark fewer.  Lines "OLSHOT mapsprite
+// check PASS|FAIL: ..." and "OLSHOT mapsprite RESULT <n> PASS, <m> FAIL".  -OLOldMapSprite (the inventory picture) must FAIL.
+
+OL_SHOT_MATCH(OLMapSpriteProbe) { return OLFlags::Has(TEXT("OLMapSpriteProbe")); }
+OL_SHOT_TEST(OLMapSpriteProbe, 2700)
+{
+	static int32 Step = 0;
+	static double At = 0.0;
+	static int32 Pass = 0, Fail = 0, DrawnBefore = 0;
+	static FString Taken;
+	AOutlawsLevelActor* Lv = Level.Get();
+	if (Step < 0 || !Lv || Lv->IsFrontEnd() || Lv->PendingLoad.IsValid() || !Camera) return;
+	const double Now = FPlatformTime::Seconds();
+	if (At == 0.0) { At = Now + 6.0; return; }
+	if (Now < At) return;
+	FString Mode;
+	OLFlags::Value(TEXT("OLMapSpriteProbe"), Mode);
+	const bool bVRMode = Mode == TEXT("vr");
+	if (bVRMode) bVR = true;
+	auto Check = [](bool bOk, const FString& What)
+	{
+		(bOk ? Pass : Fail)++;
+		UE_LOG(LogOutlaws, Display, TEXT("OLSHOT mapsprite check %s: %s"), bOk ? TEXT("PASS") : TEXT("FAIL"), *What);
+	};
+	auto Snap = [&](const TCHAR* Name)
+	{
+		const FString Path = FPaths::ProjectSavedDir() / TEXT("OLShots") / FString::Printf(TEXT("ol_mapsprite_%s_%s_%s.png"), *Lv->LevelName.ToLower(), bVRMode ? TEXT("vr") : TEXT("desktop"), Name);
+		FScreenshotRequest::RequestScreenshot(Path, false, false);
+		UE_LOG(LogOutlaws, Display, TEXT("OLSHOT mapsprite shot %s"), *Path);
+	};
+	auto OpenMapWheel = [&](bool bZoom)
+	{
+		// (as -OLMapItemsTest opens it)
+		CloseWheel();
+		const int32 One = OneHand();
+		OpenWheel(One >= 0 ? One : (LeftDominant() ? 0 : 1));
+		WheelMapTestHover = bZoom ? 1 : -1;
+		bWheelMapZoom = bZoom;
+	};
+	switch (Step)
+	{
+	case 0:
+	{
+		TArray<AOutlawsLevelActor::FMapItemDebug> Items;
+		Lv->DebugMapItems(Items);
+		for (const AOutlawsLevelActor::FMapItemDebug& D : Items) Lv->DebugSetMapSeen(D.Index, true);
+		AOutlawsLevelActor::bDebugMapItemsOff = false;
+		Check(Items.Num() > 0, FString::Printf(TEXT("%d map items in %s, all marked seen"), Items.Num(), *Lv->LevelName));
+		OpenMapWheel(false);
+		Step = 1; At = Now + 1.0;
+		return;
+	}
+	case 1:
+	{
+		MapSpotsWait = 0.f;
+		RefreshMapMarks(0.f);
+		if (MapCanvas) MapCanvas->UpdateResource();
+		Step = 2; At = Now + 0.8;
+		return;
+	}
+	case 2:
+	{
+		TArray<AOutlawsLevelActor::FMapItemMark> Marks;
+		Lv->MapItemMarks(Marks);
+		Check(bWheelOpen && MapSpriteDrawn.Num() > 0, FString::Printf(TEXT("the wheel's map open, %d of %d seen items drawn"), MapSpriteDrawn.Num(), Marks.Num()));
+		for (const FMapSpriteDrawn& D : MapSpriteDrawn)
+		{
+			const bool bGround = D.Ground && D.Tex == D.Ground && D.UV0.Equals(D.GroundUV0, 1e-4);
+			Check(bGround, FString::Printf(TEXT("%s: drawn with %s (%s), its ground sprite %s"), *D.Item, D.Source, D.Tex ? *D.Tex->GetName() : TEXT("none"), D.Ground ? *D.Ground->GetName() : TEXT("none")));
+			const double Long = FMath::Max(D.Size.X, D.Size.Y);
+			Check(FMath::Abs(Long - D.IconPx) < 0.5 && D.Rim == 8, FString::Printf(TEXT("%s: its longer side %.1f px (3.5 page cm: %.1f), rim of %d shadows"), *D.Item, Long, D.IconPx, D.Rim));
+		}
+		DrawnBefore = MapSpriteDrawn.Num();
+		Snap(TEXT("rest"));
+		Step = 3; At = Now + 0.4;
+		return;
+	}
+	case 3:
+		OpenMapWheel(true);
+		MapSpotsWait = 0.f;
+		RefreshMapMarks(0.f);
+		Step = 4; At = Now + 0.8;
+		return;
+	case 4:
+	{
+		Snap(TEXT("zoom"));
+		// one taken: off the map
+		TArray<AOutlawsLevelActor::FMapItemDebug> Items;
+		Lv->DebugMapItems(Items);
+		AActor* Pick = nullptr;
+		for (const AOutlawsLevelActor::FMapItemDebug& D : Items)
+		{
+			if (D.bSeen && MapSpriteDrawn.ContainsByPredicate([&D](const FMapSpriteDrawn& X) { return X.Item == D.Item; })) { Pick = D.Actor; Taken = D.Item; break; }
+		}
+		const bool bTaken = Pick && Lv->CollectPickupActor(Pick, true);
+		Check(bTaken, FString::Printf(TEXT("%s picked up"), *Taken));
+		Step = 5; At = Now + 0.4;
+		return;
+	}
+	case 5:
+		MapSpotsWait = 0.f;
+		RefreshMapMarks(0.f);
+		if (MapCanvas) MapCanvas->UpdateResource();
+		Step = 6; At = Now + 0.8;
+		return;
+	case 6:
+	{
+		TArray<AOutlawsLevelActor::FMapItemMark> Marks;
+		Lv->MapItemMarks(Marks);
+		int32 Left = 0;
+		for (const AOutlawsLevelActor::FMapItemMark& M : Marks) Left += M.Item == Taken ? 1 : 0;
+		Check(MapSpriteDrawn.Num() == DrawnBefore - 1, FString::Printf(TEXT("picked up, it leaves the map: %d marks drawn, from %d (%d %s marks still lying about)"), MapSpriteDrawn.Num(), DrawnBefore, Left, *Taken));
+		CloseWheel();
+		UE_LOG(LogOutlaws, Display, TEXT("OLSHOT mapsprite RESULT %d PASS, %d FAIL (%s, %s)"), Pass, Fail, OLFlags::Param(TEXT("OLOldMapSprite")) ? TEXT("-OLOldMapSprite") : TEXT("the ground sprite"), bVRMode ? TEXT("vr") : TEXT("desktop"));
+		Step = 7; At = Now + 1.0;
+		return;
+	}
+	default:
+		Step = -1;
+		FGenericPlatformMisc::RequestExit(false);
+		return;
+	}
 }
 #endif // WITH_OUTLAWS_TESTS
