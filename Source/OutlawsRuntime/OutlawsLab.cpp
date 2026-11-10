@@ -780,16 +780,18 @@ FString FOutlawsAssets::FindInstallRoot(const FString& ConfiguredPath)
 	Add(FPaths::ConvertRelativePathToFull(FPaths::Combine(FPaths::ProjectSavedDir(), TEXT(".."), TEXT("Outlaws"))), TEXT("the game's files folder"));
 	Add(TEXT("/sdcard/OutlawsVR"), TEXT("shared storage"));
 	Add(TEXT("/storage/emulated/0/OutlawsVR"), TEXT("shared storage"));
-	// a PC: where Steam and GOG installed it, then the usual Steam folders; GOG's classic Outlaws (no remaster
-	// archives, no menu art) only when nothing else is there
+	// a PC: where Steam, GOG and the Epic Games Launcher installed it, then the usual Steam folders; GOG's classic
+	// Outlaws (no remaster archives, no menu art) only when nothing else is there
 	TArray<FString> GogClassic;
 #if PLATFORM_WINDOWS
 	{
-		TArray<FString> Steam, Gog;
+		TArray<FString> Steam, Gog, Epic;
 		OutlawsInstallWin::SteamFolders(Steam);
 		OutlawsInstallWin::GogFolders(Gog, GogClassic);
+		OutlawsInstallWin::EpicFolders(Epic);
 		for (const FString& D : Steam) Add(D, TEXT("Steam"));
 		for (const FString& D : Gog) Add(D, TEXT("GOG"));
+		for (const FString& D : Epic) Add(D, TEXT("Epic"));
 	}
 #endif
 	Add(TEXT("C:/SteamLibrary/steamapps/common/Outlaws Remastered"), TEXT("a usual Steam folder"));

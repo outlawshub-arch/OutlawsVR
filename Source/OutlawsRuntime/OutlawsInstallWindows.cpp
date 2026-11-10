@@ -1,4 +1,5 @@
-// The Windows side of finding the player's Outlaws: Steam's libraries and GOG's installs from the registry, and the
+// The Windows side of finding the player's Outlaws: Steam's libraries, GOG's installs from the registry, the Epic Games
+// Launcher's install manifests, and the
 // folder picker for when neither has it (a packaged build away from the install; tools/olue/TESTER_GUIDE.md).
 #include "OutlawsInstallWindows.h"
 
@@ -6,6 +7,12 @@
 #include "Misc/FileHelper.h"
 #include "Misc/Paths.h"
 #include "HAL/PlatformMisc.h"
+#include "HAL/FileManager.h"
+#include "Dom/JsonObject.h"
+#include "Serialization/JsonReader.h"
+#include "Serialization/JsonSerializer.h"
+#include "OutlawsFlags.h"
+#include "OutlawsLab.h"
 #include "Windows/AllowWindowsPlatformTypes.h"
 #include <shobjidl.h>
 
@@ -118,6 +125,68 @@ void OutlawsInstallWin::GogFolders(TArray<FString>& OutRemaster, TArray<FString>
 		}
 	}
 	::RegCloseKey(Games);
+}
+
+FString OutlawsInstallWin::EpicManifestsDir()
+{
+#if WITH_OUTLAWS_TESTS
+	FString Test;
+	if (OLFlags::Value(TEXT("OLTestEpicManifests"), Test, /*bShouldStopOnSeparator*/ false))
+	{
+		return OutlawsInstallWinPrivate::Clean(FPaths::ConvertRelativePathToFull(Test.TrimQuotes()));
+	}
+#endif
+	// the launcher keeps one <id>.item (JSON) per installed app in %ProgramData%\Epic\EpicGamesLauncher\Data\Manifests
+	FString ProgramData = FPlatformMisc::GetEnvironmentVariable(TEXT("ProgramData"));
+	if (ProgramData.IsEmpty())
+	{
+		ProgramData = TEXT("C:/ProgramData");
+	}
+	return OutlawsInstallWinPrivate::Clean(FPaths::Combine(ProgramData, TEXT("Epic"), TEXT("EpicGamesLauncher"), TEXT("Data"), TEXT("Manifests")));
+}
+
+void OutlawsInstallWin::EpicFolders(TArray<FString>& Out)
+{
+	using namespace OutlawsInstallWinPrivate;
+	if (OLFlags::Param(TEXT("OLOldInstallFinder")))
+	{
+		return;
+	}
+	const FString Dir = EpicManifestsDir();
+	TArray<FString> Items;
+	IFileManager::Get().FindFiles(Items, *FPaths::Combine(Dir, TEXT("*.item")), /*Files*/ true, /*Directories*/ false);
+	Items.Sort();
+	// Outlaws is told by the folder (its LABs), not by an app name; a manifest naming Outlaws only goes first
+	TArray<FString> Named, Other;
+	for (const FString& Item : Items)
+	{
+		FString Text;
+		if (!FFileHelper::LoadFileToString(Text, *FPaths::Combine(Dir, Item)))
+		{
+			continue;
+		}
+		TSharedPtr<FJsonObject> Json;
+		if (!FJsonSerializer::Deserialize(TJsonReaderFactory<>::Create(Text), Json) || !Json.IsValid())
+		{
+			continue;
+		}
+		FString Location, Name;
+		bool bIncomplete = false;
+		if (!Json->TryGetStringField(TEXT("InstallLocation"), Location) || Location.IsEmpty())
+		{
+			continue;
+		}
+		Json->TryGetStringField(TEXT("DisplayName"), Name);
+		Json->TryGetBoolField(TEXT("bIsIncompleteInstall"), bIncomplete);
+		const FString Install = Clean(Location);
+		if (bIncomplete || !FOutlawsAssets::LooksLikeInstall(Install))
+		{
+			continue;
+		}
+		(Name.Contains(TEXT("Outlaws")) ? Named : Other).AddUnique(Install);
+	}
+	for (const FString& D : Named) Out.AddUnique(D);
+	for (const FString& D : Other) Out.AddUnique(D);
 }
 
 FString OutlawsInstallWin::PickFolder(const FString& Title)
