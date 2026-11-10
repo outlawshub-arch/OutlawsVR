@@ -7,6 +7,7 @@
 #include "OutlawsRuntime.h"
 #include "OutlawsPlayer.h"
 #include "OutlawsMenuDoc.h"
+#include "OutlawsMenuSpacing.h"          // REQ-MENUSPACING
 #include "OutlawsBuildInfo.h"
 #include "OutlawsDeathmatch.h"
 #include "OutlawsFlags.h"
@@ -89,8 +90,9 @@ int32 UOutlawsCoop::FrontRowRoom(int32 NumLines)
 {
 	// DrawFrontCanvas's compact #coop pages (view units, 1920 x 1080): the lines from y 362, 38 apart; the rows from 12 under
 	// them, at least 50 apart, the last one's middle at 975 at most (the help line's letters start at about 1015)
+	// (REQ-MENUSPACING: at least the remaster's pitch for their 42, not 50)
 	const float Top = 362.f + 38.f * float(FMath::Max(NumLines, 0)) + 12.f;
-	return FMath::Max(1, FMath::FloorToInt((975.f - Top) / 50.f + 0.001f) + 1);
+	return FMath::Max(1, FMath::FloorToInt((975.f - Top) / OutlawsMenuSpacing::Pitch(50.f, 42.f) + 0.001f) + 1);
 }
 
 void UOutlawsCoop::AddPlayerRows(OutlawsMenu::FPage& Page, int32 At, TArray<OutlawsMenu::FItem>& Players, int32 NumLines)

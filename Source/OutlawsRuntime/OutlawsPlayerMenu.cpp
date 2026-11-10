@@ -58,6 +58,7 @@
 #include "Materials/MaterialParameterCollectionInstance.h"
 #include "OutlawsShotTests.h"
 #include "OutlawsLobbyPage.h"
+#include "OutlawsMenuSpacing.h"          // REQ-MENUSPACING
 #include "EngineFontServices.h"
 #include "Fonts/FontCache.h"
 
@@ -3007,12 +3008,23 @@ void AOutlawsPlayer::UpdateMenu(float Dt)
 	const float Stick = FMath::Abs(MoveStick().Y) > FMath::Abs(TurnStick().Y) ? MoveStick().Y : TurnStick().Y;
 	MenuScrollWait -= Dt;
 	const int32 First = DialogFirstRow(MenuPage->Message);
-	const int32 MaxScroll = IsAchievPage() ? FMath::Max(0, MenuPage->Items.Num() - AchievRowsShown) : bWideSheet ? FMath::Max(0, MenuPage->Items.Num() + First - 7) : SheetMaxScroll();
+	// (REQ-MENUSPACING) a front page's list scrolls on its own count: its rows are picked by their place in the list
+	const bool bFrontList = IsFrontPage() && !OutlawsMenuSpacing::Old();
+	const int32 MaxScroll = bFrontList ? 0 : IsAchievPage() ? FMath::Max(0, MenuPage->Items.Num() - AchievRowsShown) : bWideSheet ? FMath::Max(0, MenuPage->Items.Num() + First - 7) : SheetMaxScroll();
 	if (FMath::Abs(Stick) > 0.6f && MenuScrollWait <= 0.f)
 	{
-		MenuScroll = FMath::Clamp(MenuScroll + (Stick < 0.f ? 1 : -1), 0, MaxScroll);
+		OutlawsMenuSpacing::FFrontList& FL = OutlawsMenuSpacing::Front();
+		if (bFrontList && FL.File == MenuPage->File && FL.MaxScroll > 0)
+		{
+			FL.Scroll = FMath::Clamp(FL.Scroll + (Stick < 0.f ? 1 : -1), 0, FL.MaxScroll);
+			RedrawMenu();
+		}
+		else if (!bFrontList)
+		{
+			MenuScroll = FMath::Clamp(MenuScroll + (Stick < 0.f ? 1 : -1), 0, MaxScroll);
+			RefreshMenuRows();
+		}
 		MenuScrollWait = 0.15f;
-		RefreshMenuRows();
 	}
 
 	// each hand points a laser at the panel; the trigger picks the row it points at
@@ -3881,6 +3893,17 @@ void AOutlawsPlayer::DrawFrontCanvas(UCanvas* C, int32 Width, int32 Height)
 	FrontItemInk.Reset();
 	FrontNameInk.Reset();
 	FrontInk = FBox2D(ForceInit);
+	// (REQ-MENUSPACING) the page's list, laid out below (PlaceList); another page starts at its top
+	OutlawsMenuSpacing::FFrontList& FL = OutlawsMenuSpacing::Front();
+	if (FL.File != MenuPage->File)
+	{
+		FL = OutlawsMenuSpacing::FFrontList();
+		FL.File = MenuPage->File;
+	}
+	FL.bList = false;
+	FL.MaxScroll = 0;
+	FL.LinesFoot = 0.f;
+	FL.More = FBox2D(ForceInit);
 	auto Col = [](uint8 R, uint8 G, uint8 B) { return FLinearColor::FromSRGBColor(FColor(R, G, B)); };
 	// a piece of art placed as the page's rules place it: the page content lives inside tpl_menu's "background"
 	// element, a 4608 x 1440 strip centred on the window, so "left: L" is view x = L - 1344 and "right: R" is
@@ -3945,6 +3968,40 @@ void AOutlawsPlayer::DrawFrontCanvas(UCanvas* C, int32 Width, int32 Height)
 		}
 		Box = Box.ExpandBy(FVector2D(PadX, PadY));
 		if (!bOff) FrontHits.Emplace(Box, Index);
+	};
+	// REQ-MENUSPACING: a list's N rows Pitch apart, the first at Top; one that would reach past Foot starts higher, as high as
+	// Highest, and past that shows what fits with room for a "more below" line under it, the rest a scroll away (FL.Scroll,
+	// the stick).  -OLOldMenuSpacing: every row at its old place
+	auto PlaceList = [&](int32 N, float Top, float Foot, float Pitch, float Em, float Highest)
+	{
+		FL.bList = true;
+		FL.Top = Top;
+		FL.Pitch = Pitch;
+		FL.Em = Em;
+		FL.From = 0;
+		FL.Shown = N;
+		if (OutlawsMenuSpacing::Old() || N <= 1 || Pitch <= 0.f) return;
+		if (Top + float(N - 1) * Pitch > Foot) FL.Top = FMath::Min(Top, FMath::Max(Highest, Foot - float(N - 1) * Pitch));
+		if (FL.Top + float(N - 1) * Pitch <= Foot + 0.5f) return;
+		// (the "more below" line's letters, in VR its stick drawn under them, clear of the help line at 1015)
+		const float Last = FMath::Min(Foot - Pitch * 0.5f, 1010.f - Pitch * 0.5f - 8.f - (bVR ? 165.f : 30.f));
+		FL.Shown = FMath::Clamp(FMath::FloorToInt((Last - FL.Top) / Pitch + 0.001f) + 1, 1, N);
+		FL.MaxScroll = N - FL.Shown;
+		FL.Scroll = FMath::Clamp(FL.Scroll, 0, FL.MaxScroll);
+		FL.From = FL.Scroll;
+	};
+	auto ListY = [&](int32 i, float& OutY)
+	{
+		if (!FL.bList || i < FL.From || i >= FL.From + FL.Shown) return false;
+		OutY = FL.Top + float(i - FL.From) * FL.Pitch;
+		return true;
+	};
+	auto ListMore = [&]()
+	{
+		if (!FL.bList || FL.MaxScroll <= 0) return;
+		const TCHAR* Say = FL.From > 0 && FL.From < FL.MaxScroll ? TEXT("more above and below") : FL.From > 0 ? TEXT("more above") : TEXT("more below");
+		FL.More = Txt(SaveFont(5), Say, 815.f, FL.Top + float(FL.Shown - 1) * FL.Pitch + FL.Pitch * 0.5f + 8.f, 1, Col(0x5a, 0x40, 0x28), false);
+		FrontInk += FL.More;
 	};
 	const FString File = MenuPage->File;
 	if (File == TEXT("#front"))
@@ -4356,6 +4413,18 @@ void AOutlawsPlayer::DrawFrontCanvas(UCanvas* C, int32 Width, int32 Height)
 			FrontInk += Txt(SaveFont(bBig ? 9 : 5), Lines[k], 815.f, bBig ? Y + 6.f : Y, 1, Ink, false, nullptr, LineMaxW);
 			Y += bBig ? 66.f : File == TEXT("#coophost") || File == TEXT("#cooplobby") || File == TEXT("#coopclient") || File == TEXT("#coopscore") || File == TEXT("#cooppause") ? 38.f : 44.f;      // (REQ-COOPLOBBY: the host's lines closer, for its rows)
 		}
+		// (REQ-MENUSPACING) the page's rows as a list (not the join page's pad): the compact pages (REQ-COOPLOBBY) spread over the
+		// room above the help line, at most 72 apart and now at least the remaster's pitch for their 42 (was 50); the others
+		// the remaster's for their 72 (was 80)
+		const bool bCompact = File == TEXT("#coophost") || File == TEXT("#coophostopts") || File == TEXT("#cooplevels") || File == TEXT("#cooplobby") || File == TEXT("#coopclient")
+			|| File == TEXT("#coopscore") || File == TEXT("#cooppause");
+		if (File != TEXT("#coopjoin"))
+		{
+			const int32 N = MenuPage->Items.Num();
+			FL.LinesFoot = Lines.Num() > 0 ? Y - 16.f : 0.f;
+			if (bCompact) PlaceList(N, Y + 12.f, 975.f, FMath::Clamp((975.f - (Y + 12.f)) / float(FMath::Max(N - 1, 1)), OutlawsMenuSpacing::Pitch(50.f, 42.f), 72.f), 42.f, Y + 12.f);
+			else PlaceList(N, Y + 44.f, 930.f, OutlawsMenuSpacing::Pitch(80.f, 72.f), 72.f, Y + 44.f);
+		}
 		for (int32 i = 0; i < MenuPage->Items.Num(); ++i)
 		{
 			if (File == TEXT("#coopjoin"))
@@ -4447,15 +4516,17 @@ void AOutlawsPlayer::DrawFrontCanvas(UCanvas* C, int32 Width, int32 Height)
 				// (REQ-COOPLOBBY) the host's pages in a smaller face, the rows spread over the room left above the help line
 				// (at most 72 apart, at least 50: the face is about 47 tall).  REQ-MPLOBBY c: the pause Players page too; the
 				// lobby's and its player lists are cut to what fits (UOutlawsCoop::FrontRowRoom), a "More players" row under them
-				const int32 N = MenuPage->Items.Num();
-				const float Step = FMath::Clamp((975.f - (Y + 12.f)) / float(FMath::Max(N - 1, 1)), 50.f, 72.f);
-				Link(i, MenuPage->Items[i].Label, 815.f, Y + 12.f + i * Step, 1, 13, 14, 36.f, 2.f);
+				// (REQ-MENUSPACING: their places from PlaceList above)
+				float RowY = 0.f;
+				if (ListY(i, RowY)) Link(i, MenuPage->Items[i].Label, 815.f, RowY, 1, 13, 14, 36.f, 2.f);
 			}
 			else
 			{
-				Link(i, MenuPage->Items[i].Label, 815.f, Y + 44.f + i * 80.f, 1, 11, 12, 40.f, 12.f);
+				float RowY = 0.f;
+				if (ListY(i, RowY)) Link(i, MenuPage->Items[i].Label, 815.f, RowY, 1, 11, 12, 40.f, 12.f);
 			}
 		}
+		ListMore();
 	}
 	else if (File == TEXT("#character"))
 	{
@@ -4573,12 +4644,16 @@ void AOutlawsPlayer::DrawFrontCanvas(UCanvas* C, int32 Width, int32 Height)
 		// menu_items.start: menu_link.main links centred on x 815 from y 350; (REQ-HMCAREER) more than five rows (Historical
 		// Missions when a v0.95 session keeps Resume Marshal Training, REQ-NOHOMRESUME) closer together, the last row's middle
 		// at 930, its letters clear of the help line
+		// (REQ-MENUSPACING: never closer than 118 now; a long list starts higher, from 330, then scrolls)
 		const int32 N = MenuPage->Items.Num();
 		const float Step = N > 1 ? FMath::Min(118.f, (930.f - 413.f) / float(N - 1)) : 118.f;
+		PlaceList(N, 350.f + 18.f + 45.f, 930.f, OutlawsMenuSpacing::Pitch(Step, 72.f), 72.f, 330.f);
 		for (int32 i = 0; i < N; ++i)
 		{
-			Link(i, MenuPage->Items[i].Label, 815.f, 350.f + 18.f + 45.f + i * Step, 1, 11, 12, 40.f, 14.f);
+			float RowY = 0.f;
+			if (ListY(i, RowY)) Link(i, MenuPage->Items[i].Label, 815.f, RowY, 1, 11, 12, 40.f, 14.f);
 		}
+		ListMore();
 	}
 	// the help line: what selects, what goes back
 	const FLinearColor Help = Col(0xc0, 0xc0, 0xc0);
@@ -5631,15 +5706,20 @@ int32 AOutlawsPlayer::MenuFitWalk(const FString& Root, TFunctionRef<void(bool, c
 		if (File != Root) MenuStack.Add(Root);
 		Walked.Add(File);
 		const bool bSheet = !IsFrontPage() && !IsSavePage();
-		const int32 MaxScroll = bSheet ? SheetMaxScroll() : 0;
-		for (int32 Sc : { 0, MaxScroll })
+		int32 MaxScroll = bSheet ? SheetMaxScroll() : 0;
+		for (int32 Pass = 0; Pass < 2; ++Pass)
 		{
-			MenuScroll = Sc;
+			// (REQ-MENUSPACING: a front page's list scrolls on its own count, its bottom known once drawn)
+			const int32 Sc = Pass == 0 ? 0 : MaxScroll;
+			MenuScroll = bSheet ? Sc : 0;
+			OutlawsMenuSpacing::Front().Scroll = bSheet ? 0 : Sc;
 			RefreshMenuRows();               // (redraws the sheet: the ink measured here)
 			if (!bSheet) RedrawMenu();
+			if (!bSheet && Pass == 0 && OutlawsMenuSpacing::Front().File == File) MaxScroll = OutlawsMenuSpacing::Front().MaxScroll;
 			FString Said;
 			const bool bFits = MenuPageFits(Said);
 			Check(bFits, FString::Printf(TEXT("%s fits the panel (%s)"), *File, *Said));
+			if (OutlawsMenuSpacing::WalkHook()) OutlawsMenuSpacing::WalkHook()(File, Check);     // (REQ-MENUSPACING's probe)
 			if (bSheet && MenuRoot)
 			{
 				// (REQ-SUBMENUSPACE) the pointer's hit areas follow the rows: a ray straight at the first and the last row shown that
