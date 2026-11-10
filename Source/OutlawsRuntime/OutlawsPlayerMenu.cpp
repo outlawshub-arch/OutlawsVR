@@ -7,6 +7,7 @@
 #include "OutlawsMpPolish.h"
 #include "OutlawsBeacon.h"
 #include "OutlawsUpdate.h"
+#include "OutlawsHQSound.h"
 #include "OutlawsPlayer.h"
 #include "OutlawsFontCompose.h"
 #include "OutlawsPerfTest.h"
@@ -1178,6 +1179,12 @@ bool AOutlawsPlayer::ShowMenuPage(const FString& File, bool bPush)
 		I.Label = TEXT("Remastered Sounds");
 		I.Name = TEXT("snd_remastered");
 		Page->Items.Add(I);
+		// (REQ-HQSOUND, the user 8 Nov) the HQ Sound Pack by T4H_Dingle and Dxierzan, On by default; Off is the sounds above
+		OutlawsMenu::FItem Hq;
+		Hq.Kind = OutlawsMenu::EItemKind::Check;
+		Hq.Label = TEXT("HQ Sound Pack");
+		Hq.Name = TEXT("snd_hqpack");
+		Page->Items.Add(Hq);
 	}
 	// a settings page (display, sound) gets its own Restore defaults at the end
 	{
@@ -1317,7 +1324,7 @@ bool AOutlawsPlayer::ItemWorks(const OutlawsMenu::FItem& I, TSet<FString>& Visit
 	case EItemKind::Select:
 	case EItemKind::Range:
 		return Settings.Contains(I.Name) || I.Name.StartsWith(TEXT("vr_")) || I.Name.StartsWith(TEXT("cheat_")) || I.Name.StartsWith(TEXT("autosave"))
-			|| I.Name == TEXT("solo_badguys") || I.Name == TEXT("endonboss") || I.Name == TEXT("update_check")
+			|| I.Name == TEXT("solo_badguys") || I.Name == TEXT("endonboss") || I.Name == TEXT("update_check") || I.Name == TEXT("snd_hqpack")
 			|| (I.Name == TEXT("cc_enable") && !OLLanguage::Old());          // (REQ-LANGUAGE step 6: the cutscene subtitles)
 	case EItemKind::Radio:
 		return I.Name == TEXT("g_language") && !OLLanguage::Old();           // (REQ-LANGUAGE step 6: the six languages)
@@ -1462,6 +1469,7 @@ FString AOutlawsPlayer::MenuRowText(int32 Index) const
 		else if (I.Name == TEXT("cheat_freeze")) bOn = L && !L->bEnemiesActive;
 		else if (I.Name == TEXT("r_remasteredmode")) bOn = L && L->bHDTextures;
 		else if (I.Name == TEXT("snd_remastered")) bOn = L && L->bHDSounds;
+		else if (I.Name == TEXT("snd_hqpack")) bOn = OLHQSound::Chosen();
 		else if (I.Name == TEXT("r_tinting")) bOn = L && L->bPaletteGrades;
 		else if (I.Name == TEXT("r_stochastic")) bOn = L && L->bStochastic;
 		else if (I.Name == TEXT("r_perfhud")) bOn = OutlawsDeviceProfile::PerfHud();
@@ -2441,6 +2449,7 @@ void AOutlawsPlayer::MenuActivate(int32 Hand, int32 Index)
 				L->MusicVolume = 0.5f;
 				L->MovieVolume = 1.f;
 				L->bHDSounds = true;
+				OLHQSound::SetChosen(true);        // (REQ-HQSOUND; the level's sounds are read again at their next play)
 				L->ApplyMusicVolume();
 			}
 			else if (I.Name == TEXT("defaults:display") && L)
@@ -2761,6 +2770,15 @@ void AOutlawsPlayer::MenuActivate(int32 Hand, int32 Index)
 		{
 			UOutlawsUpdate::ToggleCheck();
 			RefreshMenuRows();
+			return;
+		}
+		if (I.Name == TEXT("snd_hqpack"))
+		{
+			// (REQ-HQSOUND) the HQ Sound Pack On or Off, at once: the level's held sounds are read again at their next play
+			OLHQSound::SetChosen(!OLHQSound::Chosen());
+			RefreshMenuRows();
+			SaveSettings();
+			MenuToastText(OLHQSound::Chosen() ? TEXT("HQ Sound Pack on") : TEXT("HQ Sound Pack off"));
 			return;
 		}
 		if (I.Name == TEXT("endonboss"))

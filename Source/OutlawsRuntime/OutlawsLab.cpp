@@ -18,6 +18,7 @@
 #include "OutlawsUpdate.h"             // REQ-AUTOUPDATE: an update's native maps on the Quest
 #include "OutlawsInstallWindows.h"
 #include "OutlawsLanguage.h"          // REQ-LANGUAGE: the language LABs
+#include "OutlawsHQSound.h"           // REQ-HQSOUND: the HQ Sound Pack
 #if PLATFORM_ANDROID
 #include <dirent.h>                    // (BUG-QUESTNATIVEMAPS: the native maps listing's diagnosis)
 #include <errno.h>
@@ -149,6 +150,8 @@ int32 FOutlawsAssets::Open(const FString& InRoot)
 		}
 	}
 	UE_LOG(LogOutlaws, Log, TEXT("Opened %d LAB archives under %s (%d names)"), Labs.Num(), *Root, Index.Num());
+	// (REQ-HQSOUND) the HQ Sound Pack found and made ready once a run (its cache, or the decode on a worker)
+	if (Labs.Num() > 0) OLHQSound::Start(Root);
 	// (REQ-MAPQUICK, user 2 Nov: the 19 community maps playable now) every <native root>/<map>/*.lab after the stock order, at
 	// the LOWEST priority: a stock name stays the stock file, a map's own names (its .lvt, .inf, .obt, .itm, new textures) are
 	// found.  The quick step only: the per-map overlay of REQ-NATIVEMAPS replaces it (the original puts the level's LAB first,
@@ -435,7 +438,23 @@ const FOutlawsLabFile* FOutlawsAssets::FindSound(const FString& Name, bool bHD, 
 	return nullptr;
 }
 
+FString FOutlawsAssets::PackWav(const FString& Name) const
+{
+	const FString Key = Name.ToLower();
+	if ((Overlay && Overlay->GetIndex().Contains(Key)) || (TauntLab && TauntLab->GetIndex().Contains(Key))) return FString();
+	return OLHQSound::WavFor(Key);
+}
+
 bool FOutlawsAssets::GetSound(const FString& Name, bool bHD, TArray<uint8>& Out) const
+{
+	// (REQ-HQSOUND) the HQ Sound Pack's sound, decoded once into the media cache, ahead of every LAB but the map's and the
+	// language's own; a wav that will not read is today's sound
+	const FString Pack = PackWav(Name);
+	if (!Pack.IsEmpty() && FFileHelper::LoadFileToArray(Out, *Pack) && Out.Num() > 44) return true;
+	return GetSoundStock(Name, bHD, Out);
+}
+
+bool FOutlawsAssets::GetSoundStock(const FString& Name, bool bHD, TArray<uint8>& Out) const
 {
 	int32 Entry = INDEX_NONE;
 	if (const FOutlawsLabFile* Lab = FindSound(Name, bHD, Entry)) return Lab->Read(Entry, Out);
@@ -443,6 +462,12 @@ bool FOutlawsAssets::GetSound(const FString& Name, bool bHD, TArray<uint8>& Out)
 }
 
 FString FOutlawsAssets::WhereSound(const FString& Name, bool bHD) const
+{
+	if (!PackWav(Name).IsEmpty()) return TEXT("HQSoundPack.zip");
+	return WhereSoundStock(Name, bHD);
+}
+
+FString FOutlawsAssets::WhereSoundStock(const FString& Name, bool bHD) const
 {
 	int32 Entry = INDEX_NONE;
 	if (const FOutlawsLabFile* Lab = FindSound(Name, bHD, Entry)) return FPaths::GetCleanFilename(Lab->GetPath());

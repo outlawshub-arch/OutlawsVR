@@ -2419,6 +2419,9 @@ private:
 
 	struct FWav { int32 Rate = 22050; int32 Channels = 1; TArray<uint8> Pcm; };
 	TMap<FString, TSharedPtr<FWav>> WavCache;
+	/** (REQ-HQSOUND) OLHQSound::Serial when WavCache was last good: the pack becoming ready or its row changing empties it. */
+	uint32 HQSoundSerialSeen = 0;
+	void HQSoundCacheCheck();
 	/** (CPU1) the last few music tracks read from disk, newest last: a level's cues cycle through two or three short tracks
 	 *  (the train's TRK03A/TRK04A every few seconds), and each read stalled the game thread 25 to 125 ms. */
 	TArray<TPair<FString, TSharedPtr<FWav>>> MusicWavCache;

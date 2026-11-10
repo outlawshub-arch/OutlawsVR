@@ -374,6 +374,7 @@ bool OLUpdate::ExtractForQuest(const FString& ZipPath, const FString& DataDir, c
 	if (!ReadZipIndex(ZipPath, Index) || Index.Num() == 0) { Why = TEXT("not a zip"); return false; }
 	const FZipEntry* Apk = nullptr;
 	const FZipEntry* Theme = nullptr;
+	const FZipEntry* HqPack = nullptr;       // (REQ-HQSOUND) the HQ Sound Pack, when the release carries it
 	TArray<TPair<const FZipEntry*, FString>> Maps;
 	for (const FZipEntry& E : Index)
 	{
@@ -382,6 +383,7 @@ bool OLUpdate::ExtractForQuest(const FString& ZipPath, const FString& DataDir, c
 		const FString Rel = E.Name.Mid(Cut + 1);
 		if (Rel == TEXT("Tools/OutlawsVR.apk")) Apk = &E;
 		else if (Rel == TEXT("Tools/MenuOverlay.kpf")) Theme = &E;
+		else if (Rel == TEXT("Tools/HQSoundPack.zip")) HqPack = &E;
 		else if (Rel.StartsWith(TEXT("Tools/NativeMaps/")) && !Rel.EndsWith(TEXT("/"))) Maps.Emplace(&E, Rel.Mid(6));
 	}
 	if (!Apk || !Theme || Maps.Num() == 0)
@@ -397,6 +399,7 @@ bool OLUpdate::ExtractForQuest(const FString& ZipPath, const FString& DataDir, c
 	{
 		if (!ExtractEntry(*R, *M.Key, FPaths::Combine(DataDir, M.Value))) { Why = FString::Printf(TEXT("could not unpack %s"), *M.Value); return false; }
 	}
+	if (HqPack && !ExtractEntry(*R, *HqPack, FPaths::Combine(DataDir, TEXT("HQSoundPack.zip")))) { Why = TEXT("could not unpack the HQ Sound Pack"); return false; }
 	if (!ExtractEntry(*R, *Apk, ApkTo)) { Why = TEXT("could not unpack the apk"); return false; }
 	if (Sha256OfFile(ApkTo) != ApkSha256)
 	{

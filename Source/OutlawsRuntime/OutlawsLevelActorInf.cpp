@@ -64,6 +64,7 @@ struct FSoundQualityInfo
 #include "Misc/Paths.h"
 #include "HAL/IConsoleManager.h"
 #include "OutlawsLanguage.h"          // REQ-LANGUAGE: the message merge
+#include "OutlawsHQSound.h"           // REQ-HQSOUND: the pack's sounds
 
 // a 3D one-shot from farther than this (cm) from the eye is not started (user 2026-10-03; the attenuation ends at 38 m); 0 = play all
 static TAutoConsoleVariable<float> CVarOLFarSoundDistance(TEXT("ol.FarSoundDistance"), 4000.f,
@@ -4661,11 +4662,21 @@ TSharedPtr<AOutlawsLevelActor::FWav> AOutlawsLevelActor::DecodeWav(const FString
 	return Wav;
 }
 
+void AOutlawsLevelActor::HQSoundCacheCheck()
+{
+	// (REQ-HQSOUND) the pack ready (its first start decodes on a worker) or its row changed: the sounds held are read again
+	const uint32 S = OLHQSound::Serial();
+	if (S == HQSoundSerialSeen) return;
+	HQSoundSerialSeen = S;
+	WavCache.Reset();
+}
+
 void AOutlawsLevelActor::WarmWav(const FString& Name)
 {
 	// (FIRSTHITCH) read into the level's cache now, behind the load, as the first PlayWav of it would
 	if (!AssetsRef || Name.IsEmpty() || FChar::IsDigit(Name[0])) return;
 	const FString Key = Name.ToLower();
+	HQSoundCacheCheck();
 	if (Key.StartsWith(TEXT("file:")) || WavCache.Contains(Key)) return;
 	WavCache.Add(Key, DecodeWav(Name, false));
 }
@@ -4695,6 +4706,7 @@ UAudioComponent* AOutlawsLevelActor::PlayWav(const FString& Name, const FVector&
 	const FString Key = Name.ToLower();
 	// "file:<path>": a wav on disk (the converted music), kept for the last two tracks only (MusicWavCache)
 	const bool bDiskFile = Key.StartsWith(TEXT("file:"));
+	HQSoundCacheCheck();
 	TSharedPtr<FWav> Wav;
 	const int32 MusicAt = bDiskFile ? MusicWavCache.IndexOfByPredicate([&Key](const TPair<FString, TSharedPtr<FWav>>& P) { return P.Key == Key; }) : INDEX_NONE;
 	if (MusicAt != INDEX_NONE)

@@ -66,6 +66,8 @@ public:
 	bool GetText(const FString& Name, FString& Out) const;   // latin-1 -> FString
 	/** A sound: the remaster's (olsfxhd, oltaunthd) or, with !bHD, the original's where it has one. */
 	bool GetSound(const FString& Name, bool bHD, TArray<uint8>& Out) const;
+	/** (REQ-HQSOUND) the same with the HQ Sound Pack aside: today's sounds (the pack off is exactly this). */
+	bool GetSoundStock(const FString& Name, bool bHD, TArray<uint8>& Out) const;
 	/** Which archive a name resolves to (for diagnostics). */
 	FString Where(const FString& Name) const;
 	/** (REQ-LANGUAGE) the language's LABs (OLLanguage::LabsFor) open in front of the stock order, behind a native map's own
@@ -78,6 +80,8 @@ public:
 	/** (REQ-LANGUAGE step 4) the LAB GetSound would read a sound from (for the probe): the native map's, the language's
 	 *  taunts (oltaunt_<l>), an HD set or the stock order's; empty when none holds it. */
 	FString WhereSound(const FString& Name, bool bHD) const;
+	/** (REQ-HQSOUND) "HQSoundPack.zip" for a sound the HQ Sound Pack gives; WhereSoundStock: the pack aside. */
+	FString WhereSoundStock(const FString& Name, bool bHD) const;
 	/** The language's taunt LAB mounted now (oltaunt_<l>.lab), empty when none (English, French, or not in the install). */
 	FString GetTauntLab() const;
 	/** The language whose LABs are mounted now ("en" when none). */
@@ -189,5 +193,8 @@ private:
 	// the HD and the classic branch (they hold WAV only, the originals' quality; a name they lack goes on as before)
 	TSharedPtr<FOutlawsLabFile> TauntLab;
 	const FOutlawsLabFile* FindSound(const FString& Name, bool bHD, int32& OutEntry) const;
+	/** (REQ-HQSOUND) the HQ Sound Pack's decoded wav for this sound when it is in use and neither the native map's LAB nor the
+	 *  language's taunt LAB holds the name (those come first); else empty. */
+	FString PackWav(const FString& Name) const;
 	const TPair<int32, int32>* FindLang(const FString& Key) const { return LangIndex.Find(Key); }
 };

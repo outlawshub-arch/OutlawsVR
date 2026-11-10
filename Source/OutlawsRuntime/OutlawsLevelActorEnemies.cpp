@@ -4,6 +4,7 @@
 #include "OutlawsFlags.h"
 #include "OutlawsMpPolish.h"
 #include "OutlawsShipSmoke.h"
+#include "OutlawsHQSound.h"
 #include "OutlawsPolygon.h"
 #include "OutlawsUnlocks.h"
 #include "OutlawsAchievements.h"
@@ -2153,6 +2154,7 @@ void AOutlawsLevelActor::LoadSettings()
 		bHDChosen ? TEXT("the player's choice") : OutlawsDeviceProfile::DefaultHDTextures() ? TEXT("not chosen: the settings file's value") : TEXT("not chosen: off by the Quest 2 profile"));
 	OutlawsDeviceProfile::LoadSettings(S);      // the Graphics page's performance rows (resolution, refresh rate, lamps, HUD)
 	B(TEXT("RemasteredSounds"), bHDSounds);
+	if (const FString* X = S.Find(TEXT("HQSoundPack"))) OLHQSound::SetChosen(X->ToBool());      // (REQ-HQSOUND: absent, On)
 	B(TEXT("Tinting"), bPaletteGrades);
 	B(TEXT("StochasticTextures"), bStochastic);
 	F(TEXT("MovementSpeed"), GameSpeed, 0.1f, 1.f);
@@ -2237,6 +2239,7 @@ void AOutlawsLevelActor::GatherSettings(TMap<FString, FString>& Out) const
 	B(TEXT("RemasteredGraphicsChosen"), bHDChosen);      // (written false too: the save merges into the file's old keys)
 	OutlawsDeviceProfile::GatherSettings(Out);
 	B(TEXT("RemasteredSounds"), bHDSounds);
+	B(TEXT("HQSoundPack"), OLHQSound::Chosen());
 	B(TEXT("Tinting"), bPaletteGrades);
 	B(TEXT("StochasticTextures"), bStochastic);
 	F(TEXT("MovementSpeed"), GameSpeedInFile >= 0.f ? GameSpeedInFile : GameSpeed);     // (a co-op test's own speed is never written)

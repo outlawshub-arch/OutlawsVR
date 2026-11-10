@@ -96,6 +96,12 @@ Isla Pinar: T4H_Dingle
 
 
 
+# (REQ-HQSOUND, user 8 Nov) the HQ Sound Pack, a release asset (sound files only, never in the source)
+~Mods
+HQ Sound Pack by T4H_Dingle and Dxierzan
+
+
+
 ~Played from your own copy of
 Outlaws Remastered
 
