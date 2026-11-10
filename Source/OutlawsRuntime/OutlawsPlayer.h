@@ -1689,6 +1689,24 @@ private:
 	// punches: a hand pushed fast into a bad guy hits him; bare fists at the fist's full strength (James 0.8,
 	// ijfist), anything in the hand at a quarter (user 2026-09-27); the knife keeps its own jab
 	float PunchCool[2] = { 0.f, 0.f };
+	// REQ-PUNCHWHOOSH (user 3 Nov): a quick thrust of the arm out in front, punching the air, plays the game's own throw whoosh
+	// (throw.wav from the player's install).  UpdatePunchWhoosh: the hand's speed along the facing, outward, peaking at
+	// WhooshSpeed or more, the stroke reaching WhooshReach in front of the eyes; never on a frame that lands a hit (that
+	// hand's punch, knife or tool cooldown running), WhooshCool between two, and the hand back in (WhooshRearm) before the
+	// next.  Fists, the knife, the shovel and the crowbar whoosh; guns, the lantern, the map and dynamite do not
+	// (-OLWhooshAllWeapons: every one does).  -OLOldPunchWhoosh: none.
+	static constexpr float WhooshSpeed = 300.f;      // cm/s along the facing, the stroke's peak (GUESS: over a punch's 250)
+	static constexpr float WhooshReach = 45.f;       // cm in front of the eyes along the facing (GUESS: near arm's length)
+	static constexpr float WhooshRearm = 30.f;       // cm: the hand back within this before the next (GUESS)
+	static constexpr float WhooshCoolSeconds = 0.5f; // s between two from one hand (GUESS: a punch's own 0.5 s cycle)
+	float WhooshCool[2] = { 0.f, 0.f };
+	float WhooshPeak[2] = { 0.f, 0.f };
+	bool bWhooshArmed[2] = { true, true };
+	int32 WhooshCount = 0;                           // (tests) how many have played
+	bool WhooshHand(int32 H) const;
+	void UpdatePunchWhoosh(float Dt);
+	static bool OldPunchWhoosh();
+	static bool WhooshAllWeapons();
 	// stamina (the original's energy, 0..100; James' cidjames.itm rates): running drains E_MOVE 10 a second,
 	// a jump E_JUMP 5; resting gives back E_REST 11 (walking half that, INFERRED), crouched E_CROUCH 2 more.
 	// Spent, running slows to a walk and jumps reach half as high; every shot strays (100 - energy) x 0.05

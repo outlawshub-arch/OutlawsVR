@@ -3784,6 +3784,61 @@ void AOutlawsPlayer::UpdatePunches(float Dt)
 	}
 }
 
+bool AOutlawsPlayer::OldPunchWhoosh()
+{
+	static const bool bOld = OLFlags::Param(TEXT("OLOldPunchWhoosh"));      // (REQ-PUNCHWHOOSH's before: no whoosh)
+	return bOld;
+}
+
+bool AOutlawsPlayer::WhooshAllWeapons()
+{
+	static const bool bAll = OLFlags::Param(TEXT("OLWhooshAllWeapons"));    // (REQ-PUNCHWHOOSH: to try it with everything)
+	return bAll;
+}
+
+bool AOutlawsPlayer::WhooshHand(int32 H) const
+{
+	// a hand busy with something else never whooshes: a bad guy or a ledge held, a prop, a bottle, the wheel, the shovel's shaft
+	if (GrabHand == H || GrabbedEnemy[H].IsValid() || HeldItem[H].IsValid() || HeldBottle[H] || bWheelHeld[H] || bToolSupport[H]) return false;
+	const int32 Wi = Equipped[H];
+	if (Wi >= 0 && GWeapons[Wi].bAuto) return false;                     // (a mounted gun stays where it is)
+	if (WhooshAllWeapons()) return true;
+	if (Wi >= 0) return GWeapons[Wi].Throw == 2;                          // the knife; a gun or dynamite not
+	return HeldTool[H].IsEmpty() || HeldTool[H] == TEXT("ishovel") || HeldTool[H] == TEXT("icrowbar");   // a fist, the melee tools; the lantern, the map not
+}
+
+void AOutlawsPlayer::UpdatePunchWhoosh(float Dt)
+{
+	// REQ-PUNCHWHOOSH (after UpdatePunches and UpdateTools: their hits this frame are known)
+	AOutlawsLevelActor* L = Level.Get();
+	if (!L || !bVR || bMenuOpen || bWheelOpen || bDeadView || OldPunchWhoosh() || !Camera) return;
+	const FVector Eye = Camera->GetComponentLocation();
+	const FVector Fl = FVector(Camera->GetForwardVector().X, Camera->GetForwardVector().Y, 0.0).GetSafeNormal();
+	if (Fl.IsNearlyZero()) return;
+	for (int32 H = 0; H < 2; ++H)
+	{
+		WhooshCool[H] = FMath::Max(0.f, WhooshCool[H] - Dt);
+		const FVector Grip = GripOf(H)->GetComponentLocation();
+		const float Out = float(FVector::DotProduct(Grip - Eye, Fl));       // how far in front of the eyes
+		const float Fwd = float(FVector::DotProduct(HandVelocity[H], Fl));  // the arm's own speed along the facing (outward > 0)
+		WhooshPeak[H] = Fwd > 0.f ? FMath::Max(WhooshPeak[H], Fwd) : 0.f;
+		if (Out < WhooshRearm) bWhooshArmed[H] = true;
+		// a hit landed by this hand (its punch, stab or tool blow): that is the sound, and this stroke whooshes no more
+		if (PunchCool[H] > 0.f || KnifeCool[H] > 0.f || ToolCooldown[H] > 0.f)
+		{
+			bWhooshArmed[H] = false;
+			continue;
+		}
+		if (!bWhooshArmed[H] || WhooshCool[H] > 0.f || Fwd <= 0.f || Out < WhooshReach || WhooshPeak[H] < WhooshSpeed || !WhooshHand(H)) continue;
+		bWhooshArmed[H] = false;
+		WhooshCool[H] = WhooshCoolSeconds;
+		++WhooshCount;
+		L->PlaySoundAt(TEXT("throw"), Grip);
+		UE_LOG(LogOutlaws, Log, TEXT("OLRT whoosh: the %s hand (%s) thrust out to %.0f cm at %.0f cm/s: throw asked to play"), H == 0 ? TEXT("left") : TEXT("right"),
+			Equipped[H] >= 0 ? GWeapons[Equipped[H]].Label : HeldTool[H].IsEmpty() ? TEXT("fist") : *HeldTool[H], Out, WhooshPeak[H]);
+	}
+}
+
 void AOutlawsPlayer::EnsureScopeRig(AOutlawsLevelActor* L)
 {
 	// the circle subtends 52 degrees (radius 0.07 of a 7 m sheet 1 m out) and shows 26: twice the size

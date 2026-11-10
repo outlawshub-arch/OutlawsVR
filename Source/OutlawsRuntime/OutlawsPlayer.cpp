@@ -2205,6 +2205,7 @@ void AOutlawsPlayer::Tick(float Dt)
 	UpdateTools(Dt);
 	UpdateBadgeVignette(Dt);
 	UpdatePunches(Dt);
+	UpdatePunchWhoosh(Dt);               // (REQ-PUNCHWHOOSH: after the hits)
 	UpdateEnemyGrab(Dt);
 	UpdateBottles(Dt);
 	UpdateDualPickup(Dt);
